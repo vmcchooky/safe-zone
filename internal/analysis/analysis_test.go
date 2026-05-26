@@ -2,6 +2,8 @@ package analysis
 
 import (
 	"testing"
+
+	"safe-zone/internal/config"
 )
 
 func TestClassifyCategory(t *testing.T) {
@@ -92,6 +94,35 @@ func TestAnalyzeVietnamPublicServiceOfficialGovDomains(t *testing.T) {
 				t.Fatalf("expected no protected public-service reason for %s, got %v", domain, result.Reasons)
 			}
 		})
+	}
+}
+
+func TestAnalyzeHighEntropyDGASuspected(t *testing.T) {
+	result := Analyze("xjfjwqeoas.com")
+
+	if !containsReason(result.Reasons, highEntropyDGAReason) {
+		t.Fatalf("expected high entropy DGA reason, got %v", result.Reasons)
+	}
+
+	cfg := config.DefaultAnalysisConfig()
+	if result.Score < cfg.EntropyScore {
+		t.Fatalf("expected entropy score contribution >= %d, got %d", cfg.EntropyScore, result.Score)
+	}
+
+	mainLabel := getMainLabel(result.Domain)
+	if mainLabel != "xjfjwqeoas" {
+		t.Fatalf("expected entropy to use domain label without TLD, got %q", mainLabel)
+	}
+	if entropy := ShannonEntropy(mainLabel); entropy <= cfg.EntropyThreshold {
+		t.Fatalf("expected entropy %f to exceed threshold %f", entropy, cfg.EntropyThreshold)
+	}
+}
+
+func TestAnalyzeHighEntropySkipsTrustedBrandRoots(t *testing.T) {
+	result := Analyze("vietcombank.com.vn")
+
+	if containsReason(result.Reasons, highEntropyDGAReason) {
+		t.Fatalf("expected trusted brand root to skip entropy DGA reason, got %v", result.Reasons)
 	}
 }
 

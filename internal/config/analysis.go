@@ -41,8 +41,8 @@ func DefaultAnalysisConfig() AnalysisConfig {
 		KeywordMatchScore:    10,
 		KeywordMultipleBonus: 10,
 		BrandSpoofingScore:   50,
-		EntropyThreshold:     3.9,
-		EntropyScore:         15,
+		EntropyThreshold:     3.0,
+		EntropyScore:         35,
 	}
 }
 

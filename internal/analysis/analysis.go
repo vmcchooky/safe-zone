@@ -29,7 +29,10 @@ type Result struct {
 	Category   string   `json:"category,omitempty"` // e.g., "social_media", "adult", "gambling", "gaming", "advertising", "malware", "phishing", "uncategorized"
 }
 
-const protectedPublicServiceReason = "protected Vietnamese public-service keyword abuse (dichvucong)"
+const (
+	protectedPublicServiceReason = "protected Vietnamese public-service keyword abuse (dichvucong)"
+	highEntropyDGAReason         = "high_entropy_dga_suspected"
+)
 
 type Analyzer struct {
 	config config.AnalysisConfig
@@ -175,7 +178,9 @@ func (a *Analyzer) Analyze(input string) Result {
 		reasons = append(reasons, "mixed script characters")
 	}
 
+	hasSuspiciousKeyword := false
 	if keywordCount, keywordScore := a.suspiciousKeywordStats(domain); keywordScore > 0 {
+		hasSuspiciousKeyword = true
 		score += keywordScore
 		reasons = append(reasons, "phishing keyword pattern")
 		if keywordCount >= 2 {
@@ -198,11 +203,14 @@ func (a *Analyzer) Analyze(input string) Result {
 
 	// 8. Shannon Entropy Analysis (DGA detection)
 	mainLabel := getMainLabel(domain)
-	if len(mainLabel) >= 8 {
+	if len(mainLabel) >= 10 &&
+		!strings.Contains(mainLabel, "-") &&
+		!hasSuspiciousKeyword &&
+		!isTrustedBrandRoot(getRootDomain(domain)) {
 		entropy := ShannonEntropy(mainLabel)
 		if entropy > a.config.EntropyThreshold {
 			score += a.config.EntropyScore
-			reasons = append(reasons, "high lexical entropy")
+			reasons = append(reasons, highEntropyDGAReason)
 		}
 	}
 

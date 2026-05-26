@@ -170,12 +170,12 @@ func TestAnalyzeBrandSpoofingIntegration(t *testing.T) {
 	resultEntropy := Analyze("qweasdzxc123.biz")
 	hasEntropyReason := false
 	for _, r := range resultEntropy.Reasons {
-		if strings.Contains(r, "high lexical entropy") {
+		if r == highEntropyDGAReason {
 			hasEntropyReason = true
 			break
 		}
 	}
 	if !hasEntropyReason {
-		t.Logf("Analyze('qweasdzxc123.biz') reasons: %v (note: might skip if length/threshold not reached)", resultEntropy.Reasons)
+		t.Errorf("expected high entropy DGA reason, got %v", resultEntropy.Reasons)
 	}
 }
