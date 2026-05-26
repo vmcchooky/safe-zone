@@ -221,6 +221,17 @@ CREATE TABLE IF NOT EXISTS group_overrides (
     UNIQUE(group_id, domain)
 );
 CREATE INDEX IF NOT EXISTS idx_group_override_lookup ON group_overrides(group_id, domain);
+
+CREATE TABLE IF NOT EXISTS trusted_brands (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    official_domain TEXT NOT NULL UNIQUE,
+    alt_domains TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_trusted_brands_name ON trusted_brands(name);
+CREATE INDEX IF NOT EXISTS idx_trusted_brands_official_domain ON trusted_brands(official_domain);
 `
 
 const telemetryBufferSize = 1000
@@ -296,6 +307,11 @@ func New(path string, retentionDays int) (*DB, error) {
 		telemetryCh:   make(chan TelemetryEntry, telemetryBufferSize),
 		retentionDays: retentionDays,
 		done:          make(chan struct{}),
+	}
+
+	if err := d.SeedDefaultBrands(); err != nil {
+		_ = sqlDB.Close() // #nosec G104 -- error path; primary error already captured
+		return nil, fmt.Errorf("seed default brands: %w", err)
 	}
 
 	// Auto-initialize default groups

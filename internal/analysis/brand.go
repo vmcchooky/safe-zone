@@ -1,8 +1,12 @@
 package analysis
 
 import (
+	"context"
+	"errors"
 	"math"
 	"strings"
+	"sync"
+	"time"
 	"unicode"
 
 	"golang.org/x/net/idna"
@@ -10,50 +14,153 @@ import (
 
 // Brand represents a trusted brand and its official domains.
 type Brand struct {
-	Name           string   // e.g. "google"
-	OfficialDomain string   // e.g. "google.com"
-	AltDomains     []string // e.g. ["google.com.vn", "google.co.uk"]
+	ID             int64    `json:"id,omitempty"`
+	Name           string   `json:"name"`            // e.g. "google"
+	OfficialDomain string   `json:"official_domain"` // e.g. "google.com"
+	AltDomains     []string `json:"alt_domains"`     // e.g. ["google.com.vn", "google.co.uk"]
+	CreatedAt      string   `json:"created_at,omitempty"`
+	UpdatedAt      string   `json:"updated_at,omitempty"`
 }
 
-// TrustedBrands is a list of highly targeted brands for phishing and brand spoofing checks.
-var TrustedBrands = []Brand{
-	{Name: "google", OfficialDomain: "google.com", AltDomains: []string{"google.com.vn", "google.co.uk", "google.com.sg"}},
-	{Name: "binance", OfficialDomain: "binance.com", AltDomains: []string{"binance.us", "binance.info"}},
-	{Name: "paypal", OfficialDomain: "paypal.com", AltDomains: []string{"paypal.me"}},
-	{Name: "facebook", OfficialDomain: "facebook.com", AltDomains: []string{"fb.com", "messenger.com"}},
-	{Name: "apple", OfficialDomain: "apple.com", AltDomains: []string{"icloud.com"}},
-	{Name: "microsoft", OfficialDomain: "microsoft.com", AltDomains: []string{"live.com", "outlook.com", "office.com"}},
-	{Name: "amazon", OfficialDomain: "amazon.com"},
-	{Name: "netflix", OfficialDomain: "netflix.com"},
-	{Name: "instagram", OfficialDomain: "instagram.com"},
-	{Name: "twitter", OfficialDomain: "twitter.com", AltDomains: []string{"x.com"}},
-	{Name: "metamask", OfficialDomain: "metamask.io"},
-	{Name: "coinbase", OfficialDomain: "coinbase.com"},
-	{Name: "trustwallet", OfficialDomain: "trustwallet.com"},
-	{Name: "yahoo", OfficialDomain: "yahoo.com"},
-	{Name: "linkedin", OfficialDomain: "linkedin.com"},
+// BrandStore provides runtime-managed trusted brand configuration.
+type BrandStore interface {
+	ListBrands(ctx context.Context) ([]Brand, error)
+	GetBrand(ctx context.Context, id int64) (Brand, error)
+	CreateBrand(ctx context.Context, brand Brand) (Brand, error)
+	UpdateBrand(ctx context.Context, id int64, brand Brand) (Brand, error)
+	DeleteBrand(ctx context.Context, id int64) error
+}
 
-	// --- Vietnam Government & Public Organizations ---
-	{Name: "chinhphu", OfficialDomain: "chinhphu.vn", AltDomains: []string{"chinhphu.gov.vn"}},
-	{Name: "bocongan", OfficialDomain: "bocongan.gov.vn", AltDomains: []string{"mps.gov.vn"}},
-	{Name: "baohiemxahoi", OfficialDomain: "baohiemxahoi.gov.vn", AltDomains: []string{"bhxh.gov.vn"}},
-	{Name: "vtv", OfficialDomain: "vtv.vn"},
+// DefaultTrustedBrands returns the built-in brand seed used when persistence is unavailable.
+func DefaultTrustedBrands() []Brand {
+	return cloneBrands([]Brand{
+		{Name: "google", OfficialDomain: "google.com", AltDomains: []string{"google.com.vn", "google.co.uk", "google.com.sg"}},
+		{Name: "binance", OfficialDomain: "binance.com", AltDomains: []string{"binance.us", "binance.info"}},
+		{Name: "paypal", OfficialDomain: "paypal.com", AltDomains: []string{"paypal.me"}},
+		{Name: "facebook", OfficialDomain: "facebook.com", AltDomains: []string{"fb.com", "messenger.com"}},
+		{Name: "apple", OfficialDomain: "apple.com", AltDomains: []string{"icloud.com"}},
+		{Name: "microsoft", OfficialDomain: "microsoft.com", AltDomains: []string{"live.com", "outlook.com", "office.com"}},
+		{Name: "amazon", OfficialDomain: "amazon.com"},
+		{Name: "netflix", OfficialDomain: "netflix.com"},
+		{Name: "instagram", OfficialDomain: "instagram.com"},
+		{Name: "twitter", OfficialDomain: "twitter.com", AltDomains: []string{"x.com"}},
+		{Name: "metamask", OfficialDomain: "metamask.io"},
+		{Name: "coinbase", OfficialDomain: "coinbase.com"},
+		{Name: "trustwallet", OfficialDomain: "trustwallet.com"},
+		{Name: "yahoo", OfficialDomain: "yahoo.com"},
+		{Name: "linkedin", OfficialDomain: "linkedin.com"},
 
-	// --- Major Vietnamese Banks ---
-	{Name: "vietcombank", OfficialDomain: "vietcombank.com.vn", AltDomains: []string{"vietcombank.com"}},
-	{Name: "techcombank", OfficialDomain: "techcombank.com.vn", AltDomains: []string{"techcombank.com"}},
-	{Name: "bidv", OfficialDomain: "bidv.com.vn", AltDomains: []string{"bidv.com"}},
-	{Name: "vietinbank", OfficialDomain: "vietinbank.vn", AltDomains: []string{"vietinbank.co.vn"}},
-	{Name: "mbbank", OfficialDomain: "mbbank.com.vn", AltDomains: []string{"mbbank.com"}},
-	{Name: "agribank", OfficialDomain: "agribank.com.vn", AltDomains: []string{"agribank.com"}},
-	{Name: "vpbank", OfficialDomain: "vpbank.com.vn", AltDomains: []string{"vpbank.com"}},
-	{Name: "acb", OfficialDomain: "acb.com.vn", AltDomains: []string{"acb.com"}},
-	{Name: "sacombank", OfficialDomain: "sacombank.com.vn", AltDomains: []string{"sacombank.com"}},
-	{Name: "tpbank", OfficialDomain: "tpb.vn", AltDomains: []string{"tpbank.com.vn"}},
-	{Name: "vib", OfficialDomain: "vib.com.vn"},
-	{Name: "hdbank", OfficialDomain: "hdbank.com.vn"},
-	{Name: "shb", OfficialDomain: "shb.com.vn"},
-	{Name: "scb", OfficialDomain: "scb.com.vn"},
+		{Name: "chinhphu", OfficialDomain: "chinhphu.vn", AltDomains: []string{"chinhphu.gov.vn"}},
+		{Name: "bocongan", OfficialDomain: "bocongan.gov.vn", AltDomains: []string{"mps.gov.vn"}},
+		{Name: "baohiemxahoi", OfficialDomain: "baohiemxahoi.gov.vn", AltDomains: []string{"bhxh.gov.vn"}},
+		{Name: "vtv", OfficialDomain: "vtv.vn"},
+
+		{Name: "vietcombank", OfficialDomain: "vietcombank.com.vn", AltDomains: []string{"vietcombank.com"}},
+		{Name: "techcombank", OfficialDomain: "techcombank.com.vn", AltDomains: []string{"techcombank.com"}},
+		{Name: "bidv", OfficialDomain: "bidv.com.vn", AltDomains: []string{"bidv.com"}},
+		{Name: "vietinbank", OfficialDomain: "vietinbank.vn", AltDomains: []string{"vietinbank.co.vn"}},
+		{Name: "mbbank", OfficialDomain: "mbbank.com.vn", AltDomains: []string{"mbbank.com"}},
+		{Name: "agribank", OfficialDomain: "agribank.com.vn", AltDomains: []string{"agribank.com"}},
+		{Name: "vpbank", OfficialDomain: "vpbank.com.vn", AltDomains: []string{"vpbank.com"}},
+		{Name: "acb", OfficialDomain: "acb.com.vn", AltDomains: []string{"acb.com"}},
+		{Name: "sacombank", OfficialDomain: "sacombank.com.vn", AltDomains: []string{"sacombank.com"}},
+		{Name: "tpbank", OfficialDomain: "tpb.vn", AltDomains: []string{"tpbank.com.vn"}},
+		{Name: "vib", OfficialDomain: "vib.com.vn"},
+		{Name: "hdbank", OfficialDomain: "hdbank.com.vn"},
+		{Name: "shb", OfficialDomain: "shb.com.vn"},
+		{Name: "scb", OfficialDomain: "scb.com.vn"},
+	})
+}
+
+type MemoryBrandStore struct {
+	mu     sync.RWMutex
+	nextID int64
+	items  []Brand
+}
+
+func NewMemoryBrandStore(brands []Brand) *MemoryBrandStore {
+	store := &MemoryBrandStore{nextID: 1}
+	for _, brand := range brands {
+		brand = normalizeBrandRecord(brand)
+		if brand.ID == 0 {
+			brand.ID = store.nextID
+			store.nextID++
+		} else if brand.ID >= store.nextID {
+			store.nextID = brand.ID + 1
+		}
+		store.items = append(store.items, brand)
+	}
+	return store
+}
+
+func (s *MemoryBrandStore) ListBrands(_ context.Context) ([]Brand, error) {
+	if s == nil {
+		return DefaultTrustedBrands(), nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneBrands(s.items), nil
+}
+
+func (s *MemoryBrandStore) GetBrand(_ context.Context, id int64) (Brand, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, brand := range s.items {
+		if brand.ID == id {
+			return cloneBrand(brand), nil
+		}
+	}
+	return Brand{}, errors.New("brand not found")
+}
+
+func (s *MemoryBrandStore) CreateBrand(_ context.Context, brand Brand) (Brand, error) {
+	if s == nil {
+		return Brand{}, errors.New("brand store disabled")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	brand = normalizeBrandRecord(brand)
+	brand.ID = s.nextID
+	s.nextID++
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	brand.CreatedAt = now
+	brand.UpdatedAt = now
+	s.items = append(s.items, brand)
+	return cloneBrand(brand), nil
+}
+
+func (s *MemoryBrandStore) UpdateBrand(_ context.Context, id int64, brand Brand) (Brand, error) {
+	if s == nil {
+		return Brand{}, errors.New("brand store disabled")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.items {
+		if s.items[i].ID == id {
+			updated := normalizeBrandRecord(brand)
+			updated.ID = id
+			updated.CreatedAt = s.items[i].CreatedAt
+			updated.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			s.items[i] = updated
+			return cloneBrand(updated), nil
+		}
+	}
+	return Brand{}, errors.New("brand not found")
+}
+
+func (s *MemoryBrandStore) DeleteBrand(_ context.Context, id int64) error {
+	if s == nil {
+		return errors.New("brand store disabled")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.items {
+		if s.items[i].ID == id {
+			s.items = append(s.items[:i], s.items[i+1:]...)
+			return nil
+		}
+	}
+	return errors.New("brand not found")
 }
 
 // LevenshteinDistance calculates the minimum edit distance between two strings using runes.
@@ -278,9 +385,45 @@ func minFloat(a, b, c float64) float64 {
 	return c
 }
 
+func normalizeBrandRecord(brand Brand) Brand {
+	brand.Name = strings.ToLower(strings.TrimSpace(brand.Name))
+	brand.OfficialDomain = strings.ToLower(strings.TrimSpace(brand.OfficialDomain))
+	alts := make([]string, 0, len(brand.AltDomains))
+	seen := make(map[string]struct{}, len(brand.AltDomains))
+	for _, alt := range brand.AltDomains {
+		alt = strings.ToLower(strings.TrimSpace(alt))
+		if alt == "" {
+			continue
+		}
+		if _, ok := seen[alt]; ok {
+			continue
+		}
+		seen[alt] = struct{}{}
+		alts = append(alts, alt)
+	}
+	brand.AltDomains = alts
+	return brand
+}
+
+func cloneBrand(brand Brand) Brand {
+	brand.AltDomains = append([]string(nil), brand.AltDomains...)
+	return brand
+}
+
+func cloneBrands(brands []Brand) []Brand {
+	if len(brands) == 0 {
+		return nil
+	}
+	cloned := make([]Brand, len(brands))
+	for i, brand := range brands {
+		cloned[i] = cloneBrand(brand)
+	}
+	return cloned
+}
+
 // isTrustedBrandRoot checks if the root domain belongs to any official or alternative domains of trusted brands.
-func isTrustedBrandRoot(rootDomain string) bool {
-	for _, brand := range TrustedBrands {
+func isTrustedBrandRoot(rootDomain string, brands []Brand) bool {
+	for _, brand := range brands {
 		if rootDomain == brand.OfficialDomain {
 			return true
 		}
@@ -296,9 +439,16 @@ func isTrustedBrandRoot(rootDomain string) bool {
 // CheckBrandSpoofing analyzes a domain to detect typosquatting, brand keyword mentions, or subdomain abuse.
 // Trả về: (isSpoof, reason, penaltyScore)
 func CheckBrandSpoofing(domain string, brandSpoofingScore int) (bool, string, int) {
+	return CheckBrandSpoofingWithBrands(domain, brandSpoofingScore, DefaultTrustedBrands())
+}
+
+func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands []Brand) (bool, string, int) {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
 		return false, "", 0
+	}
+	if len(brands) == 0 {
+		brands = DefaultTrustedBrands()
 	}
 
 	// 0. Decode Punycode (IDN) to Unicode to handle homoglyphs
@@ -314,7 +464,7 @@ func CheckBrandSpoofing(domain string, brandSpoofingScore int) (bool, string, in
 
 	// If the root domain belongs to a trusted brand, subdomains under it are owned by that brand
 	// and are exempt from spoofing checks of other brands.
-	if isTrustedBrandRoot(rootDomain) {
+	if isTrustedBrandRoot(rootDomain, brands) {
 		return false, "", 0
 	}
 
@@ -332,7 +482,11 @@ func CheckBrandSpoofing(domain string, brandSpoofingScore int) (bool, string, in
 
 	isHomoglyphSpoof := skeletonDomain != unicodeDomain
 
-	for _, brand := range TrustedBrands {
+	for _, brand := range brands {
+		brand = normalizeBrandRecord(brand)
+		if brand.Name == "" || brand.OfficialDomain == "" {
+			continue
+		}
 		// 1. Check if it's the official domain or official alternatives
 		isOfficial := rootDomain == brand.OfficialDomain
 		if !isOfficial {

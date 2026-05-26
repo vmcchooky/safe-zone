@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/url"
@@ -35,12 +36,21 @@ const (
 )
 
 type Analyzer struct {
-	config config.AnalysisConfig
+	config     config.AnalysisConfig
+	brandStore BrandStore
 }
 
 func NewAnalyzer(cfg config.AnalysisConfig) *Analyzer {
+	return NewAnalyzerWithBrandStore(cfg, NewMemoryBrandStore(DefaultTrustedBrands()))
+}
+
+func NewAnalyzerWithBrandStore(cfg config.AnalysisConfig, brandStore BrandStore) *Analyzer {
+	if brandStore == nil {
+		brandStore = NewMemoryBrandStore(DefaultTrustedBrands())
+	}
 	return &Analyzer{
-		config: cfg,
+		config:     cfg,
+		brandStore: brandStore,
 	}
 }
 
@@ -196,7 +206,8 @@ func (a *Analyzer) Analyze(input string) Result {
 	}
 
 	// 7. Advanced Brand Spoofing Detection
-	if isSpoof, reason, penalty := CheckBrandSpoofing(domain, a.config.BrandSpoofingScore); isSpoof {
+	brands := a.trustedBrands()
+	if isSpoof, reason, penalty := CheckBrandSpoofingWithBrands(domain, a.config.BrandSpoofingScore, brands); isSpoof {
 		score += penalty
 		reasons = append(reasons, reason)
 	}
@@ -206,7 +217,7 @@ func (a *Analyzer) Analyze(input string) Result {
 	if len(mainLabel) >= 10 &&
 		!strings.Contains(mainLabel, "-") &&
 		!hasSuspiciousKeyword &&
-		!isTrustedBrandRoot(getRootDomain(domain)) {
+		!isTrustedBrandRoot(getRootDomain(domain), brands) {
 		entropy := ShannonEntropy(mainLabel)
 		if entropy > a.config.EntropyThreshold {
 			score += a.config.EntropyScore
@@ -249,6 +260,17 @@ func (a *Analyzer) Analyze(input string) Result {
 		Reasons:    reasons,
 		Category:   category,
 	}
+}
+
+func (a *Analyzer) trustedBrands() []Brand {
+	if a == nil || a.brandStore == nil {
+		return DefaultTrustedBrands()
+	}
+	brands, err := a.brandStore.ListBrands(context.Background())
+	if err != nil || len(brands) == 0 {
+		return DefaultTrustedBrands()
+	}
+	return brands
 }
 
 func isProtectedVietnamPublicServiceAbuse(domain string) bool {

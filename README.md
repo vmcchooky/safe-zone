@@ -140,6 +140,10 @@ HTTP responses now carry `X-Request-ID`, the main request pipeline emits structu
 
 The baseline JSON-metrics alert rules live in [ops/alerts/safe-zone-alert-rules.yaml](ops/alerts/safe-zone-alert-rules.yaml), and the operator checklist is in [docs/runbooks/alert-rules.md](docs/runbooks/alert-rules.md).
 
+## Security review
+
+Before major releases, use the formal pre-release security checklist at [docs/security/pre-release-security-checklist.md](docs/security/pre-release-security-checklist.md) together with the main [docs/runbooks/pre-release-checklist.md](docs/runbooks/pre-release-checklist.md).
+
 ## Build
 
 ```bash

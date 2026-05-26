@@ -1,0 +1,557 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "panels": [],
+      "title": "Safe Zone Overview",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "description": "Average latency for successful /v1/analyze requests from the JSON /metrics snapshot.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 150
+              },
+              {
+                "color": "red",
+                "value": 300
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "columns": [],
+          "format": "table",
+          "parser": "uql",
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "uql": "parse-json | scope \"metrics.request_summary\" | project kv() | extend avg_latency_ms = tonumber(value.total_duration_ms) / tonumber(value.count) | where key == \"GET /v1/analyze 200\" | project avg_latency_ms",
+          "url": "${safe_zone_base}/metrics"
+        }
+      ],
+      "title": "Analyze Avg Latency",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "description": "Approximate error rate from the request summary JSON. This template treats 5xx analyze responses as errors.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "columns": [],
+          "format": "table",
+          "parser": "uql",
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "uql": "parse-json | scope \"metrics.request_summary\" | project kv() | extend req_count = tonumber(value.count) | summarize total = sum(req_count), errors = sum(iif(indexof(key, \" 500\") >= 0, req_count, 0)) | extend error_rate = iff(total == 0, 0, (errors * 100.0) / total) | project error_rate",
+          "url": "${safe_zone_base}/metrics"
+        }
+      ],
+      "title": "Error Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "description": "Cache hit rate derived from /v1/telemetry/stats JSON.",
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 60
+              },
+              {
+                "color": "green",
+                "value": 90
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "columns": [],
+          "format": "table",
+          "parser": "uql",
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "uql": "parse-json | extend cache_hit_rate = iff(total == 0, 0, (cache_hits * 100.0) / total) | project cache_hit_rate",
+          "url": "${safe_zone_base}/v1/telemetry/stats?period=24h"
+        }
+      ],
+      "title": "Cache Hit Rate (24h)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "description": "Feed freshness and stale state from the root status JSON.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "index": 0,
+                  "text": "fresh"
+                },
+                "1": {
+                  "index": 1,
+                  "text": "stale"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "id": 5,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "columns": [],
+          "format": "table",
+          "parser": "uql",
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "uql": "parse-json | extend stale_flag = iff(feed_sync.status == \"stale\", 1, 0) | project stale_flag",
+          "url": "${safe_zone_base}/"
+        }
+      ],
+      "title": "Feed Freshness",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "id": 6,
+      "panels": [],
+      "title": "Operational Traffic",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "description": "Traffic split from /v1/telemetry/stats JSON.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "always",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "columns": [],
+          "format": "table",
+          "parser": "uql",
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "uql": "parse-json | project total, safe, suspicious, malicious, cache_hits",
+          "url": "${safe_zone_base}/v1/telemetry/stats?period=24h"
+        }
+      ],
+      "title": "Traffic Mix (24h)",
+      "transformations": [
+        {
+          "id": "transpose",
+          "options": {}
+        }
+      ],
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "description": "Request summary table from /metrics. Useful for latency, status distribution, and endpoint hotspots.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      },
+      "id": 8,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "columns": [],
+          "format": "table",
+          "parser": "uql",
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "uql": "parse-json | scope \"metrics.request_summary\" | project kv() | extend count = tonumber(value.count), avg_latency_ms = tonumber(value.total_duration_ms) / tonumber(value.count), max_latency_ms = tonumber(value.max_duration_ms), last_status = tonumber(value.last_status) | project request = key, count, avg_latency_ms, max_latency_ms, last_status",
+          "url": "${safe_zone_base}/metrics"
+        }
+      ],
+      "title": "Request Summary Table",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${DS_INFINITY}"
+      },
+      "description": "Recent potentially blocked or escalated domains from the telemetry feed. Use this as the starting point for block-event review.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {}
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 20
+      },
+      "id": 9,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "columns": [],
+          "format": "table",
+          "parser": "uql",
+          "refId": "A",
+          "source": "url",
+          "type": "json",
+          "uql": "parse-json | scope \"items\" | where verdict == \"MALICIOUS\" or verdict == \"SUSPICIOUS\" | project domain, verdict, score, source, analyzed_at",
+          "url": "${safe_zone_base}/v1/telemetry/recent?limit=50"
+        }
+      ],
+      "title": "Recent Block / Escalation Events",
+      "type": "table"
+    },
+    {
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "id": 10,
+      "options": {
+        "content": "This template expects the Grafana Infinity datasource (`yesoreyeram-infinity-datasource`) and a dashboard variable `safe_zone_base` such as `http://127.0.0.1:8080` or `https://safe.example.com`. Panels read JSON directly from `/metrics`, `/`, `/v1/telemetry/stats`, and `/v1/telemetry/recent`.",
+        "mode": "markdown"
+      },
+      "title": "Import Notes",
+      "type": "text"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": [
+    "safe-zone",
+    "operations",
+    "json"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "selected": false,
+          "text": "http://127.0.0.1:8080",
+          "value": "http://127.0.0.1:8080"
+        },
+        "hide": 0,
+        "label": "Safe Zone Base URL",
+        "name": "safe_zone_base",
+        "options": [],
+        "query": "http://127.0.0.1:8080",
+        "skipUrlSync": false,
+        "type": "textbox"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Safe Zone Operations Dashboard",
+  "uid": "safe-zone-ops",
+  "version": 1,
+  "weekStart": ""
+}

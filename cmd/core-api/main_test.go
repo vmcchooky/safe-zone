@@ -699,6 +699,78 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	}
 }
 
+func TestReviewFalsePositiveHandlerCreatesAllowOverride(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "false-positive-review.db")
+	storeDB, err := store.New(dbPath, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app := &app{
+		risk: risk.NewService(risk.Options{
+			AnalysisConfig: config.DefaultAnalysisConfig(),
+			RedisTimeout:   10 * time.Millisecond,
+			Store:          storeDB,
+		}),
+		metrics:        observability.NewRegistry(),
+		deploymentTier: "budget-vps",
+		adminAPIKey:    "testkey",
+	}
+	defer func() {
+		if err := app.risk.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/overrides/review-false-positive", app.requireAuthFunc(app.reviewFalsePositiveHandler))
+	testServer := httptest.NewServer(mux)
+	defer testServer.Close()
+
+	body := `{"domain":"Legit-Portal.Example","reason":"verified with site owner and internal users","source":"dashboard_analysis","previous_action":"block"}`
+	req, err := http.NewRequest(http.MethodPost, testServer.URL+"/v1/overrides/review-false-positive", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer testkey")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	override, err := storeDB.GetOverride("legit-portal.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if override == nil {
+		t.Fatal("expected override to be created")
+	}
+	if override.Action != "allow" {
+		t.Fatalf("expected allow override, got %q", override.Action)
+	}
+	if !strings.Contains(override.Reason, "false-positive review (dashboard_analysis): verified with site owner and internal users") {
+		t.Fatalf("unexpected review reason %q", override.Reason)
+	}
+
+	events, err := storeDB.QueryAgentEvents(time.Now().Add(-1*time.Hour), []string{"operator_false_positive_review"}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(events) != 1 {
+		t.Fatalf("expected 1 operator review event, got %d", len(events))
+	}
+	if events[0].Domain != "legit-portal.example" {
+		t.Fatalf("expected normalized domain in event, got %q", events[0].Domain)
+	}
+}
+
 func TestSecurityAuditLimits(t *testing.T) {
 	app := &app{
 		risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),

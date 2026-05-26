@@ -19,6 +19,8 @@ import (
 	"safe-zone/internal/feed"
 	"safe-zone/internal/osint"
 	"safe-zone/internal/store"
+	"safe-zone/internal/tlsinspect"
+	"safe-zone/internal/whois"
 )
 
 func TestAnalyzeWithoutRedis(t *testing.T) {
@@ -114,6 +116,133 @@ func TestThreatFeedSuffixMatch(t *testing.T) {
 	}
 	if len(result.Reasons) != 1 || result.Reasons[0] != threatFeedReason {
 		t.Fatalf("expected feed reason, got %#v", result.Reasons)
+	}
+}
+
+func TestRuntimeBrandStoreUpdatesAnalyzer(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	storeDB, err := store.New(filepath.Join(t.TempDir(), "brands.db"), 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Options{
+		AnalysisConfig: config.DefaultAnalysisConfig(),
+		Redis:          cache.NewRedis(server.Addr(), "", 0),
+		RedisTimeout:   100 * time.Millisecond,
+		TTLAllowed:     time.Hour,
+		TTLSuspicious:  time.Hour,
+		TTLBlocked:     time.Hour,
+		BrandCacheTTL:  time.Hour,
+		Store:          storeDB,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	before := service.Analyze(context.Background(), "quor1x.com", ClientInfo{})
+	if hasReasonContaining(before.Reasons, "quorix") {
+		t.Fatalf("expected quorix not to be detected before runtime brand create, got %v", before.Reasons)
+	}
+
+	if _, err := service.CreateBrand(context.Background(), analysis.Brand{
+		Name:           "quorix",
+		OfficialDomain: "quorix.io.vn",
+		AltDomains:     []string{"safe.quorix.io.vn"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	after := service.Analyze(context.Background(), "quor1x.com", ClientInfo{})
+	if !hasReasonContaining(after.Reasons, "typosquatting of quorix") {
+		t.Fatalf("expected runtime brand spoofing reason, got %v", after.Reasons)
+	}
+	if after.Score < config.DefaultAnalysisConfig().BrandSpoofingScore {
+		t.Fatalf("expected brand spoofing score contribution, got %d", after.Score)
+	}
+}
+
+func TestSuspiciousDomainEnrichmentRunsInBackgroundAndUpdatesCache(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	service := NewService(Options{
+		AnalysisConfig:  config.DefaultAnalysisConfig(),
+		Redis:           cache.NewRedis(server.Addr(), "", 0),
+		RedisTimeout:    100 * time.Millisecond,
+		TTLAllowed:      time.Hour,
+		TTLSuspicious:   time.Hour,
+		TTLBlocked:      time.Hour,
+		EnrichEnabled:   true,
+		EnrichTimeout:   time.Second,
+		EnrichQueueSize: 4,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	service.enrichmentLookup = func(ctx context.Context, domain string) enrichmentSignals {
+		close(started)
+		select {
+		case <-release:
+		case <-ctx.Done():
+			return enrichmentSignals{}
+		}
+		return enrichmentSignals{
+			TLS:   tlsinspect.Result{Score: 20, Reasons: []string{"tls: test background signal"}},
+			WHOIS: whois.Result{Score: 15, Reasons: []string{"whois: test background signal"}},
+		}
+	}
+
+	first := service.Analyze(context.Background(), "secure-login-example.com", ClientInfo{})
+	if first.CacheHit {
+		t.Fatal("expected first request to be a cache miss")
+	}
+	if hasReasonContaining(first.Reasons, "tls:") || hasReasonContaining(first.Reasons, "whois:") {
+		t.Fatalf("expected preliminary result without enrichment, got %v", first.Reasons)
+	}
+	if first.Score >= 70 {
+		t.Fatalf("expected preliminary suspicious score before enrichment, got %d", first.Score)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("expected background enrichment worker to start")
+	}
+	close(release)
+
+	var second Analysis
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		second = service.Analyze(context.Background(), "secure-login-example.com", ClientInfo{})
+		if second.CacheHit && hasReasonContaining(second.Reasons, "tls: test background signal") {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !second.CacheHit {
+		t.Fatal("expected second request to use cache")
+	}
+	if !hasReasonContaining(second.Reasons, "tls: test background signal") ||
+		!hasReasonContaining(second.Reasons, "whois: test background signal") {
+		t.Fatalf("expected cached enriched reasons, got %v", second.Reasons)
+	}
+	if second.Score <= first.Score {
+		t.Fatalf("expected enriched score to increase, first=%d second=%d", first.Score, second.Score)
 	}
 }
 
@@ -446,6 +575,15 @@ func newTestServiceWithRedis(t *testing.T) (*Service, func()) {
 		}
 		server.Close()
 	}
+}
+
+func hasReasonContaining(reasons []string, needle string) bool {
+	for _, reason := range reasons {
+		if strings.Contains(reason, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func newTestServiceWithStore(t *testing.T) *Service {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"safe-zone/internal/agent"
+	"safe-zone/internal/analysis"
 	"safe-zone/internal/auth"
 	"safe-zone/internal/buildinfo"
 	"safe-zone/internal/config"
@@ -120,6 +121,7 @@ func main() {
 			defaultLimiter,
 			ratelimit.Tier{PathPrefix: "/v1/analyze", Limiter: analyzeLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/overrides", Limiter: overrideLimiter},
+			ratelimit.Tier{PathPrefix: "/v1/brands", Limiter: overrideLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/telemetry", Limiter: telemetryLimiter},
 		)
 		logjson.Info("rate limiting enabled", map[string]any{
@@ -264,6 +266,8 @@ func main() {
 	mux.HandleFunc("/v1/auth/login", api.authLoginHandler)
 	mux.HandleFunc("/v1/auth/logout", api.authLogoutHandler)
 	mux.HandleFunc("/v1/overrides", api.requireAuthFunc(api.overridesHandler))
+	mux.HandleFunc("/v1/overrides/review-false-positive", api.requireAuthFunc(api.reviewFalsePositiveHandler))
+	mux.HandleFunc("/v1/brands", api.requireAuthFunc(serve.BrandHandler(api.risk)))
 	mux.HandleFunc("/v1/telemetry/recent", api.requireAuthFunc(api.telemetryRecentHandler))
 	mux.HandleFunc("/v1/telemetry/stats", api.requireAuthFunc(api.telemetryStatsHandler))
 	mux.HandleFunc("/v1/agent/status", api.requireAuthFunc(agentStatusHandler(agentEngine)))
@@ -344,6 +348,8 @@ func (a *app) statusHandler(w http.ResponseWriter, r *http.Request) {
 			"/v1/osint/evidence?domain=example.com",
 			"/v1/analysis/recent",
 			"/v1/overrides",
+			"/v1/overrides/review-false-positive",
+			"/v1/brands",
 			"/v1/telemetry/recent",
 			"/v1/telemetry/stats",
 			"/v1/agent/status",
@@ -536,6 +542,13 @@ type overrideRequest struct {
 	Reason string `json:"reason"`
 }
 
+type falsePositiveReviewRequest struct {
+	Domain         string `json:"domain"`
+	Reason         string `json:"reason"`
+	Source         string `json:"source,omitempty"`
+	PreviousAction string `json:"previous_action,omitempty"`
+}
+
 func (a *app) overridesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -583,6 +596,70 @@ func (a *app) overridesHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (a *app) reviewFalsePositiveHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 12288)
+	defer r.Body.Close()
+
+	var req falsePositiveReviewRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	req.Domain = strings.TrimSpace(req.Domain)
+	req.Reason = strings.TrimSpace(req.Reason)
+	req.Source = strings.TrimSpace(req.Source)
+	req.PreviousAction = strings.TrimSpace(req.PreviousAction)
+
+	if req.Domain == "" {
+		writeError(w, http.StatusBadRequest, "domain is required")
+		return
+	}
+	if req.Reason == "" {
+		writeError(w, http.StatusBadRequest, "review reason is required")
+		return
+	}
+	normalized, err := analysis.NormalizeDomain(req.Domain)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid domain: "+err.Error())
+		return
+	}
+
+	reviewReason := "false-positive review: " + req.Reason
+	if req.Source != "" {
+		reviewReason = fmt.Sprintf("false-positive review (%s): %s", req.Source, req.Reason)
+	}
+
+	if err := a.risk.UpsertOverride(normalized, "allow", reviewReason); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	if db := a.risk.StoreDB(); db != nil {
+		details := map[string]string{
+			"source":          req.Source,
+			"review_reason":   req.Reason,
+			"previous_action": req.PreviousAction,
+			"resolved_action": "allow",
+		}
+		if data, err := json.Marshal(details); err == nil {
+			_ = db.RecordAgentEvent("operator_review", "operator_false_positive_review", normalized, string(data))
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status": "ok",
+		"domain": normalized,
+		"action": "allow",
+		"reason": reviewReason,
+	})
 }
 
 // --- Telemetry API ---

@@ -1,9 +1,12 @@
 package store
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"safe-zone/internal/analysis"
 )
 
 func newTestDB(t *testing.T) *DB {
@@ -78,6 +81,56 @@ func TestNilDBClose(t *testing.T) {
 	var db *DB
 	if err := db.Close(); err != nil {
 		t.Fatalf("nil close should not error: %v", err)
+	}
+}
+
+func TestBrandCRUDAndDefaultSeed(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	brands, err := db.ListBrands(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(brands) == 0 {
+		t.Fatal("expected default trusted brands to be seeded")
+	}
+
+	created, err := db.CreateBrand(ctx, analysis.Brand{
+		Name:           "Quorix",
+		OfficialDomain: "Quorix.io.vn",
+		AltDomains:     []string{"safe.quorix.io.vn", "safe.quorix.io.vn"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.ID == 0 {
+		t.Fatal("expected created brand id")
+	}
+	if created.Name != "quorix" || created.OfficialDomain != "quorix.io.vn" {
+		t.Fatalf("expected normalized brand, got %#v", created)
+	}
+	if len(created.AltDomains) != 1 || created.AltDomains[0] != "safe.quorix.io.vn" {
+		t.Fatalf("expected normalized/deduplicated alt domains, got %#v", created.AltDomains)
+	}
+
+	updated, err := db.UpdateBrand(ctx, created.ID, analysis.Brand{
+		Name:           "quorix",
+		OfficialDomain: "quorix.com",
+		AltDomains:     []string{"quorix.io.vn"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.OfficialDomain != "quorix.com" {
+		t.Fatalf("expected updated official domain, got %s", updated.OfficialDomain)
+	}
+
+	if err := db.DeleteBrand(ctx, created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.GetBrand(ctx, created.ID); err == nil {
+		t.Fatal("expected deleted brand to be absent")
 	}
 }
 

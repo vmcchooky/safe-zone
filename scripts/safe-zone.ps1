@@ -134,6 +134,40 @@ function Get-DotEnvValue {
   return $value.Trim('"').Trim("'")
 }
 
+function Get-SecretValue {
+  param([string]$Name)
+
+  $value = Get-DotEnvValue -Name $Name
+  if ($value) {
+    return $value
+  }
+
+  $filePath = Get-DotEnvValue -Name "${Name}_FILE"
+  if (-not $filePath) {
+    return $null
+  }
+  if (-not (Test-Path $filePath -PathType Leaf)) {
+    throw "secret file not found: $filePath"
+  }
+  return (Get-Content -Path $filePath -Raw).Trim()
+}
+
+function Get-FlagEnabled {
+  param([string]$Name)
+
+  $raw = Get-DotEnvValue -Name $Name
+  if (-not $raw) {
+    return $false
+  }
+  switch ($raw.Trim().ToLowerInvariant()) {
+    '1' { return $true }
+    'true' { return $true }
+    'yes' { return $true }
+    'on' { return $true }
+    default { return $false }
+  }
+}
+
 function Resolve-SqliteRuntimePath {
   $configured = Get-DotEnvValue -Name 'SAFE_ZONE_SQLITE_PATH'
   if (-not $configured) {
@@ -239,6 +273,93 @@ function Copy-OptionalSnapshots {
   if (Test-Path $caddyFile -PathType Leaf) {
     Copy-Item -Force -Path $caddyFile -Destination (Join-Path $TargetDir 'Caddyfile.snapshot')
   }
+
+  $duckDNS = Join-Path $PSScriptRoot 'duckdns-update.sh'
+  if (Test-Path $duckDNS -PathType Leaf) {
+    Copy-Item -Force -Path $duckDNS -Destination (Join-Path $TargetDir 'duckdns-update.sh.snapshot')
+  }
+
+  $productionCompose = Join-Path $RepoRoot 'docker-compose.production.yml'
+  if (Test-Path $productionCompose -PathType Leaf) {
+    Copy-Item -Force -Path $productionCompose -Destination (Join-Path $TargetDir 'docker-compose.production.yml.snapshot')
+  }
+}
+
+function Write-ChecksumManifest {
+  param([string]$TargetDir)
+
+  $manifest = Join-Path $TargetDir 'SHA256SUMS'
+  $lines = @()
+  $files = Get-ChildItem -Path $TargetDir -File | Where-Object { $_.Name -ne 'SHA256SUMS' }
+  foreach ($file in $files) {
+    $hash = (Get-FileHash -Algorithm SHA256 -Path $file.FullName).Hash.ToLowerInvariant()
+    $lines += "$hash  $($file.Name)"
+  }
+  Set-Content -Path $manifest -Value $lines
+}
+
+function Test-BackupArtifacts {
+  param([string]$TargetDir)
+
+  $files = Get-ChildItem -Path $TargetDir -File
+  if (-not $files) {
+    throw "backup directory is empty: $TargetDir"
+  }
+  foreach ($file in $files) {
+    if ($file.Length -le 0) {
+      throw "backup artifact is empty: $($file.FullName)"
+    }
+  }
+}
+
+function Protect-BackupBundle {
+  param(
+    [string]$TargetDir,
+    [string]$Timestamp
+  )
+
+  if (-not (Get-FlagEnabled -Name 'SAFE_ZONE_BACKUP_ENCRYPT')) {
+    return
+  }
+  if (-not (Get-Command gpg -ErrorAction SilentlyContinue)) {
+    throw 'SAFE_ZONE_BACKUP_ENCRYPT is enabled but gpg is not installed'
+  }
+
+  $recipient = Get-DotEnvValue -Name 'SAFE_ZONE_BACKUP_GPG_RECIPIENT'
+  $passphrase = Get-SecretValue -Name 'SAFE_ZONE_BACKUP_GPG_PASSPHRASE'
+  if (-not $recipient -and -not $passphrase) {
+    throw 'Backup encryption requires SAFE_ZONE_BACKUP_GPG_RECIPIENT or SAFE_ZONE_BACKUP_GPG_PASSPHRASE(_FILE)'
+  }
+
+  $archivePath = Join-Path $BackupsRoot "$Timestamp.tar.gz"
+  $encryptedPath = Join-Path $TargetDir 'backup.tar.gz.gpg'
+  $checksumPath = Join-Path $TargetDir 'backup.tar.gz.gpg.sha256'
+
+  Write-Host "Packaging backup into $archivePath..."
+  & tar -czf $archivePath -C $TargetDir .
+  if ($LASTEXITCODE -ne 0) {
+    throw "tar archive creation failed with exit code $LASTEXITCODE"
+  }
+
+  Write-Host 'Encrypting backup archive with GPG...'
+  if ($recipient) {
+    & gpg --batch --yes --trust-model always --output $encryptedPath --encrypt --recipient $recipient $archivePath
+  } else {
+    & gpg --batch --yes --pinentry-mode loopback --passphrase $passphrase --cipher-algo AES256 --output $encryptedPath --symmetric $archivePath
+  }
+  if ($LASTEXITCODE -ne 0) {
+    throw "gpg backup encryption failed with exit code $LASTEXITCODE"
+  }
+
+  Remove-Item -Force $archivePath
+  $encryptedHash = (Get-FileHash -Algorithm SHA256 -Path $encryptedPath).Hash.ToLowerInvariant()
+  Set-Content -Path $checksumPath -Value "$encryptedHash  $(Split-Path -Leaf $encryptedPath)"
+
+  if (-not (Get-FlagEnabled -Name 'SAFE_ZONE_BACKUP_KEEP_PLAINTEXT')) {
+    Get-ChildItem -Path $TargetDir -Force | Where-Object {
+      $_.Name -notin @('backup.tar.gz.gpg', 'backup.tar.gz.gpg.sha256')
+    } | Remove-Item -Recurse -Force
+  }
 }
 
 function Sync-OffsiteBackup {
@@ -285,6 +406,9 @@ function New-Backup {
   Backup-Redis -TargetDir $targetDir
   Copy-OptionalSnapshots -TargetDir $targetDir
   Backup-Sqlite -TargetDir $targetDir
+  Write-ChecksumManifest -TargetDir $targetDir
+  Test-BackupArtifacts -TargetDir $targetDir
+  Protect-BackupBundle -TargetDir $targetDir -Timestamp $timestamp
   Sync-OffsiteBackup -LocalDir $targetDir -Timestamp $timestamp
 
   Write-Host "Backup written to $targetDir" -ForegroundColor Green
@@ -392,17 +516,68 @@ function Restore-EnvNotice {
   }
 }
 
+function Expand-BackupBundleIfNeeded {
+  param([string]$BackupDir)
+
+  $encryptedBundle = Join-Path $BackupDir 'backup.tar.gz.gpg'
+  $archiveBundle = Join-Path $BackupDir 'backup.tar.gz'
+  if (-not (Test-Path $encryptedBundle -PathType Leaf) -and -not (Test-Path $archiveBundle -PathType Leaf)) {
+    return @{
+      Path    = $BackupDir
+      TempDir = $null
+    }
+  }
+
+  $tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("safe-zone-restore-" + [guid]::NewGuid().ToString('N'))
+  New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
+  $bundleDir = Join-Path $tempDir 'bundle'
+  New-Item -ItemType Directory -Force -Path $bundleDir | Out-Null
+
+  if (Test-Path $encryptedBundle -PathType Leaf) {
+    if (-not (Get-Command gpg -ErrorAction SilentlyContinue)) {
+      throw 'Encrypted backup found but gpg is not installed'
+    }
+    $passphrase = Get-SecretValue -Name 'SAFE_ZONE_BACKUP_GPG_PASSPHRASE'
+    $tarPath = Join-Path $tempDir 'backup.tar.gz'
+    Write-Host "Decrypting encrypted backup bundle from $encryptedBundle..."
+    if ($passphrase) {
+      & gpg --batch --yes --pinentry-mode loopback --passphrase $passphrase --output $tarPath --decrypt $encryptedBundle
+    } else {
+      & gpg --batch --yes --output $tarPath --decrypt $encryptedBundle
+    }
+    if ($LASTEXITCODE -ne 0) {
+      throw "gpg backup decryption failed with exit code $LASTEXITCODE"
+    }
+    & tar -xzf $tarPath -C $bundleDir
+  } else {
+    Write-Host "Extracting backup bundle from $archiveBundle..."
+    & tar -xzf $archiveBundle -C $bundleDir
+  }
+  if ($LASTEXITCODE -ne 0) {
+    throw "tar extraction failed with exit code $LASTEXITCODE"
+  }
+
+  return @{
+    Path    = $bundleDir
+    TempDir = $tempDir
+  }
+}
+
 function Restore-Backup {
   param([string]$Path)
 
   $backupDir = Resolve-BackupDirectory -Path $Path
   Write-Host "Restoring backup from $backupDir"
+  $prepared = Expand-BackupBundleIfNeeded -BackupDir $backupDir
   Stop-ForRestore
-  Restore-Sqlite -BackupDir $backupDir
-  Restore-Redis -BackupDir $backupDir
-  Restore-EnvNotice -BackupDir $backupDir
+  Restore-Sqlite -BackupDir $prepared.Path
+  Restore-Redis -BackupDir $prepared.Path
+  Restore-EnvNotice -BackupDir $prepared.Path
   Write-Host 'Restarting stack...'
   Start-ComposeStack
+  if ($prepared.TempDir) {
+    Remove-Item -Recurse -Force $prepared.TempDir
+  }
   Write-Host 'Restore completed.' -ForegroundColor Green
 }
 
@@ -475,6 +650,13 @@ Commands:
 
 Options:
   -Stack production|dev   Choose the stack used by status/backup/restore/prune helpers.
+
+Environment:
+  SAFE_ZONE_BACKUP_ENCRYPT=1
+  SAFE_ZONE_BACKUP_GPG_RECIPIENT=<gpg-recipient>
+  SAFE_ZONE_BACKUP_GPG_PASSPHRASE=<passphrase>
+  SAFE_ZONE_BACKUP_GPG_PASSPHRASE_FILE=<path>
+  SAFE_ZONE_BACKUP_KEEP_PLAINTEXT=1
 '@ | Write-Host
 }
 

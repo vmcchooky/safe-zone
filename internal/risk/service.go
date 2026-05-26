@@ -26,6 +26,7 @@ import (
 
 const recentAnalysisKey = "safe-zone:analysis:recent"
 const defaultThreatFeedKey = "safe-zone:threat:feed"
+const brandRevisionKey = "safe-zone:analysis:trusted-brands:revision"
 const threatFeedReason = "matched local threat feed"
 const analysisAlgorithmRevision = "2026-05-osint-v1"
 
@@ -36,6 +37,7 @@ type Options struct {
 	TTLSuspicious  time.Duration
 	TTLBlocked     time.Duration
 	RecentLimit    int64
+	RecentTTL      time.Duration
 	ThreatFeedKey  string
 	AIProvider     string
 	GeminiBaseURL  string
@@ -48,29 +50,39 @@ type Options struct {
 	WhitelistPath  string
 	AnalysisConfig config.AnalysisConfig
 	Store          *store.DB
+	BrandCacheTTL  time.Duration
 	// Enrichment (TLS + WHOIS)
-	EnrichEnabled bool
-	EnrichTimeout time.Duration
+	EnrichEnabled   bool
+	EnrichTimeout   time.Duration
+	EnrichQueueSize int
 	// OSINT evidence lookup for API/dashboard paths.
 	OSINT *osint.Service
 }
 
 type Service struct {
-	redis           *cache.Redis
-	redisTimeout    time.Duration
-	ttlAllowed      time.Duration
-	ttlSuspicious   time.Duration
-	ttlBlocked      time.Duration
-	recentLimit     int64
-	threatFeedKey   string
-	feedRevisionKey string
-	ai              *ai.Client
-	whitelist       *Whitelist
-	analyzer        *analysis.Analyzer
-	store           *store.DB
-	enrichEnabled   bool
-	enrichTimeout   time.Duration
-	osint           *osint.Service
+	redis            *cache.Redis
+	redisTimeout     time.Duration
+	ttlAllowed       time.Duration
+	ttlSuspicious    time.Duration
+	ttlBlocked       time.Duration
+	recentLimit      int64
+	recentTTL        time.Duration
+	threatFeedKey    string
+	feedRevisionKey  string
+	ai               *ai.Client
+	whitelist        *Whitelist
+	analyzer         *analysis.Analyzer
+	store            *store.DB
+	brandStore       analysis.BrandStore
+	enrichEnabled    bool
+	enrichTimeout    time.Duration
+	enrichQueue      chan enrichmentJob
+	enrichDone       chan struct{}
+	enrichWG         sync.WaitGroup
+	enrichMu         sync.Mutex
+	enrichInFlight   map[string]struct{}
+	enrichmentLookup func(context.Context, string) enrichmentSignals
+	osint            *osint.Service
 }
 
 type ClientInfo struct {
@@ -101,8 +113,23 @@ type CacheStatus struct {
 type analysisCacheEntry struct {
 	Result           analysis.Result `json:"result"`
 	FeedRevision     string          `json:"feed_revision,omitempty"`
+	BrandRevision    string          `json:"brand_revision,omitempty"`
 	AnalysisRevision string          `json:"analysis_revision,omitempty"`
 	OSINTCheckedAt   string          `json:"osint_checked_at,omitempty"`
+	EnrichedAt       string          `json:"enriched_at,omitempty"`
+}
+
+type enrichmentJob struct {
+	Domain        string
+	Result        analysis.Result
+	FeedRevision  string
+	BrandRevision string
+}
+
+type enrichmentSignals struct {
+	DNSFailed bool
+	TLS       tlsinspect.Result
+	WHOIS     whois.Result
 }
 
 type AnalyzeOptions struct {
@@ -148,23 +175,53 @@ func NewService(options Options) *Service {
 		_ = wl.LoadFromDB()
 	}
 
-	return &Service{
-		redis:           options.Redis,
-		redisTimeout:    options.RedisTimeout,
-		ttlAllowed:      options.TTLAllowed,
-		ttlSuspicious:   options.TTLSuspicious,
-		ttlBlocked:      options.TTLBlocked,
-		recentLimit:     recentLimit,
-		threatFeedKey:   threatFeedKey,
-		feedRevisionKey: feed.RevisionKey(threatFeedKey),
-		ai:              aiClient,
-		whitelist:       wl,
-		analyzer:        analysis.NewAnalyzer(options.AnalysisConfig),
-		store:           options.Store,
-		enrichEnabled:   options.EnrichEnabled,
-		enrichTimeout:   options.EnrichTimeout,
-		osint:           options.OSINT,
+	brandStore := analysis.BrandStore(store.NewBrandStore(
+		options.Store,
+		options.Redis,
+		options.RedisTimeout,
+		configDuration(options.BrandCacheTTL, 5*time.Minute),
+	))
+
+	enrichQueueSize := options.EnrichQueueSize
+	if enrichQueueSize <= 0 {
+		enrichQueueSize = 256
 	}
+
+	svc := &Service{
+		redis:            options.Redis,
+		redisTimeout:     options.RedisTimeout,
+		ttlAllowed:       options.TTLAllowed,
+		ttlSuspicious:    options.TTLSuspicious,
+		ttlBlocked:       options.TTLBlocked,
+		recentLimit:      recentLimit,
+		recentTTL:        configDuration(options.RecentTTL, 24*time.Hour),
+		threatFeedKey:    threatFeedKey,
+		feedRevisionKey:  feed.RevisionKey(threatFeedKey),
+		ai:               aiClient,
+		whitelist:        wl,
+		analyzer:         analysis.NewAnalyzerWithBrandStore(options.AnalysisConfig, brandStore),
+		store:            options.Store,
+		brandStore:       brandStore,
+		enrichEnabled:    options.EnrichEnabled,
+		enrichTimeout:    options.EnrichTimeout,
+		enrichDone:       make(chan struct{}),
+		enrichInFlight:   make(map[string]struct{}),
+		enrichmentLookup: defaultEnrichmentLookup,
+		osint:            options.OSINT,
+	}
+	if svc.enrichEnabled && svc.redis != nil && svc.redis.Enabled() && svc.enrichTimeout > 0 {
+		svc.enrichQueue = make(chan enrichmentJob, enrichQueueSize)
+		svc.enrichWG.Add(1)
+		go svc.enrichmentWorker()
+	}
+	return svc
+}
+
+func configDuration(value, fallback time.Duration) time.Duration {
+	if value <= 0 {
+		return fallback
+	}
+	return value
 }
 
 func (s *Service) Close() error {
@@ -172,6 +229,10 @@ func (s *Service) Close() error {
 		return nil
 	}
 	var redisErr, storeErr error
+	if s.enrichDone != nil {
+		close(s.enrichDone)
+		s.enrichWG.Wait()
+	}
 	if s.redis != nil {
 		redisErr = s.redis.Close()
 	}
@@ -402,7 +463,13 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 
 func (s *Service) RecordRecent(ctx context.Context, item Analysis) {
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		return s.redis.PushJSON(redisCtx, recentAnalysisKey, item, s.recentLimit)
+		if err := s.redis.PushJSON(redisCtx, recentAnalysisKey, item, s.recentLimit); err != nil {
+			return err
+		}
+		if s.recentTTL > 0 {
+			return s.redis.Expire(redisCtx, recentAnalysisKey, s.recentTTL)
+		}
+		return nil
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("recent analysis cache write failed", correlation.Fields(ctx, map[string]any{
@@ -468,13 +535,18 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	// 1. Check Cache
 	cacheKey := fmt.Sprintf("safe-zone:analysis:%s", normalized)
 	currentRevision := s.currentFeedRevision(ctx)
+	currentBrandRevision := s.currentBrandRevision(ctx)
 	var cached analysis.Result
+	var cachedEntry analysisCacheEntry
 	err = s.withRedis(ctx, func(redisCtx context.Context) error {
 		var entry analysisCacheEntry
 		found, err := s.redis.GetJSON(redisCtx, cacheKey, &entry)
 		if err == nil && found && entry.Result.Domain != "" {
-			if entry.AnalysisRevision == analysisAlgorithmRevision && (currentRevision == "" || entry.FeedRevision == currentRevision) {
+			if entry.AnalysisRevision == analysisAlgorithmRevision &&
+				(currentRevision == "" || entry.FeedRevision == currentRevision) &&
+				(currentBrandRevision == "" || entry.BrandRevision == currentBrandRevision) {
 				cached = entry.Result
+				cachedEntry = entry
 				return nil
 			}
 			return nil
@@ -488,6 +560,14 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		return nil
 	})
 	if err == nil && cached.Domain != "" {
+		if shouldEnqueueEnrichment(cached) && cachedEntryNeedsEnrichment(cachedEntry) {
+			s.enqueueEnrichment(ctx, enrichmentJob{
+				Domain:        normalized,
+				Result:        cached,
+				FeedRevision:  cachedEntry.FeedRevision,
+				BrandRevision: cachedEntry.BrandRevision,
+			})
+		}
 		report := s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
 		updated := s.applyOSINT(ctx, normalized, cached, report, currentRevision)
 		return updated, true, report.Evidence
@@ -505,32 +585,18 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	if result.Domain == "" {
 		// 3. Lexical Analysis
 		result = s.analyzer.Analyze(normalized)
-
-		// 3.5. Registration Check (NS Lookup)
-		if s.enrichEnabled && (result.Verdict == analysis.VerdictSafe || result.Verdict == analysis.VerdictSuspicious) {
-			apex := whois.RegisteredDomain(normalized)
-			if apex != "" {
-				nsCtx, nsCancel := context.WithTimeout(ctx, 2*time.Second)
-				_, err := net.DefaultResolver.LookupNS(nsCtx, apex)
-				nsCancel()
-				// if it fails with 'no such host' or times out, we flag it. (If it's actually unregistered, net.LookupNS returns error).
-				// We only flag if we get a definitive "no such host" or similar DNS failure to avoid false positives on transient errors.
-				// For simplicity, any error from LookupNS on the apex domain is highly suspicious.
-				if err != nil {
-					if result.Score < 75 {
-						result.Score = 75
-						result.Verdict = analysis.VerdictSuspicious
-					}
-					result.Reasons = append(result.Reasons, "domain is not registered or resolving (NXDOMAIN)")
-				}
-			}
-		}
 	}
-	// 4. TLS + WHOIS Enrichment (suspicious zone only)
-	s.enrichSuspicious(ctx, normalized, &result)
-	// 5. AI Refinement
+	// 4. AI Refinement
 	result = s.refineWithAI(ctx, result)
-	// 6. OSINT public-warning evidence. API/dashboard can fetch on demand;
+	if shouldEnqueueEnrichment(result) {
+		s.enqueueEnrichment(ctx, enrichmentJob{
+			Domain:        normalized,
+			Result:        result,
+			FeedRevision:  currentRevision,
+			BrandRevision: currentBrandRevision,
+		})
+	}
+	// 5. OSINT public-warning evidence. API/dashboard can fetch on demand;
 	// resolver policy uses cached evidence only via lookupMode.
 	report := s.lookupOSINT(ctx, normalized, result, lookupMode, forceOSINT)
 	result = s.applyOSINT(ctx, normalized, result, report, currentRevision)
@@ -540,6 +606,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           result,
 			FeedRevision:     currentRevision,
+			BrandRevision:    currentBrandRevision,
 			AnalysisRevision: analysisAlgorithmRevision,
 		}, s.ttlFor(result.Verdict))
 	})
@@ -660,6 +727,7 @@ func (s *Service) applyOSINT(ctx context.Context, domain string, result analysis
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           updated,
 			FeedRevision:     feedRevision,
+			BrandRevision:    s.currentBrandRevision(ctx),
 			AnalysisRevision: analysisAlgorithmRevision,
 			OSINTCheckedAt:   report.CheckedAt,
 		}, s.ttlFor(updated.Verdict))
@@ -704,42 +772,144 @@ func (s *Service) recordOSINTEvidence(report osint.Report) {
 	}
 }
 
-// enrichSuspicious runs TLS + WHOIS analysis in parallel for domains in the
-// "suspicious zone" (score 20-69). Modifies result in-place. Always fail-open.
-func (s *Service) enrichSuspicious(ctx context.Context, domain string, result *analysis.Result) {
-	if !s.enrichEnabled || s.enrichTimeout <= 0 {
+func shouldEnqueueEnrichment(result analysis.Result) bool {
+	return result.Domain != "" && result.Score >= 20 && result.Score < 70
+}
+
+func cachedEntryNeedsEnrichment(entry analysisCacheEntry) bool {
+	return entry.EnrichedAt == ""
+}
+
+func (s *Service) enqueueEnrichment(ctx context.Context, job enrichmentJob) {
+	if s == nil || !s.enrichEnabled || s.enrichQueue == nil || s.enrichTimeout <= 0 {
 		return
 	}
-	// Only enrich the uncertain middle band.
-	if result.Score < 20 || result.Score >= 70 {
+	s.enrichMu.Lock()
+	if _, ok := s.enrichInFlight[job.Domain]; ok {
+		s.enrichMu.Unlock()
+		return
+	}
+	s.enrichInFlight[job.Domain] = struct{}{}
+	s.enrichMu.Unlock()
+
+	select {
+	case s.enrichQueue <- job:
+	case <-ctx.Done():
+		s.clearEnrichmentInFlight(job.Domain)
+	default:
+		s.clearEnrichmentInFlight(job.Domain)
+		logjson.Warn("enrichment queue full; skipping background job", correlation.Fields(ctx, map[string]any{
+			"service": "risk",
+			"domain":  job.Domain,
+		}))
+	}
+}
+
+func (s *Service) clearEnrichmentInFlight(domain string) {
+	s.enrichMu.Lock()
+	delete(s.enrichInFlight, domain)
+	s.enrichMu.Unlock()
+}
+
+func (s *Service) enrichmentWorker() {
+	defer s.enrichWG.Done()
+	for {
+		select {
+		case <-s.enrichDone:
+			return
+		case job := <-s.enrichQueue:
+			s.processEnrichmentJob(job)
+			s.clearEnrichmentInFlight(job.Domain)
+		}
+	}
+}
+
+func (s *Service) processEnrichmentJob(job enrichmentJob) {
+	if s == nil || s.redis == nil || !s.redis.Enabled() {
+		return
+	}
+	if current := s.currentFeedRevision(context.Background()); current != "" && job.FeedRevision != "" && current != job.FeedRevision {
+		return
+	}
+	if current := s.currentBrandRevision(context.Background()); current != "" && job.BrandRevision != "" && current != job.BrandRevision {
 		return
 	}
 
-	enrichCtx, cancel := context.WithTimeout(ctx, s.enrichTimeout)
+	enrichCtx, cancel := context.WithTimeout(context.Background(), s.enrichTimeout)
 	defer cancel()
 
+	signals := s.enrichmentLookup(enrichCtx, job.Domain)
+	enriched := job.Result
+	applyEnrichmentSignals(&enriched, signals)
+
+	cacheKey := fmt.Sprintf("safe-zone:analysis:%s", job.Domain)
+	err := s.withRedis(context.Background(), func(redisCtx context.Context) error {
+		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
+			Result:           enriched,
+			FeedRevision:     job.FeedRevision,
+			BrandRevision:    job.BrandRevision,
+			AnalysisRevision: analysisAlgorithmRevision,
+			EnrichedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+		}, s.ttlFor(enriched.Verdict))
+	})
+	if err != nil && !errors.Is(err, cache.ErrDisabled) {
+		logjson.Warn("background enrichment cache write failed", map[string]any{
+			"service": "risk",
+			"domain":  job.Domain,
+			"error":   err.Error(),
+		})
+	}
+}
+
+func defaultEnrichmentLookup(ctx context.Context, domain string) enrichmentSignals {
 	var (
+		dnsFailed   bool
 		tlsResult   tlsinspect.Result
 		whoisResult whois.Result
 		wg          sync.WaitGroup
 	)
-	wg.Add(2)
+	wg.Add(3)
 	go func() {
 		defer wg.Done()
-		tlsResult = tlsinspect.Inspect(enrichCtx, domain)
+		apex := whois.RegisteredDomain(domain)
+		if apex == "" {
+			return
+		}
+		nsCtx, cancel := context.WithTimeout(ctx, minDuration(2*time.Second, enrichContextTimeout(ctx, 2*time.Second)))
+		defer cancel()
+		if _, err := net.DefaultResolver.LookupNS(nsCtx, apex); err != nil {
+			dnsFailed = true
+		}
 	}()
 	go func() {
 		defer wg.Done()
-		whoisResult = whois.Lookup(enrichCtx, domain)
+		tlsResult = tlsinspect.Inspect(ctx, domain)
+	}()
+	go func() {
+		defer wg.Done()
+		whoisResult = whois.Lookup(ctx, domain)
 	}()
 	wg.Wait()
+	return enrichmentSignals{
+		DNSFailed: dnsFailed,
+		TLS:       tlsResult,
+		WHOIS:     whoisResult,
+	}
+}
 
-	// Merge scores and reasons.
-	result.Score += tlsResult.Score + whoisResult.Score
-	result.Reasons = append(result.Reasons, tlsResult.Reasons...)
-	result.Reasons = append(result.Reasons, whoisResult.Reasons...)
-
-	// Cap and recalculate verdict.
+func applyEnrichmentSignals(result *analysis.Result, signals enrichmentSignals) {
+	if result == nil {
+		return
+	}
+	if signals.DNSFailed {
+		if result.Score < 75 {
+			result.Score = 75
+		}
+		result.Reasons = append(result.Reasons, "domain is not registered or resolving (NXDOMAIN)")
+	}
+	result.Score += signals.TLS.Score + signals.WHOIS.Score
+	result.Reasons = append(result.Reasons, signals.TLS.Reasons...)
+	result.Reasons = append(result.Reasons, signals.WHOIS.Reasons...)
 	if result.Score > 100 {
 		result.Score = 100
 	}
@@ -752,6 +922,25 @@ func (s *Service) enrichSuspicious(ctx context.Context, domain string, result *a
 		result.Verdict = analysis.VerdictSafe
 	}
 	result.Confidence = math.Min(1, 0.45+float64(result.Score)/120)
+}
+
+func enrichContextTimeout(ctx context.Context, fallback time.Duration) time.Duration {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return fallback
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return fallback
+	}
+	return remaining
+}
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (s *Service) matchThreatFeed(parent context.Context, domain string) (bool, error) {
@@ -833,6 +1022,41 @@ func (s *Service) currentFeedRevision(ctx context.Context) string {
 		return ""
 	}
 	return revision
+}
+
+func (s *Service) currentBrandRevision(ctx context.Context) string {
+	if s == nil {
+		return ""
+	}
+	var revision string
+	err := s.withRedis(ctx, func(redisCtx context.Context) error {
+		value, err := s.redis.GetString(redisCtx, brandRevisionKey)
+		if err != nil {
+			return err
+		}
+		revision = value
+		return nil
+	})
+	if err != nil {
+		return ""
+	}
+	return revision
+}
+
+func (s *Service) bumpBrandRevision(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	revision := time.Now().UTC().Format(time.RFC3339Nano)
+	err := s.withRedis(ctx, func(redisCtx context.Context) error {
+		return s.redis.SetString(redisCtx, brandRevisionKey, revision, 0)
+	})
+	if err != nil && !errors.Is(err, cache.ErrDisabled) {
+		logjson.Warn("brand revision cache write failed", correlation.Fields(ctx, map[string]any{
+			"service": "risk",
+			"error":   err.Error(),
+		}))
+	}
 }
 
 // --- Local Overrides ---
@@ -953,6 +1177,55 @@ func (s *Service) DeleteOverride(domain string) error {
 		return fmt.Errorf("invalid domain: %w", err)
 	}
 	return s.store.DeleteOverride(normalized)
+}
+
+func (s *Service) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
+	if s == nil || s.brandStore == nil {
+		return nil, fmt.Errorf("brand store not configured")
+	}
+	return s.brandStore.ListBrands(ctx)
+}
+
+func (s *Service) GetBrand(ctx context.Context, id int64) (analysis.Brand, error) {
+	if s == nil || s.brandStore == nil {
+		return analysis.Brand{}, fmt.Errorf("brand store not configured")
+	}
+	return s.brandStore.GetBrand(ctx, id)
+}
+
+func (s *Service) CreateBrand(ctx context.Context, brand analysis.Brand) (analysis.Brand, error) {
+	if s == nil || s.brandStore == nil {
+		return analysis.Brand{}, fmt.Errorf("brand store not configured")
+	}
+	created, err := s.brandStore.CreateBrand(ctx, brand)
+	if err != nil {
+		return analysis.Brand{}, err
+	}
+	s.bumpBrandRevision(ctx)
+	return created, nil
+}
+
+func (s *Service) UpdateBrand(ctx context.Context, id int64, brand analysis.Brand) (analysis.Brand, error) {
+	if s == nil || s.brandStore == nil {
+		return analysis.Brand{}, fmt.Errorf("brand store not configured")
+	}
+	updated, err := s.brandStore.UpdateBrand(ctx, id, brand)
+	if err != nil {
+		return analysis.Brand{}, err
+	}
+	s.bumpBrandRevision(ctx)
+	return updated, nil
+}
+
+func (s *Service) DeleteBrand(ctx context.Context, id int64) error {
+	if s == nil || s.brandStore == nil {
+		return fmt.Errorf("brand store not configured")
+	}
+	if err := s.brandStore.DeleteBrand(ctx, id); err != nil {
+		return err
+	}
+	s.bumpBrandRevision(ctx)
+	return nil
 }
 
 // TelemetryRecent returns recent telemetry entries.

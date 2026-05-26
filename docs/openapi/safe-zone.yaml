@@ -100,6 +100,31 @@ paths:
       responses:
         "200":
           description: Override deleted
+  /v1/overrides/review-false-positive:
+    post:
+      summary: Resolve a false positive by converting a domain to an allow override
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain, reason]
+              properties:
+                domain:
+                  type: string
+                reason:
+                  type: string
+                source:
+                  type: string
+                previous_action:
+                  type: string
+      responses:
+        "200":
+          description: False-positive review applied
   /v1/telemetry/recent:
     get:
       summary: List telemetry entries

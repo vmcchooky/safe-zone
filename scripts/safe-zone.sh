@@ -81,6 +81,59 @@ env_value() {
   fi
 }
 
+secret_value() {
+  key="$1"
+  value="$(env_value "$key" || true)"
+  if [ -n "$value" ]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  file_key="${key}_FILE"
+  file_path="$(env_value "$file_key" || true)"
+  if [ -n "$file_path" ] && [ -f "$file_path" ]; then
+    tr -d '\r' < "$file_path"
+  fi
+}
+
+is_true() {
+  value="$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1|true|yes|on)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+encrypt_backups_enabled() {
+  is_true "$(env_value SAFE_ZONE_BACKUP_ENCRYPT || true)"
+}
+
+keep_plaintext_backup() {
+  is_true "$(env_value SAFE_ZONE_BACKUP_KEEP_PLAINTEXT || true)"
+}
+
+sha256_file() {
+  target="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$target" | awk '{print $1}'
+    return 0
+  fi
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$target" | awk '{print $1}'
+    return 0
+  fi
+  if command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 "$target" | awk '{print $NF}'
+    return 0
+  fi
+  log_error "No SHA-256 utility found (sha256sum, shasum, or openssl)"
+  exit 2
+}
+
 sqlite_runtime_path() {
   configured="$(env_value SAFE_ZONE_SQLITE_PATH || true)"
   if [ -z "$configured" ]; then
@@ -155,6 +208,87 @@ copy_optional_snapshots() {
   fi
   if [ -f Caddyfile ]; then
     cp Caddyfile "${target}/Caddyfile.snapshot"
+  fi
+  if [ -f scripts/duckdns-update.sh ]; then
+    cp scripts/duckdns-update.sh "${target}/duckdns-update.sh.snapshot"
+  fi
+  if [ -f docker-compose.production.yml ]; then
+    cp docker-compose.production.yml "${target}/docker-compose.production.yml.snapshot"
+  fi
+}
+
+write_checksum_manifest() {
+  target="$1"
+  manifest="${target}/SHA256SUMS"
+  : > "$manifest"
+  for entry in "$target"/*; do
+    [ -f "$entry" ] || continue
+    base="$(basename -- "$entry")"
+    [ "$base" = "SHA256SUMS" ] && continue
+    checksum="$(sha256_file "$entry")"
+    printf '%s  %s\n' "$checksum" "$base" >> "$manifest"
+  done
+}
+
+verify_backup_snapshot() {
+  target="$1"
+  found_file=0
+  for entry in "$target"/*; do
+    [ -f "$entry" ] || continue
+    found_file=1
+    if [ ! -s "$entry" ]; then
+      log_error "Backup artifact is empty: $entry"
+      exit 2
+    fi
+  done
+  if [ "$found_file" -eq 0 ]; then
+    log_error "Backup directory is empty: $target"
+    exit 2
+  fi
+}
+
+encrypt_backup_bundle() {
+  target="$1"
+  ts="$2"
+  recipient="$(env_value SAFE_ZONE_BACKUP_GPG_RECIPIENT || true)"
+  passphrase="$(secret_value SAFE_ZONE_BACKUP_GPG_PASSPHRASE || true)"
+  archive="${backup_dir}/${ts}.tar.gz"
+  encrypted="${target}/backup.tar.gz.gpg"
+  checksum_file="${target}/backup.tar.gz.gpg.sha256"
+
+  if ! command -v gpg >/dev/null 2>&1; then
+    log_error "SAFE_ZONE_BACKUP_ENCRYPT is enabled but gpg is not installed"
+    exit 2
+  fi
+  if [ -z "$recipient" ] && [ -z "$passphrase" ]; then
+    log_error "Backup encryption requires SAFE_ZONE_BACKUP_GPG_RECIPIENT or SAFE_ZONE_BACKUP_GPG_PASSPHRASE(_FILE)"
+    exit 2
+  fi
+
+  log_info "Packaging backup into ${archive}..."
+  tar -czf "$archive" -C "$target" .
+
+  log_info "Encrypting backup archive with GPG..."
+  if [ -n "$recipient" ]; then
+    gpg --batch --yes --trust-model always --output "$encrypted" --encrypt --recipient "$recipient" "$archive"
+  else
+    gpg --batch --yes --pinentry-mode loopback --passphrase "$passphrase" --cipher-algo AES256 --output "$encrypted" --symmetric "$archive"
+  fi
+  rm -f "$archive"
+
+  printf '%s  %s\n' "$(sha256_file "$encrypted")" "$(basename -- "$encrypted")" > "$checksum_file"
+
+  if ! keep_plaintext_backup; then
+    for entry in "$target"/*; do
+      [ -e "$entry" ] || continue
+      base="$(basename -- "$entry")"
+      case "$base" in
+        backup.tar.gz.gpg|backup.tar.gz.gpg.sha256)
+          continue
+          ;;
+      esac
+      rm -rf "$entry"
+    done
   fi
 }
 
@@ -278,6 +412,42 @@ restore_env_notice() {
   fi
 }
 
+prepare_restore_dir() {
+  src_dir="$1"
+  encrypted="${src_dir}/backup.tar.gz.gpg"
+  archive="${src_dir}/backup.tar.gz"
+
+  if [ ! -f "$encrypted" ] && [ ! -f "$archive" ]; then
+    printf '%s' "$src_dir"
+    return 0
+  fi
+
+  tmp_root="$(mktemp -d "${TMPDIR:-/tmp}/safe-zone-restore.XXXXXX")"
+  unpacked="${tmp_root}/bundle"
+  mkdir -p "$unpacked"
+
+  if [ -f "$encrypted" ]; then
+    passphrase="$(secret_value SAFE_ZONE_BACKUP_GPG_PASSPHRASE || true)"
+    if ! command -v gpg >/dev/null 2>&1; then
+      log_error "Encrypted backup found but gpg is not installed"
+      rm -rf "$tmp_root"
+      exit 2
+    fi
+    log_info "Decrypting encrypted backup bundle from ${encrypted}..."
+    if [ -n "$passphrase" ]; then
+      gpg --batch --yes --pinentry-mode loopback --passphrase "$passphrase" --output "${tmp_root}/backup.tar.gz" --decrypt "$encrypted"
+    else
+      gpg --batch --yes --output "${tmp_root}/backup.tar.gz" --decrypt "$encrypted"
+    fi
+    tar -xzf "${tmp_root}/backup.tar.gz" -C "$unpacked"
+  else
+    log_info "Extracting backup bundle from ${archive}..."
+    tar -xzf "$archive" -C "$unpacked"
+  fi
+
+  printf '%s' "$unpacked"
+}
+
 new_backup() {
   ts="$(date -u +%Y%m%d-%H%M%S)"
   target="${backup_dir}/${ts}"
@@ -286,6 +456,11 @@ new_backup() {
   backup_redis "$target"
   copy_optional_snapshots "$target"
   backup_sqlite "$target"
+  write_checksum_manifest "$target"
+  verify_backup_snapshot "$target"
+  if encrypt_backups_enabled; then
+    encrypt_backup_bundle "$target" "$ts"
+  fi
   sync_offsite "$target" "$ts"
   log_info "Backup written to ${target}"
 }
@@ -293,12 +468,16 @@ new_backup() {
 restore_backup() {
   src_dir="$(resolve_backup_dir "${1:-}")"
   log_info "Restoring backup from ${src_dir}"
+  prepared_dir="$(prepare_restore_dir "$src_dir")"
   stop_for_restore
-  restore_sqlite "$src_dir"
-  restore_redis "$src_dir"
-  restore_env_notice "$src_dir"
+  restore_sqlite "$prepared_dir"
+  restore_redis "$prepared_dir"
+  restore_env_notice "$prepared_dir"
   log_info "Restarting stack..."
   compose_up_stack
+  if [ "$prepared_dir" != "$src_dir" ]; then
+    rm -rf "$(dirname -- "$prepared_dir")"
+  fi
   log_info "Restore completed"
 }
 
@@ -381,6 +560,11 @@ Commands:
 Environment:
   SAFE_ZONE_STACK=production|dev      Choose the stack for status/logs/backup/restore/feed-sync.
   SAFE_ZONE_BACKUP_DIR=/path          Override the local backup root.
+  SAFE_ZONE_BACKUP_ENCRYPT=1          Package the backup and encrypt it with GPG.
+  SAFE_ZONE_BACKUP_GPG_RECIPIENT=id   Encrypt to a GPG recipient key.
+  SAFE_ZONE_BACKUP_GPG_PASSPHRASE=... Encrypt symmetrically when no recipient is set.
+  SAFE_ZONE_BACKUP_GPG_PASSPHRASE_FILE=/path
+  SAFE_ZONE_BACKUP_KEEP_PLAINTEXT=1   Keep plaintext snapshot files after encrypted bundle creation.
   SAFE_ZONE_RCLONE_REMOTE=gdrive:     Optional rclone remote for offsite backup upload.
   SAFE_ZONE_RCLONE_DEST=safe-zone-backups
 USAGE

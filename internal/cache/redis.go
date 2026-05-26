@@ -143,6 +143,13 @@ func (r *Redis) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, key).Err()
 }
 
+func (r *Redis) Expire(ctx context.Context, key string, ttl time.Duration) error {
+	if !r.Enabled() {
+		return ErrDisabled
+	}
+	return r.client.Expire(ctx, key, ttl).Err()
+}
+
 func (r *Redis) Rename(ctx context.Context, fromKey, toKey string) error {
 	if !r.Enabled() {
 		return ErrDisabled

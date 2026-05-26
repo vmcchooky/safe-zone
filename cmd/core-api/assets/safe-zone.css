@@ -111,7 +111,8 @@ header {
 .quick-grid,
 .modal-body,
 .brand-header,
-.form-group {
+.form-group,
+.review-panel {
   display: grid;
   gap: var(--qx-space-4, 16px);
 }
@@ -504,6 +505,27 @@ dd {
 
 .evidence-empty {
   padding: 0;
+}
+
+.review-panel {
+  padding: var(--qx-space-4, 16px);
+  border: 1px solid var(--line);
+  border-radius: var(--qx-radius-lg, 20px);
+  background: color-mix(in srgb, var(--panel-strong) 78%, var(--qx-brand-green, #58a67a) 8%);
+}
+
+.review-head,
+.review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--qx-space-3, 12px);
+}
+
+.review-note {
+  margin: 0;
+  color: var(--muted);
 }
 
 .recent-list,

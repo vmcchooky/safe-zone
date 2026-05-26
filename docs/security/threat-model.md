@@ -115,18 +115,40 @@ Notes:
 | Denial of service | Rate limiting and timeouts exist for HTTP and DoT paths. | Real internet traffic patterns and amplification resistance still need public-environment validation. | Medium |
 | Elevation of privilege | Narrow edge routing limits what reaches the control plane. | Misrouted public traffic could still expand access if the edge is misconfigured. | `RB-1` |
 
-### 8.2 Admin Dashboard and Control Plane APIs
+### 8.2 DoH and DoT Request Handling
 
 | Threat | Current mitigation | Residual risk | Status |
 | --- | --- | --- | --- |
-| Spoofing | Admin API key or signed `admin_session` cookie required; cookie uses HMAC-SHA256. | Stolen admin credentials remain high impact. | High |
-| Tampering | Authenticated endpoints protect override, mapping, group, and agent actions. | Loss of SQLite persistence can undermine admin intent durability. | `RB-3` |
-| Repudiation | Structured logs and request IDs are present. | Review workflow for admin actions is still lightweight. | Medium |
-| Information disclosure | Cookies are `HttpOnly`; `Secure` is enabled on HTTPS requests; secrets can come from `*_FILE`. | A public edge exposure or backup leak would expose high-value admin material. | High |
-| Denial of service | Request size caps and rate limiting exist across major POST/PUT routes. | Dashboard manual QA and sustained public load evidence are incomplete. | Medium |
-| Elevation of privilege | Production rejects missing or weak admin password/API key. | Local mode still generates temporary admin secrets by design; safe for local use, not for production. | Low in prod, accepted in local |
+| Spoofing | DoH stays on HTTPS and DoT uses TLS; request handling is shared through the `risk.Service` policy layer. | Public DoT trust still depends on production certificate discipline. | `RB-4` |
+| Tampering | DNS policy is centralized; block strategies are explicit (`sinkhole`, `nxdomain`, `refused`, `nullip`). | Mis-set block strategy can weaken operator intent or client UX. | Medium |
+| Repudiation | Request IDs and structured logs exist across API and resolver flows. | DNS client identity is often IP-based only; attribution is imperfect without external network logs. | Accepted MVP limitation |
+| Information disclosure | Resolver avoids exposing internal admin APIs on DNS paths. | Query metadata is still visible to the operator and any reverse proxy in front of DoH. | Accepted MVP risk |
+| Denial of service | Rate limiting, request size caps, timeouts, and fail-open dependency handling are present. | DNS amplification and query-flood resistance still need target-environment evidence under public load. | Medium |
+| Elevation of privilege | Resolver does not expose privileged mutation paths. | If client-to-policy mappings are misconfigured, some clients could receive the wrong policy group. | Medium |
 
-### 8.3 Redis Cache and Threat-Feed State
+### 8.3 Admin Dashboard and Control Plane APIs
+
+| Threat | Current mitigation | Residual risk | Status |
+| --- | --- | --- | --- |
+| Spoofing | Dashboard and admin APIs require either bearer API key or signed `admin_session` cookie. | Stolen admin credentials remain high impact until rotated. | High |
+| Tampering | Authenticated endpoints protect overrides, groups, mappings, telemetry access, agent triggers, and brand management. | SQLite durability and backup quality still determine whether operator intent survives incidents. | `RB-2`, `RB-3` |
+| Repudiation | Structured JSON logs and request IDs exist. | There is no dedicated immutable audit log or per-admin change approval workflow. | Medium |
+| Information disclosure | Cookies are `HttpOnly`; `Secure` is set on HTTPS; request bodies are size-limited. | Dashboard exposure through edge misconfiguration or backup leakage remains high impact. | High |
+| Denial of service | POST/PUT/DELETE routes are rate-limited and body-capped. | Dashboard endpoints still share host resources with the analysis plane on the single-node MVP. | Accepted MVP risk |
+| Elevation of privilege | Production validation rejects missing or weak admin password/API key. | Local auto-generated admin secrets are intentionally convenient and would be unsafe if reused outside local mode. | Low in prod, accepted in local |
+
+### 8.4 Auth and Session Model
+
+| Threat | Current mitigation | Residual risk | Status |
+| --- | --- | --- | --- |
+| Spoofing | Session cookies are HMAC-signed; API keys use constant-time comparisons; CSRF checks protect cookie-authenticated state-changing requests. | Credential theft, browser compromise, or leaked local secret files still bypass these checks. | High |
+| Tampering | Session payload is signed; logout clears the cookie; bearer and cookie flows are explicit. | Session invalidation is coarse-grained because stateless cookies stay valid until expiry or server secret rotation. | Accepted MVP risk |
+| Repudiation | Login/logout and admin API use are visible in HTTP logs. | Logs do not yet distinguish all mutation events into a dedicated audit stream with actor and diff semantics. | Medium |
+| Information disclosure | `HttpOnly`, `SameSite=Lax`, and HTTPS-aware `Secure` reduce browser leakage. | Local generated secrets files and backups can still expose session material if mishandled. | Medium |
+| Denial of service | Login bodies are capped and unauthenticated requests fail early. | Brute-force and credential-stuffing resistance depends mostly on rate limiting and operator monitoring, not MFA. | Medium |
+| Elevation of privilege | CSRF is enforced for cookie-authenticated mutations; bearer auth bypasses CSRF by design. | There is no MFA, no IP allowlist, and no per-role separation in the current admin model. | Accepted MVP risk |
+
+### 8.5 Redis Cache and Threat-Feed State
 
 | Threat | Current mitigation | Residual risk | Status |
 | --- | --- | --- | --- |
@@ -136,7 +158,7 @@ Notes:
 | Denial of service | System is designed to fail open when Redis is unavailable. | Detection quality and feed-backed blocking degrade during Redis outage. | Accepted MVP risk |
 | Elevation of privilege | Redis is not the primary auth system. | Cache poisoning can still influence behavior indirectly. | Medium |
 
-### 8.4 SQLite Persistence
+### 8.6 SQLite Persistence
 
 | Threat | Current mitigation | Residual risk | Status |
 | --- | --- | --- | --- |
@@ -145,7 +167,18 @@ Notes:
 | Information disclosure | DB stays local to the deployment by default. | Backup snapshots can copy the DB without encryption requirements. | Tied to `RB-2` |
 | Denial of service | Query limits and SQLite pragmas reduce abuse risk. | Disk exhaustion or DB corruption scenarios still need restore evidence. | Medium |
 
-### 8.5 Threat-Feed and OSINT Ingestion
+### 8.7 Threat-Feed Ingestion and Scheduled Feed Sync
+
+| Threat | Current mitigation | Residual risk | Status |
+| --- | --- | --- | --- |
+| Spoofing | Operators configure feed sources explicitly; parser normalization rejects malformed entries. | A malicious but syntactically valid source can still feed operator-approved bad data into Redis. | High |
+| Tampering | Parser drift detection, duplicate filtering, normalization, and revision-based cache invalidation exist. | There is no signature verification, source pinning, or content attestation for feed payloads. | Medium |
+| Repudiation | Feed sync records counts, invalid rows, drift warnings, and completion metadata. | Source provenance remains procedural and log-based rather than strongly attested. | Medium |
+| Information disclosure | Local file access uses safe file-root restrictions; outbound feed fetches can be time-bounded. | Pulling remote feeds reveals operator IP, sync timing, and potentially interest in specific providers. | Accepted MVP risk |
+| Denial of service | Max byte limits, timeouts, and fail-open handling reduce blast radius. | Large or slow upstream feeds can still delay freshness and consume resources during sync windows. | Accepted MVP risk |
+| Elevation of privilege | Feed sync writes domains, not arbitrary code or SQL. | Poisoned feed content can still escalate from data-layer influence into unwanted blocking behavior. | Medium |
+
+### 8.8 OSINT and External HTTP Evidence Fetching
 
 | Threat | Current mitigation | Residual risk | Status |
 | --- | --- | --- | --- |
@@ -156,16 +189,16 @@ Notes:
 | Denial of service | Timeouts and byte limits exist. | Upstream slowness or drift can degrade protection quality. | Accepted MVP risk |
 | Elevation of privilege | OSINT blocks private-address lookups by default, reducing SSRF-style abuse. | Any future setting that allows private sources must stay off by default and be tightly reviewed. | Low currently |
 
-### 8.6 Enrichment and AI Providers
+### 8.9 Enrichment, WHOIS/TLS, and AI Providers
 
 | Threat | Current mitigation | Residual risk | Status |
 | --- | --- | --- | --- |
-| Spoofing / tampering | TLS minimum version is set on outbound AI/TLS paths; provider URLs are configurable. | Operator misconfiguration of provider endpoints could still redirect data or degrade trust. | Medium |
-| Information disclosure | AI and alerting secrets support `*_FILE` loading. | Domain analysis data may be sent to third-party providers when those integrations are enabled. | Accepted with operator awareness |
-| Denial of service | Timeouts are short and the service fails open when optional enrichment fails. | Attackers can still trigger slower analysis paths for suspicious domains. | Medium |
-| Elevation of privilege | AI is not the sole decision engine. | Poor provider behavior should not become an automatic bypass, but can influence classification quality. | Accepted MVP risk |
+| Spoofing / tampering | TLS minimum version is set on outbound AI/TLS paths; provider URLs are configurable; background enrichment updates cache instead of blocking the initial request path. | Operator misconfiguration of provider endpoints could still redirect traffic or produce misleading enrichment data. | Medium |
+| Information disclosure | AI and alerting secrets support `*_FILE` loading. | Domain analysis data may be sent to third-party services when integrations are enabled. | Accepted with operator awareness |
+| Denial of service | Enrichment is time-bounded and backgrounded; service fails open when optional providers fail. | Attackers can still manufacture many suspicious domains to increase outbound lookups and queue pressure. | Medium |
+| Elevation of privilege | AI and enrichment can influence classification but do not directly grant admin access. | Poor provider behavior can still skew allow/block outcomes on ambiguous domains. | Accepted MVP risk |
 
-### 8.7 Secrets, Deployment Config, and Backups
+### 8.10 Secrets, Deployment Config, and Backups
 
 | Threat | Current mitigation | Residual risk | Status |
 | --- | --- | --- | --- |
@@ -175,24 +208,58 @@ Notes:
 | Denial of service | Backup and restore scripts exist. | Restore capability is unproven until drilled. | `RB-2` |
 | Elevation of privilege | Limiting secret exposure reduces blast radius. | If `.env`, secret files, or backups leak, attackers gain direct admin and provider access. | High |
 
-## 9. Accepted MVP Risks
+## 9. Abuse Cases
+
+The following abuse cases should be assumed possible and reviewed before each public production release:
+
+| Abuse case | Entry point | Likely impact | Current mitigation | Residual risk |
+| --- | --- | --- | --- | --- |
+| Malicious feed input from a compromised or operator-misconfigured source | Feed sync HTTP(S) source or local file source | False positives at scale, poisoning Redis threat-feed set, unwanted blocking | Source allowlisting by operator, parser normalization, drift warnings, revision-based cache invalidation | No cryptographic source verification; supply-chain trust remains procedural |
+| Admin API key leakage | `.env`, secret files, terminal history, backups, screenshots, logs | Full control-plane takeover, override injection, telemetry access, agent triggering | Strong secrets required in production, `*_FILE` support, constant-time comparisons, runbooks for rotation | No MFA or role separation; one key is still high blast radius |
+| Session secret leakage | Secret files, local admin secrets file, backup archives | Forged `admin_session` cookies until rotation | Signed stateless cookies, `HttpOnly`, HTTPS-aware `Secure`, operator secret handling | Rotation is manual; compromise impact is immediate and broad |
+| Dashboard CSRF or same-origin abuse | Authenticated browser session | Unauthorized override or group mutation through the browser | Origin/Referer validation for cookie-authenticated state-changing requests | Same-site browser compromise or XSS in any trusted origin still bypasses intent |
+| DNS amplification or query-flooding | Public DoH or DoT | Resource exhaustion, edge instability, degraded resolver quality | Rate limiting, request timeouts, block strategies, shared policy service | Public target-VPS proof is still required for confidence under real traffic |
+| SSRF through OSINT or enrichment fetches | Operator-configured remote source, future private-source toggle, outbound enrichment targets | Internal network probing, metadata exposure, unexpected outbound traffic | Private-address blocking by default, timeout limits, redirect and byte caps | Operator misconfiguration or future feature drift could reopen SSRF paths |
+| Redis exposure or poisoning | Internal network, bad Compose binding, leaked Redis credentials | Feed tampering, cache poisoning, degraded policy correctness | Redis expected to stay internal, credentials configurable, fail-open behavior | Internal network trust is still important; Redis is not an immutable source of truth |
+| SQLite corruption or deletion | Host compromise, disk failure, unsafe restore, file tampering | Loss of overrides, groups, mappings, telemetry, and admin intent | WAL mode, foreign keys, backups, store APIs | Startup currently tolerates DB init failure unless production policy changes |
+| Abuse of background enrichment queue | Many suspicious domains through public APIs | Outbound connection spikes, increased CPU, delayed cache enrichment | Queueing, timeouts, in-flight deduplication, initial response path stays non-blocking | Queue pressure is still a capacity concern on the single-node MVP |
+| OSINT false-warning manipulation | Compromised public warning page or weakly reviewed source | Malicious escalation of suspicious domains to blocked | Trusted-domain allowlists, private-IP blocking, cached-evidence path separation | Trust still inherits from source-domain correctness and operator review |
+
+## 10. Mitigations and Control Priorities
+
+Priority mitigations for the MVP release:
+
+1. Keep public exposure narrow: only intended Caddy/DoH/DoT ports should be reachable from the internet; archive real firewall and port-check evidence.
+2. Treat admin secrets and backups as high-sensitivity artifacts: use `*_FILE` secrets, restrict filesystem access, rotate on suspicion, and define backup encryption or handling rules.
+3. Make feed and Redis state replaceable: prefer revision-based cache invalidation, drift detection, and the ability to resync from known sources quickly.
+4. Preserve operator intent in SQLite: either require SQLite for production startup or explicitly approve degraded mode with alerts and documented exception handling.
+5. Keep optional outbound integrations bounded: short timeouts, byte caps, redirect limits, private-address blocking, and queue back-pressure for enrichment.
+6. Require review discipline around source changes: new feed sources, OSINT allowlists, AI endpoints, and private-source toggles should be explicit operator decisions, not ad hoc edits.
+7. Keep the public request path fail-open but observable: Redis, OSINT, AI, and enrichment failures should not cause a total outage, but they must remain visible in logs, alerts, and release evidence.
+
+## 11. Accepted MVP Risks
 
 These risks are currently acceptable for an MVP if they stay visible and documented:
 
 - Redis outage degrades caching and feed-backed coverage, but should not become a total outage.
 - TLS/WHOIS enrichment is fail-open and may miss signals during upstream failures.
 - AI enrichment is optional and may be disabled or unavailable without blocking core service.
+- Background enrichment may lag behind the first request for a suspicious domain; later requests should benefit from cache once enrichment completes.
 - Sinkhole block-page mode can still trigger HTTPS certificate warnings for arbitrary blocked third-party domains.
 - OSINT evidence is best-effort and should influence suspicious cases, not replace deterministic controls.
+- Single-admin control plane without MFA or role-based access remains an MVP tradeoff; strong secret hygiene is therefore mandatory.
+- Remote feed and evidence source trust is partly procedural because the MVP does not yet enforce signed feed provenance.
 
-## 10. Recommended Remediations
+## 12. Recommended Remediations
 
 1. Close RB-1 by running and archiving real target-VPS edge checks before release.
 2. Close RB-2 by defining backup secrecy rules, recording checksums, and completing a restore drill.
 3. Close RB-3 by deciding whether SQLite is required for production startup and enforcing that choice in code.
 4. Close RB-4 by requiring configured DoT cert/key files for any public DoT release.
-5. Re-review this document whenever the public edge, auth model, feed pipeline, or storage model changes.
+5. Add a stricter admin model for post-MVP: MFA, narrower API keys, or role separation for dashboard vs automation.
+6. Add stronger source provenance for feeds and operator review gates for remote-source changes.
+7. Re-review this document whenever the public edge, auth model, feed pipeline, or storage model changes.
 
-## 11. Production Go/No-Go Rule
+## 13. Production Go/No-Go Rule
 
 Safe Zone should not be called production-ready while any release blocker in Section 7 remains open.

@@ -161,9 +161,9 @@ Goal: prove data can be restored, not just backed up.
 - `[x]` Logrotate config exists.
 - `[x]` Offsite backup via `rclone` is mentioned in SRS/OPEX docs and implemented in both Linux and PowerShell helper scripts.
 - `[x]` Add `rclone` offsite backup for Redis dump, `.env` snapshot, SQLite DB, and critical config including Caddy config.
-- `[ ]` Add encrypted backup option or document secrets handling.
-- `[ ]` Add scheduled restore drill.
-- `[ ]` Define Recovery Time Objective and Recovery Point Objective.
+- `[x]` Add encrypted backup option or document secrets handling.
+- `[x]` Add scheduled restore drill.
+- `[x]` Define Recovery Time Objective and Recovery Point Objective.
 
 Steps:
 
@@ -180,27 +180,71 @@ Goal: prove the system meets the target environment, not only local benchmarks.
 - `[x]` Local Go benchmarks exist.
 - `[~]` Local benchmark file explicitly says it does not prove 500 qps cache-hit / 50 qps miss on target VPS.
 - `[x]` Add HTTP/DoH load test script for cache hit and cache miss paths. Implemented as `cmd/load-test`.
+- `[x]` Add a reproducible performance-proof wrapper. Implemented as `scripts/performance-proof.sh`.
 - `[ ]` Run benchmark on the chosen VPS class.
 - `[ ]` Benchmark with Redis enabled, DoH through Caddy, TLS/WHOIS enrichment enabled, and AI mode explicitly selected.
-- `[ ]` Record CPU, memory, latency percentiles, error rate, and cache hit rate.
-- `[ ]` Define pass/fail thresholds for production release.
+- `[x]` Record CPU, memory, latency percentiles, error rate, and cache hit rate in the benchmark tooling.
+- `[x]` Define pass/fail thresholds for production release.
+
+Benchmark procedure:
+
+1. Deploy the exact release candidate to the target VPS class with Redis enabled, SQLite persistence enabled, TLS/WHOIS enrichment enabled, and the intended AI mode explicitly configured (`SAFE_ZONE_AI_PROVIDER=none`, `gemini`, or `ollama`).
+2. Run the formal API benchmark from the same network segment as the production edge:
+
+   ```sh
+   SAFE_ZONE_BENCH_API_URL=https://safe.example.com/v1/analyze \
+   SAFE_ZONE_BENCH_DOCKER_CONTAINERS="safe-zone-core-api safe-zone-redis" \
+   scripts/performance-proof.sh
+   ```
+
+3. Archive the generated `tmp/performance-proof/<timestamp>/` directory in the release evidence bundle.
+4. If the release exposes DoH through Caddy, run an additional DoH path smoke load with `cmd/load-test`:
+
+   ```sh
+   go run ./cmd/load-test \
+     -type doh \
+     -url https://dns.example.com/dns-query \
+     -scenario cache-hit \
+     -duration 60s \
+     -rate 500 \
+     -concurrency 64 \
+     -max-error-rate 1 \
+     -max-p95 150ms \
+     -max-p99 300ms
+   ```
+
+Required recorded metrics:
+
+- API cache-hit run: throughput, p50/p95/p99 latency, error rate, cache hit rate, load-generator memory, target container CPU/memory samples.
+- API cache-miss run: throughput, p50/p95/p99 latency, error rate, load-generator memory, target container CPU/memory samples.
+- DoH edge run, when applicable: throughput, p50/p95/p99 latency, error rate, and target container CPU/memory samples.
+
+Production release pass/fail thresholds:
+
+| Scenario | Minimum load | Required cache hit rate | p95 latency | p99 latency | Error rate | Target resource ceiling |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| API cache-hit | 500 req/s for 60s | >= 95% | <= 150 ms | <= 300 ms | <= 1.0% | Core API avg CPU <= 75%, max memory <= 70% container limit |
+| API cache-miss | 50 req/s for 60s | n/a | <= 750 ms | <= 1500 ms | <= 1.0% | Core API avg CPU <= 85%, max memory <= 75% container limit |
+| DoH cache-hit edge, if exposed | 500 req/s for 60s | not directly measurable from DoH | <= 150 ms | <= 300 ms | <= 1.0% | DNS resolver + edge avg CPU <= 75%, max memory <= 70% container limit |
+
+Any threshold failure blocks production release unless the release owner records an explicit exception with the measured impact, rollback plan, and expiry date.
 
 Steps:
 
-1. Add reproducible load test commands.
-2. Seed Redis with cache-hit domains and choose cache-miss test domains.
-3. Test direct service path and public Caddy/DoH path.
-4. Capture p50/p95/p99 latency and throughput.
+1. Build the release candidate and start the production-like stack.
+2. Run `scripts/performance-proof.sh` and archive its evidence directory.
+3. Run the optional DoH edge command if DoH is part of the release surface.
+4. Compare the JSON summaries and Docker stats summary against the pass/fail table.
 5. Tune rate limits, cache TTL, Redis memory, and upstream timeouts based on results.
 
 ## 9. Threat Model And Security Review
 
 Goal: document what Safe Zone protects, what it does not protect, and how it can be attacked.
 
-- `[~]` Write a threat model using STRIDE or a similarly simple structure. Initial draft now exists at `docs/security/threat-model.md`; review and blocker closure still pending.
-- `[ ]` Cover public edge, DoH/DoT, admin dashboard, auth/session, Redis, SQLite, feed ingestion, AI providers, backup storage, and deployment secrets.
-- `[ ]` Add abuse cases: malicious feed input, admin key leakage, upstream DoH failure, DNS amplification attempts, stale feeds, false positives, and SSRF-like enrichment risks.
-- `[ ]` Add mitigations and explicit accepted risks.
+- `[x]` Write a threat model using STRIDE or a similarly simple structure in `docs/security/threat-model.md`.
+- `[x]` Cover public edge, DoH/DoT, admin dashboard, auth/session, Redis, SQLite, feed ingestion, AI providers, backup storage, and deployment secrets.
+- `[x]` Add abuse cases: malicious feed input, admin key leakage, upstream DoH failure, DNS amplification attempts, stale feeds, false positives, and SSRF-like enrichment risks.
+- `[x]` Add mitigations and explicit accepted risks.
 - `[ ]` Review the model before production release.
 
 Steps:
@@ -218,10 +262,11 @@ Goal: make the product operationally useful, not just technically deployable.
 - `[x]` Admin dashboard exists with analysis, telemetry, overrides, system status, agent panel, and client/group controls.
 - `[x]` Agent workflow exists for audit, feed sync, alerting, and whitelist update.
 - `[x]` Dashboard and agent task checklists in `docs/specs/` were reviewed; remaining open items are manual QA or environment smoke checks, not stale implementation tasks.
-- `[ ]` Add manual QA checklist for dashboard workflows on desktop and mobile.
+- `[x]` Add manual QA checklist for dashboard workflows on desktop and mobile.
 - `[ ]` Add release notes or changelog process.
-- `[ ]` Add operator onboarding guide: first login, first feed sync, first override, first backup, first restore.
-- `[ ]` Add false-positive and incident review workflow.
+- `[x]` Add operator onboarding guide: first login, first feed sync, first override, first backup, first restore.
+- `[x]` Add false-positive and incident review workflow.
+- `[x]` Add a simple operator review flow in `core-api` to move false positives from blocked to allow override with a documented review reason.
 - `[ ]` Add URL/path analysis if project scope expands beyond domain-level analysis.
 
 Steps:
@@ -262,14 +307,14 @@ Steps:
 Goal: go beyond single-node MVP into a polished, resilient service.
 
 - `[ ]` Multi-node architecture decision: stay single VPS, split DNS/core/Redis, or add HA.
-- `[ ]` External uptime monitoring.
-- `[ ]` Dedicated dashboards for latency, error rate, cache hit rate, feed freshness, and block events.
-- `[ ]` Automated certificate monitoring for both HTTPS and DoT.
-- `[ ]` Regular disaster recovery drills.
-- `[ ]` Security review before major releases.
-- `[ ]` Capacity plan for 10x current traffic.
-- `[ ]` Data retention and privacy policy for telemetry.
-- `[ ]` Operator handover docs.
+- `[x]` External uptime monitoring.
+- `[x]` Dedicated dashboards for latency, error rate, cache hit rate, feed freshness, and block events.
+- `[x]` Automated certificate monitoring for both HTTPS and DoT.
+- `[x]` Regular disaster recovery drills.
+- `[x]` Security review before major releases.
+- `[x]` Capacity plan for 10x current traffic.
+- `[x]` Data retention and privacy policy for telemetry.
+- `[x]` Operator handover docs.
 
 Steps:
 
