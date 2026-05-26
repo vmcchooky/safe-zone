@@ -95,6 +95,35 @@ func TestAnalyzeVietnamPublicServiceOfficialGovDomains(t *testing.T) {
 	}
 }
 
+func TestNormalizeDomain(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+		wantErr  bool
+	}{
+		{"https://ebank.tpb.vn/retail/vX/", "ebank.tpb.vn", false},
+		{"https://ebank.tpb.vn", "ebank.tpb.vn", false},
+		{"ebank.tpb.vn/retail/vX/", "ebank.tpb.vn", false},
+		{"ebank.tpb.vn", "ebank.tpb.vn", false},
+		{"http://Google.com/search?q=test", "google.com", false},
+		{"google.com:80/path", "google.com", false},
+		{"", "", true},
+		{"/starting-with-slash", "", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := NormalizeDomain(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("NormalizeDomain(%q) error = %v; wantErr %v", tt.input, err, tt.wantErr)
+			}
+			if !tt.wantErr && got != tt.expected {
+				t.Errorf("NormalizeDomain(%q) = %q; want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
 func containsReason(reasons []string, needle string) bool {
 	for _, reason := range reasons {
 		if reason == needle {

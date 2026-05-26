@@ -263,6 +263,11 @@ func NormalizeDomain(input string) (string, error) {
 		return "", errInvalidDomain("domain is empty")
 	}
 
+	// Support URLs without scheme but containing a path (e.g., ebank.tpb.vn/retail/vx/)
+	if strings.Contains(value, "/") && !strings.Contains(value, "://") && !strings.HasPrefix(value, "/") {
+		value = "http://" + value
+	}
+
 	if strings.Contains(value, "://") {
 		parsed, err := url.Parse(value)
 		if err != nil || parsed.Hostname() == "" {

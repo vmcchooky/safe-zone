@@ -278,6 +278,21 @@ func minFloat(a, b, c float64) float64 {
 	return c
 }
 
+// isTrustedBrandRoot checks if the root domain belongs to any official or alternative domains of trusted brands.
+func isTrustedBrandRoot(rootDomain string) bool {
+	for _, brand := range TrustedBrands {
+		if rootDomain == brand.OfficialDomain {
+			return true
+		}
+		for _, alt := range brand.AltDomains {
+			if rootDomain == alt {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // CheckBrandSpoofing analyzes a domain to detect typosquatting, brand keyword mentions, or subdomain abuse.
 // Trả về: (isSpoof, reason, penaltyScore)
 func CheckBrandSpoofing(domain string, brandSpoofingScore int) (bool, string, int) {
@@ -296,6 +311,13 @@ func CheckBrandSpoofing(domain string, brandSpoofingScore int) (bool, string, in
 	if isVietnamGovernmentRoot(rootDomain) {
 		return false, "", 0
 	}
+
+	// If the root domain belongs to a trusted brand, subdomains under it are owned by that brand
+	// and are exempt from spoofing checks of other brands.
+	if isTrustedBrandRoot(rootDomain) {
+		return false, "", 0
+	}
+
 	labels := strings.Split(domain, ".")
 
 	rootParts := strings.Split(rootDomain, ".")

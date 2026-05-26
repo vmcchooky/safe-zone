@@ -69,7 +69,7 @@ var privacyKeywords = []string{
 // Lookup queries WHOIS for the registered domain and returns a scored Result.
 // Returns a zero-score Result on any error (fail-open).
 func Lookup(ctx context.Context, domain string) Result {
-	registered := registeredDomain(domain)
+	registered := RegisteredDomain(domain)
 	if registered == "" {
 		return Result{Reasons: []string{}}
 	}
@@ -224,9 +224,9 @@ var secondLevelSuffixes = map[string]bool{
 	"me":   true,
 }
 
-// registeredDomain extracts the apex/registered domain from a full FQDN.
+// RegisteredDomain extracts the apex/registered domain from a full FQDN.
 // e.g. "mail.example.com" → "example.com", "vietcombank.com.vn" → "vietcombank.com.vn".
-func registeredDomain(domain string) string {
+func RegisteredDomain(domain string) string {
 	domain = strings.ToLower(strings.TrimSuffix(domain, "."))
 	parts := strings.Split(domain, ".")
 	if len(parts) < 2 {
@@ -262,7 +262,7 @@ func ParseAndScoreForTest(raw string) Result {
 	return parseAndScore(raw)
 }
 
-// RegisteredDomainForTest exposes registeredDomain for testing.
+// RegisteredDomainForTest exposes RegisteredDomain for testing.
 func RegisteredDomainForTest(domain string) string {
-	return registeredDomain(domain)
+	return RegisteredDomain(domain)
 }

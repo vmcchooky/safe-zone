@@ -130,6 +130,7 @@ func TestCheckBrandSpoofing(t *testing.T) {
 		{"bocongan.gov.vn", false, "", 0},
 		{"vietcombank.com.vn", false, "", 0},
 		{"support.vietcombank.com.vn", false, "", 0},
+		{"ebank.tpb.vn", false, "", 0},
 	}
 
 	for _, tc := range tests {

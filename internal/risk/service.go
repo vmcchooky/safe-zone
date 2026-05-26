@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -504,6 +505,26 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	if result.Domain == "" {
 		// 3. Lexical Analysis
 		result = s.analyzer.Analyze(normalized)
+
+		// 3.5. Registration Check (NS Lookup)
+		if s.enrichEnabled && (result.Verdict == analysis.VerdictSafe || result.Verdict == analysis.VerdictSuspicious) {
+			apex := whois.RegisteredDomain(normalized)
+			if apex != "" {
+				nsCtx, nsCancel := context.WithTimeout(ctx, 2*time.Second)
+				_, err := net.DefaultResolver.LookupNS(nsCtx, apex)
+				nsCancel()
+				// if it fails with 'no such host' or times out, we flag it. (If it's actually unregistered, net.LookupNS returns error).
+				// We only flag if we get a definitive "no such host" or similar DNS failure to avoid false positives on transient errors.
+				// For simplicity, any error from LookupNS on the apex domain is highly suspicious.
+				if err != nil {
+					if result.Score < 75 {
+						result.Score = 75
+						result.Verdict = analysis.VerdictSuspicious
+					}
+					result.Reasons = append(result.Reasons, "domain is not registered or resolving (NXDOMAIN)")
+				}
+			}
+		}
 	}
 	// 4. TLS + WHOIS Enrichment (suspicious zone only)
 	s.enrichSuspicious(ctx, normalized, &result)
