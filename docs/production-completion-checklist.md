@@ -197,7 +197,7 @@ Steps:
 
 Goal: document what Safe Zone protects, what it does not protect, and how it can be attacked.
 
-- `[ ]` Write a threat model using STRIDE or a similarly simple structure.
+- `[~]` Write a threat model using STRIDE or a similarly simple structure. Initial draft now exists at `docs/security/threat-model.md`; review and blocker closure still pending.
 - `[ ]` Cover public edge, DoH/DoT, admin dashboard, auth/session, Redis, SQLite, feed ingestion, AI providers, backup storage, and deployment secrets.
 - `[ ]` Add abuse cases: malicious feed input, admin key leakage, upstream DoH failure, DNS amplification attempts, stale feeds, false positives, and SSRF-like enrichment risks.
 - `[ ]` Add mitigations and explicit accepted risks.
@@ -237,14 +237,14 @@ Goal: make deployments repeatable and reversible.
 
 - `[x]` Compose deploy helper exists.
 - `[x]` Health checks exist.
-- `[~]` Production deploy runbook exists, but release gating is not formalized.
+- `[x]` Production deploy and release-gate runbooks exist for both supported edge modes.
 - `[x]` Production ports validation check exists through `scripts/check-production-ports.sh`.
 - `[x]` Public edge smoke check exists through `scripts/public-edge-smoke.sh`.
-- `[ ]` Add staging environment procedure.
-- `[ ]` Add pre-release checklist.
-- `[ ]` Add rollback procedure.
-- `[ ]` Pin image tags or define build provenance for releases.
-- `[ ]` Add version endpoint/build metadata.
+- `[x]` Add staging environment procedure.
+- `[x]` Add pre-release checklist.
+- `[x]` Add rollback procedure.
+- `[x]` Pin image tags or define build provenance for releases.
+- `[x]` Add version endpoint/build metadata.
 - `[x]` Add production smoke test script.
 
 Steps:
@@ -305,5 +305,5 @@ Safe Zone can be called production MVP when all of these are true:
 - `[x]` Structured logs and request IDs exist.
 - `[x]` Alerts exist for the main failure modes.
 - `[ ]` Performance target is proven on the target VPS.
-- `[ ]` Threat model is written and release-blocking risks are addressed.
+- `[~]` Threat model draft exists and release-blocking risks are identified; blocker closure is still required.
 - `[~]` Staging deploy and production smoke tests are scripted; pass records from the target environment are still needed.

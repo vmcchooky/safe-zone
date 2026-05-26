@@ -25,6 +25,7 @@ import (
 
 	"github.com/miekg/dns"
 
+	"safe-zone/internal/buildinfo"
 	"safe-zone/internal/config"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
@@ -131,6 +132,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", resolver.statusHandler)
 	mux.HandleFunc("/healthz", healthHandler("dns-resolver"))
+	mux.HandleFunc("/v1/version", resolver.versionHandler)
 	mux.HandleFunc("/metrics", resolver.metricsHandler)
 	mux.HandleFunc("/v1/policy", resolver.policyHandler)
 	mux.HandleFunc("/dns-query", resolver.dohHandler)
@@ -319,6 +321,7 @@ func (a *app) statusHandler(w http.ResponseWriter, r *http.Request) {
 		"endpoints": []string{
 			"/",
 			"/healthz",
+			"/v1/version",
 			"/v1/policy?domain=example.com",
 			"/dns-query",
 		},
@@ -341,6 +344,15 @@ func (a *app) metricsHandler(w http.ResponseWriter, r *http.Request) {
 		},
 		"time": time.Now().UTC().Format(time.RFC3339Nano),
 	})
+}
+
+func (a *app) versionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, buildinfo.Snapshot("dns-resolver", a.deploymentTier))
 }
 
 func (a *app) policyHandler(w http.ResponseWriter, r *http.Request) {

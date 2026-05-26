@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"safe-zone/internal/buildinfo"
 	"safe-zone/internal/config"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/feed"
@@ -29,6 +30,8 @@ type syncReport struct {
 }
 
 func main() {
+	buildinfo.Link()
+
 	source := flag.String("source", config.String("SAFE_ZONE_THREAT_FEED_SOURCE", ""), "local file path or HTTP(S) feed URL")
 	redisAddr := flag.String("redis-addr", config.String("SAFE_ZONE_REDIS_ADDR", ""), "Redis address")
 	redisPassword := flag.String("redis-password", config.SecretString("SAFE_ZONE_REDIS_PASSWORD", ""), "Redis password")

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"safe-zone/internal/auth"
+	"safe-zone/internal/buildinfo"
 	"safe-zone/internal/config"
 	"safe-zone/internal/observability"
 	"safe-zone/internal/osint"
@@ -237,6 +238,60 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	}
 }
 
+func TestVersionEndpointReportsBuildMetadata(t *testing.T) {
+	restore := overrideBuildInfo("1.3.0", "abc123def", "2026-05-26T12:00:00Z", "safe-zone-core-api:1.3.0-abc123def", "https://github.com/quorix/safe-zone")
+	defer restore()
+
+	app := &app{deploymentTier: "shared-vps"}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
+	app.versionHandler(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+
+	var payload buildinfo.Metadata
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+
+	if payload.Service != "core-api" {
+		t.Fatalf("expected core-api service, got %q", payload.Service)
+	}
+	if payload.Version != "1.3.0" {
+		t.Fatalf("expected version 1.3.0, got %q", payload.Version)
+	}
+	if payload.GitCommit != "abc123def" {
+		t.Fatalf("expected git commit abc123def, got %q", payload.GitCommit)
+	}
+	if payload.BuildTime != "2026-05-26T12:00:00Z" {
+		t.Fatalf("expected build time, got %q", payload.BuildTime)
+	}
+	if payload.ImageTag != "safe-zone-core-api:1.3.0-abc123def" {
+		t.Fatalf("expected image tag, got %q", payload.ImageTag)
+	}
+	if payload.SourceRepo != "https://github.com/quorix/safe-zone" {
+		t.Fatalf("expected source repo, got %q", payload.SourceRepo)
+	}
+	if payload.DeploymentTier != "shared-vps" {
+		t.Fatalf("expected deployment tier shared-vps, got %q", payload.DeploymentTier)
+	}
+}
+
+func TestVersionEndpointRejectsNonGet(t *testing.T) {
+	app := &app{deploymentTier: "budget-vps"}
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/version", nil)
+	app.versionHandler(recorder, request)
+
+	if recorder.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", recorder.Code)
+	}
+}
+
 func TestLogRequestsSkipsMetricsAfterRecoveredPanic(t *testing.T) {
 	metrics := observability.NewRegistry()
 	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -259,6 +314,28 @@ func TestLogRequestsSkipsMetricsAfterRecoveredPanic(t *testing.T) {
 	}
 	if summary.Count != 1 {
 		t.Fatalf("expected panic request metric to be observed once, got %d", summary.Count)
+	}
+}
+
+func overrideBuildInfo(version, gitCommit, buildTime, imageTag, sourceRepo string) func() {
+	prevVersion := buildinfo.Version
+	prevGitCommit := buildinfo.GitCommit
+	prevBuildTime := buildinfo.BuildTime
+	prevImageTag := buildinfo.ImageTag
+	prevSourceRepo := buildinfo.SourceRepo
+
+	buildinfo.Version = version
+	buildinfo.GitCommit = gitCommit
+	buildinfo.BuildTime = buildTime
+	buildinfo.ImageTag = imageTag
+	buildinfo.SourceRepo = sourceRepo
+
+	return func() {
+		buildinfo.Version = prevVersion
+		buildinfo.GitCommit = prevGitCommit
+		buildinfo.BuildTime = prevBuildTime
+		buildinfo.ImageTag = prevImageTag
+		buildinfo.SourceRepo = prevSourceRepo
 	}
 }
 

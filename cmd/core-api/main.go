@@ -16,6 +16,7 @@ import (
 
 	"safe-zone/internal/agent"
 	"safe-zone/internal/auth"
+	"safe-zone/internal/buildinfo"
 	"safe-zone/internal/config"
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
@@ -255,7 +256,7 @@ func main() {
 	mux.HandleFunc("/readyz", healthHandler("core-api"))
 	mux.HandleFunc("/block", api.blockPageHandler)
 	mux.HandleFunc("/block/report", api.blockReportHandler)
-	mux.HandleFunc("/v1/version", versionHandler)
+	mux.HandleFunc("/v1/version", api.versionHandler)
 	mux.HandleFunc("/metrics", api.metricsHandler)
 	mux.HandleFunc("/v1/analyze", api.analyzeHandler)
 	mux.HandleFunc("/v1/osint/evidence", api.requireAuthFunc(api.osintEvidenceHandler))
@@ -368,11 +369,13 @@ func (a *app) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func versionHandler(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]string{
-		"service": "core-api",
-		"version": "0.1.0",
-	})
+func (a *app) versionHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, buildinfo.Snapshot("core-api", a.deploymentTier))
 }
 
 func (a *app) analyzeHandler(w http.ResponseWriter, r *http.Request) {

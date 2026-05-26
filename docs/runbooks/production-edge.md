@@ -14,10 +14,11 @@ Run Safe Zone on a single VPS with public HTTPS for the dashboard/API and DoH, p
 ## Deploy
 
 ```sh
-cp .env.example .env
+cp ops/vps-edge/env.production-edge.production.example .env
 vi .env
 mkdir -p ops/certs/dot
 mkdir -p ops/secrets
+scripts/release-preflight.sh --edge-mode production-edge --version 0.1.0
 scripts/safe-zone.sh deploy
 ```
 
@@ -50,6 +51,7 @@ Production deploy now uses:
 - `docker-compose.production.yml` for public edge bindings
 - `127.0.0.1:8080` and `127.0.0.1:8081` for host-local health/debug only
 - `80`, `443`, and `853` as the intended public surface
+- `docs/runbooks/release-gate.md` as the formal staging-to-production release flow
 
 ## Verify
 

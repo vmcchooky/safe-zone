@@ -1,18 +1,41 @@
 FROM golang:1.26.3-alpine AS build
 
 ARG SERVICE=core-api
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG IMAGE_TAG=unreleased
+ARG SOURCE_REPO=unknown
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/service ./cmd/${SERVICE}
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+  -ldflags="-s -w -X safe-zone/internal/buildinfo.Version=${VERSION} -X safe-zone/internal/buildinfo.GitCommit=${GIT_COMMIT} -X safe-zone/internal/buildinfo.BuildTime=${BUILD_TIME} -X safe-zone/internal/buildinfo.ImageTag=${IMAGE_TAG} -X safe-zone/internal/buildinfo.SourceRepo=${SOURCE_REPO}" \
+  -o /out/service ./cmd/${SERVICE}
 
 FROM alpine:3.20
 
+ARG SERVICE=core-api
+ARG VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG IMAGE_TAG=unreleased
+ARG SOURCE_REPO=unknown
+
 WORKDIR /app
 RUN addgroup -S app && adduser -S app -G app
+
+LABEL org.opencontainers.image.title="safe-zone-${SERVICE}" \
+  org.opencontainers.image.version="${VERSION}" \
+  org.opencontainers.image.revision="${GIT_COMMIT}" \
+  org.opencontainers.image.created="${BUILD_TIME}" \
+  org.opencontainers.image.source="${SOURCE_REPO}" \
+  org.opencontainers.image.vendor="Quorix" \
+  safe-zone.image.tag="${IMAGE_TAG}" \
+  safe-zone.service="${SERVICE}"
 
 COPY --from=build --chown=app:app /out/service /app/service
 

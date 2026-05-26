@@ -6,8 +6,9 @@ Use this path when Safe Zone runs behind the host-level Caddy edge for all Quori
 
 ```sh
 cd /opt/safe-zone
-cp ops/vps-edge/env.vps-edge.example .env
+cp ops/vps-edge/env.shared-host-edge.production.example .env
 nano .env
+scripts/release-preflight.sh --edge-mode shared-host-edge --version 0.1.0
 
 docker compose \
   -f docker-compose.yml \
@@ -71,3 +72,4 @@ sudo ufw allow 853/tcp
 - Do not start the internal Safe Zone `caddy` service on the shared VPS.
 - Keep `SAFE_ZONE_BLOCK_PAGE_IP` set to the VPS public IPv4 in production.
 - Keep `SAFE_ZONE_AI_PROVIDER=none` for the first deploy; enable Gemini only after the base stack is stable.
+- Use `docs/runbooks/release-gate.md` for the formal staging and production release flow.
