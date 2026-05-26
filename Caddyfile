@@ -1,0 +1,30 @@
+{$SAFE_ZONE_PUBLIC_HOST:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+	}
+
+	@doh path /dns-query
+	reverse_proxy @doh dns-resolver:8081
+
+	reverse_proxy core-api:8080
+}
+
+http:// {
+	@report path /block/report
+	reverse_proxy @report core-api:8080 {
+		header_up X-Blocked-Domain {http.request.host}
+		header_up X-Original-Path {uri}
+	}
+
+	handle {
+		rewrite * /block
+		reverse_proxy core-api:8080 {
+			header_up X-Blocked-Domain {http.request.host}
+			header_up X-Original-Path {uri}
+		}
+	}
+}

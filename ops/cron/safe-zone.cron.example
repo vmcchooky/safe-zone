@@ -1,0 +1,8 @@
+# Safe Zone maintenance schedule for a Linux VPS with pwsh installed.
+# Replace /opt/safe-zone with the actual checkout path on the deploy host.
+
+# Take a Redis snapshot every day at 02:00 UTC.
+0 2 * * * cd /opt/safe-zone && pwsh ./scripts/safe-zone.ps1 backup >> ./tmp/backup.log 2>&1
+
+# Prune old backups and tmp logs every day at 02:30 UTC.
+30 2 * * * cd /opt/safe-zone && pwsh ./scripts/safe-zone.ps1 prune -Keep 7 -LogRetentionDays 7 >> ./tmp/maintenance.log 2>&1

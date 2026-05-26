@@ -1,0 +1,12 @@
+.git
+.github
+.vscode
+backups
+data
+logs
+tmp
+*.exe
+*.test
+*.out
+docs/**/*.pdf
+safe-zone-*.tar

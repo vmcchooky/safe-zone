@@ -1,0 +1,241 @@
+openapi: 3.1.0
+info:
+  title: Safe Zone API
+  version: 0.1.0
+  description: Local-first anti-phishing API for domain analysis, policy checks, telemetry, and administration.
+servers:
+  - url: https://{host}
+    variables:
+      host:
+        default: safezone.example.com
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: Service is healthy
+  /v1/analyze:
+    get:
+      summary: Analyze a domain
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+    post:
+      summary: Analyze a domain from JSON body
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [domain]
+              properties:
+                domain:
+                  type: string
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Analysis"
+  /v1/analysis/recent:
+    get:
+      summary: List recent analysis results
+      responses:
+        "200":
+          description: Recent analysis entries
+  /v1/overrides:
+    get:
+      summary: List global overrides
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [allow, block]
+      responses:
+        "200":
+          description: Override list
+    post:
+      summary: Create or update a global override
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OverrideRequest"
+      responses:
+        "200":
+          description: Override saved
+    delete:
+      summary: Delete a global override
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Override deleted
+  /v1/telemetry/recent:
+    get:
+      summary: List telemetry entries
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Telemetry entries
+  /v1/telemetry/stats:
+    get:
+      summary: Get telemetry stats
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: period
+          in: query
+          schema:
+            type: string
+            enum: [24h, 7d, 30d]
+      responses:
+        "200":
+          description: Telemetry stats
+  /v1/auth/login:
+    post:
+      summary: Login to dashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful
+  /v1/auth/logout:
+    post:
+      summary: Logout from dashboard
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Logout successful
+  /dns-query:
+    get:
+      summary: DNS-over-HTTPS query using RFC 8484 GET
+      parameters:
+        - name: dns
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: DNS wire-format response
+          content:
+            application/dns-message:
+              schema:
+                type: string
+                format: binary
+    post:
+      summary: DNS-over-HTTPS query using RFC 8484 POST
+      requestBody:
+        required: true
+        content:
+          application/dns-message:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: DNS wire-format response
+          content:
+            application/dns-message:
+              schema:
+                type: string
+                format: binary
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: admin_session
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      description: Use `Bearer <SAFE_ZONE_ADMIN_API_KEY>`.
+  schemas:
+    Analysis:
+      type: object
+      properties:
+        domain:
+          type: string
+        verdict:
+          type: string
+          enum: [INVALID, SAFE, SUSPICIOUS, MALICIOUS]
+        confidence:
+          type: number
+        score:
+          type: integer
+        reasons:
+          type: array
+          items:
+            type: string
+        category:
+          type: string
+        cache_hit:
+          type: boolean
+        analyzed_at:
+          type: string
+          format: date-time
+    OverrideRequest:
+      type: object
+      required: [domain, action]
+      properties:
+        domain:
+          type: string
+        action:
+          type: string
+          enum: [allow, block]
+        reason:
+          type: string

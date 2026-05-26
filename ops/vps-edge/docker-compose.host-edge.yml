@@ -1,0 +1,13 @@
+services:
+  caddy:
+    profiles: ["disabled-by-shared-vps-edge"]
+
+  core-api:
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  dns-resolver:
+    environment:
+      SAFE_ZONE_DNS_DOT_ENABLED: ${SAFE_ZONE_DNS_DOT_ENABLED:-false}
+    ports:
+      - "127.0.0.1:8081:8081"

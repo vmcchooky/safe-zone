@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Safe Zone — Admin Authentication</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/quorix.min.css">
+  <link rel="stylesheet" href="/assets/safe-zone.css">
+  <script src="/assets/quorix.min.js" defer></script>
+</head>
+<body class="login-page">
+
+  <div class="login-container">
+    <main class="login-card">
+      <div class="brand-header">
+        <span class="logo-icon">SR</span>
+        <h1 class="brand-title">SAFE ROAD</h1>
+        <h2 class="brand-subtitle">Admin Gateway</h2>
+      </div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input type="text" id="username" value="admin" required autocomplete="username">
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password" autofocus>
+        </div>
+
+        <button type="submit" id="btn-login">Sign In</button>
+      </form>
+
+      <div class="footer-note">
+        Protected by stateless HMAC secure sessions.
+      </div>
+    </main>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const btn = document.getElementById('btn-login');
+    const toast = document.getElementById('toast');
+    let toastTimer;
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
+    }
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+      btn.disabled = true;
+      btn.textContent = 'Authenticating...';
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+
+      try {
+        const res = await fetch('/v1/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          throw new Error(err.error || 'Authentication failed');
+        }
+
+        // Redirect to dashboard on successful login
+        window.location.reload();
+      } catch (err) {
+        showToast(err.message);
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+      }
+    });
+  </script>
+</body>
+</html>

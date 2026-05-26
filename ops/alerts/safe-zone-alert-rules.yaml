@@ -1,0 +1,48 @@
+version: 1
+metrics_format: json
+source_endpoints:
+  core_api_status: http://127.0.0.1:8080/
+  core_api_metrics: http://127.0.0.1:8080/metrics
+  dns_resolver_status: http://127.0.0.1:8081/
+  dns_resolver_metrics: http://127.0.0.1:8081/metrics
+
+rules:
+  - id: core-api-down
+    severity: critical
+    condition: core_api_status.http_status != 200 for 2m
+    action: page operator immediately
+
+  - id: dns-resolver-down
+    severity: critical
+    condition: dns_resolver_status.http_status != 200 for 2m
+    action: page operator immediately
+
+  - id: redis-unavailable
+    severity: warning
+    condition: core_api_status.json.redis.configured == true and core_api_status.json.redis.status != "ok" for 5m
+    action: investigate Redis health; Safe Zone is fail-open but cache/feed coverage is degraded
+
+  - id: threat-feed-stale
+    severity: critical
+    condition: core_api_status.json.feed_sync.configured == true and core_api_status.json.feed_sync.stale == true for 15m
+    action: run feed sync, inspect source reachability, and confirm last_success_at moved forward
+
+  - id: threat-feed-parser-drift
+    severity: warning
+    condition: any core_api_status.json.feed_sync.sources[*].parser_drift == true for 15m
+    action: inspect parser_drift_reason and confirm the upstream feed format did not change
+
+  - id: high-http-5xx-rate
+    severity: warning
+    condition: sum request_summary[* where status>=500].count increases by > 10 over 5m
+    action: inspect request logs with matching request IDs
+
+  - id: doh-upstream-failure
+    severity: critical
+    condition: dns_resolver_metrics.json.upstream_doh.failures_total increases by > 0 over 5m
+    action: verify SAFE_ZONE_UPSTREAM_DOH_URL reachability and upstream provider status
+
+  - id: high-doh-latency
+    severity: warning
+    condition: average request_summary["POST /dns-query 200"].total_duration_ms / count > 150 over 10m
+    action: inspect upstream latency, Redis, and TLS/WHOIS enrichment settings

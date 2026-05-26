@@ -1,0 +1,9 @@
+services:
+  core-api:
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  dns-resolver:
+    ports:
+      - "127.0.0.1:8081:8081"
+      - "127.0.0.1:${SAFE_ZONE_DNS_DOT_DEV_PUBLISHED_PORT:-1853}:${SAFE_ZONE_DNS_DOT_CONTAINER_PORT:-8533}"

@@ -1,0 +1,204 @@
+services:
+  caddy:
+    profiles: ["production-edge"]
+    image: caddy:2-alpine
+    env_file:
+      - .env
+    environment:
+      SAFE_ZONE_PUBLIC_HOST: ${SAFE_ZONE_PUBLIC_HOST:-localhost}
+      SAFE_ZONE_CADDY_EMAIL: ${SAFE_ZONE_CADDY_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - core-api
+      - dns-resolver
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: ${SAFE_ZONE_DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: "${SAFE_ZONE_DOCKER_LOG_MAX_FILE:-5}"
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory ${SAFE_ZONE_REDIS_MAXMEMORY:-256mb} --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: ${SAFE_ZONE_DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: "${SAFE_ZONE_DOCKER_LOG_MAX_FILE:-5}"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  core-api:
+    build:
+      context: .
+      args:
+        SERVICE: core-api
+    env_file:
+      - .env
+    environment:
+      SAFE_ZONE_HEALTHCHECK_PORT: "8080"
+      SAFE_ZONE_HEALTHCHECK_PATH: ${SAFE_ZONE_HEALTHCHECK_PATH:-/healthz}
+      SAFE_ZONE_CORE_API_ADDR: ${SAFE_ZONE_CORE_API_ADDR:-:8080}
+      SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
+      SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
+      SAFE_ZONE_REDIS_DB: ${SAFE_ZONE_REDIS_DB:-0}
+      SAFE_ZONE_REDIS_TIMEOUT_MS: ${SAFE_ZONE_REDIS_TIMEOUT_MS:-250}
+      SAFE_ZONE_THREAT_FEED_KEY: ${SAFE_ZONE_THREAT_FEED_KEY:-safe-zone:threat:feed}
+      SAFE_ZONE_CACHE_TTL_ALLOWED_SECONDS: ${SAFE_ZONE_CACHE_TTL_ALLOWED_SECONDS:-10800}
+      SAFE_ZONE_CACHE_TTL_SUSPICIOUS_SECONDS: ${SAFE_ZONE_CACHE_TTL_SUSPICIOUS_SECONDS:-3600}
+      SAFE_ZONE_CACHE_TTL_BLOCKED_SECONDS: ${SAFE_ZONE_CACHE_TTL_BLOCKED_SECONDS:-21600}
+      SAFE_ZONE_ENRICH_ENABLED: ${SAFE_ZONE_ENRICH_ENABLED:-true}
+      SAFE_ZONE_ENRICH_TIMEOUT_MS: ${SAFE_ZONE_ENRICH_TIMEOUT_MS:-3000}
+      SAFE_ZONE_OSINT_ENABLED: ${SAFE_ZONE_OSINT_ENABLED:-false}
+      SAFE_ZONE_OSINT_MODE: ${SAFE_ZONE_OSINT_MODE:-background_on_demand}
+      SAFE_ZONE_OSINT_TIMEOUT_MS: ${SAFE_ZONE_OSINT_TIMEOUT_MS:-2000}
+      SAFE_ZONE_OSINT_CACHE_TTL_SECONDS: ${SAFE_ZONE_OSINT_CACHE_TTL_SECONDS:-21600}
+      SAFE_ZONE_OSINT_TRUSTED_DOMAINS: ${SAFE_ZONE_OSINT_TRUSTED_DOMAINS:-gov.vn,bocongan.gov.vn,mps.gov.vn,baochinhphu.vn,thanhnien.vn,tuoitre.vn,vnexpress.net,vietnamnet.vn,nhandan.vn,vtv.vn,vov.vn}
+      SAFE_ZONE_OSINT_SOURCES: ${SAFE_ZONE_OSINT_SOURCES:-}
+      SAFE_ZONE_DASHBOARD_RECENT_LIMIT: ${SAFE_ZONE_DASHBOARD_RECENT_LIMIT:-25}
+      SAFE_ZONE_SQLITE_PATH: ${SAFE_ZONE_SQLITE_PATH:-/app/data/safe-zone.db}
+      SAFE_ZONE_TELEMETRY_RETENTION_DAYS: ${SAFE_ZONE_TELEMETRY_RETENTION_DAYS:-30}
+      SAFE_ZONE_RATELIMIT_ENABLED: ${SAFE_ZONE_RATELIMIT_ENABLED:-true}
+      SAFE_ZONE_RATELIMIT_ANALYZE_RPM: ${SAFE_ZONE_RATELIMIT_ANALYZE_RPM:-10}
+      SAFE_ZONE_RATELIMIT_ANALYZE_BURST: ${SAFE_ZONE_RATELIMIT_ANALYZE_BURST:-5}
+      SAFE_ZONE_RATELIMIT_OVERRIDE_RPM: ${SAFE_ZONE_RATELIMIT_OVERRIDE_RPM:-20}
+      SAFE_ZONE_RATELIMIT_OVERRIDE_BURST: ${SAFE_ZONE_RATELIMIT_OVERRIDE_BURST:-5}
+      SAFE_ZONE_RATELIMIT_TELEMETRY_RPM: ${SAFE_ZONE_RATELIMIT_TELEMETRY_RPM:-30}
+      SAFE_ZONE_RATELIMIT_TELEMETRY_BURST: ${SAFE_ZONE_RATELIMIT_TELEMETRY_BURST:-10}
+      SAFE_ZONE_RATELIMIT_DEFAULT_RPM: ${SAFE_ZONE_RATELIMIT_DEFAULT_RPM:-60}
+      SAFE_ZONE_RATELIMIT_DEFAULT_BURST: ${SAFE_ZONE_RATELIMIT_DEFAULT_BURST:-15}
+      SAFE_ZONE_AGENT_ENABLED: ${SAFE_ZONE_AGENT_ENABLED:-false}
+      SAFE_ZONE_AGENT_OSINT_INTERVAL_SECONDS: ${SAFE_ZONE_AGENT_OSINT_INTERVAL_SECONDS:-3600}
+      SAFE_ZONE_AGENT_OSINT_TIMEOUT_SECONDS: ${SAFE_ZONE_AGENT_OSINT_TIMEOUT_SECONDS:-120}
+      SAFE_ZONE_AGENT_OSINT_MAX_PER_CYCLE: ${SAFE_ZONE_AGENT_OSINT_MAX_PER_CYCLE:-50}
+      SAFE_ZONE_AGENT_OSINT_LOOKBACK_SECONDS: ${SAFE_ZONE_AGENT_OSINT_LOOKBACK_SECONDS:-86400}
+    volumes:
+      - app-data:/app/data
+      - ./ops/secrets:/app/ops/secrets:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: ${SAFE_ZONE_DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: "${SAFE_ZONE_DOCKER_LOG_MAX_FILE:-5}"
+
+  dns-resolver:
+    build:
+      context: .
+      args:
+        SERVICE: dns-resolver
+    env_file:
+      - .env
+    environment:
+      SAFE_ZONE_HEALTHCHECK_PORT: "8081"
+      SAFE_ZONE_HEALTHCHECK_PATH: ${SAFE_ZONE_HEALTHCHECK_PATH:-/healthz}
+      SAFE_ZONE_DNS_RESOLVER_ADDR: ${SAFE_ZONE_DNS_RESOLVER_ADDR:-:8081}
+      SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
+      SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
+      SAFE_ZONE_REDIS_DB: ${SAFE_ZONE_REDIS_DB:-0}
+      SAFE_ZONE_REDIS_TIMEOUT_MS: ${SAFE_ZONE_REDIS_TIMEOUT_MS:-250}
+      SAFE_ZONE_THREAT_FEED_KEY: ${SAFE_ZONE_THREAT_FEED_KEY:-safe-zone:threat:feed}
+      SAFE_ZONE_CACHE_TTL_ALLOWED_SECONDS: ${SAFE_ZONE_CACHE_TTL_ALLOWED_SECONDS:-10800}
+      SAFE_ZONE_CACHE_TTL_SUSPICIOUS_SECONDS: ${SAFE_ZONE_CACHE_TTL_SUSPICIOUS_SECONDS:-3600}
+      SAFE_ZONE_CACHE_TTL_BLOCKED_SECONDS: ${SAFE_ZONE_CACHE_TTL_BLOCKED_SECONDS:-21600}
+      SAFE_ZONE_ENRICH_ENABLED: ${SAFE_ZONE_ENRICH_ENABLED:-true}
+      SAFE_ZONE_ENRICH_TIMEOUT_MS: ${SAFE_ZONE_ENRICH_TIMEOUT_MS:-3000}
+      SAFE_ZONE_UPSTREAM_DOH_URL: ${SAFE_ZONE_UPSTREAM_DOH_URL:-https://cloudflare-dns.com/dns-query}
+      SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS: ${SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS:-3000}
+      SAFE_ZONE_BLOCK_PAGE_IP: ${SAFE_ZONE_BLOCK_PAGE_IP:-127.0.0.1}
+      SAFE_ZONE_DNS_BLOCK_TTL_SECONDS: ${SAFE_ZONE_DNS_BLOCK_TTL_SECONDS:-60}
+      SAFE_ZONE_SQLITE_PATH: ${SAFE_ZONE_SQLITE_PATH:-/app/data/safe-zone.db}
+      SAFE_ZONE_TELEMETRY_RETENTION_DAYS: ${SAFE_ZONE_TELEMETRY_RETENTION_DAYS:-30}
+      SAFE_ZONE_RATELIMIT_ENABLED: ${SAFE_ZONE_RATELIMIT_ENABLED:-true}
+      SAFE_ZONE_RATELIMIT_DOH_RPM: ${SAFE_ZONE_RATELIMIT_DOH_RPM:-100}
+      SAFE_ZONE_RATELIMIT_DOH_BURST: ${SAFE_ZONE_RATELIMIT_DOH_BURST:-20}
+      SAFE_ZONE_RATELIMIT_DEFAULT_RPM: ${SAFE_ZONE_RATELIMIT_DEFAULT_RPM:-60}
+      SAFE_ZONE_RATELIMIT_DEFAULT_BURST: ${SAFE_ZONE_RATELIMIT_DEFAULT_BURST:-15}
+      SAFE_ZONE_DNS_DOT_ENABLED: ${SAFE_ZONE_DNS_DOT_ENABLED:-true}
+      SAFE_ZONE_DNS_DOT_ADDR: :${SAFE_ZONE_DNS_DOT_CONTAINER_PORT:-8533}
+      SAFE_ZONE_DNS_DOT_CERT_FILE: ${SAFE_ZONE_DNS_DOT_CERT_FILE:-}
+      SAFE_ZONE_DNS_DOT_KEY_FILE: ${SAFE_ZONE_DNS_DOT_KEY_FILE:-}
+      SAFE_ZONE_RATELIMIT_DOT_RPM: ${SAFE_ZONE_RATELIMIT_DOT_RPM:-100}
+      SAFE_ZONE_RATELIMIT_DOT_BURST: ${SAFE_ZONE_RATELIMIT_DOT_BURST:-20}
+    volumes:
+      - app-data:/app/data
+      - ./ops/secrets:/app/ops/secrets:ro
+    depends_on:
+      - redis
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: ${SAFE_ZONE_DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: "${SAFE_ZONE_DOCKER_LOG_MAX_FILE:-5}"
+
+  feed-syncd:
+    profiles: ["feed-sync"]
+    build:
+      context: .
+      args:
+        SERVICE: feed-syncd
+    env_file:
+      - .env
+    environment:
+      SAFE_ZONE_THREAT_FEED_SOURCE: ${SAFE_ZONE_THREAT_FEED_SOURCE:-}
+      SAFE_ZONE_THREAT_FEED_KEY: ${SAFE_ZONE_THREAT_FEED_KEY:-safe-zone:threat:feed}
+      SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
+      SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
+      SAFE_ZONE_REDIS_DB: ${SAFE_ZONE_REDIS_DB:-0}
+      SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS: ${SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS:-86400}
+      SAFE_ZONE_FEED_SYNC_TIMEOUT_MS: ${SAFE_ZONE_FEED_SYNC_TIMEOUT_MS:-30000}
+    depends_on:
+      - redis
+    volumes:
+      - ./ops/secrets:/app/ops/secrets:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: ${SAFE_ZONE_DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: "${SAFE_ZONE_DOCKER_LOG_MAX_FILE:-5}"
+
+  feed-sync:
+    profiles: ["feed-sync"]
+    build:
+      context: .
+      args:
+        SERVICE: feed-sync
+    env_file:
+      - .env
+    environment:
+      SAFE_ZONE_THREAT_FEED_SOURCE: ${SAFE_ZONE_THREAT_FEED_SOURCE:-}
+      SAFE_ZONE_THREAT_FEED_KEY: ${SAFE_ZONE_THREAT_FEED_KEY:-safe-zone:threat:feed}
+      SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
+      SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
+      SAFE_ZONE_REDIS_DB: ${SAFE_ZONE_REDIS_DB:-0}
+      SAFE_ZONE_FEED_SYNC_TIMEOUT_MS: ${SAFE_ZONE_FEED_SYNC_TIMEOUT_MS:-30000}
+    depends_on:
+      - redis
+    volumes:
+      - ./ops/secrets:/app/ops/secrets:ro
+    restart: "no"
+    logging:
+      driver: json-file
+      options:
+        max-size: ${SAFE_ZONE_DOCKER_LOG_MAX_SIZE:-10m}
+        max-file: "${SAFE_ZONE_DOCKER_LOG_MAX_FILE:-5}"
+
+volumes:
+  redis-data:
+  app-data:
+  caddy-data:
+  caddy-config:

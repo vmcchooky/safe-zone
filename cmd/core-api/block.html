@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Access Blocked | Safe Zone</title>
+  <link rel="stylesheet" href="/assets/quorix.min.css">
+  <link rel="stylesheet" href="/assets/safe-zone.css">
+  <script src="/assets/quorix.min.js" defer></script>
+</head>
+<body class="block-page">
+  <main class="shell block-shell">
+    <section class="hero block-hero">
+      <div class="eyebrow danger-soft">Safe Zone Block Page</div>
+      <h1>This site was blocked.</h1>
+      <p class="lede">Safe Zone redirected this request because the requested destination matched a local protection policy. This page is intentionally lightweight so it can load even when the original destination is sinkholed to the block-page IP.</p>
+    </section>
+
+    <section class="grid block-grid">
+      <div class="main block-main">
+        {{if .ReportReceived}}
+        <div class="card success">
+          Your false-positive report was received. An operator can now review it with request ID <code>{{.RequestID}}</code>.
+        </div>
+        {{end}}
+
+        <div class="card">
+          <h2>What was blocked</h2>
+          <div class="fact">
+            <span>Blocked domain</span>
+            <strong>{{.Domain}}</strong>
+          </div>
+          <div class="fact">
+            <span>Requested path</span>
+            <strong>{{.RequestedPath}}</strong>
+          </div>
+          <div class="fact">
+            <span>Category</span>
+            <strong>{{.Category}}</strong>
+          </div>
+          <p class="note">{{.Reason}}</p>
+          <div class="meta">
+            <span>Request ID: {{.RequestID}}</span>
+            <span>Review path: /block/report</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Think this is a false positive?</h2>
+          <p class="note">Send a short review request. The report is stored locally for an operator to investigate.</p>
+          <form action="/block/report" method="post">
+            <input type="hidden" name="domain" value="{{.Domain}}">
+            <input type="hidden" name="requested_path" value="{{.RequestedPath}}">
+
+            <label>
+              Your contact (optional)
+              <input type="text" name="contact" maxlength="200" placeholder="email, ticket number, or team name">
+            </label>
+
+            <label>
+              Why should this be reviewed?
+              <textarea name="note" maxlength="2000" placeholder="Describe why you believe this site should be allowed."></textarea>
+            </label>
+
+            <button type="submit">Submit False-Positive Report</button>
+          </form>
+        </div>
+      </div>
+
+      <aside class="side block-side">
+        <div class="card">
+          <h3>What to do next</h3>
+          <p class="note">If you expected this domain to be safe, submit the report form and keep the request ID. If this was unexpected on an internal business system, contact your Safe Zone operator or network administrator.</p>
+          {{if .SupportEmail}}
+          <p class="note">Support contact: <strong>{{.SupportEmail}}</strong></p>
+          {{end}}
+        </div>
+
+        <div class="card">
+          <h3>HTTPS note</h3>
+          <p class="note">Direct HTTPS access to a blocked third-party domain may still trigger a browser certificate warning before this page can render. That is expected: TLS validates the original domain name before Safe Zone can show the block explanation.</p>
+        </div>
+
+        <div class="foot">
+          Safe Zone keeps the block page generic because DNS sinkholing does not always have access to the original verdict metadata at HTTP render time.
+        </div>
+      </aside>
+    </section>
+  </main>
+</body>
+</html>
