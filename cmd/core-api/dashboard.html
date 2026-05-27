@@ -179,10 +179,13 @@
             <span class="eyebrow">Telemetry</span>
             <h2>Verdict distribution</h2>
           </div>
-          <div class="period-bar">
+          <div class="period-switcher" aria-label="Telemetry time range">
+            <span class="period-label">Range</span>
+            <div class="period-bar">
             <button class="period-btn active" data-period="24h">24h</button>
             <button class="period-btn" data-period="7d">7d</button>
             <button class="period-btn" data-period="30d">30d</button>
+            </div>
           </div>
         </div>
         <div class="stats-grid">
@@ -194,6 +197,10 @@
         </div>
         <div class="chart-wrap cockpit-scope">
           <div class="chart-container"><canvas id="verdict-chart"></canvas></div>
+          <div class="telemetry-empty-state" id="telemetry-empty-state" aria-live="polite">
+            <strong>No telemetry yet</strong>
+            <span>Analyze domains to populate verdict distribution.</span>
+          </div>
         </div>
         <div class="chart-footer">
           <span id="chart-legend">Loading...</span>
@@ -579,6 +586,61 @@ const pageTitles = {
   clients: 'Policy Matrix',
   system: 'Runtime System',
 };
+const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+const motionOK = () => !motionQuery.matches;
+
+function pulseNode(el, className) {
+  if (!el || !motionOK()) return;
+  el.classList.remove(className);
+  void el.offsetWidth;
+  el.classList.add(className);
+}
+
+function setTextWithMotion(el, value, pulseTarget) {
+  if (!el) return;
+  const next = String(value);
+  const changed = el.textContent !== next;
+  el.textContent = next;
+  if (changed) {
+    pulseNode(el, 'star-glint');
+    pulseNode(pulseTarget || el.closest('.metric, .stat-card, .sys-card, .panel-head, .status-pills'), 'stellar-pulse');
+  }
+}
+
+function setHTMLWithMotion(el, value, pulseTarget) {
+  if (!el) return;
+  const changed = el.innerHTML !== value;
+  el.innerHTML = value;
+  if (changed) pulseNode(pulseTarget || el, 'stellar-pulse');
+}
+
+function markInsertedRows(root, selector) {
+  if (!root || !motionOK()) return;
+  requestAnimationFrame(() => {
+    root.querySelectorAll(selector).forEach((row, index) => {
+      row.classList.add('comet-in');
+      row.style.setProperty('--comet-delay', Math.min(index * 28, 180) + 'ms');
+    });
+  });
+}
+
+function openModalShell(modal) {
+  if (!modal) return;
+  modal.classList.remove('is-closing');
+  modal.classList.add('active');
+}
+
+function closeModalShell(modal) {
+  if (!modal || !modal.classList.contains('active')) return;
+  if (!motionOK()) {
+    modal.classList.remove('active', 'is-closing');
+    return;
+  }
+  modal.classList.add('is-closing');
+  window.setTimeout(() => {
+    modal.classList.remove('active', 'is-closing');
+  }, 190);
+}
 
 // ── Command deck shell ────────────────────────────────────────────────────────
 function setNavCollapsed(collapsed) {
@@ -659,7 +721,8 @@ osintBtn.addEventListener('click', async () => {
 async function analyzeDomain(domain, forceEvidence) {
   analyzeBtn.disabled = true;
   osintBtn.disabled = true;
-  resultState.textContent = forceEvidence ? 'checking public evidence...' : 'analyzing...';
+  setTextWithMotion(resultState, forceEvidence ? 'checking public evidence...' : 'analyzing...', resultState);
+  pulseNode(document.querySelector('.result-panel'), 'signal-sweep');
   try {
     const suffix = '?include_evidence=1' + (forceEvidence ? '&force_osint=1' : '');
     const r = await fetch('/v1/analyze' + suffix, {
@@ -671,10 +734,10 @@ async function analyzeDomain(domain, forceEvidence) {
     state.latest = payload;
     renderResult(payload);
     await loadRecent();
-    resultState.textContent = 'fresh result';
+    setTextWithMotion(resultState, 'fresh result', resultState);
   } catch {
     resultEl.innerHTML = '<div class="empty">Request failed.</div>';
-    resultState.textContent = 'request failed';
+    setTextWithMotion(resultState, 'request failed', resultState);
   } finally {
     analyzeBtn.disabled = false;
     osintBtn.disabled = false;
@@ -687,10 +750,11 @@ async function loadRecent() {
     const payload = await r.json();
     const items = payload.items || [];
     state.recent = items;
-    recentCount.textContent = items.length;
+    setTextWithMotion(recentCount, items.length, recentCount.closest('.panel-head'));
     recentEl.innerHTML = items.length
       ? items.map(renderRecentItem).join('')
       : '<div class="empty">No cached history.</div>';
+    markInsertedRows(recentEl, '.recent-item');
     if (!state.latest && items.length) renderResult(items[0]);
   } catch {
     recentEl.innerHTML = '<div class="empty">Recent unavailable.</div>';
@@ -698,7 +762,7 @@ async function loadRecent() {
 }
 
 function renderResult(item) {
-  cacheState.innerHTML = item.cache_hit ? '<strong>cache</strong> hit' : '<strong>cache</strong> fresh';
+  setHTMLWithMotion(cacheState, item.cache_hit ? '<strong>cache</strong> hit' : '<strong>cache</strong> fresh', cacheState);
   const blocked = item.verdict === 'MALICIOUS';
   const policyLabel = blocked ? 'Block' : 'Allow';
   const policyClass = blocked ? 'badge-block' : 'badge-allow';
@@ -740,6 +804,7 @@ function renderResult(item) {
       evidence +
       reviewPanel +
     '</article>';
+  pulseNode(resultEl, 'signal-sweep');
 }
 
 function renderFalsePositiveReviewPanel(item) {
@@ -794,17 +859,24 @@ function renderRecentItem(item) {
       '<span>' + confidence + '% confidence</span>' +
       '<span>' + fmtTime(item.analyzed_at) + '</span>' +
     '</div>' +
+    '<div class="risk-intensity" style="--risk-level:' + clampScore(item.score) + '%"><span></span></div>' +
     '<button class="ghost btn-sm" type="button" onclick="domainInput.value=' + JSON.stringify(item.domain) + '; analyzeDomain(' + JSON.stringify(item.domain) + ')">Open dossier</button>' +
     '</article>';
 }
 
 // ── Telemetry tab ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.period-btn').forEach(btn => {
+  btn.setAttribute('aria-pressed', btn.classList.contains('active') ? 'true' : 'false');
   btn.addEventListener('click', () => {
-    document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.period-btn').forEach(b => {
+      b.classList.remove('active');
+      b.setAttribute('aria-pressed', 'false');
+    });
     btn.classList.add('active');
+    btn.setAttribute('aria-pressed', 'true');
     state.telemetry.period = btn.dataset.period;
     state.telemetry.page = 0;
+    pulseNode(btn.closest('.period-switcher'), 'stellar-pulse');
     loadTelemetry();
   });
 });
@@ -825,17 +897,17 @@ async function loadTelemetryStats() {
     const r = await fetch('/v1/telemetry/stats?period=' + state.telemetry.period);
     const s = await r.json();
     state.telemetry.stats = s;
-    $('st-total').textContent      = (s.total || 0).toLocaleString();
-    $('st-safe').textContent       = (s.safe || 0).toLocaleString();
-    $('st-suspicious').textContent = (s.suspicious || 0).toLocaleString();
-    $('st-malicious').textContent  = (s.malicious || 0).toLocaleString();
-    $('st-cache').textContent      = (s.cache_hits || 0).toLocaleString();
+    setTextWithMotion($('st-total'), (s.total || 0).toLocaleString());
+    setTextWithMotion($('st-safe'), (s.safe || 0).toLocaleString());
+    setTextWithMotion($('st-suspicious'), (s.suspicious || 0).toLocaleString());
+    setTextWithMotion($('st-malicious'), (s.malicious || 0).toLocaleString());
+    setTextWithMotion($('st-cache'), (s.cache_hits || 0).toLocaleString());
     // Update header metrics too
-    metricTotal.textContent = (s.total || 0).toLocaleString();
-    metricSafe.textContent  = (s.safe || 0).toLocaleString();
-    metricSusp.textContent  = (s.suspicious || 0).toLocaleString();
-    metricMal.textContent   = (s.malicious || 0).toLocaleString();
-    metricCache.textContent = (s.cache_hits || 0).toLocaleString();
+    setTextWithMotion(metricTotal, (s.total || 0).toLocaleString());
+    setTextWithMotion(metricSafe, (s.safe || 0).toLocaleString());
+    setTextWithMotion(metricSusp, (s.suspicious || 0).toLocaleString());
+    setTextWithMotion(metricMal, (s.malicious || 0).toLocaleString());
+    setTextWithMotion(metricCache, (s.cache_hits || 0).toLocaleString());
     renderChart(s);
   } catch {
     // fail silently
@@ -849,13 +921,14 @@ async function loadTelemetryItems() {
     const payload = await r.json();
     const items = payload.items || [];
     state.telemetry.items = items;
-    $('telem-info').textContent = 'Page ' + (state.telemetry.page + 1);
-    $('telem-page').textContent = 'Page ' + (state.telemetry.page + 1);
+    setTextWithMotion($('telem-info'), 'Page ' + (state.telemetry.page + 1));
+    setTextWithMotion($('telem-page'), 'Page ' + (state.telemetry.page + 1));
     $('telem-prev').disabled = state.telemetry.page === 0;
     $('telem-next').disabled = items.length < state.telemetry.pageSize;
     $('telem-body').innerHTML = items.length
       ? items.map(renderTelemRow).join('')
       : '<div class="empty">No telemetry data for this period.</div>';
+    markInsertedRows($('telem-body'), '.telemetry-row');
   } catch {
     $('telem-body').innerHTML = '<div class="empty">Telemetry unavailable.</div>';
   }
@@ -868,7 +941,7 @@ function renderTelemRow(item) {
   return '<div class="telemetry-row">' +
     '<div style="overflow-wrap:anywhere;font-weight:700">' + esc(item.domain) + '</div>' +
     '<div><span class="verdict ' + item.verdict + '">' + esc(item.verdict) + '</span></div>' +
-    '<div>' + item.score + '</div>' +
+    '<div><span class="score-spark" style="--risk-level:' + clampScore(item.score) + '%">' + item.score + '</span></div>' +
     '<div style="color:var(--muted)">' + esc(item.source || '--') + '</div>' +
     '<div style="color:var(--muted)">' + fmtTime(item.analyzed_at) + '</div>' +
     '<div>' + actionCell + '</div>' +
@@ -876,6 +949,15 @@ function renderTelemRow(item) {
 }
 
 function renderChart(s) {
+  const safe    = s.safe || 0;
+  const susp    = s.suspicious || 0;
+  const mal     = s.malicious || 0;
+  const meaningfulTotal = safe + susp + mal;
+  const chartWrap = document.querySelector('.chart-wrap');
+  if (chartWrap) {
+    chartWrap.classList.toggle('telemetry-empty', meaningfulTotal === 0);
+    pulseNode(chartWrap, 'orbit-wake');
+  }
   if (!window.CHARTJS_AVAILABLE || typeof Chart === 'undefined') {
     $('chart-legend').textContent = 'Chart.js unavailable (CDN offline).';
     return;
@@ -885,9 +967,6 @@ function renderChart(s) {
   const warnColor = styles.getPropertyValue('--warn').trim() || '#f6b94b';
   const badColor = styles.getPropertyValue('--bad').trim() || '#ff5f86';
   const gridColor = styles.getPropertyValue('--line').trim() || 'rgba(255,255,255,0.1)';
-  const safe    = s.safe || 0;
-  const susp    = s.suspicious || 0;
-  const mal     = s.malicious || 0;
   const total   = safe + susp + mal || 1;
   $('chart-legend').innerHTML =
     '<span style="color:var(--safe)">Safe ' + pct(safe,total) + '</span> / ' +
@@ -1065,24 +1144,24 @@ async function checkHealth() {
     const status = await sRes.json();
     const ok = health.status === 'ok';
     apiStatus.className = ok ? 'chip ok' : 'chip warn';
-    apiStatus.innerHTML = '<strong>core-api</strong> ' + (ok ? 'healthy' : 'limited');
-    $('sys-api-status').textContent = ok ? 'Online' : 'Limited';
+    setHTMLWithMotion(apiStatus, '<strong>core-api</strong> ' + (ok ? 'healthy' : 'limited'), apiStatus);
+    setTextWithMotion($('sys-api-status'), ok ? 'Online' : 'Limited');
     $('sys-api-status').style.color = ok ? 'var(--safe)' : 'var(--warn)';
-    $('sys-api-detail').textContent = 'mode: ' + (status.mode || 'api');
+    setTextWithMotion($('sys-api-detail'), 'mode: ' + (status.mode || 'api'), $('sys-api-status').closest('.sys-card'));
     // Redis
     const redis = status.redis || {};
     const redisOk = redis.status === 'ok';
-    $('sys-redis-status').textContent = redis.configured ? (redisOk ? 'Connected' : 'Unavailable') : 'Disabled';
+    setTextWithMotion($('sys-redis-status'), redis.configured ? (redisOk ? 'Connected' : 'Unavailable') : 'Disabled');
     $('sys-redis-status').style.color = redis.configured ? (redisOk ? 'var(--safe)' : 'var(--warn)') : 'var(--muted)';
-    $('sys-redis-detail').textContent = redis.configured ? (redis.error || 'operational') : 'no Redis configured';
-    cacheState.innerHTML = redis.configured && redisOk ? '<strong>cache</strong> ok' : '<strong>cache</strong> offline';
+    setTextWithMotion($('sys-redis-detail'), redis.configured ? (redis.error || 'operational') : 'no Redis configured', $('sys-redis-status').closest('.sys-card'));
+    setHTMLWithMotion(cacheState, redis.configured && redisOk ? '<strong>cache</strong> ok' : '<strong>cache</strong> offline', cacheState);
     // Enrichment assumed enabled by default
-    $('sys-enrich-status').textContent = 'Enabled';
+    setTextWithMotion($('sys-enrich-status'), 'Enabled');
     $('sys-enrich-status').style.color = 'var(--safe)';
   } catch {
     apiStatus.className = 'chip bad';
-    apiStatus.innerHTML = '<strong>core-api</strong> offline';
-    $('sys-api-status').textContent = 'Offline';
+    setHTMLWithMotion(apiStatus, '<strong>core-api</strong> offline', apiStatus);
+    setTextWithMotion($('sys-api-status'), 'Offline');
     $('sys-api-status').style.color = 'var(--bad)';
   }
 }
@@ -1093,22 +1172,25 @@ async function loadMetrics() {
     const data = await r.json();
     const snap = data.metrics || {};
     const uptime = snap.uptime_seconds || 0;
-    $('sys-uptime').textContent = 'Uptime: ' + fmtUptime(uptime);
+    setTextWithMotion($('sys-uptime'), 'Uptime: ' + fmtUptime(uptime));
     const summary = snap.request_summary || {};
     const rows = Object.entries(summary).map(([key, val]) => {
       const avg = val.count ? Math.round(val.total_duration_ms / val.count) : 0;
+      const max = val.max_duration_ms || 0;
+      const latencyPct = max ? Math.min(100, Math.max(4, Math.round(avg / max * 100))) : 0;
       return '<tr>' +
         '<td style="font-weight:700">' + esc(key) + '</td>' +
         '<td>' + (val.count || 0).toLocaleString() + '</td>' +
-        '<td>' + avg + 'ms</td>' +
-        '<td>' + (val.max_duration_ms || 0) + 'ms</td>' +
+        '<td><span class="latency-readout">' + avg + 'ms</span><span class="latency-bars" style="--latency-level:' + latencyPct + '%"><i></i></span></td>' +
+        '<td>' + max + 'ms</td>' +
         '<td>' + (val.last_status || '--') + '</td>' +
         '</tr>';
     });
     const totalReqs = Object.values(summary).reduce((s, v) => s + (v.count || 0), 0);
-    $('sys-total-reqs').textContent = totalReqs.toLocaleString() + ' total requests';
-    rlStatus.innerHTML = '<strong>rate limit</strong> on';
+    setTextWithMotion($('sys-total-reqs'), totalReqs.toLocaleString() + ' total requests');
+    setHTMLWithMotion(rlStatus, '<strong>rate limit</strong> on', rlStatus);
     $('metrics-tbody').innerHTML = rows.length ? rows.join('') : '<tr><td colspan="5" class="empty">No metrics yet.</td></tr>';
+    markInsertedRows($('metrics-tbody'), 'tr');
   } catch {
     $('metrics-tbody').innerHTML = '<tr><td colspan="5" class="empty">Metrics unavailable.</td></tr>';
   }
@@ -1120,12 +1202,12 @@ async function loadAgentStatus() {
     const s = await r.json();
     const overall = $('agent-overall-status');
     if (!s.enabled) {
-      overall.textContent = 'Disabled';
+      setTextWithMotion(overall, 'Disabled');
       overall.style.color = 'var(--muted)';
       $('agent-panel-body').innerHTML = '<div class="empty">Agent Engine is disabled (SAFE_ZONE_AGENT_ENABLED=false).</div>';
       return;
     }
-    overall.textContent = 'Active';
+    setTextWithMotion(overall, 'Active');
     overall.style.color = 'var(--safe)';
     
     const tasks = s.tasks || [];
@@ -1137,11 +1219,12 @@ async function loadAgentStatus() {
     const rows = tasks.map(t => {
       const stateClass = t.state === 'running' ? 'badge-allow' : (t.state === 'failed' ? 'badge-block' : '');
       const stateLabel = t.state === 'running' ? 'Running' : (t.state === 'failed' ? 'Failed' : 'Idle');
+      const statusPulse = t.state === 'running' ? ' agent-status-pulse' : '';
       const lastErr = t.last_error ? `<span style="color:var(--bad); font-size: 12px;">${esc(t.last_error)}</span>` : '--';
       
       return '<tr>' +
         '<td style="font-weight:700">' + esc(t.name) + '</td>' +
-        '<td><span class="' + stateClass + '">' + stateLabel + '</span></td>' +
+        '<td><span class="' + stateClass + statusPulse + '">' + stateLabel + '</span></td>' +
         '<td>' + esc(t.interval) + '</td>' +
         '<td>' + fmtTime(t.last_run) + '</td>' +
         '<td>' + fmtTime(t.next_run) + '</td>' +
@@ -1156,6 +1239,7 @@ async function loadAgentStatus() {
         '<thead><tr><th>Task Name</th><th>Status</th><th>Interval</th><th>Last Run</th><th>Next Run</th><th>Runs / Errors</th><th>Last Error</th><th>Action</th></tr></thead>' +
         '<tbody>' + rows.join('') + '</tbody>' +
       '</table></div>';
+    markInsertedRows($('agent-panel-body'), 'tbody tr');
   } catch (err) {
     $('agent-panel-body').innerHTML = '<div class="empty">Error loading Agent status: ' + esc(err.message) + '</div>';
   }
@@ -1399,7 +1483,7 @@ function openNewGroupModal() {
   $('group-phish-input').checked = false;
   $('group-malware-input').checked = false;
 
-  $('group-modal').classList.add('active');
+  openModalShell($('group-modal'));
 }
 
 function openEditGroupModal(id) {
@@ -1427,12 +1511,22 @@ function openEditGroupModal(id) {
   $('group-phish-input').checked = !!g.strict_phishing;
   $('group-malware-input').checked = !!g.strict_malware;
 
-  $('group-modal').classList.add('active');
+  openModalShell($('group-modal'));
 }
 
 function closeGroupModal() {
-  $('group-modal').classList.remove('active');
+  closeModalShell($('group-modal'));
 }
+
+$('group-modal').addEventListener('click', e => {
+  if (e.target === $('group-modal')) closeGroupModal();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && $('group-modal').classList.contains('active')) {
+    closeGroupModal();
+  }
+});
 
 async function handleGroupSubmit(e) {
   e.preventDefault();
@@ -1552,12 +1646,17 @@ function showToast(msg, type) {
   toast.textContent = msg;
   toast.className = 'toast ' + type + ' show';
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
+  toastTimer = setTimeout(() => {
+    if (motionOK()) toast.classList.add('is-closing');
+    toast.classList.remove('show');
+    window.setTimeout(() => toast.classList.remove('is-closing'), 190);
+  }, 3000);
 }
 // Canvas Background Animation
 (function() {
   const canvas = document.getElementById('appCanvasBackground');
   if (!canvas) return;
+  if (!motionOK()) return;
   const ctx = canvas.getContext('2d');
   let cW, cH;
   let time = 0;
