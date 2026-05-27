@@ -43,25 +43,49 @@
 </svg>
 <div class="shell command-shell">
 
-  <aside class="command-rail" aria-label="Sentinel navigation">
-    <div class="rail-brand">
+  <aside class="command-rail command-sidebar" aria-label="Sentinel navigation">
+    <div class="rail-brand sidebar-brand">
       <span class="brand-mark">SZ</span>
       <div class="brand-copy">
         <strong>Sentinel</strong>
         <span>Command OS</span>
       </div>
-      <button class="rail-toggle" id="sidebar-toggle" type="button" title="Collapse navigation" aria-label="Collapse navigation" aria-expanded="true">
+      <button class="rail-toggle sidebar-toggle" id="sidebar-toggle" type="button" title="Collapse navigation" aria-label="Collapse navigation" aria-expanded="true">
         <svg><use href="#icon-collapse"></use></svg>
       </button>
     </div>
     <nav class="tabs" role="tablist" aria-label="Dashboard views">
-      <button class="tab-btn active" role="tab" data-tab="analysis" id="tab-btn-analysis" title="Analysis"><svg><use href="#icon-analysis"></use></svg><span>Analysis</span></button>
-      <button class="tab-btn" role="tab" data-tab="telemetry" id="tab-btn-telemetry" title="Telemetry"><svg><use href="#icon-telemetry"></use></svg><span>Telemetry</span></button>
-      <button class="tab-btn" role="tab" data-tab="overrides" id="tab-btn-overrides" title="Overrides"><svg><use href="#icon-overrides"></use></svg><span>Overrides</span></button>
-      <button class="tab-btn" role="tab" data-tab="clients" id="tab-btn-clients" title="Clients & Policies"><svg><use href="#icon-clients"></use></svg><span>Clients</span></button>
-      <button class="tab-btn" role="tab" data-tab="system" id="tab-btn-system" title="System"><svg><use href="#icon-system"></use></svg><span>System</span></button>
+      <button class="tab-btn nav-item active" role="tab" data-tab="analysis" id="tab-btn-analysis" title="Analysis">
+        <div class="nav-item-icon"><svg><use href="#icon-analysis"></use></svg></div>
+        <span class="nav-item-label">Analysis</span>
+        <div class="nav-tooltip" role="tooltip">Analysis</div>
+      </button>
+      <button class="tab-btn nav-item" role="tab" data-tab="telemetry" id="tab-btn-telemetry" title="Telemetry">
+        <div class="nav-item-icon"><svg><use href="#icon-telemetry"></use></svg></div>
+        <span class="nav-item-label">Telemetry</span>
+        <div class="nav-tooltip" role="tooltip">Telemetry</div>
+      </button>
+      <button class="tab-btn nav-item" role="tab" data-tab="overrides" id="tab-btn-overrides" title="Overrides">
+        <div class="nav-item-icon"><svg><use href="#icon-overrides"></use></svg></div>
+        <span class="nav-item-label">Overrides</span>
+        <div class="nav-tooltip" role="tooltip">Overrides</div>
+      </button>
+      <button class="tab-btn nav-item" role="tab" data-tab="clients" id="tab-btn-clients" title="Clients & Policies">
+        <div class="nav-item-icon"><svg><use href="#icon-clients"></use></svg></div>
+        <span class="nav-item-label">Clients</span>
+        <div class="nav-tooltip" role="tooltip">Clients</div>
+      </button>
+      <button class="tab-btn nav-item" role="tab" data-tab="system" id="tab-btn-system" title="System">
+        <div class="nav-item-icon"><svg><use href="#icon-system"></use></svg></div>
+        <span class="nav-item-label">System</span>
+        <div class="nav-tooltip" role="tooltip">System</div>
+      </button>
     </nav>
-    <button class="tab-btn logout-btn" id="logout-btn" onclick="handleLogout()" title="Logout"><svg><use href="#icon-logout"></use></svg><span>Logout</span></button>
+    <button class="tab-btn logout-btn nav-item" id="logout-btn" onclick="handleLogout()" title="Logout">
+      <div class="nav-item-icon"><svg><use href="#icon-logout"></use></svg></div>
+      <span class="nav-item-label">Logout</span>
+      <div class="nav-tooltip" role="tooltip">Logout</div>
+    </button>
   </aside>
 
   <div class="command-stage">
@@ -603,7 +627,6 @@ function setTextWithMotion(el, value, pulseTarget) {
   el.textContent = next;
   if (changed) {
     pulseNode(el, 'star-glint');
-    pulseNode(pulseTarget || el.closest('.metric, .stat-card, .sys-card, .panel-head, .status-pills'), 'stellar-pulse');
   }
 }
 
@@ -611,7 +634,6 @@ function setHTMLWithMotion(el, value, pulseTarget) {
   if (!el) return;
   const changed = el.innerHTML !== value;
   el.innerHTML = value;
-  if (changed) pulseNode(pulseTarget || el, 'stellar-pulse');
 }
 
 function markInsertedRows(root, selector) {
@@ -722,7 +744,6 @@ async function analyzeDomain(domain, forceEvidence) {
   analyzeBtn.disabled = true;
   osintBtn.disabled = true;
   setTextWithMotion(resultState, forceEvidence ? 'checking public evidence...' : 'analyzing...', resultState);
-  pulseNode(document.querySelector('.result-panel'), 'signal-sweep');
   try {
     const suffix = '?include_evidence=1' + (forceEvidence ? '&force_osint=1' : '');
     const r = await fetch('/v1/analyze' + suffix, {
@@ -804,7 +825,6 @@ function renderResult(item) {
       evidence +
       reviewPanel +
     '</article>';
-  pulseNode(resultEl, 'signal-sweep');
 }
 
 function renderFalsePositiveReviewPanel(item) {
@@ -956,7 +976,6 @@ function renderChart(s) {
   const chartWrap = document.querySelector('.chart-wrap');
   if (chartWrap) {
     chartWrap.classList.toggle('telemetry-empty', meaningfulTotal === 0);
-    pulseNode(chartWrap, 'orbit-wake');
   }
   if (!window.CHARTJS_AVAILABLE || typeof Chart === 'undefined') {
     $('chart-legend').textContent = 'Chart.js unavailable (CDN offline).';

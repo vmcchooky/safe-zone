@@ -40,8 +40,11 @@
   --text: #d8e2ef;
   --muted: #8fa0b8;
   --faint: #5f718c;
-  --line: rgba(154, 190, 231, 0.14);
-  --line-strong: rgba(154, 190, 231, 0.28);
+  --line: rgba(154, 190, 231, 0.08);
+  --line-strong: rgba(154, 190, 231, 0.16);
+  --sidebar-expanded: 260px;
+  --sidebar-collapsed: 84px;
+  --sidebar-transition: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
   --accent: #78c7ff;
   --accent-2: #b7e4ff;
@@ -230,9 +233,14 @@ h3 {
 
 .command-shell {
   display: grid;
-  grid-template-columns: 238px minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-expanded) minmax(0, 1fr);
   gap: 18px;
   padding: 18px 0 44px;
+  transition: grid-template-columns var(--sidebar-transition);
+}
+
+.command-shell.nav-collapsed {
+  grid-template-columns: var(--sidebar-collapsed) minmax(0, 1fr);
 }
 
 .command-rail,
@@ -317,6 +325,7 @@ h3 {
   width: 100%;
   padding: 0 12px;
   text-align: left;
+  transition: gap var(--sidebar-transition), padding var(--sidebar-transition);
 }
 
 .tab-btn span {
@@ -1066,20 +1075,41 @@ h3 {
 .toast {
   position: fixed;
   right: 22px;
-  bottom: 22px;
+  top: 22px;
+  bottom: auto;
   z-index: 1200;
   max-width: min(420px, calc(100vw - 28px));
-  padding: 14px 16px;
+  padding: 14px 16px 14px 40px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius);
   color: var(--ink);
   background: #08111d;
   box-shadow: var(--shadow);
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(-12px);
   pointer-events: none;
   transition: opacity 180ms ease, transform 180ms ease;
   font-family: var(--font-mono);
+}
+
+.toast::before {
+  content: "";
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  background: var(--safe);
+  box-shadow: 0 0 10px var(--safe);
+}
+
+.toast.error::before,
+.toast.err::before,
+.toast.bad::before {
+  background: var(--bad);
+  box-shadow: 0 0 10px var(--bad);
 }
 
 .toast.show {
@@ -1584,12 +1614,14 @@ code {
 .command-shell.nav-collapsed .brand-copy,
 .command-shell.nav-collapsed .tab-btn span,
 .command-shell.nav-collapsed .logout-btn span {
-  position: absolute;
-  width: 1px;
-  height: 1px;
+  max-width: 0;
+  opacity: 0;
+  margin: 0;
+  width: 0;
+  padding: 0;
   overflow: hidden;
-  clip-path: inset(50%);
   white-space: nowrap;
+  pointer-events: none;
 }
 
 .command-shell.nav-collapsed .brand-mark {
@@ -1616,9 +1648,6 @@ code {
   width: 38px;
   height: 38px;
   flex: 0 0 38px;
-  border-color: rgba(120, 199, 255, 0.34);
-  background: var(--accent-soft);
-  color: var(--accent-2);
 }
 
 .command-shell.nav-collapsed .rail-toggle:hover {
@@ -3006,14 +3035,15 @@ button {
 }
 
 .command-shell {
-  --sidebar-expanded: 226px;
-  --sidebar-collapsed: 72px;
+  --sidebar-expanded: 260px;
+  --sidebar-collapsed: 84px;
   display: grid !important;
   grid-template-columns: auto minmax(0, 1fr) !important;
   transition: none !important; /* Disable heavy grid track rendering transitions */
 }
 
-.command-rail {
+/* Sidebar aside element styling */
+.command-sidebar {
   width: var(--sidebar-expanded) !important;
   overflow: hidden;
   contain: layout paint;
@@ -3021,19 +3051,19 @@ button {
   transition: width var(--sidebar-transition), padding var(--sidebar-transition), background-color 150ms ease, border-color 150ms ease !important;
 }
 
-.command-shell.nav-collapsed .command-rail {
+.command-shell.nav-collapsed .command-sidebar {
   width: var(--sidebar-collapsed) !important;
 }
 
 /* --- Brand Header (Flexbox for organic transition) --- */
-.rail-brand {
+.sidebar-brand {
   display: flex !important;
   align-items: center;
   justify-content: flex-start;
   min-height: 54px;
-  padding: 6px 17px !important; /* Static perfect spacing */
+  padding: 6px 14px !important; /* Static perfect spacing */
   gap: 12px;
-  transition: none !important;
+  transition: padding var(--sidebar-transition) !important;
 }
 
 .brand-mark {
@@ -3042,8 +3072,8 @@ button {
   height: 38px;
   opacity: 1;
   transform: scale(1);
-  will-change: opacity, transform, width, flex;
-  transition: flex var(--sidebar-transition), width var(--sidebar-transition), opacity var(--sidebar-transition), transform var(--sidebar-transition);
+  will-change: opacity, transform;
+  transition: opacity var(--sidebar-transition), transform var(--sidebar-transition);
 }
 
 .brand-copy {
@@ -3052,8 +3082,8 @@ button {
   transform: translateX(0);
   max-width: 120px;
   overflow: hidden;
-  will-change: opacity, transform, width, flex;
-  transition: flex var(--sidebar-transition), width var(--sidebar-transition), opacity var(--sidebar-transition), transform var(--sidebar-transition);
+  will-change: opacity, transform, max-width;
+  transition: max-width var(--sidebar-transition), opacity var(--sidebar-transition), transform var(--sidebar-transition);
 }
 
 .brand-copy strong,
@@ -3062,7 +3092,8 @@ button {
   white-space: nowrap;
 }
 
-.rail-toggle {
+/* Toggle button styling */
+.sidebar-toggle {
   flex: 0 0 34px;
   width: 34px;
   height: 34px;
@@ -3073,11 +3104,11 @@ button {
   background: rgba(255, 255, 255, 0.025);
   display: grid;
   place-items: center;
-  will-change: flex, width, height, background-color, border-color, transform;
-  transition: flex var(--sidebar-transition), width var(--sidebar-transition), height var(--sidebar-transition), background-color var(--sidebar-transition), border-color var(--sidebar-transition), color var(--sidebar-transition), transform var(--sidebar-transition);
+  will-change: background-color, border-color, transform;
+  transition: background-color var(--sidebar-transition), border-color var(--sidebar-transition), color var(--sidebar-transition), transform var(--sidebar-transition);
 }
 
-.rail-toggle svg {
+.sidebar-toggle svg {
   width: 18px;
   height: 18px;
   fill: none;
@@ -3089,106 +3120,186 @@ button {
   transition: transform var(--sidebar-transition);
 }
 
-/* --- Tab buttons (Flexbox with static centered layout to prevent jumping) --- */
-.tab-btn {
+/* --- Nav items (Tab buttons with premium styles) --- */
+.nav-item {
+  position: relative;
   display: flex !important;
   align-items: center;
   justify-content: flex-start;
-  gap: 12px;
-  padding: 0 17px !important; /* Fixed: 17px left/right centers the 18px icon perfectly in 72px rail width */
-  min-height: 42px;
+  min-height: 44px;
   width: 100%;
+  padding: 0 15px !important; /* Perfect math: 15px centers 24px icon inside 84px - 14px*2 padding container */
   border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
   transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
 }
 
-.tab-btn svg {
-  flex: 0 0 18px;
-  width: 18px;
-  height: 18px;
+.nav-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
   transition: transform var(--sidebar-transition);
 }
 
-.tab-btn span {
-  flex: 1 1 auto;
-  opacity: 1;
-  transform: translateX(0);
-  font-family: var(--font-body);
-  font-size: 0.86rem;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: none;
+.nav-item-icon svg {
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+}
+
+.nav-item-label {
+  display: inline-block;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  will-change: opacity, transform;
-  transition: opacity var(--sidebar-transition), transform var(--sidebar-transition), max-width var(--sidebar-transition), width var(--sidebar-transition);
-  max-width: 150px;
+  will-change: max-width, opacity, margin-left, transform;
+  transition: max-width var(--sidebar-transition), opacity var(--sidebar-transition), margin-left var(--sidebar-transition), transform var(--sidebar-transition);
+  max-width: 160px;
+  opacity: 1;
+  margin-left: 12px;
+  transform: translateX(0);
+}
+
+.nav-item:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.nav-item.active {
+  color: var(--accent-2);
+  border-color: rgba(120, 199, 255, 0.15);
+  background: linear-gradient(90deg, rgba(120, 199, 255, 0.17), rgba(120, 199, 255, 0.045));
+}
+
+.nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 22px;
+  border-radius: 0 999px 999px 0;
+  background: var(--accent);
+  transform: translateY(-50%);
+}
+
+/* Tooltip appearing when sidebar is collapsed */
+.nav-tooltip {
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) translateX(-8px);
+  background: #09131f;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid rgba(120, 199, 255, 0.2);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  box-shadow: var(--shadow);
+  transition: opacity 150ms ease, transform 150ms ease, visibility 150ms ease;
+  z-index: 999;
+}
+
+.nav-tooltip::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  border-width: 5px;
+  border-style: solid;
+  border-color: transparent #09131f transparent transparent;
 }
 
 /* --- Collapsed State Styles (Unified Timing) --- */
 
-/* Override the immediate layout jumps from earlier absolute positioning */
-.command-shell.nav-collapsed .brand-copy,
-.command-shell.nav-collapsed .tab-btn span,
-.command-shell.nav-collapsed .logout-btn span {
-  position: static !important;
-  width: 0 !important;
-  max-width: 0 !important;
-  height: auto !important;
-  clip-path: none !important;
-  white-space: nowrap !important;
-  pointer-events: none;
-}
-
-.command-shell.nav-collapsed .brand-mark {
-  flex: 0 0 0;
-  width: 0;
-  opacity: 0;
-  transform: scale(0.85);
-  pointer-events: none;
-}
-
 .command-shell.nav-collapsed .brand-copy {
-  flex: 0 0 0;
-  width: 0;
-  opacity: 0;
-  transform: translateX(-10px);
-  pointer-events: none;
+  max-width: 0 !important;
+  opacity: 0 !important;
+  margin-left: 0 !important;
+  transform: translateX(-6px) !important;
+  pointer-events: none !important;
 }
 
-.command-shell.nav-collapsed .rail-toggle {
-  flex: 0 0 38px;
-  width: 38px;
-  height: 38px;
-  margin: 0; /* Automatically centers within the 17px padding box model */
-  border-color: rgba(120, 199, 255, 0.34);
-  background: var(--accent-soft);
-  color: var(--accent-2);
+/* Brand mark stays visible and fixed-size! */
+.command-shell.nav-collapsed .brand-mark {
+  flex: 0 0 38px !important;
+  width: 38px !important;
+  opacity: 1 !important;
+  transform: scale(1) !important;
+  pointer-events: auto !important;
 }
 
-.command-shell.nav-collapsed .rail-toggle:hover {
-  background: rgba(120, 199, 255, 0.22);
-  border-color: rgba(120, 199, 255, 0.62);
-  color: var(--ink);
-  transform: scale(1.05);
+.command-shell.nav-collapsed .sidebar-brand {
+  padding: 6px 12px !important; /* beautifully tight centered space */
+  gap: 10px;
 }
 
-.command-shell.nav-collapsed .rail-toggle svg {
-  transform: rotate(180deg);
+.command-shell.nav-collapsed .sidebar-toggle {
+  flex: 0 0 34px !important;
+  width: 34px !important;
+  height: 34px !important;
+  margin-left: auto !important;
+  border-color: rgba(120, 199, 255, 0.34) !important;
+  background: var(--accent-soft) !important;
+  color: var(--accent-2) !important;
 }
 
-.command-shell.nav-collapsed .tab-btn span {
-  opacity: 0;
-  transform: translateX(-8px);
-  pointer-events: none;
+.command-shell.nav-collapsed .sidebar-toggle:hover {
+  background: rgba(120, 199, 255, 0.22) !important;
+  border-color: rgba(120, 199, 255, 0.62) !important;
+  color: var(--ink) !important;
+  transform: scale(1.05) !important;
 }
 
-.command-shell.nav-collapsed .rail-brand {
-  flex-direction: row !important;
-  justify-content: center;
-  min-height: 54px;
-  padding: 6px !important;
+.command-shell.nav-collapsed .sidebar-toggle svg {
+  transform: rotate(180deg) !important;
+}
+
+.command-shell.nav-collapsed .nav-item {
+  padding: 0 15px !important;
+}
+
+.command-shell.nav-collapsed .nav-item-label {
+  max-width: 0 !important;
+  opacity: 0 !important;
+  margin-left: 0 !important;
+  transform: translateX(-6px) !important;
+  pointer-events: none !important;
+}
+
+/* Show tooltips only when collapsed and hovered/focused */
+.command-shell.nav-collapsed .nav-item:hover .nav-tooltip,
+.command-shell.nav-collapsed .nav-item:focus-within .nav-tooltip {
+  opacity: 1 !important;
+  visibility: visible !important;
+  transform: translateY(-50%) translateX(0) !important;
+}
+
+/* Respect user requests for reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .command-sidebar,
+  .brand-mark,
+  .brand-copy,
+  .sidebar-toggle,
+  .sidebar-toggle svg,
+  .nav-item,
+  .nav-item-icon,
+  .nav-item-label,
+  .nav-tooltip {
+    transition: none !important;
+    transform: none !important;
+  }
 }
 
 /* Stellar Signal Motion -------------------------------------------------- */
@@ -3414,13 +3525,13 @@ button {
 }
 
 @keyframes toastIn {
-  from { opacity: 0; transform: translateY(10px) scale(0.985); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes toastOut {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(8px) scale(0.985); }
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-12px); }
 }
 
 .period-switcher {
