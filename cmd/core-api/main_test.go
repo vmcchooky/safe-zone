@@ -465,7 +465,7 @@ func TestDashboardEndpointHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := string(body)
-	if !strings.Contains(content, "Admin Authentication") || !strings.Contains(content, "login-form") {
+	if !strings.Contains(content, "Sentinel Command OS") || !strings.Contains(content, "adminLoginForm") {
 		t.Fatalf("expected login page, got: %s", content)
 	}
 
@@ -500,7 +500,7 @@ func TestDashboardEndpointHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	content2 := string(body2)
-	for _, fragment := range []string{"Safe Zone Dashboard", "Analyze domain"} {
+	for _, fragment := range []string{"Safe Zone Dashboard", "Domain Inspection"} {
 		if !strings.Contains(content2, fragment) {
 			t.Fatalf("expected dashboard content to contain %q, got: %s", fragment, content2)
 		}

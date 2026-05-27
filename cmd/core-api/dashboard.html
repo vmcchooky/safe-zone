@@ -90,10 +90,13 @@
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content active" id="tab-analysis">
     <main class="workspace analysis-workspace">
-      <section class="page-head">
-        <div>
-          <span class="eyebrow">Analysis Deck</span>
-          <h2>Domain Inspection</h2>
+      <section class="page-head page-head-analysis">
+        <div class="page-title-block">
+          <svg class="page-icon" aria-hidden="true"><use href="#icon-analysis"></use></svg>
+          <div>
+            <span class="eyebrow">Analysis Deck</span>
+            <h2>Domain Inspection</h2>
+          </div>
         </div>
         <p>Fast lexical and evidence-backed triage for suspicious destinations.</p>
       </section>
@@ -160,10 +163,13 @@
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-telemetry">
     <main class="workspace">
-      <section class="page-head">
-        <div>
-          <span class="eyebrow">Telemetry Deck</span>
-          <h2>Telemetry</h2>
+      <section class="page-head page-head-telemetry">
+        <div class="page-title-block">
+          <svg class="page-icon" aria-hidden="true"><use href="#icon-telemetry"></use></svg>
+          <div>
+            <span class="eyebrow">Telemetry Deck</span>
+            <h2>Telemetry</h2>
+          </div>
         </div>
         <p>Verdict distribution and recent analysis flow.</p>
       </section>
@@ -186,7 +192,7 @@
           <div class="stat-card"><div class="stat-val MALICIOUS" id="st-malicious">--</div><div class="stat-lbl">Malicious</div></div>
           <div class="stat-card"><div class="stat-val" id="st-cache">--</div><div class="stat-lbl">Cache hits</div></div>
         </div>
-        <div class="chart-wrap">
+        <div class="chart-wrap cockpit-scope">
           <div class="chart-container"><canvas id="verdict-chart"></canvas></div>
         </div>
         <div class="chart-footer">
@@ -196,10 +202,12 @@
 
       <div class="panel">
         <div class="panel-head"><h2>Analysis History</h2><span id="telem-info">--</span></div>
-        <div class="telemetry-row header">
-          <div>Domain</div><div>Verdict</div><div>Score</div><div>Source</div><div>Time</div><div></div>
+        <div class="telemetry-table-wrap">
+          <div class="telemetry-row header">
+            <div>Domain</div><div>Verdict</div><div>Score</div><div>Source</div><div>Time</div><div></div>
+          </div>
+          <div id="telem-body"><div class="empty">Loading...</div></div>
         </div>
-        <div id="telem-body"><div class="empty">Loading...</div></div>
         <div class="pagination">
           <button class="ghost btn-sm" id="telem-prev" disabled>Prev</button>
           <span id="telem-page">Page 1</span>
@@ -214,10 +222,13 @@
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-overrides">
     <main class="workspace">
-      <section class="page-head">
-        <div>
-          <span class="eyebrow">Override Deck</span>
-          <h2>Override Rules</h2>
+      <section class="page-head page-head-overrides">
+        <div class="page-title-block">
+          <svg class="page-icon" aria-hidden="true"><use href="#icon-overrides"></use></svg>
+          <div>
+            <span class="eyebrow">Override Deck</span>
+            <h2>Override Rules</h2>
+          </div>
         </div>
         <p>Compose global allow/block rules without changing policy engines.</p>
       </section>
@@ -259,10 +270,13 @@
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-system">
     <main class="workspace">
-      <section class="page-head">
-        <div>
-          <span class="eyebrow">Runtime Deck</span>
-          <h2>Runtime System</h2>
+      <section class="page-head page-head-system">
+        <div class="page-title-block">
+          <svg class="page-icon" aria-hidden="true"><use href="#icon-system"></use></svg>
+          <div>
+            <span class="eyebrow">Runtime Deck</span>
+            <h2>Runtime System</h2>
+          </div>
         </div>
         <p>Service nodes, request logs, and agent operations.</p>
       </section>
@@ -317,10 +331,13 @@
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-clients">
     <main class="workspace">
-      <section class="page-head">
-        <div>
-          <span class="eyebrow">Policy Deck</span>
-          <h2>Policy Matrix</h2>
+      <section class="page-head page-head-clients">
+        <div class="page-title-block">
+          <svg class="page-icon" aria-hidden="true"><use href="#icon-clients"></use></svg>
+          <div>
+            <span class="eyebrow">Policy Deck</span>
+            <h2>Policy Matrix</h2>
+          </div>
         </div>
         <p>Map clients to structured policy groups and scoped overrides.</p>
       </section>
@@ -398,39 +415,108 @@
 
 <!-- Modal Popup for Create/Edit Group -->
 <div class="modal-overlay" id="group-modal">
-  <div class="modal-card">
+  <div class="modal-card policy-composer">
     <div class="modal-head">
-      <h3 id="modal-title">New Policy Group</h3>
-      <button class="modal-close" onclick="closeGroupModal()">x</button>
+      <div class="modal-title-block">
+        <span class="eyebrow">Policy Group Composer</span>
+        <h3 id="modal-title">New Policy Group</h3>
+        <p>Define categories, strict protection, and scoped policy behavior.</p>
+      </div>
+      <button class="modal-close" onclick="closeGroupModal()" type="button" aria-label="Close policy group composer"><span aria-hidden="true">x</span></button>
     </div>
     <form id="group-form" onsubmit="handleGroupSubmit(event)">
       <input type="hidden" id="group-id-input">
       <div class="modal-body">
-        <label>
-          Group Name
-          <input type="text" id="group-name-input" required placeholder="e.g. Kids, Server Room">
-        </label>
-        <label>
-          Description
-          <input type="text" id="group-desc-input" placeholder="e.g. Policy for kids devices">
-        </label>
-        <label class="plain-label">
-          Block Categories
-          <div class="modal-checkboxes">
-            <label><input type="checkbox" name="block-cat" value="adult"> Adult Content</label>
-            <label><input type="checkbox" name="block-cat" value="gambling"> Gambling</label>
-            <label><input type="checkbox" name="block-cat" value="social_media"> Social Media</label>
-            <label><input type="checkbox" name="block-cat" value="gaming"> Gaming</label>
-            <label><input type="checkbox" name="block-cat" value="advertising"> Advertising</label>
+        <section class="policy-section policy-section-basics" aria-labelledby="policy-basics-title">
+          <div class="policy-section-head">
+            <span class="eyebrow">Identity</span>
+            <h4 id="policy-basics-title">Group details</h4>
           </div>
-        </label>
-        <label class="plain-label">
-          Security Features
-          <div class="modal-checkboxes">
-            <label><input type="checkbox" id="group-phish-input"> Strict Phishing</label>
-            <label><input type="checkbox" id="group-malware-input"> Strict Malware</label>
+          <div class="policy-field-grid">
+            <label>
+              Group Name
+              <input type="text" id="group-name-input" required placeholder="e.g. Kids, Server Room">
+            </label>
+            <label>
+              Description
+              <input type="text" id="group-desc-input" placeholder="e.g. Policy for kids devices">
+            </label>
           </div>
-        </label>
+        </section>
+
+        <section class="policy-section" aria-labelledby="policy-categories-title">
+          <div class="policy-section-head">
+            <span class="eyebrow">Categories</span>
+            <h4 id="policy-categories-title">Block categories</h4>
+          </div>
+          <div class="policy-option-grid modal-checkboxes">
+            <label class="policy-option">
+              <input type="checkbox" name="block-cat" value="adult">
+              <span class="policy-option-copy">
+                <span class="policy-option-title">Adult Content</span>
+                <span class="policy-option-desc">Restrict mature destination categories.</span>
+              </span>
+              <span class="policy-switch" aria-hidden="true"><span class="policy-switch-knob"></span></span>
+            </label>
+            <label class="policy-option">
+              <input type="checkbox" name="block-cat" value="gambling">
+              <span class="policy-option-copy">
+                <span class="policy-option-title">Gambling</span>
+                <span class="policy-option-desc">Block wagering, betting, and casino domains.</span>
+              </span>
+              <span class="policy-switch" aria-hidden="true"><span class="policy-switch-knob"></span></span>
+            </label>
+            <label class="policy-option">
+              <input type="checkbox" name="block-cat" value="social_media">
+              <span class="policy-option-copy">
+                <span class="policy-option-title">Social Media</span>
+                <span class="policy-option-desc">Limit social platforms and high-distraction feeds.</span>
+              </span>
+              <span class="policy-switch" aria-hidden="true"><span class="policy-switch-knob"></span></span>
+            </label>
+            <label class="policy-option">
+              <input type="checkbox" name="block-cat" value="gaming">
+              <span class="policy-option-copy">
+                <span class="policy-option-title">Gaming</span>
+                <span class="policy-option-desc">Restrict game portals and related services.</span>
+              </span>
+              <span class="policy-switch" aria-hidden="true"><span class="policy-switch-knob"></span></span>
+            </label>
+            <label class="policy-option">
+              <input type="checkbox" name="block-cat" value="advertising">
+              <span class="policy-option-copy">
+                <span class="policy-option-title">Advertising</span>
+                <span class="policy-option-desc">Reduce ad networks and tracking endpoints.</span>
+              </span>
+              <span class="policy-switch" aria-hidden="true"><span class="policy-switch-knob"></span></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="policy-section policy-section-guards" aria-labelledby="policy-guards-title">
+          <div class="policy-section-head">
+            <span class="eyebrow">Protection</span>
+            <h4 id="policy-guards-title">Security features</h4>
+          </div>
+          <div class="policy-option-grid policy-option-grid-guards modal-checkboxes">
+            <label class="policy-option policy-option-guard">
+              <input type="checkbox" id="group-phish-input">
+              <span class="policy-option-copy">
+                <span class="policy-option-title">Strict Phishing</span>
+                <span class="policy-option-desc">Escalate suspicious login and impersonation signals.</span>
+              </span>
+              <span class="policy-switch" aria-hidden="true"><span class="policy-switch-knob"></span></span>
+            </label>
+            <label class="policy-option policy-option-guard">
+              <input type="checkbox" id="group-malware-input">
+              <span class="policy-option-copy">
+                <span class="policy-option-title">Strict Malware</span>
+                <span class="policy-option-desc">Apply stronger blocking for payload and abuse indicators.</span>
+              </span>
+              <span class="policy-switch" aria-hidden="true"><span class="policy-switch-knob"></span></span>
+            </label>
+          </div>
+        </section>
       </div>
       <div class="modal-foot">
         <button type="button" class="ghost" onclick="closeGroupModal()">Cancel</button>
@@ -508,6 +594,18 @@ sidebarToggle.addEventListener('click', () => {
   setNavCollapsed(!commandShell.classList.contains('nav-collapsed'));
 });
 
+function syncActiveTabState(name) {
+  commandShell.dataset.activeTab = name;
+  document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
+    const active = btn.dataset.tab === name;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-selected', String(active));
+    btn.setAttribute('tabindex', active ? '0' : '-1');
+  });
+  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + name));
+  currentPageTitle.textContent = pageTitles[name] || 'Sentinel Command';
+}
+
 // ── Routing / Tab switching ───────────────────────────────────────────────────
 document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
@@ -515,11 +613,11 @@ document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
 
 function switchTab(name) {
   state.activeTab = name;
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + name));
-  currentPageTitle.textContent = pageTitles[name] || 'Sentinel Command';
+  syncActiveTabState(name);
   loadTabData(name);
 }
+
+syncActiveTabState(state.activeTab);
 
 async function loadTabData(name) {
   switch(name) {
