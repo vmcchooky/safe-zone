@@ -3302,18 +3302,100 @@ button {
   }
 }
 
-/* Stellar Signal Motion -------------------------------------------------- */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Stellar Signal Motion — Safe Zone Sentinel Command OS v2
+   Premium calm, precise, celestial motion layer
+   ═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Tab entrance animation ──────────────────────────────────────────────── */
+@media (prefers-reduced-motion: no-preference) {
+  .tab-content.tab-enter {
+    animation: tabEnter 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+}
+
+@keyframes tabEnter {
+  from { opacity: 0.3; transform: translateY(6px); }
+  to   { opacity: 1;   transform: translateY(0);   }
+}
+
+/* ── Status pill idle shimmer ────────────────────────────────────────────── */
+.chip.ok::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--safe);
+  box-shadow: 0 0 8px var(--safe);
+  vertical-align: middle;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chip.ok::after {
+    animation: statusBreath 2200ms ease-in-out infinite;
+  }
+}
+
+/* ── Cache hit mini meter ────────────────────────────────────────────────── */
+.cache-hit-meter-wrap {
+  display: none;
+  gap: 7px;
+  padding: 10px 14px 0;
+  flex-direction: column;
+}
+
+/* Show when populated */
+.cache-hit-meter-wrap:not(:empty) {
+  display: flex;
+}
+
+.cache-meter-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font: 700 0.65rem/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cache-meter-pct {
+  color: var(--accent-2);
+  font-size: 0.75rem;
+}
+
+.cache-meter-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+
+.cache-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--safe));
+  box-shadow: 0 0 14px rgba(120, 199, 255, 0.26);
+  transition: width 500ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Stellar Signal Motion classes ───────────────────────────────────────── */
+
+/* stellar-pulse: subtle glow ring — for status pills and metric cards */
 .stellar-pulse {
-  animation: stellarPulse 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: stellarPulse 540ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* star-glint: numeral sparkle on value update */
 .star-glint {
-  animation: starGlint 620ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: starGlint 640ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* comet-in: slide/fade in for newly-inserted rows and content sections */
 .comet-in {
-  animation: cometIn 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: cometIn 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: var(--comet-delay, 0ms);
 }
 
@@ -3763,7 +3845,8 @@ button {
   .tab-btn span,
   .logout-btn span,
   .period-switcher .period-btn,
-  .telemetry-empty-state {
+  .telemetry-empty-state,
+  .cache-meter-fill {
     transition: none !important;
   }
 
@@ -3773,6 +3856,8 @@ button {
   .signal-sweep::after,
   .orbit-wake,
   .agent-status-pulse::after,
+  .chip.ok::after,
+  .tab-content.tab-enter,
   .modal-overlay.active,
   .modal-overlay.is-closing,
   .modal-overlay.active .modal-card,

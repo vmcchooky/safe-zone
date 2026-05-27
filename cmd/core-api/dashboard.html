@@ -219,6 +219,7 @@
           <div class="stat-card"><div class="stat-val MALICIOUS" id="st-malicious">--</div><div class="stat-lbl">Malicious</div></div>
           <div class="stat-card"><div class="stat-val" id="st-cache">--</div><div class="stat-lbl">Cache hits</div></div>
         </div>
+        <div class="cache-hit-meter-wrap" id="cache-hit-meter" aria-label="Cache efficiency meter"></div>
         <div class="chart-wrap cockpit-scope">
           <div class="chart-container"><canvas id="verdict-chart"></canvas></div>
           <div class="telemetry-empty-state" id="telemetry-empty-state" aria-live="polite">
@@ -627,6 +628,7 @@ function setTextWithMotion(el, value, pulseTarget) {
   el.textContent = next;
   if (changed) {
     pulseNode(el, 'star-glint');
+    if (pulseTarget) pulseNode(pulseTarget, 'stellar-pulse');
   }
 }
 
@@ -634,6 +636,7 @@ function setHTMLWithMotion(el, value, pulseTarget) {
   if (!el) return;
   const changed = el.innerHTML !== value;
   el.innerHTML = value;
+  if (changed && pulseTarget) pulseNode(pulseTarget, 'stellar-pulse');
 }
 
 function markInsertedRows(root, selector) {
@@ -698,6 +701,15 @@ document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
 function switchTab(name) {
   state.activeTab = name;
   syncActiveTabState(name);
+  // Entrance animation for tab content
+  if (motionOK()) {
+    const panel = document.getElementById('tab-' + name);
+    if (panel) {
+      panel.classList.remove('tab-enter');
+      void panel.offsetWidth;
+      panel.classList.add('tab-enter');
+    }
+  }
   loadTabData(name);
 }
 
@@ -744,6 +756,8 @@ async function analyzeDomain(domain, forceEvidence) {
   analyzeBtn.disabled = true;
   osintBtn.disabled = true;
   setTextWithMotion(resultState, forceEvidence ? 'checking public evidence...' : 'analyzing...', resultState);
+  // Signal sweep on the result panel while analyzing
+  pulseNode(document.querySelector('.result-panel'), 'signal-sweep');
   try {
     const suffix = '?include_evidence=1' + (forceEvidence ? '&force_osint=1' : '');
     const r = await fetch('/v1/analyze' + suffix, {
@@ -825,6 +839,15 @@ function renderResult(item) {
       evidence +
       reviewPanel +
     '</article>';
+  // Comet-in entrance for all child sections
+  if (motionOK()) {
+    requestAnimationFrame(() => {
+      resultEl.querySelectorAll('.dossier-section, .review-panel, .facts-grid').forEach((el, i) => {
+        el.classList.add('comet-in');
+        el.style.setProperty('--comet-delay', Math.min(i * 40, 200) + 'ms');
+      });
+    });
+  }
 }
 
 function renderFalsePositiveReviewPanel(item) {
@@ -917,21 +940,34 @@ async function loadTelemetryStats() {
     const r = await fetch('/v1/telemetry/stats?period=' + state.telemetry.period);
     const s = await r.json();
     state.telemetry.stats = s;
-    setTextWithMotion($('st-total'), (s.total || 0).toLocaleString());
+    const statsGrid = document.querySelector('.stats-grid');
+    setTextWithMotion($('st-total'), (s.total || 0).toLocaleString(), statsGrid);
     setTextWithMotion($('st-safe'), (s.safe || 0).toLocaleString());
     setTextWithMotion($('st-suspicious'), (s.suspicious || 0).toLocaleString());
     setTextWithMotion($('st-malicious'), (s.malicious || 0).toLocaleString());
     setTextWithMotion($('st-cache'), (s.cache_hits || 0).toLocaleString());
     // Update header metrics too
-    setTextWithMotion(metricTotal, (s.total || 0).toLocaleString());
-    setTextWithMotion(metricSafe, (s.safe || 0).toLocaleString());
-    setTextWithMotion(metricSusp, (s.suspicious || 0).toLocaleString());
-    setTextWithMotion(metricMal, (s.malicious || 0).toLocaleString());
-    setTextWithMotion(metricCache, (s.cache_hits || 0).toLocaleString());
+    setTextWithMotion(metricTotal, (s.total || 0).toLocaleString(), metricTotal.closest('.metric'));
+    setTextWithMotion(metricSafe, (s.safe || 0).toLocaleString(), metricSafe.closest('.metric'));
+    setTextWithMotion(metricSusp, (s.suspicious || 0).toLocaleString(), metricSusp.closest('.metric'));
+    setTextWithMotion(metricMal, (s.malicious || 0).toLocaleString(), metricMal.closest('.metric'));
+    setTextWithMotion(metricCache, (s.cache_hits || 0).toLocaleString(), metricCache.closest('.metric'));
     renderChart(s);
+    renderCacheHitMeter(s);
   } catch {
     // fail silently
   }
+}
+
+function renderCacheHitMeter(s) {
+  const el = $('cache-hit-meter');
+  if (!el) return;
+  const total = s.total || 0;
+  const hits = s.cache_hits || 0;
+  const pctVal = total > 0 ? Math.min(100, Math.round(hits / total * 100)) : 0;
+  el.innerHTML =
+    '<div class="cache-meter-label"><span>Cache efficiency</span><span class="cache-meter-pct">' + pctVal + '%</span></div>' +
+    '<div class="cache-meter-track"><div class="cache-meter-fill" style="width:' + pctVal + '%"></div></div>';
 }
 
 async function loadTelemetryItems() {
@@ -976,6 +1012,7 @@ function renderChart(s) {
   const chartWrap = document.querySelector('.chart-wrap');
   if (chartWrap) {
     chartWrap.classList.toggle('telemetry-empty', meaningfulTotal === 0);
+    if (meaningfulTotal > 0) pulseNode(chartWrap, 'orbit-wake');
   }
   if (!window.CHARTJS_AVAILABLE || typeof Chart === 'undefined') {
     $('chart-legend').textContent = 'Chart.js unavailable (CDN offline).';
@@ -1164,22 +1201,25 @@ async function checkHealth() {
     const ok = health.status === 'ok';
     apiStatus.className = ok ? 'chip ok' : 'chip warn';
     setHTMLWithMotion(apiStatus, '<strong>core-api</strong> ' + (ok ? 'healthy' : 'limited'), apiStatus);
+    pulseNode(apiStatus, 'stellar-pulse');
     setTextWithMotion($('sys-api-status'), ok ? 'Online' : 'Limited');
     $('sys-api-status').style.color = ok ? 'var(--safe)' : 'var(--warn)';
-    setTextWithMotion($('sys-api-detail'), 'mode: ' + (status.mode || 'api'), $('sys-api-status').closest('.sys-card'));
+    setTextWithMotion($('sys-api-detail'), 'mode: ' + (status.mode || 'api'));
     // Redis
     const redis = status.redis || {};
     const redisOk = redis.status === 'ok';
     setTextWithMotion($('sys-redis-status'), redis.configured ? (redisOk ? 'Connected' : 'Unavailable') : 'Disabled');
     $('sys-redis-status').style.color = redis.configured ? (redisOk ? 'var(--safe)' : 'var(--warn)') : 'var(--muted)';
-    setTextWithMotion($('sys-redis-detail'), redis.configured ? (redis.error || 'operational') : 'no Redis configured', $('sys-redis-status').closest('.sys-card'));
+    setTextWithMotion($('sys-redis-detail'), redis.configured ? (redis.error || 'operational') : 'no Redis configured');
     setHTMLWithMotion(cacheState, redis.configured && redisOk ? '<strong>cache</strong> ok' : '<strong>cache</strong> offline', cacheState);
+    pulseNode(cacheState, 'stellar-pulse');
     // Enrichment assumed enabled by default
     setTextWithMotion($('sys-enrich-status'), 'Enabled');
     $('sys-enrich-status').style.color = 'var(--safe)';
   } catch {
     apiStatus.className = 'chip bad';
     setHTMLWithMotion(apiStatus, '<strong>core-api</strong> offline', apiStatus);
+    pulseNode(apiStatus, 'stellar-pulse');
     setTextWithMotion($('sys-api-status'), 'Offline');
     $('sys-api-status').style.color = 'var(--bad)';
   }
