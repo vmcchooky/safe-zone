@@ -2,56 +2,54 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Safe Zone — Admin Authentication</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+  <title>Sentinel Command OS Login</title>
   <link rel="stylesheet" href="/assets/quorix.min.css">
   <link rel="stylesheet" href="/assets/safe-zone.css">
-  <script src="/assets/quorix.min.js" defer></script>
 </head>
-<body class="login-page">
+<body class="login-page" oncontextmenu="return false;">
+  <main class="login-wrapper">
+    <section class="login-card-pro" id="loginCard">
+      <header class="brand-header-pro">
+        <div class="logo-icon-pro">SZ</div>
+        <h1 class="brand-title-pro">Sentinel Command OS</h1>
+        <p class="brand-subtitle-pro">Admin gateway</p>
+      </header>
 
-  <div class="login-container">
-    <main class="login-card">
-      <div class="brand-header">
-        <span class="logo-icon">SR</span>
-        <h1 class="brand-title">SAFE ROAD</h1>
-        <h2 class="brand-subtitle">Admin Gateway</h2>
-      </div>
-
-      <form id="login-form">
-        <div class="form-group">
-          <label for="username">Username</label>
-          <input type="text" id="username" value="admin" required autocomplete="username">
+      <form id="adminLoginForm">
+        <div class="form-group-pro">
+          <label for="username">Admin identity</label>
+          <input type="text" id="username" value="admin" required autocomplete="off" placeholder="root_admin">
         </div>
 
-        <div class="form-group">
-          <label for="password">Password</label>
-          <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password" autofocus>
+        <div class="form-group-pro">
+          <label for="password">Access token</label>
+          <input type="password" id="password" required placeholder="Enter token" autofocus>
         </div>
 
-        <button type="submit" id="btn-login">Sign In</button>
+        <button type="submit" id="submitBtn" class="login-btn-pro">
+          <span id="btnText">Establish connection</span>
+          <span id="btnIcon" aria-hidden="true">-&gt;</span>
+        </button>
       </form>
 
-      <div class="footer-note">
-        Protected by stateless HMAC secure sessions.
-      </div>
-    </main>
-  </div>
+      <p class="footer-note-pro">Local session only. Credentials are verified by the core API.</p>
+    </section>
+  </main>
 
   <div class="toast" id="toast"></div>
 
   <script>
-    const form = document.getElementById('login-form');
-    const btn = document.getElementById('btn-login');
+    const form = document.getElementById('adminLoginForm');
+    const btn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+    const btnIcon = document.getElementById('btnIcon');
     const toast = document.getElementById('toast');
     let toastTimer;
 
     function showToast(msg) {
       toast.textContent = msg;
-      toast.classList.add('show');
+      toast.className = 'toast err show';
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
     }
@@ -59,7 +57,8 @@
     form.addEventListener('submit', async e => {
       e.preventDefault();
       btn.disabled = true;
-      btn.textContent = 'Authenticating...';
+      btnText.textContent = 'Verifying credentials...';
+      btnIcon.textContent = '';
 
       const username = document.getElementById('username').value.trim();
       const password = document.getElementById('password').value;
@@ -76,12 +75,16 @@
           throw new Error(err.error || 'Authentication failed');
         }
 
-        // Redirect to dashboard on successful login
-        window.location.reload();
+        btnText.textContent = 'Access granted';
+        btnIcon.textContent = 'OK';
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
       } catch (err) {
         showToast(err.message);
         btn.disabled = false;
-        btn.textContent = 'Sign In';
+        btnText.textContent = 'Establish connection';
+        btnIcon.textContent = '->';
       }
     });
   </script>

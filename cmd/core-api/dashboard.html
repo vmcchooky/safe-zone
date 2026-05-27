@@ -3,84 +3,155 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Safe Zone operational control plane — analyze domains, manage overrides, view telemetry and system health.">
+  <meta name="description" content="Safe Zone operational control plane - analyze domains, manage overrides, view telemetry and system health.">
   <title>Safe Zone Dashboard</title>
   <link rel="stylesheet" href="/assets/quorix.min.css">
   <link rel="stylesheet" href="/assets/safe-zone.css">
   <script src="/assets/quorix.min.js" defer></script>
 </head>
 <body class="dashboard-page">
-<div class="shell">
+<canvas id="appCanvasBackground" aria-hidden="true"></canvas>
+<svg class="svg-sprite" aria-hidden="true" focusable="false">
+  <symbol id="icon-analysis" viewBox="0 0 24 24">
+    <circle cx="10.5" cy="10.5" r="5.5"></circle>
+    <path d="M15 15l4.5 4.5M7.5 10.5h6M10.5 7.5v6"></path>
+  </symbol>
+  <symbol id="icon-telemetry" viewBox="0 0 24 24">
+    <path d="M4 13h3l2-6 4 12 2.5-8H20"></path>
+    <path d="M5 19c2.1 1.8 4.4 2.7 7 2.7s4.9-.9 7-2.7"></path>
+  </symbol>
+  <symbol id="icon-overrides" viewBox="0 0 24 24">
+    <path d="M5 5h14v5c0 4.8-2.3 8.1-7 10-4.7-1.9-7-5.2-7-10V5z"></path>
+    <path d="M8 12h8M12 8v8"></path>
+  </symbol>
+  <symbol id="icon-clients" viewBox="0 0 24 24">
+    <circle cx="6" cy="7" r="2.5"></circle>
+    <circle cx="18" cy="7" r="2.5"></circle>
+    <circle cx="12" cy="17" r="2.5"></circle>
+    <path d="M8.2 8.6l2.6 6M15.8 8.6l-2.6 6M8.5 7h7"></path>
+  </symbol>
+  <symbol id="icon-system" viewBox="0 0 24 24">
+    <path d="M12 3l7 4v10l-7 4-7-4V7l7-4z"></path>
+    <path d="M12 3v8l7-4M12 11l-7-4M12 11v10"></path>
+  </symbol>
+  <symbol id="icon-logout" viewBox="0 0 24 24">
+    <path d="M9 5H5v14h4M14 8l4 4-4 4M18 12H9"></path>
+  </symbol>
+  <symbol id="icon-collapse" viewBox="0 0 24 24">
+    <path d="M4 6h16M4 12h10M4 18h16"></path>
+  </symbol>
+</svg>
+<div class="shell command-shell">
 
-  <header>
-    <div class="hero">
-      <div class="title">
-        <div class="eyebrow">OPEX-first local control plane</div>
-        <h1>Safe Zone Dashboard</h1>
-        <p class="subtitle">Analyze domains, manage overrides, track telemetry and monitor system health — all from one lightweight control plane.</p>
+  <aside class="command-rail" aria-label="Sentinel navigation">
+    <div class="rail-brand">
+      <span class="brand-mark">SZ</span>
+      <div class="brand-copy">
+        <strong>Sentinel</strong>
+        <span>Command OS</span>
+      </div>
+      <button class="rail-toggle" id="sidebar-toggle" type="button" title="Collapse navigation" aria-label="Collapse navigation" aria-expanded="true">
+        <svg><use href="#icon-collapse"></use></svg>
+      </button>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Dashboard views">
+      <button class="tab-btn active" role="tab" data-tab="analysis" id="tab-btn-analysis" title="Analysis"><svg><use href="#icon-analysis"></use></svg><span>Analysis</span></button>
+      <button class="tab-btn" role="tab" data-tab="telemetry" id="tab-btn-telemetry" title="Telemetry"><svg><use href="#icon-telemetry"></use></svg><span>Telemetry</span></button>
+      <button class="tab-btn" role="tab" data-tab="overrides" id="tab-btn-overrides" title="Overrides"><svg><use href="#icon-overrides"></use></svg><span>Overrides</span></button>
+      <button class="tab-btn" role="tab" data-tab="clients" id="tab-btn-clients" title="Clients & Policies"><svg><use href="#icon-clients"></use></svg><span>Clients</span></button>
+      <button class="tab-btn" role="tab" data-tab="system" id="tab-btn-system" title="System"><svg><use href="#icon-system"></use></svg><span>System</span></button>
+    </nav>
+    <button class="tab-btn logout-btn" id="logout-btn" onclick="handleLogout()" title="Logout"><svg><use href="#icon-logout"></use></svg><span>Logout</span></button>
+  </aside>
+
+  <div class="command-stage">
+    <header class="command-topbar">
+      <div class="command-context">
+        <span class="mini-brand">Safe Zone</span>
+        <h1 id="current-page-title">Domain Inspection</h1>
       </div>
       <div class="status-pills">
         <span class="chip" id="api-status"><strong>core-api</strong> checking</span>
         <span class="chip" id="cache-state"><strong>cache</strong> idle</span>
-        <span class="chip" id="rl-status"><strong>rate limit</strong> —</span>
+        <span class="chip" id="rl-status"><strong>rate limit</strong> --</span>
       </div>
-    </div>
-    <div class="hero-grid">
-      <div class="metric"><strong id="metric-total">0</strong><span>Total (24h)</span></div>
-      <div class="metric"><strong id="metric-safe">0</strong><span>Safe</span></div>
-      <div class="metric"><strong id="metric-suspicious">0</strong><span>Suspicious</span></div>
-      <div class="metric"><strong id="metric-malicious">0</strong><span>Malicious</span></div>
-      <div class="metric"><strong id="metric-cache">0</strong><span>Cache hits</span></div>
-    </div>
-  </header>
+    </header>
 
-  <!-- Tab Navigation -->
-  <nav class="tabs" role="tablist">
-    <button class="tab-btn active" role="tab" data-tab="analysis" id="tab-btn-analysis">🔍 Analysis</button>
-    <button class="tab-btn" role="tab" data-tab="telemetry" id="tab-btn-telemetry">📊 Telemetry</button>
-    <button class="tab-btn" role="tab" data-tab="overrides" id="tab-btn-overrides">🛡 Overrides</button>
-    <button class="tab-btn" role="tab" data-tab="clients" id="tab-btn-clients">👥 Clients & Policies</button>
-    <button class="tab-btn" role="tab" data-tab="system" id="tab-btn-system">⚙️ System</button>
-    <button class="tab-btn logout-btn" id="logout-btn" onclick="handleLogout()">🚪 Đăng xuất</button>
-  </nav>
+    <section class="pulse-strip" aria-label="Operational pulse">
+      <div class="metric"><span>Total 24h</span><strong id="metric-total">0</strong></div>
+      <div class="metric safe"><span>Safe</span><strong id="metric-safe">0</strong></div>
+      <div class="metric suspicious"><span>Suspicious</span><strong id="metric-suspicious">0</strong></div>
+      <div class="metric malicious"><span>Malicious</span><strong id="metric-malicious">0</strong></div>
+      <div class="metric"><span>Cache</span><strong id="metric-cache">0</strong></div>
+    </section>
 
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <!-- Tab: Analysis                                                         -->
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content active" id="tab-analysis">
-    <main>
-      <form class="toolbar" id="analyze-form">
-        <input id="domain-input" name="domain" autocomplete="off" spellcheck="false" placeholder="secure-login-wallet-example.com">
-        <button id="analyze-btn" type="submit">Analyze</button>
-        <button class="ghost" id="osint-btn" type="button">Check public evidence</button>
-      </form>
-
-      <div class="actions" id="quick-actions">
-        <button class="ghost" type="button" data-domain="example.com">example.com</button>
-        <button class="ghost" type="button" data-domain="dichvucong-vn.com">Fake public-service</button>
-        <button class="ghost" type="button" data-domain="secure-login-wallet-example.com">Suspicious sample</button>
-        <button class="ghost" type="button" data-domain="login.bank-verify-support.com">Phishing-style sample</button>
-        <button class="ghost" type="button" data-domain="xn--pple-43d.com">Punycode sample</button>
-      </div>
-
-      <div class="grid-2">
-        <section class="panel">
-          <div class="panel-head"><h2>Live result</h2><span id="result-state">waiting</span></div>
-          <div id="result"><div class="empty">No result yet. Run a domain through the analyzer.</div></div>
-        </section>
-        <div class="stack">
-          <section class="panel">
-            <div class="panel-head"><h2>Recent activity</h2><span id="recent-count">0</span></div>
-            <div class="recent-list" id="recent"><div class="empty">No cached history.</div></div>
-          </section>
-          <section class="panel">
-            <div class="panel-head"><h2>Quick checks</h2><span>local only</span></div>
-            <div class="quick-grid">
-              <div class="empty" style="padding:0">Polls health and recent activity every 15 seconds.</div>
-            </div>
-          </section>
+    <main class="workspace analysis-workspace">
+      <section class="page-head">
+        <div>
+          <span class="eyebrow">Analysis Deck</span>
+          <h2>Domain Inspection</h2>
         </div>
-      </div>
+        <p>Fast lexical and evidence-backed triage for suspicious destinations.</p>
+      </section>
+      <section class="panel inspection-dock">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">Inspection Dock</span>
+            <h2>Domain interrogation</h2>
+          </div>
+          <span id="result-state">waiting</span>
+        </div>
+        <form class="toolbar analyze-dock" id="analyze-form">
+          <label class="domain-field" for="domain-input">
+            <span>Target domain</span>
+            <input id="domain-input" name="domain" autocomplete="off" spellcheck="false" placeholder="secure-login-wallet-example.com">
+          </label>
+          <button id="analyze-btn" type="submit">
+            <span>Analyze</span>
+            <div id="analyze-shockwave" class="shockwave"></div>
+          </button>
+          <button id="osint-btn" type="button" class="ghost">OSINT</button>
+        </form>
+        <div class="quick-grid" id="quick-actions" aria-label="Quick analysis targets">
+          <button class="ghost btn-sm" type="button" data-domain="example.com">example.com</button>
+          <button class="ghost btn-sm" type="button" data-domain="login-update.test">login-update.test</button>
+          <button class="ghost btn-sm" type="button" data-domain="secure-wallet.test">secure-wallet.test</button>
+        </div>
+      </section>
+
+      <section class="analysis-grid">
+        <section class="panel result-panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">Threat Lens</span>
+              <h2>Risk dossier</h2>
+            </div>
+            <span class="chip">live</span>
+          </div>
+          <div class="scanner-laser blue" id="result-scanner"></div>
+          <div id="result">
+            <div class="empty result-empty">
+              <strong>Awaiting inspection target.</strong>
+              <span>Enter a domain to generate verdict, score, confidence, signals, evidence, and operator action.</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel event-stream-panel">
+          <div class="panel-head">
+            <div>
+              <span class="eyebrow">Event Stream</span>
+              <h2>Recent activity</h2>
+            </div>
+            <span id="recent-count">0</span>
+          </div>
+          <div class="recent-list" id="recent"><div class="empty">No history.</div></div>
+        </aside>
+      </section>
     </main>
   </div>
 
@@ -88,10 +159,20 @@
   <!-- Tab: Telemetry                                                        -->
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-telemetry">
-    <main>
-      <div class="panel">
+    <main class="workspace">
+      <section class="page-head">
+        <div>
+          <span class="eyebrow">Telemetry Deck</span>
+          <h2>Telemetry</h2>
+        </div>
+        <p>Verdict distribution and recent analysis flow.</p>
+      </section>
+      <div class="panel telemetry-cockpit">
         <div class="panel-head">
-          <h2>Verdict Distribution</h2>
+          <div>
+            <span class="eyebrow">Telemetry</span>
+            <h2>Verdict distribution</h2>
+          </div>
           <div class="period-bar">
             <button class="period-btn active" data-period="24h">24h</button>
             <button class="period-btn" data-period="7d">7d</button>
@@ -99,30 +180,30 @@
           </div>
         </div>
         <div class="stats-grid">
-          <div class="stat-card"><div class="stat-val" id="st-total">—</div><div class="stat-lbl">Total</div></div>
-          <div class="stat-card"><div class="stat-val SAFE" id="st-safe">—</div><div class="stat-lbl">Safe</div></div>
-          <div class="stat-card"><div class="stat-val SUSPICIOUS" id="st-suspicious">—</div><div class="stat-lbl">Suspicious</div></div>
-          <div class="stat-card"><div class="stat-val MALICIOUS" id="st-malicious">—</div><div class="stat-lbl">Malicious</div></div>
-          <div class="stat-card"><div class="stat-val" id="st-cache">—</div><div class="stat-lbl">Cache hits</div></div>
+          <div class="stat-card"><div class="stat-val" id="st-total">--</div><div class="stat-lbl">Total</div></div>
+          <div class="stat-card"><div class="stat-val SAFE" id="st-safe">--</div><div class="stat-lbl">Safe</div></div>
+          <div class="stat-card"><div class="stat-val SUSPICIOUS" id="st-suspicious">--</div><div class="stat-lbl">Suspicious</div></div>
+          <div class="stat-card"><div class="stat-val MALICIOUS" id="st-malicious">--</div><div class="stat-lbl">Malicious</div></div>
+          <div class="stat-card"><div class="stat-val" id="st-cache">--</div><div class="stat-lbl">Cache hits</div></div>
         </div>
         <div class="chart-wrap">
           <div class="chart-container"><canvas id="verdict-chart"></canvas></div>
         </div>
-        <div style="padding:12px 16px 16px;text-align:center">
-          <span id="chart-legend" style="color:var(--muted);font-size:13px">Loading...</span>
+        <div class="chart-footer">
+          <span id="chart-legend">Loading...</span>
         </div>
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>Analysis History</h2><span id="telem-info">—</span></div>
+        <div class="panel-head"><h2>Analysis History</h2><span id="telem-info">--</span></div>
         <div class="telemetry-row header">
           <div>Domain</div><div>Verdict</div><div>Score</div><div>Source</div><div>Time</div><div></div>
         </div>
         <div id="telem-body"><div class="empty">Loading...</div></div>
         <div class="pagination">
-          <button class="ghost btn-sm" id="telem-prev" disabled>← Prev</button>
+          <button class="ghost btn-sm" id="telem-prev" disabled>Prev</button>
           <span id="telem-page">Page 1</span>
-          <button class="ghost btn-sm" id="telem-next">Next →</button>
+          <button class="ghost btn-sm" id="telem-next">Next</button>
         </div>
       </div>
     </main>
@@ -132,14 +213,26 @@
   <!-- Tab: Overrides                                                        -->
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-overrides">
-    <main>
-      <div class="panel">
-        <div class="panel-head"><h2>Add Override</h2></div>
+    <main class="workspace">
+      <section class="page-head">
+        <div>
+          <span class="eyebrow">Override Deck</span>
+          <h2>Override Rules</h2>
+        </div>
+        <p>Compose global allow/block rules without changing policy engines.</p>
+      </section>
+      <div class="panel rule-composer">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">Override Command</span>
+            <h2>Add domain override</h2>
+          </div>
+        </div>
         <form class="override-form" id="override-form">
           <label>Domain<input id="ov-domain" type="text" placeholder="evil.com" required autocomplete="off" spellcheck="false"></label>
           <label>Action<select id="ov-action"><option value="block">Block</option><option value="allow">Allow</option></select></label>
-          <label>&nbsp;<button id="ov-submit" type="submit" class="btn-block">Add Override</button></label>
-          <label style="grid-column:span 2">Reason (optional)<input id="ov-reason" type="text" placeholder="e.g. phishing confirmed"></label>
+          <label>Reason<input id="ov-reason" type="text" placeholder="e.g. phishing confirmed"></label>
+          <label class="button-label"><span>Execute</span><button id="ov-submit" type="submit" class="btn-block">Add Override</button></label>
         </form>
       </div>
 
@@ -151,7 +244,7 @@
           <button class="ghost btn-sm ov-filter" data-filter="allow">Allow only</button>
           <button class="ghost btn-sm ov-filter" data-filter="block">Block only</button>
         </div>
-        <div id="ov-table-wrap">
+        <div class="table-wrap" id="ov-table-wrap">
           <table class="override-table">
             <thead><tr><th>Domain</th><th>Action</th><th>Reason</th><th>Updated</th><th></th></tr></thead>
             <tbody id="ov-tbody"><tr><td colspan="5" class="empty">No overrides.</td></tr></tbody>
@@ -165,39 +258,54 @@
   <!-- Tab: System                                                           -->
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-system">
-    <main>
+    <main class="workspace">
+      <section class="page-head">
+        <div>
+          <span class="eyebrow">Runtime Deck</span>
+          <h2>Runtime System</h2>
+        </div>
+        <p>Service nodes, request logs, and agent operations.</p>
+      </section>
       <div class="panel">
-        <div class="panel-head"><h2>Service Health</h2><span id="sys-uptime">—</span></div>
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">Node Grid</span>
+            <h2>Service health</h2>
+          </div>
+          <span id="sys-uptime">--</span>
+        </div>
         <div class="system-grid">
           <div class="sys-card">
             <div class="sys-name">core-api</div>
-            <div class="sys-status" id="sys-api-status">—</div>
-            <div class="sys-detail" id="sys-api-detail">—</div>
+            <div class="sys-status" id="sys-api-status">--</div>
+            <div class="sys-detail" id="sys-api-detail">--</div>
           </div>
           <div class="sys-card">
             <div class="sys-name">Redis Cache</div>
-            <div class="sys-status" id="sys-redis-status">—</div>
-            <div class="sys-detail" id="sys-redis-detail">—</div>
+            <div class="sys-status" id="sys-redis-status">--</div>
+            <div class="sys-detail" id="sys-redis-detail">--</div>
           </div>
           <div class="sys-card">
             <div class="sys-name">Enrichment (TLS+WHOIS)</div>
-            <div class="sys-status" id="sys-enrich-status">—</div>
+            <div class="sys-status" id="sys-enrich-status">--</div>
             <div class="sys-detail" id="sys-enrich-detail">TLS & WHOIS analysis</div>
           </div>
         </div>
       </div>
 
       <div class="panel">
-        <div class="panel-head"><h2>Request Metrics</h2><span id="sys-total-reqs">—</span></div>
-        <table class="metrics-table">
-          <thead><tr><th>Endpoint</th><th>Requests</th><th>Avg Latency</th><th>Max Latency</th><th>Last Status</th></tr></thead>
-          <tbody id="metrics-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
-        </table>
+        <div class="panel-head"><h2>Request Metrics</h2><span id="sys-total-reqs">--</span></div>
+        <div class="table-wrap">
+          <table class="metrics-table">
+            <thead><tr><th>Endpoint</th><th>Requests</th><th>Avg Latency</th><th>Max Latency</th><th>Last Status</th></tr></thead>
+            <tbody id="metrics-tbody"><tr><td colspan="5" class="empty">Loading...</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
-      <div class="panel" style="margin-top:16px">
-        <div class="panel-head"><h2>Agent Engine</h2><span id="agent-overall-status">—</span></div>
-        <div id="agent-panel-body" style="padding:16px">
+      <div class="panel">
+        <div class="panel-head"><h2>Agent Engine</h2><span id="agent-overall-status">--</span></div>
+        <div id="agent-panel-body">
           <div class="empty">Loading Agent status...</div>
         </div>
       </div>
@@ -208,24 +316,34 @@
   <!-- Tab: Clients & Policies                                               -->
   <!-- ══════════════════════════════════════════════════════════════════════ -->
   <div class="tab-content" id="tab-clients">
-    <main>
+    <main class="workspace">
+      <section class="page-head">
+        <div>
+          <span class="eyebrow">Policy Deck</span>
+          <h2>Policy Matrix</h2>
+        </div>
+        <p>Map clients to structured policy groups and scoped overrides.</p>
+      </section>
       <!-- Section 1: Groups Configuration -->
       <div class="panel">
         <div class="panel-head">
-          <h2>Policy Groups</h2>
+          <div>
+            <span class="eyebrow">Policy Matrix</span>
+            <h2>Policy groups</h2>
+          </div>
           <button class="ghost btn-sm" id="btn-add-group" onclick="openNewGroupModal()">+ New Group</button>
         </div>
-        <div class="stats-grid" id="groups-grid" style="grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; padding: 16px;">
+        <div class="groups-grid" id="groups-grid">
           <!-- Render groups here dynamically -->
         </div>
       </div>
 
       <!-- Section 2: Client Mappings -->
-      <div class="panel" style="margin-top: 16px;">
+      <div class="panel">
         <div class="panel-head">
           <h2>Client Mappings</h2>
         </div>
-        <form class="toolbar" id="mapping-form" style="display: grid; grid-template-columns: 150px 1fr 200px auto; gap: 10px; padding: 16px;" onsubmit="handleMappingSubmit(event)">
+        <form class="mapping-form" id="mapping-form" onsubmit="handleMappingSubmit(event)">
           <select id="map-type-input">
             <option value="ip">IP Address</option>
             <option value="cidr">CIDR Range</option>
@@ -237,24 +355,26 @@
           </select>
           <button id="btn-add-mapping" type="submit">Add Mapping</button>
         </form>
-        <table class="override-table">
-          <thead><tr><th>Type</th><th>Value</th><th>Policy Group</th><th>Mapped At</th><th></th></tr></thead>
-          <tbody id="mappings-tbody"><tr><td colspan="5" class="empty">No client mappings.</td></tr></tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="override-table">
+            <thead><tr><th>Type</th><th>Value</th><th>Policy Group</th><th>Mapped At</th><th></th></tr></thead>
+            <tbody id="mappings-tbody"><tr><td colspan="5" class="empty">No client mappings.</td></tr></tbody>
+          </table>
+        </div>
       </div>
 
       <!-- Section 3: Group Overrides -->
-      <div class="panel" style="margin-top: 16px;">
+      <div class="panel">
         <div class="panel-head">
           <h2>Group Overrides</h2>
         </div>
         <div class="filter-bar">
           <span>Select Group:</span>
-          <select id="override-group-select" style="min-width: 200px;" onchange="loadGroupOverrides()">
+          <select id="override-group-select" onchange="loadGroupOverrides()">
             <!-- Render group options dynamically -->
           </select>
         </div>
-        <form class="toolbar" id="group-override-form" style="display: grid; grid-template-columns: 1fr 120px 1fr auto; gap: 10px; padding: 16px;" onsubmit="handleGroupOverrideSubmit(event)">
+        <form class="group-override-form" id="group-override-form" onsubmit="handleGroupOverrideSubmit(event)">
           <input id="go-domain-input" autocomplete="off" placeholder="restricted-domain.com">
           <select id="go-action-input">
             <option value="block">Block</option>
@@ -263,14 +383,17 @@
           <input id="go-reason-input" autocomplete="off" placeholder="Reason (e.g. Parental control)">
           <button id="btn-add-group-override" type="submit">Add Override</button>
         </form>
-        <table class="override-table">
-          <thead><tr><th>Domain</th><th>Action</th><th>Reason</th><th>Updated</th><th></th></tr></thead>
-          <tbody id="group-overrides-tbody"><tr><td colspan="5" class="empty">Select a group to load overrides.</td></tr></tbody>
-        </table>
+        <div class="table-wrap">
+          <table class="override-table">
+            <thead><tr><th>Domain</th><th>Action</th><th>Reason</th><th>Updated</th><th></th></tr></thead>
+            <tbody id="group-overrides-tbody"><tr><td colspan="5" class="empty">Select a group to load overrides.</td></tr></tbody>
+          </table>
+        </div>
       </div>
     </main>
   </div>
 
+  </div><!-- .command-stage -->
 </div><!-- .shell -->
 
 <!-- Modal Popup for Create/Edit Group -->
@@ -278,7 +401,7 @@
   <div class="modal-card">
     <div class="modal-head">
       <h3 id="modal-title">New Policy Group</h3>
-      <button class="modal-close" onclick="closeGroupModal()">✕</button>
+      <button class="modal-close" onclick="closeGroupModal()">x</button>
     </div>
     <form id="group-form" onsubmit="handleGroupSubmit(event)">
       <input type="hidden" id="group-id-input">
@@ -291,7 +414,7 @@
           Description
           <input type="text" id="group-desc-input" placeholder="e.g. Policy for kids devices">
         </label>
-        <label style="text-transform: none;">
+        <label class="plain-label">
           Block Categories
           <div class="modal-checkboxes">
             <label><input type="checkbox" name="block-cat" value="adult"> Adult Content</label>
@@ -301,7 +424,7 @@
             <label><input type="checkbox" name="block-cat" value="advertising"> Advertising</label>
           </div>
         </label>
-        <label style="text-transform: none;">
+        <label class="plain-label">
           Security Features
           <div class="modal-checkboxes">
             <label><input type="checkbox" id="group-phish-input"> Strict Phishing</label>
@@ -319,7 +442,7 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Chart.js from CDN — graceful degradation if unavailable -->
+<!-- Chart.js from CDN - graceful degradation if unavailable -->
 <script>
 window.CHARTJS_AVAILABLE = false;
 </script>
@@ -360,9 +483,33 @@ const metricMal       = $('metric-malicious');
 const metricCache     = $('metric-cache');
 const quickActions    = $('quick-actions');
 const toast           = $('toast');
+const commandShell    = document.querySelector('.command-shell');
+const sidebarToggle   = $('sidebar-toggle');
+const currentPageTitle = $('current-page-title');
+const pageTitles = {
+  analysis: 'Domain Inspection',
+  telemetry: 'Telemetry',
+  overrides: 'Override Rules',
+  clients: 'Policy Matrix',
+  system: 'Runtime System',
+};
+
+// ── Command deck shell ────────────────────────────────────────────────────────
+function setNavCollapsed(collapsed) {
+  commandShell.classList.toggle('nav-collapsed', collapsed);
+  sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
+  sidebarToggle.setAttribute('title', collapsed ? 'Expand navigation' : 'Collapse navigation');
+  sidebarToggle.setAttribute('aria-label', collapsed ? 'Expand navigation' : 'Collapse navigation');
+  localStorage.setItem('safe-zone-nav-collapsed', collapsed ? '1' : '0');
+}
+
+setNavCollapsed(localStorage.getItem('safe-zone-nav-collapsed') === '1');
+sidebarToggle.addEventListener('click', () => {
+  setNavCollapsed(!commandShell.classList.contains('nav-collapsed'));
+});
 
 // ── Routing / Tab switching ───────────────────────────────────────────────────
-document.querySelectorAll('.tab-btn').forEach(btn => {
+document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
@@ -370,6 +517,7 @@ function switchTab(name) {
   state.activeTab = name;
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
   document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === 'tab-' + name));
+  currentPageTitle.textContent = pageTitles[name] || 'Sentinel Command';
   loadTabData(name);
 }
 
@@ -385,6 +533,13 @@ async function loadTabData(name) {
 
 // ── Analysis tab ──────────────────────────────────────────────────────────────
 analyzeForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const d = domainInput.value.trim();
+  if (!d) return;
+  await analyzeDomain(d);
+});
+domainInput.addEventListener('keydown', async e => {
+  if (e.key !== 'Enter') return;
   e.preventDefault();
   const d = domainInput.value.trim();
   if (!d) return;
@@ -406,7 +561,7 @@ osintBtn.addEventListener('click', async () => {
 async function analyzeDomain(domain, forceEvidence) {
   analyzeBtn.disabled = true;
   osintBtn.disabled = true;
-  resultState.textContent = forceEvidence ? 'checking public evidence…' : 'analyzing…';
+  resultState.textContent = forceEvidence ? 'checking public evidence...' : 'analyzing...';
   try {
     const suffix = '?include_evidence=1' + (forceEvidence ? '&force_osint=1' : '');
     const r = await fetch('/v1/analyze' + suffix, {
@@ -449,32 +604,44 @@ function renderResult(item) {
   const blocked = item.verdict === 'MALICIOUS';
   const policyLabel = blocked ? 'Block' : 'Allow';
   const policyClass = blocked ? 'badge-block' : 'badge-allow';
+  const verdict = esc(item.verdict || 'UNKNOWN');
+  const risk = riskClass(item.verdict);
+  const score = clampScore(item.score);
+  const confidence = Math.round((Number(item.confidence) || 0) * 100);
   const reasons = (item.reasons && item.reasons.length)
-    ? '<ul class="reasons">' + item.reasons.map(r => '<li>' + esc(r) + '</li>').join('') + '</ul>'
-    : '<ul class="reasons"><li>no risk signals</li></ul>';
+    ? '<div class="signals-list">' + item.reasons.map(r => '<div class="signal-row"><span></span><strong>' + esc(r) + '</strong></div>').join('') + '</div>'
+    : '<div class="signals-list"><div class="signal-row muted"><span></span><strong>No risk signals reported.</strong></div></div>';
   const evidence = renderEvidence(item.evidence || []);
   const reviewPanel = renderFalsePositiveReviewPanel(item);
   resultEl.innerHTML =
-    '<div class="result-body">' +
-      '<div class="verdict-banner">' +
-        '<div class="verdict-row">' +
-          '<strong class="' + item.verdict + '">' + esc(item.verdict) + '</strong>' +
-          '<span class="verdict-meta">' + Math.round(item.confidence * 100) + '% confidence &middot; score ' + item.score + '</span>' +
+    '<article class="result-body dossier ' + risk + '">' +
+      '<div class="dossier-hero">' +
+        '<div class="dossier-title">' +
+          '<span class="verdict ' + verdict + '">' + verdict + '</span>' +
+          '<h3>' + esc(item.domain) + '</h3>' +
+          '<p>Policy default: <span class="' + policyClass + '">' + policyLabel + '</span></p>' +
         '</div>' +
-        '<span class="verdict ' + item.verdict + '">' + esc(item.verdict) + '</span>' +
+        '<div class="score-orbit" style="--score:' + score + '">' +
+          '<strong>' + score + '</strong>' +
+          '<span>/100</span>' +
+        '</div>' +
       '</div>' +
-      '<div class="subgrid">' +
-        '<div class="subcard"><span>Domain</span><strong>' + esc(item.domain) + '</strong></div>' +
-        '<div class="subcard"><span>Category</span><strong>' + esc(item.category || 'uncategorized') + '</strong></div>' +
-        '<div class="subcard"><span>Default policy</span><strong><span class="' + policyClass + '">' + policyLabel + '</span></strong></div>' +
-        '<div class="subcard"><span>Analyzed</span><strong>' + fmtTime(item.analyzed_at) + '</strong></div>' +
-        '<div class="subcard"><span>Cache</span><strong>' + (item.cache_hit ? 'hit' : 'fresh') + '</strong></div>' +
-        '<div class="subcard"><span>Score</span><strong>' + item.score + '/100</strong></div>' +
+      '<div class="risk-meter" aria-label="Risk score">' +
+        '<div class="risk-meter-track"><span style="width:' + score + '%"></span></div>' +
+        '<div class="risk-meter-labels"><span>Low</span><span>Review</span><span>Block</span></div>' +
       '</div>' +
-      '<dl><dt>Signals</dt><dd>' + reasons + '</dd></dl>' +
+      '<div class="facts-grid">' +
+        '<div><span>Verdict</span><strong class="' + verdict + '">' + verdict + '</strong></div>' +
+        '<div><span>Confidence</span><strong>' + confidence + '%</strong></div>' +
+        '<div><span>Category</span><strong>' + esc(item.category || 'uncategorized') + '</strong></div>' +
+        '<div><span>Cache state</span><strong>' + (item.cache_hit ? 'hit' : 'fresh') + '</strong></div>' +
+        '<div><span>Analyzed</span><strong>' + fmtTime(item.analyzed_at) + '</strong></div>' +
+        '<div><span>Policy</span><strong><span class="' + policyClass + '">' + policyLabel + '</span></strong></div>' +
+      '</div>' +
+      '<section class="dossier-section"><div class="section-kicker">Signals</div>' + reasons + '</section>' +
       evidence +
       reviewPanel +
-    '</div>';
+    '</article>';
 }
 
 function renderFalsePositiveReviewPanel(item) {
@@ -483,7 +650,7 @@ function renderFalsePositiveReviewPanel(item) {
   }
   return '<section class="review-panel">' +
     '<div class="review-head">' +
-      '<strong>False-positive review</strong>' +
+      '<div><span class="section-kicker">Operator Action</span><strong>False-positive review</strong></div>' +
       '<span class="chip warn">operator action</span>' +
     '</div>' +
     '<p class="review-note">Use this when the domain was blocked or escalated incorrectly and should be pinned as allowed while follow-up review continues.</p>' +
@@ -498,9 +665,9 @@ function renderFalsePositiveReviewPanel(item) {
 
 function renderEvidence(items) {
   if (!items.length) {
-    return '<dl><dt>Evidence</dt><dd><div class="empty evidence-empty">No public warning evidence cached for this domain.</div></dd></dl>';
+    return '<section class="dossier-section"><div class="section-kicker">Evidence</div><div class="empty evidence-empty">No public warning evidence cached for this domain.</div></section>';
   }
-  return '<dl><dt>Evidence</dt><dd><div class="evidence-list">' + items.map(ev => {
+  return '<section class="dossier-section"><div class="section-kicker">Evidence</div><div class="evidence-list">' + items.map(ev => {
     const confidence = Math.round((ev.confidence || 0) * 100);
     const terms = (ev.matched_terms || []).slice(0, 4).map(t => '<span>' + esc(t) + '</span>').join('');
     const title = ev.source_title || ev.source_url || 'public source';
@@ -513,17 +680,23 @@ function renderEvidence(items) {
       '<a href="' + esc(ev.source_url) + '" target="_blank" rel="noopener noreferrer">' + esc(ev.source_url) + '</a>' +
       '<div class="recent-tags">' + (terms || '<span>domain matched</span>') + '</div>' +
     '</article>';
-  }).join('') + '</div></dd></dl>';
+  }).join('') + '</div></section>';
 }
 
 function renderRecentItem(item) {
-  const tags = (item.reasons && item.reasons.length)
-    ? item.reasons.slice(0, 3).map(r => '<span>' + esc(r) + '</span>').join('')
-    : '<span>no signals</span>';
-  return '<article class="recent-item">' +
-    '<div class="recent-top"><div class="recent-domain">' + esc(item.domain) + '</div><span class="verdict ' + item.verdict + '">' + esc(item.verdict) + '</span></div>' +
-    '<div class="recent-meta"><span>Score ' + item.score + '</span><span>' + Math.round(item.confidence * 100) + '%</span><span>' + fmtTime(item.analyzed_at) + '</span></div>' +
-    '<div class="recent-tags">' + tags + '</div>' +
+  const verdict = esc(item.verdict || 'UNKNOWN');
+  const confidence = Math.round((Number(item.confidence) || 0) * 100);
+  return '<article class="recent-item event-item ' + riskClass(item.verdict) + '">' +
+    '<div class="recent-top">' +
+      '<div class="recent-domain">' + esc(item.domain) + '</div>' +
+      '<span class="verdict ' + verdict + '">' + verdict + '</span>' +
+    '</div>' +
+    '<div class="recent-meta">' +
+      '<span>score ' + clampScore(item.score) + '</span>' +
+      '<span>' + confidence + '% confidence</span>' +
+      '<span>' + fmtTime(item.analyzed_at) + '</span>' +
+    '</div>' +
+    '<button class="ghost btn-sm" type="button" onclick="domainInput.value=' + JSON.stringify(item.domain) + '; analyzeDomain(' + JSON.stringify(item.domain) + ')">Open dossier</button>' +
     '</article>';
 }
 
@@ -598,37 +771,51 @@ function renderTelemRow(item) {
     '<div style="overflow-wrap:anywhere;font-weight:700">' + esc(item.domain) + '</div>' +
     '<div><span class="verdict ' + item.verdict + '">' + esc(item.verdict) + '</span></div>' +
     '<div>' + item.score + '</div>' +
-    '<div style="color:var(--muted)">' + esc(item.source || '—') + '</div>' +
+    '<div style="color:var(--muted)">' + esc(item.source || '--') + '</div>' +
     '<div style="color:var(--muted)">' + fmtTime(item.analyzed_at) + '</div>' +
     '<div>' + actionCell + '</div>' +
     '</div>';
 }
 
 function renderChart(s) {
-  if (!window.CHARTJS_AVAILABLE) {
+  if (!window.CHARTJS_AVAILABLE || typeof Chart === 'undefined') {
     $('chart-legend').textContent = 'Chart.js unavailable (CDN offline).';
     return;
   }
+  const styles = getComputedStyle(document.documentElement);
+  const safeColor = styles.getPropertyValue('--safe').trim() || '#33d399';
+  const warnColor = styles.getPropertyValue('--warn').trim() || '#f6b94b';
+  const badColor = styles.getPropertyValue('--bad').trim() || '#ff5f86';
+  const gridColor = styles.getPropertyValue('--line').trim() || 'rgba(255,255,255,0.1)';
   const safe    = s.safe || 0;
   const susp    = s.suspicious || 0;
   const mal     = s.malicious || 0;
   const total   = safe + susp + mal || 1;
   $('chart-legend').innerHTML =
-    '<span style="color:var(--safe)">■ Safe ' + pct(safe,total) + '</span> &nbsp; ' +
-    '<span style="color:var(--warn)">■ Suspicious ' + pct(susp,total) + '</span> &nbsp; ' +
-    '<span style="color:var(--bad)">■ Malicious ' + pct(mal,total) + '</span>';
+    '<span style="color:var(--safe)">Safe ' + pct(safe,total) + '</span> / ' +
+    '<span style="color:var(--warn)">Suspicious ' + pct(susp,total) + '</span> / ' +
+    '<span style="color:var(--bad)">Malicious ' + pct(mal,total) + '</span>';
   const canvas = $('verdict-chart');
   if (state.chart) { state.chart.destroy(); state.chart = null; }
   state.chart = new Chart(canvas, {
     type: 'doughnut',
     data: {
       labels: ['Safe', 'Suspicious', 'Malicious'],
-      datasets: [{ data: [safe, susp, mal], backgroundColor: ['#177d53','#a96d18','#ab2f3f'], borderWidth: 0, hoverOffset: 6 }],
+      datasets: [{
+        data: [safe, susp, mal],
+        backgroundColor: [safeColor, warnColor, badColor],
+        borderColor: gridColor,
+        borderWidth: 2,
+        hoverOffset: 8
+      }],
     },
     options: {
-      cutout: '68%',
-      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed.toLocaleString() } } },
-      animation: { duration: 400 },
+      cutout: '72%',
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ctx.label + ': ' + ctx.parsed.toLocaleString() } }
+      },
+      animation: { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 400 },
     },
   });
 }
@@ -662,7 +849,7 @@ $('override-form').addEventListener('submit', async e => {
       body: JSON.stringify({ domain, action, reason }),
     });
     if (!r.ok) { const err = await r.json(); throw new Error(err.error || 'Unknown error'); }
-    showToast('Override saved: ' + domain + ' → ' + action, 'ok');
+    showToast('Override saved: ' + domain + ' -> ' + action, 'ok');
     $('ov-domain').value = '';
     $('ov-reason').value = '';
     await loadOverrides();
@@ -696,7 +883,7 @@ function renderOverrideRow(item) {
   return '<tr>' +
     '<td style="font-weight:700">' + esc(item.domain) + '</td>' +
     '<td><span class="' + badgeClass + '">' + esc(item.action) + '</span></td>' +
-    '<td style="color:var(--muted)">' + esc(item.reason || '—') + '</td>' +
+    '<td style="color:var(--muted)">' + esc(item.reason || '--') + '</td>' +
     '<td style="color:var(--muted)">' + fmtTime(item.updated_at) + '</td>' +
     '<td><button class="ghost btn-sm btn-danger" onclick="deleteOverride(' + JSON.stringify(item.domain) + ')">Delete</button></td>' +
     '</tr>';
@@ -781,23 +968,23 @@ async function checkHealth() {
     const ok = health.status === 'ok';
     apiStatus.className = ok ? 'chip ok' : 'chip warn';
     apiStatus.innerHTML = '<strong>core-api</strong> ' + (ok ? 'healthy' : 'limited');
-    $('sys-api-status').textContent = ok ? '● Online' : '⚠ Limited';
+    $('sys-api-status').textContent = ok ? 'Online' : 'Limited';
     $('sys-api-status').style.color = ok ? 'var(--safe)' : 'var(--warn)';
     $('sys-api-detail').textContent = 'mode: ' + (status.mode || 'api');
     // Redis
     const redis = status.redis || {};
     const redisOk = redis.status === 'ok';
-    $('sys-redis-status').textContent = redis.configured ? (redisOk ? '● Connected' : '⚠ Unavailable') : '○ Disabled';
+    $('sys-redis-status').textContent = redis.configured ? (redisOk ? 'Connected' : 'Unavailable') : 'Disabled';
     $('sys-redis-status').style.color = redis.configured ? (redisOk ? 'var(--safe)' : 'var(--warn)') : 'var(--muted)';
     $('sys-redis-detail').textContent = redis.configured ? (redis.error || 'operational') : 'no Redis configured';
     cacheState.innerHTML = redis.configured && redisOk ? '<strong>cache</strong> ok' : '<strong>cache</strong> offline';
     // Enrichment assumed enabled by default
-    $('sys-enrich-status').textContent = '● Enabled';
+    $('sys-enrich-status').textContent = 'Enabled';
     $('sys-enrich-status').style.color = 'var(--safe)';
   } catch {
     apiStatus.className = 'chip bad';
     apiStatus.innerHTML = '<strong>core-api</strong> offline';
-    $('sys-api-status').textContent = '✕ Offline';
+    $('sys-api-status').textContent = 'Offline';
     $('sys-api-status').style.color = 'var(--bad)';
   }
 }
@@ -817,7 +1004,7 @@ async function loadMetrics() {
         '<td>' + (val.count || 0).toLocaleString() + '</td>' +
         '<td>' + avg + 'ms</td>' +
         '<td>' + (val.max_duration_ms || 0) + 'ms</td>' +
-        '<td>' + (val.last_status || '—') + '</td>' +
+        '<td>' + (val.last_status || '--') + '</td>' +
         '</tr>';
     });
     const totalReqs = Object.values(summary).reduce((s, v) => s + (v.count || 0), 0);
@@ -852,7 +1039,7 @@ async function loadAgentStatus() {
     const rows = tasks.map(t => {
       const stateClass = t.state === 'running' ? 'badge-allow' : (t.state === 'failed' ? 'badge-block' : '');
       const stateLabel = t.state === 'running' ? 'Running' : (t.state === 'failed' ? 'Failed' : 'Idle');
-      const lastErr = t.last_error ? `<span style="color:var(--bad); font-size: 12px;">${esc(t.last_error)}</span>` : '—';
+      const lastErr = t.last_error ? `<span style="color:var(--bad); font-size: 12px;">${esc(t.last_error)}</span>` : '--';
       
       return '<tr>' +
         '<td style="font-weight:700">' + esc(t.name) + '</td>' +
@@ -867,10 +1054,10 @@ async function loadAgentStatus() {
     });
     
     $('agent-panel-body').innerHTML = 
-      '<table class="override-table">' +
+      '<div class="table-wrap"><table class="override-table">' +
         '<thead><tr><th>Task Name</th><th>Status</th><th>Interval</th><th>Last Run</th><th>Next Run</th><th>Runs / Errors</th><th>Last Error</th><th>Action</th></tr></thead>' +
         '<tbody>' + rows.join('') + '</tbody>' +
-      '</table>';
+      '</table></div>';
   } catch (err) {
     $('agent-panel-body').innerHTML = '<div class="empty">Error loading Agent status: ' + esc(err.message) + '</div>';
   }
@@ -930,8 +1117,8 @@ async function loadGroups() {
 function renderGroupCard(g) {
   const blockCategories = g.block_categories || [];
   const badges = blockCategories.map(c => `<span class="grp-badge">${esc(c)}</span>`).join('');
-  const strictPhish = g.strict_phishing ? '<span class="active">✓ Strict Phishing</span>' : '<span>✗ Strict Phishing</span>';
-  const strictMal = g.strict_malware ? '<span class="active">✓ Strict Malware</span>' : '<span>✗ Strict Malware</span>';
+  const strictPhish = g.strict_phishing ? '<span class="active">Strict Phishing on</span>' : '<span>Strict Phishing off</span>';
+  const strictMal = g.strict_malware ? '<span class="active">Strict Malware on</span>' : '<span>Strict Malware off</span>';
 
   const deleteBtn = (g.id === 1 || g.name.toLowerCase() === 'default')
     ? ''
@@ -1052,7 +1239,7 @@ function renderGroupOverrideRow(item, group_id) {
   return '<tr>' +
     '<td style="font-weight:700">' + esc(item.domain) + '</td>' +
     '<td><span class="' + badgeClass + '">' + esc(item.action) + '</span></td>' +
-    '<td style="color:var(--muted)">' + esc(item.reason || '—') + '</td>' +
+    '<td style="color:var(--muted)">' + esc(item.reason || '--') + '</td>' +
     '<td style="color:var(--muted)">' + fmtTime(item.updated_at) + '</td>' +
     '<td><button class="ghost btn-sm btn-danger" onclick="deleteGroupOverride(' + group_id + ', ' + JSON.stringify(item.domain) + ')">Delete</button></td>' +
     '</tr>';
@@ -1093,7 +1280,7 @@ async function handleGroupOverrideSubmit(e) {
       body: JSON.stringify({ group_id, domain, action, reason })
     });
     if (!r.ok) { const err = await r.json(); throw new Error(err.error || 'Unknown error'); }
-    showToast('Group override saved: ' + domain + ' → ' + action, 'ok');
+    showToast('Group override saved: ' + domain + ' -> ' + action, 'ok');
     $('go-domain-input').value = '';
     $('go-reason-input').value = '';
     await loadGroupOverrides();
@@ -1213,16 +1400,16 @@ async function deleteGroup(id, name) {
 }
 
 async function handleLogout() {
-  if (!confirm('Bạn có chắc chắn muốn đăng xuất khỏi Admin Gateway không?')) return;
+  if (!confirm('Log out of Sentinel Command OS?')) return;
   try {
     const res = await fetch('/v1/auth/logout', { method: 'POST' });
     if (res.ok) {
       window.location.reload();
     } else {
-      showToast('Đăng xuất thất bại', 'err');
+      showToast('Logout failed', 'err');
     }
   } catch (err) {
-    showToast('Lỗi: ' + err.message, 'err');
+    showToast('Error: ' + err.message, 'err');
   }
 }
 
@@ -1241,7 +1428,7 @@ function esc(v) {
   return String(v || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 }
 function fmtTime(v) {
-  if (!v) return '—';
+  if (!v) return '--';
   return new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 function fmtUptime(secs) {
@@ -1251,6 +1438,17 @@ function fmtUptime(secs) {
   return (d ? d + 'd ' : '') + (h ? h + 'h ' : '') + m + 'm';
 }
 function pct(n, total) { return total ? Math.round(n / total * 100) + '%' : '0%'; }
+function clampScore(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+function riskClass(verdict) {
+  if (verdict === 'MALICIOUS') return 'risk-malicious';
+  if (verdict === 'SUSPICIOUS') return 'risk-suspicious';
+  if (verdict === 'SAFE') return 'risk-safe';
+  return 'risk-unknown';
+}
 let toastTimer;
 function showToast(msg, type) {
   toast.textContent = msg;
@@ -1258,6 +1456,79 @@ function showToast(msg, type) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
 }
+// Canvas Background Animation
+(function() {
+  const canvas = document.getElementById('appCanvasBackground');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  let cW, cH;
+  let time = 0;
+  
+  function resize() {
+    cW = window.innerWidth;
+    cH = window.innerHeight;
+    canvas.width = cW;
+    canvas.height = cH;
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  const particles = [];
+  for (let i = 0; i < 40; i++) {
+    particles.push({
+      x: Math.random() * cW,
+      y: Math.random() * cH,
+      size: Math.random() * 1.5 + 0.5,
+      speedY: -(Math.random() * 0.3 + 0.1),
+      alpha: Math.random() * 0.3 + 0.1,
+      freq: Math.random() * 0.02 + 0.01,
+      phase: Math.random() * Math.PI * 2
+    });
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, cW, cH);
+    time++;
+
+    particles.forEach(p => {
+      p.y += p.speedY;
+      if (p.y < -10) {
+        p.y = cH + 10;
+        p.x = Math.random() * cW;
+      }
+      const drawX = p.x + Math.sin(time * p.freq + p.phase) * 10;
+      ctx.beginPath();
+      ctx.arc(drawX, p.y, p.size, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(96, 165, 250, ${p.alpha})`;
+      ctx.fill();
+    });
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// Trigger UI Animations on Analysis
+document.addEventListener('DOMContentLoaded', () => {
+  const analyzeForm = document.getElementById('analyze-form');
+  const shockwave = document.getElementById('analyze-shockwave');
+  const scanner = document.getElementById('result-scanner');
+  
+  if (analyzeForm) {
+    analyzeForm.addEventListener('submit', (e) => {
+      if (shockwave) {
+        shockwave.classList.remove('active');
+        void shockwave.offsetWidth;
+        shockwave.classList.add('active');
+      }
+      if (scanner) {
+        scanner.classList.remove('active');
+        scanner.className = 'scanner-laser blue active';
+        setTimeout(() => scanner.classList.remove('active'), 1500);
+      }
+    });
+  }
+});
 </script>
 </body>
 </html>
