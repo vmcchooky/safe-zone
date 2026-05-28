@@ -1279,6 +1279,395 @@ code {
   display: block;
 }
 
+/* Quarantine Gate block page -------------------------------------------- */
+
+.quarantine-page {
+  min-height: 100vh;
+  padding: 32px;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 50% -10%, rgba(246, 184, 75, 0.11), transparent 26rem),
+    radial-gradient(circle at 16% 18%, rgba(255, 95, 134, 0.12), transparent 24rem),
+    linear-gradient(135deg, #05070c, #07101b 52%, #080d14);
+}
+
+body.quarantine-page::before {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(183, 228, 255, 0.055), transparent 24rem),
+    linear-gradient(180deg, rgba(154, 190, 231, 0.02), transparent 72%);
+  background-size: auto;
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+.quarantine-shell {
+  width: min(1160px, 100%);
+  display: grid;
+  gap: 18px;
+  padding: 0;
+  animation: quarantineIntro 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.quarantine-hero,
+.quarantine-panel,
+.quarantine-success {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(154, 190, 231, 0.16);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)),
+    #08111d;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.quarantine-hero {
+  min-height: 360px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
+  gap: 26px;
+  align-items: center;
+  padding: clamp(24px, 4vw, 46px);
+  border-color: rgba(246, 184, 75, 0.22);
+  background:
+    radial-gradient(circle at 75% 46%, rgba(246, 184, 75, 0.1), transparent 18rem),
+    radial-gradient(circle at 18% 14%, rgba(255, 95, 134, 0.12), transparent 20rem),
+    linear-gradient(135deg, rgba(120, 199, 255, 0.045), transparent 48%),
+    #070d15;
+}
+
+.quarantine-hero::after,
+.quarantine-facts::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 0 36%, rgba(255, 226, 183, 0.13) 48%, transparent 60%);
+  transform: translateX(-115%);
+  animation: quarantineSignalSweep 900ms 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.quarantine-orbit {
+  position: absolute;
+  right: clamp(16px, 5vw, 70px);
+  top: 50%;
+  width: min(42vw, 360px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(246, 184, 75, 0.16);
+  border-radius: 50%;
+  opacity: 0.78;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.quarantine-orbit::before,
+.quarantine-orbit::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.quarantine-orbit::before {
+  inset: 15%;
+  border: 1px solid rgba(255, 95, 134, 0.18);
+  background:
+    radial-gradient(circle, transparent 0 46%, rgba(255, 255, 255, 0.035) 47% 48%, transparent 49%),
+    conic-gradient(from 25deg, transparent 0 62deg, rgba(255, 226, 183, 0.16) 70deg, transparent 82deg);
+}
+
+.quarantine-orbit::after {
+  inset: 48% auto auto 82%;
+  width: 7px;
+  height: 7px;
+  background: var(--warn);
+  box-shadow: 0 0 18px rgba(246, 184, 75, 0.55);
+}
+
+.quarantine-hero-copy,
+.quarantine-domain-card,
+.quarantine-panel > *,
+.quarantine-success > * {
+  position: relative;
+  z-index: 1;
+}
+
+.quarantine-hero-copy {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.quarantine-hero h1 {
+  max-width: 13ch;
+  font-size: clamp(2.35rem, 6vw, 5.4rem);
+  line-height: 0.92;
+}
+
+.quarantine-message {
+  color: var(--ink);
+  font-size: clamp(1.05rem, 2vw, 1.42rem);
+  font-weight: 700;
+}
+
+.quarantine-hero .lede {
+  max-width: 62ch;
+  color: var(--muted);
+  font-size: clamp(0.98rem, 1.4vw, 1.08rem);
+}
+
+.quarantine-domain-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(246, 184, 75, 0.26);
+  border-radius: var(--radius-lg);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(255, 95, 134, 0.09), transparent 14rem),
+    rgba(7, 16, 26, 0.82);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.045);
+}
+
+.quarantine-domain {
+  display: block;
+  min-width: 0;
+  color: var(--ink);
+  font: 700 clamp(1.28rem, 3vw, 2.15rem)/1.08 var(--font-mono);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.quarantine-path {
+  display: block;
+  min-width: 0;
+  color: var(--muted);
+  font: 0.82rem/1.45 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.quarantine-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+  gap: 18px;
+  align-items: start;
+}
+
+.quarantine-main,
+.quarantine-side {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.quarantine-panel,
+.quarantine-success {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.quarantine-panel-head {
+  display: grid;
+  gap: 6px;
+}
+
+.quarantine-panel-head h2,
+.quarantine-panel h3,
+.quarantine-success h2 {
+  font-size: 1.1rem;
+  line-height: 1.15;
+}
+
+.quarantine-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.quarantine-fact,
+.quarantine-reason {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(154, 190, 231, 0.13);
+  border-radius: var(--radius);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.quarantine-fact {
+  display: grid;
+  gap: 8px;
+}
+
+.quarantine-fact span,
+.quarantine-reason span {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.quarantine-fact strong,
+.quarantine-success code,
+.quarantine-contact strong {
+  min-width: 0;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.quarantine-reason {
+  display: grid;
+  gap: 8px;
+  border-color: rgba(246, 184, 75, 0.18);
+  background: rgba(246, 184, 75, 0.055);
+}
+
+.quarantine-reason p,
+.quarantine-note,
+.quarantine-foot,
+.quarantine-success p {
+  color: var(--muted);
+}
+
+.quarantine-success {
+  border-color: rgba(53, 212, 154, 0.26);
+  background:
+    radial-gradient(circle at 10% 0%, rgba(53, 212, 154, 0.12), transparent 16rem),
+    #071019;
+}
+
+.quarantine-success h2 {
+  color: #d9fff1;
+}
+
+.quarantine-form form {
+  display: grid;
+  gap: 14px;
+}
+
+.quarantine-form label {
+  min-width: 0;
+}
+
+.quarantine-form input,
+.quarantine-form textarea {
+  background: rgba(5, 10, 17, 0.92);
+}
+
+.quarantine-form button {
+  justify-self: start;
+  min-width: min(100%, 220px);
+  border-color: rgba(246, 184, 75, 0.34);
+  background: linear-gradient(180deg, rgba(246, 184, 75, 0.18), rgba(246, 184, 75, 0.08));
+}
+
+.quarantine-contact {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  padding-top: 2px;
+}
+
+.quarantine-technical-note {
+  border-color: rgba(120, 199, 255, 0.18);
+  background:
+    radial-gradient(circle at 0% 0%, rgba(120, 199, 255, 0.07), transparent 14rem),
+    #08111d;
+}
+
+.quarantine-foot {
+  padding-inline: 4px;
+  font: 0.78rem/1.55 var(--font-mono);
+}
+
+.block-report-status {
+  display: none;
+}
+
+.block-report-status.show {
+  display: grid;
+}
+
+@keyframes quarantineIntro {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes quarantineSignalSweep {
+  from { opacity: 0; transform: translateX(-115%); }
+  20% { opacity: 1; }
+  to { opacity: 0; transform: translateX(115%); }
+}
+
+@media (max-width: 900px) {
+  .quarantine-page {
+    padding: 18px;
+  }
+
+  .quarantine-hero,
+  .quarantine-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quarantine-hero {
+    min-height: 0;
+  }
+
+  .quarantine-orbit {
+    right: 12px;
+    top: auto;
+    bottom: 24px;
+    width: min(66vw, 300px);
+    transform: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .quarantine-page {
+    padding: 10px;
+  }
+
+  .quarantine-shell {
+    gap: 12px;
+  }
+
+  .quarantine-hero,
+  .quarantine-panel,
+  .quarantine-success {
+    padding: 16px;
+  }
+
+  .quarantine-hero h1 {
+    max-width: 11ch;
+    font-size: clamp(2.1rem, 13vw, 3.1rem);
+  }
+
+  .quarantine-domain-card {
+    padding: 14px;
+  }
+
+  .quarantine-domain {
+    font-size: clamp(1.12rem, 7vw, 1.55rem);
+  }
+
+  .quarantine-fact-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quarantine-form button {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quarantine-shell,
+  .quarantine-hero::after,
+  .quarantine-facts::after {
+    animation: none !important;
+  }
+}
+
 .login-page {
   display: grid;
   min-height: 100vh;
