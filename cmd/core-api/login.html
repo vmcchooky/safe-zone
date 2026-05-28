@@ -7,33 +7,35 @@
   <link rel="stylesheet" href="/assets/quorix.min.css">
   <link rel="stylesheet" href="/assets/safe-zone.css">
 </head>
-<body class="login-page" oncontextmenu="return false;">
-  <main class="login-wrapper">
-    <section class="login-card-pro" id="loginCard">
-      <header class="brand-header-pro">
-        <div class="logo-icon-pro">SZ</div>
-        <h1 class="brand-title-pro">Sentinel Command OS</h1>
-        <p class="brand-subtitle-pro">Admin gateway</p>
-      </header>
+<body class="sentinel-access-page" oncontextmenu="return false;">
+  <main class="access-portal" id="loginCard">
+    <section class="access-brand-pane">
+      <div class="access-brand-mark stellar-pulse">SZ</div>
+      <h1 class="access-brand-title">Sentinel Command OS</h1>
+      <p class="access-brand-subtitle">Local-first anti-phishing control plane</p>
+    </section>
 
-      <form id="adminLoginForm">
-        <div class="form-group-pro">
-          <label for="username">Admin identity</label>
+    <section class="access-form-pane">
+      <div id="inlineError" class="access-error" aria-live="assertive"></div>
+      
+      <form id="adminLoginForm" class="access-form">
+        <div class="form-group">
+          <label for="username">Identity</label>
           <input type="text" id="username" value="admin" required autocomplete="off" placeholder="root_admin">
         </div>
 
-        <div class="form-group-pro">
+        <div class="form-group">
           <label for="password">Access token</label>
           <input type="password" id="password" required placeholder="Enter token" autofocus>
         </div>
 
-        <button type="submit" id="submitBtn" class="login-btn-pro">
+        <button type="submit" id="submitBtn" class="access-submit">
           <span id="btnText">Establish connection</span>
           <span id="btnIcon" aria-hidden="true">-&gt;</span>
         </button>
       </form>
 
-      <p class="footer-note-pro">Local session only. Credentials are verified by the core API.</p>
+      <p class="access-footer-note">Local session only. Verified by core API.</p>
     </section>
   </main>
 
@@ -44,20 +46,43 @@
     const btn = document.getElementById('submitBtn');
     const btnText = document.getElementById('btnText');
     const btnIcon = document.getElementById('btnIcon');
+    const inlineError = document.getElementById('inlineError');
     const toast = document.getElementById('toast');
     let toastTimer;
 
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const motionOK = () => !motionQuery.matches;
+
+    function pulseNode(el, className) {
+      if (!el || !motionOK()) return;
+      el.classList.remove(className);
+      void el.offsetWidth;
+      el.classList.add(className);
+    }
+
     function showToast(msg) {
+      inlineError.textContent = msg;
+      inlineError.classList.add('show');
+      if (motionOK()) inlineError.classList.add('comet-in');
+      
+      // Also show toast as a fallback
       toast.textContent = msg;
       toast.className = 'toast err show';
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { toast.classList.remove('show'); }, 3000);
+      toastTimer = setTimeout(() => { 
+        toast.classList.remove('show'); 
+        if (motionOK()) toast.classList.add('is-closing');
+        setTimeout(() => toast.classList.remove('is-closing'), 190);
+      }, 3000);
     }
 
     form.addEventListener('submit', async e => {
       e.preventDefault();
       btn.disabled = true;
-      btnText.textContent = 'Verifying credentials...';
+      inlineError.classList.remove('show', 'comet-in');
+      
+      btnText.textContent = 'Verifying...';
+      if (motionOK()) pulseNode(btnText, 'star-glint');
       btnIcon.textContent = '';
 
       const username = document.getElementById('username').value.trim();
@@ -77,6 +102,7 @@
 
         btnText.textContent = 'Access granted';
         btnIcon.textContent = 'OK';
+        if (motionOK()) pulseNode(btnText, 'star-glint');
         setTimeout(() => {
           window.location.reload();
         }, 500);
