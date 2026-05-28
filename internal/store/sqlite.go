@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -105,6 +107,15 @@ type OSINTEvidence struct {
 	ExpiresAt    string   `json:"expires_at"`
 }
 
+type BlockReport struct {
+	ID        int64  `json:"id"`
+	Domain    string `json:"domain"`
+	Contact   string `json:"contact"`
+	Note      string `json:"note"`
+	Status    string `json:"status"`
+	CreatedAt string `json:"created_at"`
+}
+
 // DomainCount holds a domain and its occurrence count from audit queries.
 type DomainCount struct {
 	Domain string `json:"domain"`
@@ -119,8 +130,10 @@ type cidrMapping struct {
 // DB wraps a SQLite connection with telemetry and override capabilities.
 type DB struct {
 	db            *sql.DB
+	dbPath        string
 	telemetryCh   chan TelemetryEntry
 	retentionDays int
+	configMu      sync.RWMutex
 	done          chan struct{}
 	wg            sync.WaitGroup
 
@@ -232,6 +245,23 @@ CREATE TABLE IF NOT EXISTS trusted_brands (
 );
 CREATE INDEX IF NOT EXISTS idx_trusted_brands_name ON trusted_brands(name);
 CREATE INDEX IF NOT EXISTS idx_trusted_brands_official_domain ON trusted_brands(official_domain);
+
+CREATE TABLE IF NOT EXISTS block_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain TEXT NOT NULL,
+    contact TEXT,
+    note TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_block_reports_status ON block_reports(status);
+CREATE INDEX IF NOT EXISTS idx_block_reports_domain ON block_reports(domain);
+
+CREATE TABLE IF NOT EXISTS system_config (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 `
 
 const telemetryBufferSize = 1000
@@ -302,8 +332,18 @@ func New(path string, retentionDays int) (*DB, error) {
 		_, _ = sqlDB.Exec("ALTER TABLE analysis_log ADD COLUMN client_id TEXT DEFAULT ''")
 	}
 
+	// Load custom retentionDays if stored in database
+	var customRetentionStr string
+	_ = sqlDB.QueryRow(`SELECT value FROM system_config WHERE key = 'telemetry_retention_days'`).Scan(&customRetentionStr)
+	if customRetentionStr != "" {
+		if val, err := strconv.Atoi(customRetentionStr); err == nil && val > 0 {
+			retentionDays = val
+		}
+	}
+
 	d := &DB{
 		db:            sqlDB,
+		dbPath:        path,
 		telemetryCh:   make(chan TelemetryEntry, telemetryBufferSize),
 		retentionDays: retentionDays,
 		done:          make(chan struct{}),
@@ -485,7 +525,7 @@ func (d *DB) cleanupLoop() {
 }
 
 func (d *DB) cleanup() {
-	cutoff := time.Now().AddDate(0, 0, -d.retentionDays).UTC().Format(time.RFC3339)
+	cutoff := time.Now().AddDate(0, 0, -d.GetRetentionDays()).UTC().Format(time.RFC3339)
 	result, err := d.db.Exec(`DELETE FROM analysis_log WHERE analyzed_at < ?`, cutoff)
 	if err != nil {
 		logjson.Error("telemetry cleanup failed", map[string]any{
@@ -1437,3 +1477,154 @@ func (d *DB) loadCIDRCache() error {
 	d.cidrMu.Unlock()
 	return nil
 }
+
+// CreateBlockReport creates a new block report entry.
+func (d *DB) CreateBlockReport(domain, contact, note string) (int64, error) {
+	if !d.Enabled() {
+		return 0, fmt.Errorf("sqlite store disabled")
+	}
+	res, err := d.db.Exec(`
+		INSERT INTO block_reports (domain, contact, note, status)
+		VALUES (?, ?, ?, 'pending')`, domain, contact, note)
+	if err != nil {
+		return 0, fmt.Errorf("insert block report: %w", err)
+	}
+	return res.LastInsertId()
+}
+
+// ListBlockReports retrieves block reports with pagination.
+func (d *DB) ListBlockReports(limit, offset int) ([]BlockReport, error) {
+	if !d.Enabled() {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, err := d.db.Query(`
+		SELECT id, domain, COALESCE(contact, ''), COALESCE(note, ''), status, created_at
+		FROM block_reports ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list block reports: %w", err)
+	}
+	defer rows.Close()
+
+	var reports []BlockReport
+	for rows.Next() {
+		var r BlockReport
+		if err := rows.Scan(&r.ID, &r.Domain, &r.Contact, &r.Note, &r.Status, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan block report: %w", err)
+		}
+		reports = append(reports, r)
+	}
+	return reports, rows.Err()
+}
+
+// UpdateBlockReportStatus updates the status of a specific block report.
+func (d *DB) UpdateBlockReportStatus(id int64, status string) error {
+	if !d.Enabled() {
+		return fmt.Errorf("sqlite store disabled")
+	}
+	_, err := d.db.Exec(`UPDATE block_reports SET status = ? WHERE id = ?`, status, id)
+	if err != nil {
+		return fmt.Errorf("update block report status: %w", err)
+	}
+	return nil
+}
+
+// ResolveBlockReportsForDomain marks all pending reports for a domain as resolved.
+func (d *DB) ResolveBlockReportsForDomain(domain string) error {
+	if !d.Enabled() {
+		return fmt.Errorf("sqlite store disabled")
+	}
+	_, err := d.db.Exec(`UPDATE block_reports SET status = 'resolved' WHERE domain = ? AND status = 'pending'`, domain)
+	return err
+}
+
+// GetSystemConfig retrieves the value of a system configuration key.
+// Returns an empty string and nil error if not found.
+func (d *DB) GetSystemConfig(key string) (string, error) {
+	if !d.Enabled() {
+		return "", fmt.Errorf("sqlite store disabled")
+	}
+	var value string
+	err := d.db.QueryRow(`SELECT value FROM system_config WHERE key = ?`, key).Scan(&value)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("get system config for key %s: %w", key, err)
+	}
+	return value, nil
+}
+
+// SetSystemConfig sets the value of a system configuration key (upsert).
+func (d *DB) SetSystemConfig(key, value string) error {
+	if !d.Enabled() {
+		return fmt.Errorf("sqlite store disabled")
+	}
+	_, err := d.db.Exec(`
+		INSERT INTO system_config (key, value, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+	`, key, value)
+	if err != nil {
+		return fmt.Errorf("set system config for key %s: %w", key, err)
+	}
+	return nil
+}
+
+// DatabaseStats holds SQLite database storage usage metrics.
+type DatabaseStats struct {
+	FileSizeMB float64 `json:"file_size_mb"`
+	DiskFreeGB float64 `json:"disk_free_gb"`
+}
+
+// Stats computes SQLite database file size and free storage capacity.
+func (d *DB) Stats() DatabaseStats {
+	if !d.Enabled() || d.dbPath == "" {
+		return DatabaseStats{}
+	}
+
+	var fileSize float64
+	if fi, err := os.Stat(d.dbPath); err == nil {
+		fileSize = float64(fi.Size()) / 1024.0 / 1024.0 // MB
+	}
+
+	freeSpace, err := getFreeDiskSpace(d.dbPath)
+	if err != nil {
+		// Degrade gracefully if OS permission issue occurs
+		freeSpace = 0.0
+	}
+
+	return DatabaseStats{
+		FileSizeMB: fileSize,
+		DiskFreeGB: freeSpace,
+	}
+}
+
+// GetRetentionDays returns the active telemetry retention days thread-safely.
+func (d *DB) GetRetentionDays() int {
+	if d == nil {
+		return 30
+	}
+	d.configMu.RLock()
+	defer d.configMu.RUnlock()
+	return d.retentionDays
+}
+
+// UpdateRetentionDays updates the active telemetry retention days thread-safely.
+func (d *DB) UpdateRetentionDays(days int) {
+	if d == nil {
+		return
+	}
+	if days <= 0 {
+		days = 30
+	}
+	d.configMu.Lock()
+	d.retentionDays = days
+	d.configMu.Unlock()
+}
+

@@ -80,7 +80,6 @@ func (a *app) blockReportHandler(w http.ResponseWriter, r *http.Request) {
 	requestedPath := firstNonEmpty(strings.TrimSpace(r.Form.Get("requested_path")), blockedPathFromRequest(r))
 	contact := strings.TrimSpace(r.Form.Get("contact"))
 	note := strings.TrimSpace(r.Form.Get("note"))
-
 	reportDetails, err := json.Marshal(map[string]string{
 		"domain":         domain,
 		"requested_path": requestedPath,
@@ -96,6 +95,10 @@ func (a *app) blockReportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if db := a.risk.StoreDB(); db != nil && db.Enabled() {
+		if _, err := db.CreateBlockReport(domain, contact, note); err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to record report")
+			return
+		}
 		if err := db.RecordAgentEvent("block_page", "false_positive_report", domain, string(reportDetails)); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to record report")
 			return

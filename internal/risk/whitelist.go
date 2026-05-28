@@ -187,3 +187,47 @@ func (w *Whitelist) IsAllowed(domain string) bool {
 
 	return false
 }
+
+// WhitelistMetrics holds operational Bloom filter and Whitelist size metrics.
+type WhitelistMetrics struct {
+	LoadedDomains int     `json:"loaded_domains"`
+	BloomBits     uint64  `json:"bloom_bits"`
+	BloomHashes   uint64  `json:"bloom_hashes"`
+	BloomSizeRAM  float64 `json:"bloom_size_ram_kb"`
+	FPR           float64 `json:"fpr"`
+}
+
+// Metrics queries Whitelist capacity and dynamic RAM usage.
+func (w *Whitelist) Metrics() WhitelistMetrics {
+	if w == nil {
+		return WhitelistMetrics{}
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	var loaded int
+	if w.db != nil && w.db.Enabled() {
+		if domains, err := w.db.GetWhitelist(); err == nil {
+			loaded = len(domains)
+		}
+	} else {
+		loaded = len(w.allowed)
+	}
+
+	var bits, hashes uint64
+	var sizeRAM float64
+	if w.bloom != nil {
+		bits = w.bloom.m
+		hashes = w.bloom.k
+		sizeRAM = float64(bits) / 8.0 / 1024.0 // KB
+	}
+
+	return WhitelistMetrics{
+		LoadedDomains: loaded,
+		BloomBits:     bits,
+		BloomHashes:   hashes,
+		BloomSizeRAM:  sizeRAM,
+		FPR:           0.01, // 1% false positive rate
+	}
+}
+

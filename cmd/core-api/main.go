@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"bytes"
 	"time"
 
 	"safe-zone/internal/agent"
@@ -32,6 +33,10 @@ type analyzeRequest struct {
 	Domain string `json:"domain"`
 }
 
+type RateLimitingStatus struct {
+	Enabled bool `json:"enabled"`
+}
+
 type statusResponse struct {
 	Service        string              `json:"service"`
 	Status         string              `json:"status"`
@@ -40,6 +45,7 @@ type statusResponse struct {
 	Redis          *risk.CacheStatus   `json:"redis,omitempty"`
 	FeedSync       *feed.StatusSummary `json:"feed_sync,omitempty"`
 	Endpoints      []string            `json:"endpoints,omitempty"`
+	RateLimiting   *RateLimitingStatus `json:"rate_limiting,omitempty"`
 	Time           string              `json:"time"`
 }
 
@@ -55,6 +61,7 @@ type app struct {
 	feedPreset     string
 	feedSources    []string
 	feedStaleAfter time.Duration
+	rateLimiter    *ratelimit.TieredMiddleware
 }
 
 func main() {
@@ -130,6 +137,7 @@ func main() {
 			"default_rpm": config.Float64("SAFE_ZONE_RATELIMIT_DEFAULT_RPM", 60),
 		})
 	}
+	api.rateLimiter = tiered
 
 	// --- Agent Engine ---
 	var agentEngine *agent.Engine
@@ -267,14 +275,19 @@ func main() {
 	mux.HandleFunc("/v1/auth/logout", api.authLogoutHandler)
 	mux.HandleFunc("/v1/overrides", api.requireAuthFunc(api.overridesHandler))
 	mux.HandleFunc("/v1/overrides/review-false-positive", api.requireAuthFunc(api.reviewFalsePositiveHandler))
+	mux.HandleFunc("/v1/reports", api.requireAuthFunc(api.listReportsHandler))
+	mux.HandleFunc("/v1/reports/status", api.requireAuthFunc(api.updateReportStatusHandler))
 	mux.HandleFunc("/v1/brands", api.requireAuthFunc(serve.BrandHandler(api.risk)))
 	mux.HandleFunc("/v1/telemetry/recent", api.requireAuthFunc(api.telemetryRecentHandler))
 	mux.HandleFunc("/v1/telemetry/stats", api.requireAuthFunc(api.telemetryStatsHandler))
-	mux.HandleFunc("/v1/agent/status", api.requireAuthFunc(agentStatusHandler(agentEngine)))
+	mux.HandleFunc("/v1/agent/status", api.requireAuthFunc(api.agentStatusHandler(agentEngine)))
 	mux.HandleFunc("/v1/agent/trigger", api.requireAuthFunc(agentTriggerHandler(agentEngine)))
 	mux.HandleFunc("/v1/groups", api.requireAuthFunc(api.groupsHandler))
 	mux.HandleFunc("/v1/mappings", api.requireAuthFunc(api.mappingsHandler))
 	mux.HandleFunc("/v1/group-overrides", api.requireAuthFunc(api.groupOverridesHandler))
+	mux.HandleFunc("/v1/settings", api.requireAuthFunc(api.settingsHandler))
+	mux.HandleFunc("/v1/settings/test-ai", api.requireAuthFunc(api.testAIHandler))
+	mux.HandleFunc("/v1/settings/test-alert", api.requireAuthFunc(api.testAlertHandler))
 	mux.Handle("/assets/", http.FileServer(http.FS(assetsFS)))
 	mux.HandleFunc("/dashboard", api.dashboardHandler)
 	mux.HandleFunc("/dashboard/", api.dashboardHandler)
@@ -355,6 +368,9 @@ func (a *app) statusHandler(w http.ResponseWriter, r *http.Request) {
 			"/v1/agent/status",
 			"/v1/agent/trigger?task=<name>",
 			"/dashboard",
+		},
+		RateLimiting: &RateLimitingStatus{
+			Enabled: a.rateLimiter != nil,
 		},
 		Time: time.Now().UTC().Format(time.RFC3339Nano),
 	})
@@ -549,6 +565,11 @@ type falsePositiveReviewRequest struct {
 	PreviousAction string `json:"previous_action,omitempty"`
 }
 
+type updateReportStatusRequest struct {
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+}
+
 func (a *app) overridesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -652,6 +673,9 @@ func (a *app) reviewFalsePositiveHandler(w http.ResponseWriter, r *http.Request)
 		if data, err := json.Marshal(details); err == nil {
 			_ = db.RecordAgentEvent("operator_review", "operator_false_positive_review", normalized, string(data))
 		}
+		if db.Enabled() {
+			_ = db.ResolveBlockReportsForDomain(normalized)
+		}
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{
@@ -697,6 +721,89 @@ func (a *app) telemetryRecentHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"items": entries})
 }
 
+func (a *app) listReportsHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	limit := 50
+	offset := 0
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	if v := r.URL.Query().Get("offset"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			offset = n
+		}
+	}
+
+	db := a.risk.StoreDB()
+	if db == nil || !db.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "database not configured")
+		return
+	}
+
+	reports, err := db.ListBlockReports(limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list reports: "+err.Error())
+		return
+	}
+	if reports == nil {
+		reports = []store.BlockReport{}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"reports": reports,
+	})
+}
+
+func (a *app) updateReportStatusHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	defer r.Body.Close()
+
+	var req updateReportStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	req.Status = strings.TrimSpace(req.Status)
+	if req.ID <= 0 {
+		writeError(w, http.StatusBadRequest, "invalid ID")
+		return
+	}
+	if req.Status == "" {
+		writeError(w, http.StatusBadRequest, "status is required")
+		return
+	}
+
+	db := a.risk.StoreDB()
+	if db == nil || !db.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "database not configured")
+		return
+	}
+
+	if err := db.UpdateBlockReportStatus(req.ID, req.Status); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to update report status: "+err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status": "ok",
+	})
+}
+
 func (a *app) telemetryStatsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -725,17 +832,41 @@ func (a *app) telemetryStatsHandler(w http.ResponseWriter, r *http.Request) {
 
 // --- Agent API ---
 
-func agentStatusHandler(engine *agent.Engine) http.HandlerFunc {
+func (a *app) agentStatusHandler(engine *agent.Engine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 			return
 		}
+
+		var engineStatus any
 		if engine == nil {
-			writeJSON(w, http.StatusOK, agent.EngineStatus{Enabled: false})
-			return
+			engineStatus = map[string]any{"enabled": false}
+		} else {
+			engineStatus = engine.Status()
 		}
-		writeJSON(w, http.StatusOK, engine.Status())
+
+		db := a.risk.StoreDB()
+		var dbStats store.DatabaseStats
+		var retentionDays int
+		if db != nil && db.Enabled() {
+			dbStats = db.Stats()
+			retentionDays = db.GetRetentionDays()
+		}
+
+		var wlMetrics risk.WhitelistMetrics
+		if a.risk != nil && a.risk.Whitelist() != nil {
+			wlMetrics = a.risk.Whitelist().Metrics()
+		}
+
+		response := map[string]any{
+			"status":                   engineStatus,
+			"whitelist_stats":          wlMetrics,
+			"database_stats":           dbStats,
+			"telemetry_retention_days": retentionDays,
+		}
+
+		writeJSON(w, http.StatusOK, response)
 	}
 }
 
@@ -1238,3 +1369,264 @@ func canonicalRequestHost(value string) string {
 	}
 	return value
 }
+
+// Settings API Handlers
+
+type settingsResponse struct {
+	GeminiAPIKey           string `json:"gemini_api_key"`
+	AgentWebhookURL        string `json:"agent_webhook_url"`
+	TelemetryRetentionDays int    `json:"telemetry_retention_days"`
+}
+
+type settingsRequest struct {
+	GeminiAPIKey           string `json:"gemini_api_key"`
+	AgentWebhookURL        string `json:"agent_webhook_url"`
+	TelemetryRetentionDays int    `json:"telemetry_retention_days"`
+}
+
+type testAlertEvent struct {
+	Type      string `json:"type"`
+	Domain    string `json:"domain,omitempty"`
+	Details   string `json:"details,omitempty"`
+	CreatedAt string `json:"created_at"`
+}
+
+type testAlertPayload struct {
+	Timestamp string           `json:"timestamp"`
+	EventType string           `json:"event_type"`
+	Summary   string           `json:"summary"`
+	Events    []testAlertEvent `json:"events"`
+}
+
+func maskConfigValue(val string) string {
+	if val == "" {
+		return ""
+	}
+	if len(val) <= 4 {
+		return strings.Repeat("*", len(val))
+	}
+	return val[:4] + strings.Repeat("*", len(val)-4)
+}
+
+func (a *app) settingsHandler(w http.ResponseWriter, r *http.Request) {
+	db := a.risk.StoreDB()
+	if db == nil || !db.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "database not configured")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		apiKey, err := db.GetSystemConfig("gemini_api_key")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to get gemini_api_key: "+err.Error())
+			return
+		}
+		webhookURL, err := db.GetSystemConfig("agent_webhook_url")
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to get agent_webhook_url: "+err.Error())
+			return
+		}
+
+		writeJSON(w, http.StatusOK, settingsResponse{
+			GeminiAPIKey:           maskConfigValue(apiKey),
+			AgentWebhookURL:        maskConfigValue(webhookURL),
+			TelemetryRetentionDays: db.GetRetentionDays(),
+		})
+
+	case http.MethodPost:
+		r.Body = http.MaxBytesReader(w, r.Body, 8192)
+		defer r.Body.Close()
+		var req settingsRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+
+		// Save Gemini API Key if not masked
+		if req.GeminiAPIKey != "" {
+			if !strings.Contains(req.GeminiAPIKey, "*") {
+				if err := db.SetSystemConfig("gemini_api_key", strings.TrimSpace(req.GeminiAPIKey)); err != nil {
+					writeError(w, http.StatusInternalServerError, "failed to save gemini_api_key: "+err.Error())
+					return
+				}
+				// Hot reload key in client
+				if a.risk != nil {
+					a.risk.AIClient() // triggers syncAIClient
+				}
+			}
+		} else {
+			if err := db.SetSystemConfig("gemini_api_key", ""); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to clear gemini_api_key: "+err.Error())
+				return
+			}
+		}
+
+		// Save Webhook URL if not masked
+		if req.AgentWebhookURL != "" {
+			if !strings.Contains(req.AgentWebhookURL, "*") {
+				if err := db.SetSystemConfig("agent_webhook_url", strings.TrimSpace(req.AgentWebhookURL)); err != nil {
+					writeError(w, http.StatusInternalServerError, "failed to save agent_webhook_url: "+err.Error())
+					return
+				}
+			}
+		} else {
+			if err := db.SetSystemConfig("agent_webhook_url", ""); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to clear agent_webhook_url: "+err.Error())
+				return
+			}
+		}
+
+		// Save Telemetry Retention Days if provided
+		if req.TelemetryRetentionDays > 0 {
+			db.UpdateRetentionDays(req.TelemetryRetentionDays)
+			if err := db.SetSystemConfig("telemetry_retention_days", strconv.Itoa(req.TelemetryRetentionDays)); err != nil {
+				writeError(w, http.StatusInternalServerError, "failed to save telemetry_retention_days: "+err.Error())
+				return
+			}
+		}
+
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (a *app) testAIHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	aiClient := a.risk.AIClient()
+	if aiClient == nil || !aiClient.Enabled() {
+		writeError(w, http.StatusBadRequest, "AI client is not configured or disabled")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	testRes := analysis.Result{
+		Domain:     "test-api-key.com",
+		Verdict:    analysis.VerdictSuspicious,
+		Score:      50,
+		Confidence: 0.5,
+		Reasons:    []string{"testing API key configuration"},
+	}
+
+	res, err := aiClient.Refine(ctx, "test-api-key.com", testRes)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":  "ok",
+		"verdict": res.Verdict,
+		"reason":  strings.Join(res.Reasons, "; "),
+	})
+}
+
+func (a *app) testAlertHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	db := a.risk.StoreDB()
+	if db == nil || !db.Enabled() {
+		writeError(w, http.StatusServiceUnavailable, "database not configured")
+		return
+	}
+
+	webhookURL := ""
+	if customURL, err := db.GetSystemConfig("agent_webhook_url"); err == nil && customURL != "" {
+		webhookURL = customURL
+	}
+	if webhookURL == "" {
+		webhookURL = config.SecretString("SAFE_ZONE_AGENT_WEBHOOK_URL", "")
+	}
+
+	if webhookURL == "" {
+		writeError(w, http.StatusBadRequest, "No webhook URL configured")
+		return
+	}
+
+	payload := testAlertPayload{
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+		EventType: "safe_zone_test_alert",
+		Summary:   "Safe Zone: This is a test notification from the management console",
+		Events: []testAlertEvent{
+			{
+				Type:      "test_alert",
+				Domain:    "test-notification.com",
+				Details:   "Testing Discord/Slack Alert Channel Configuration",
+				CreatedAt: time.Now().Format(time.RFC3339),
+			},
+		},
+	}
+
+	var body []byte
+	var err error
+	if strings.Contains(webhookURL, "discord.com/api/webhooks") || strings.Contains(webhookURL, "discordapp.com/api/webhooks") {
+		discord := map[string]any{
+			"embeds": []map[string]any{
+				{
+					"title":       "🔔 Safe Zone Test Alert",
+					"description": "🟢 Your Alert Notification integration is working perfectly!",
+					"color":       3066993,
+					"footer": map[string]string{
+						"text": payload.Summary,
+					},
+					"timestamp": payload.Timestamp,
+				},
+			},
+		}
+		body, err = json.Marshal(discord)
+	} else {
+		body, err = json.Marshal(payload)
+	}
+
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to marshal payload: "+err.Error())
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "error",
+			"error":  err.Error(),
+		})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status": "error",
+			"error":  fmt.Sprintf("Webhook returned status %d", resp.StatusCode),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status": "ok",
+	})
+}
+

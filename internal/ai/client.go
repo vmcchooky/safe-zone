@@ -351,3 +351,27 @@ Trả lời CHÍNH XÁC theo JSON:
 {"verdict": "SAFE|SUSPICIOUS|MALICIOUS", "confidence": 0.0-1.0, "category": "social_media|adult|gambling|gaming|advertising|malware|phishing|uncategorized", "reason": "giải thích ngắn"}`,
 		domain, current.Verdict, current.Score, current.Confidence)
 }
+
+// SetGeminiAPIKey dynamically updates the Gemini API key used by the client.
+func (c *Client) SetGeminiAPIKey(key string) {
+	if c == nil {
+		return
+	}
+	key = strings.TrimSpace(key)
+	if c.gemini == nil {
+		c.gemini = NewGeminiClient("", key, "", 3*time.Second)
+	} else {
+		c.gemini.apiKey = key
+		if c.gemini.http == nil && key != "" {
+			c.gemini.http = &http.Client{
+				Timeout: c.gemini.timeout,
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+				},
+			}
+		}
+	}
+	if c.providerType == "none" || c.providerType == "" {
+		c.providerType = "gemini"
+	}
+}

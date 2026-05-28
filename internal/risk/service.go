@@ -646,8 +646,25 @@ func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result
 	}
 }
 
+func (s *Service) syncAIClient() {
+	if s == nil || s.store == nil {
+		return
+	}
+	customKey, err := s.store.GetSystemConfig("gemini_api_key")
+	if err == nil && customKey != "" {
+		if s.ai == nil {
+			s.ai = ai.NewClient(ai.Config{Provider: "gemini"})
+		}
+		s.ai.SetGeminiAPIKey(customKey)
+	}
+}
+
 func (s *Service) refineWithAI(ctx context.Context, current analysis.Result) analysis.Result {
-	if s == nil || s.ai == nil {
+	if s == nil {
+		return current
+	}
+	s.syncAIClient()
+	if s.ai == nil {
 		return current
 	}
 	if current.Verdict != analysis.VerdictSuspicious {
@@ -1259,6 +1276,7 @@ func (s *Service) AIClient() *ai.Client {
 	if s == nil {
 		return nil
 	}
+	s.syncAIClient()
 	return s.ai
 }
 

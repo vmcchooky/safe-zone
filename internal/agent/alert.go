@@ -105,8 +105,15 @@ func NewAlertTask(db *store.DB, cfg AlertConfig) *AlertTask {
 func (t *AlertTask) Name() string { return "alert" }
 
 func (t *AlertTask) Run(ctx context.Context) error {
+	webhookURL := t.config.WebhookURL
+	if t.store != nil && t.store.Enabled() {
+		if customURL, err := t.store.GetSystemConfig("agent_webhook_url"); err == nil && customURL != "" {
+			webhookURL = customURL
+		}
+	}
+
 	// Kiểm tra xem có cấu hình bất kỳ kênh cảnh báo nào không
-	hasWebhook := strings.TrimSpace(t.config.WebhookURL) != ""
+	hasWebhook := strings.TrimSpace(webhookURL) != ""
 	hasTelegram := t.config.TelegramEnabled
 	hasSlack := t.config.SlackEnabled
 	hasEmail := t.config.EmailEnabled
@@ -179,7 +186,7 @@ func (t *AlertTask) Run(ctx context.Context) error {
 
 	// 1. Send default webhook (Discord/Generic)
 	if hasWebhook {
-		if err := t.sendWebhook(ctx, payload); err != nil {
+		if err := t.sendWebhook(ctx, webhookURL, payload); err != nil {
 			errorsList = append(errorsList, fmt.Sprintf("webhook: %v", err))
 		}
 	}
@@ -254,11 +261,11 @@ func (t *AlertTask) Run(ctx context.Context) error {
 	return nil
 }
 
-func (t *AlertTask) sendWebhook(ctx context.Context, payload AlertPayload) error {
+func (t *AlertTask) sendWebhook(ctx context.Context, webhookURL string, payload AlertPayload) error {
 	var body []byte
 	var err error
 
-	if isDiscordWebhook(t.config.WebhookURL) {
+	if isDiscordWebhook(webhookURL) {
 		body, err = buildDiscordPayload(payload)
 	} else {
 		body, err = json.Marshal(payload)
@@ -267,7 +274,7 @@ func (t *AlertTask) sendWebhook(ctx context.Context, payload AlertPayload) error
 		return fmt.Errorf("marshal payload: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, t.config.WebhookURL, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
