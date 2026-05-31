@@ -48,7 +48,7 @@ function Get-ComposeBaseArgs {
 
 function Invoke-Compose {
   param(
-    [string[]]$Args,
+    [string[]]$SubCommandArgs,
     [string]$TargetStack = $Stack,
     [switch]$UseProductionProfile
   )
@@ -57,7 +57,7 @@ function Invoke-Compose {
   if ($UseProductionProfile) {
     $composeArgs += @('--profile', 'production-edge')
   }
-  $composeArgs += $Args
+  $composeArgs += $SubCommandArgs
 
   & docker compose @composeArgs
   if ($LASTEXITCODE -ne 0) {
@@ -67,12 +67,12 @@ function Invoke-Compose {
 
 function Invoke-ComposeBestEffort {
   param(
-    [string[]]$Args,
+    [string[]]$SubCommandArgs,
     [string]$TargetStack = $Stack
   )
 
   $composeArgs = Get-ComposeBaseArgs -TargetStack $TargetStack
-  $composeArgs += $Args
+  $composeArgs += $SubCommandArgs
   & docker compose @composeArgs | Out-Null
   if ($LASTEXITCODE -ne 0) {
     Write-Warn "docker compose $($composeArgs -join ' ') exited with code $LASTEXITCODE"
@@ -81,10 +81,10 @@ function Invoke-ComposeBestEffort {
 
 function Start-ComposeStack {
   if ($Stack -eq 'production') {
-    Invoke-Compose -Args @('up', '-d') -TargetStack 'production' -UseProductionProfile
+    Invoke-Compose -SubCommandArgs @('up', '-d') -TargetStack 'production' -UseProductionProfile
     return
   }
-  Invoke-Compose -Args @('up', '-d') -TargetStack 'dev'
+  Invoke-Compose -SubCommandArgs @('up', '-d') -TargetStack 'dev'
 }
 
 function Get-ComposeContainerId {
@@ -101,7 +101,15 @@ function Get-ComposeContainerId {
     $composeArgs += @('ps', '-q', $ServiceName)
   }
 
-  $containerId = (& docker compose @composeArgs).Trim()
+  $rawOutput = & docker compose @composeArgs
+  if ($rawOutput -is [array]) {
+    $rawOutput = $rawOutput -join "`n"
+  }
+  if (-not $rawOutput) {
+    return $null
+  }
+
+  $containerId = $rawOutput.Trim()
   if (-not $containerId) {
     return $null
   }
@@ -211,19 +219,22 @@ function Wait-ForHealth {
 function Backup-Redis {
   param([string]$TargetDir)
 
-  Write-Host 'Creating Redis snapshot...'
-  Invoke-Compose -Args @('exec', '-T', 'redis', 'redis-cli', 'SAVE')
-
   $containerId = Get-ComposeContainerId -ServiceName 'redis'
   if (-not $containerId) {
     Write-Warn 'Redis container is not running; skipping Redis snapshot copy'
     return
   }
 
-  $targetFile = Join-Path $TargetDir 'redis-dump.rdb'
-  & docker cp "${containerId}:/data/dump.rdb" $targetFile
-  if ($LASTEXITCODE -ne 0) {
-    throw 'docker cp failed while exporting the Redis snapshot'
+  Write-Host 'Creating Redis snapshot...'
+  try {
+    Invoke-Compose -SubCommandArgs @('exec', '-T', 'redis', 'redis-cli', 'SAVE')
+    $targetFile = Join-Path $TargetDir 'redis-dump.rdb'
+    & docker cp "${containerId}:/data/dump.rdb" $targetFile
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warn 'docker cp failed while exporting the Redis snapshot'
+    }
+  } catch {
+    Write-Warn "Failed to trigger Redis SAVE or copy dump: $_"
   }
 }
 
@@ -446,7 +457,7 @@ function Resolve-BackupDirectory {
 
 function Stop-ForRestore {
   Write-Host 'Stopping services that may hold Redis/SQLite locks...'
-  Invoke-ComposeBestEffort -Args @('stop', 'core-api', 'dns-resolver', 'feed-syncd', 'redis')
+  Invoke-ComposeBestEffort -SubCommandArgs @('stop', 'core-api', 'dns-resolver', 'feed-syncd', 'redis')
 }
 
 function Restore-Sqlite {
@@ -491,7 +502,7 @@ function Restore-Redis {
   $containerId = Get-ComposeContainerId -ServiceName 'redis' -All
   if (-not $containerId) {
     Write-Warn 'Redis container does not exist yet; creating it before Redis restore'
-    Invoke-Compose -Args @('up', '--no-start', 'redis')
+    Invoke-Compose -SubCommandArgs @('up', '--no-start', 'redis')
     $containerId = Get-ComposeContainerId -ServiceName 'redis' -All
   }
 
@@ -689,21 +700,21 @@ switch ($Command) {
     if ($FeedSync) {
       $composeArgs = @('--profile', 'feed-sync') + $composeArgs
     }
-    Invoke-Compose -Args $composeArgs -TargetStack 'production' -UseProductionProfile
+    Invoke-Compose -SubCommandArgs $composeArgs -TargetStack 'production' -UseProductionProfile
     Wait-ForHealth -Url 'http://localhost:8080/healthz' -Name 'core-api'
     Wait-ForHealth -Url 'http://localhost:8081/healthz' -Name 'dns-resolver'
     Write-Host 'Deployment healthy.' -ForegroundColor Green
   }
   'deploy-dev' {
     Write-Section 'Deploying Safe Zone (dev stack)'
-    Invoke-Compose -Args @('up', '-d', '--build') -TargetStack 'dev'
+    Invoke-Compose -SubCommandArgs @('up', '-d', '--build') -TargetStack 'dev'
     Wait-ForHealth -Url 'http://localhost:8080/healthz' -Name 'core-api'
     Wait-ForHealth -Url 'http://localhost:8081/healthz' -Name 'dns-resolver'
     Write-Host 'Deployment healthy.' -ForegroundColor Green
   }
   'status' {
     Write-Section 'Compose status'
-    Invoke-Compose -Args @('ps')
+    Invoke-Compose -SubCommandArgs @('ps')
     Write-Section 'Health checks'
     foreach ($item in @(
       @{ Name = 'core-api'; Url = 'http://localhost:8080/healthz' },
@@ -738,7 +749,7 @@ switch ($Command) {
 
     foreach ($source in $sources) {
       Write-Section "Syncing $source"
-      Invoke-Compose -Args @('--profile', 'feed-sync', 'run', '--rm', 'feed-sync', '/app/service', '-source', $source)
+      Invoke-Compose -SubCommandArgs @('--profile', 'feed-sync', 'run', '--rm', 'feed-sync', '/app/service', '-source', $source)
     }
   }
   default {

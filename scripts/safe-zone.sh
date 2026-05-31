@@ -162,16 +162,17 @@ quote_sqlite_path() {
 
 backup_redis() {
   target="$1"
-  log_info "Creating Redis snapshot..."
-  compose_stack "$stack" exec -T redis redis-cli SAVE >/dev/null
-
   container_id="$(compose_container_id redis)"
   if [ -z "$container_id" ]; then
     log_warn "Redis container is not running; skipping Redis snapshot copy"
     return 0
   fi
 
-  docker cp "${container_id}:/data/dump.rdb" "${target}/redis-dump.rdb"
+  log_info "Creating Redis snapshot..."
+  if ! compose_stack "$stack" exec -T redis redis-cli SAVE >/dev/null; then
+    log_warn "Redis SAVE command failed, attempting to copy current dump anyway"
+  fi
+  docker cp "${container_id}:/data/dump.rdb" "${target}/redis-dump.rdb" || log_warn "Failed to copy Redis snapshot"
 }
 
 backup_sqlite() {

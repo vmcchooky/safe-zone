@@ -44,7 +44,15 @@ function Invoke-AndCapture {
 
   $outputFile = Join-Path $EvidenceDir "$Label.txt"
   Write-Host "==> $Label"
-  & $Script *> $outputFile
+  
+  $oldPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $Script *> $outputFile
+  } finally {
+    $ErrorActionPreference = $oldPreference
+  }
+
   if ($LASTEXITCODE -ne 0) {
     Get-Content $outputFile
     throw "$Label failed"
@@ -68,11 +76,19 @@ function Build-Binary {
   ) -join ' '
 
   Write-Host "==> build-$Service"
-  & {
-    $env:CGO_ENABLED = '0'
-    $env:GOOS = 'linux'
-    go build -trimpath -ldflags $ldflags -o $binaryPath "./cmd/$Service"
-  } *> $outputFile
+  
+  $oldPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & {
+      $env:CGO_ENABLED = '0'
+      $env:GOOS = 'linux'
+      go build -trimpath -ldflags $ldflags -o $binaryPath "./cmd/$Service"
+    } *> $outputFile
+  } finally {
+    $ErrorActionPreference = $oldPreference
+  }
+  
   if ($LASTEXITCODE -ne 0) {
     Get-Content $outputFile
     throw "build-$Service failed"
@@ -87,23 +103,31 @@ function Build-Image {
   $inspectFile = Join-Path (Join-Path $EvidenceDir 'docker') "$Service.inspect.json"
 
   Write-Host "==> docker-build-$Service"
-  for ($attempt = 1; $attempt -le 3; $attempt++) {
-    & docker build `
-      --build-arg "SERVICE=$Service" `
-      --build-arg "VERSION=$Version" `
-      --build-arg "GIT_COMMIT=$GitCommit" `
-      --build-arg "BUILD_TIME=$BuildTime" `
-      --build-arg "IMAGE_TAG=$imageRef" `
-      --build-arg "SOURCE_REPO=$SourceRepo" `
-      -t $imageRef . *> $buildLog
-    if ($LASTEXITCODE -eq 0) {
-      break
+  
+  $oldPreference = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+      & docker build `
+        --build-arg "SERVICE=$Service" `
+        --build-arg "VERSION=$Version" `
+        --build-arg "GIT_COMMIT=$GitCommit" `
+        --build-arg "BUILD_TIME=$BuildTime" `
+        --build-arg "IMAGE_TAG=$imageRef" `
+        --build-arg "SOURCE_REPO=$SourceRepo" `
+        -t $imageRef . *> $buildLog
+      if ($LASTEXITCODE -eq 0) {
+        break
+      }
+      if ($attempt -lt 3) {
+        Write-Warning "docker-build-$Service attempt $attempt failed, retrying..."
+        Start-Sleep -Seconds 2
+      }
     }
-    if ($attempt -lt 3) {
-      Write-Warning "docker-build-$Service attempt $attempt failed, retrying..."
-      Start-Sleep -Seconds 2
-    }
+  } finally {
+    $ErrorActionPreference = $oldPreference
   }
+
   if ($LASTEXITCODE -ne 0) {
     Get-Content $buildLog
     throw "docker-build-$Service failed"
