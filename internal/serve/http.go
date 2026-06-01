@@ -76,11 +76,12 @@ func Recovery(next http.Handler, obs MetricsObserver) http.Handler {
 				accept := r.Header.Get("Accept")
 				isHTML := strings.Contains(accept, "text/html") || strings.HasPrefix(r.URL.Path, "/dashboard")
 
+				reqID := RequestID(r.Context())
 				var bytesWritten int
 				if isHTML {
 					w.Header().Set("Content-Type", "text/html; charset=utf-8")
 					w.WriteHeader(http.StatusInternalServerError)
-					htmlContent := getGlassmorphicErrorHTML(fmt.Sprintf("%v", rec))
+					htmlContent := getGlassmorphicErrorHTML(reqID)
 					n, _ := w.Write([]byte(htmlContent))
 					bytesWritten = n
 				} else {
@@ -103,7 +104,7 @@ func Recovery(next http.Handler, obs MetricsObserver) http.Handler {
 }
 
 // getGlassmorphicErrorHTML sinh ra giao diện lỗi HTML phong cách Glassmorphic cực kỳ hiện đại
-func getGlassmorphicErrorHTML(errStr string) string {
+func getGlassmorphicErrorHTML(requestID string) string {
 	return `<!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -337,7 +338,8 @@ func getGlassmorphicErrorHTML(errStr string) string {
             <div class="status-badge">HTTP 500 Internal Error</div>
             <p>Đã xảy ra lỗi runtime không mong muốn trong quá trình xử lý yêu cầu của bạn. Sự cố đã được tự động ghi nhận và chuyển tới đội ngũ kỹ thuật để khắc phục.</p>
             
-            <div class="error-details">Sự cố: ` + htmlEscape(errStr) + `</div>
+            			<div class="error-details">Mã sự cố: ` + htmlEscape(requestID) + `
+Vui lòng cung cấp mã này khi liên hệ hỗ trợ kỹ thuật.</div>
 
             <a href="/dashboard" class="btn">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor">

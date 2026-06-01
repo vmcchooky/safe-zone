@@ -76,6 +76,7 @@ func NewServiceFromEnv() *Service {
 		EnrichEnabled:   config.Bool("SAFE_ZONE_ENRICH_ENABLED", true),
 		EnrichTimeout:   config.DurationMillis("SAFE_ZONE_ENRICH_TIMEOUT_MS", 3*time.Second),
 		EnrichQueueSize: config.Int("SAFE_ZONE_ENRICH_QUEUE_SIZE", 256),
+		EnrichWorkers:   config.Int("SAFE_ZONE_ENRICH_WORKERS", 2),
 		OSINT:           osintService,
 	})
 }

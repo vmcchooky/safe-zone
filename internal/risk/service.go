@@ -57,9 +57,13 @@ type Options struct {
 	EnrichQueueSize int
 	// OSINT evidence lookup for API/dashboard paths.
 	OSINT *osint.Service
+	// Enrichment worker pool size. Defaults to 1 if not set.
+	EnrichWorkers int
 }
 
 type Service struct {
+	lifecycleCtx     context.Context
+	lifecycleCancel  context.CancelFunc
 	redis            *cache.Redis
 	redisTimeout     time.Duration
 	ttlAllowed       time.Duration
@@ -186,8 +190,15 @@ func NewService(options Options) *Service {
 	if enrichQueueSize <= 0 {
 		enrichQueueSize = 256
 	}
+	enrichWorkers := options.EnrichWorkers
+	if enrichWorkers <= 0 {
+		enrichWorkers = 1
+	}
 
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	svc := &Service{
+		lifecycleCtx:     lifecycleCtx,
+		lifecycleCancel:  lifecycleCancel,
 		redis:            options.Redis,
 		redisTimeout:     options.RedisTimeout,
 		ttlAllowed:       options.TTLAllowed,
@@ -211,8 +222,10 @@ func NewService(options Options) *Service {
 	}
 	if svc.enrichEnabled && svc.redis != nil && svc.redis.Enabled() && svc.enrichTimeout > 0 {
 		svc.enrichQueue = make(chan enrichmentJob, enrichQueueSize)
-		svc.enrichWG.Add(1)
-		go svc.enrichmentWorker()
+		svc.enrichWG.Add(enrichWorkers)
+		for i := 0; i < enrichWorkers; i++ {
+			go svc.enrichmentWorker()
+		}
 	}
 	return svc
 }
@@ -228,6 +241,7 @@ func (s *Service) Close() error {
 	if s == nil {
 		return nil
 	}
+	s.lifecycleCancel()
 	var redisErr, storeErr error
 	if s.enrichDone != nil {
 		close(s.enrichDone)
@@ -845,14 +859,14 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	if s == nil || s.redis == nil || !s.redis.Enabled() {
 		return
 	}
-	if current := s.currentFeedRevision(context.Background()); current != "" && job.FeedRevision != "" && current != job.FeedRevision {
+	if current := s.currentFeedRevision(s.lifecycleCtx); current != "" && job.FeedRevision != "" && current != job.FeedRevision {
 		return
 	}
-	if current := s.currentBrandRevision(context.Background()); current != "" && job.BrandRevision != "" && current != job.BrandRevision {
+	if current := s.currentBrandRevision(s.lifecycleCtx); current != "" && job.BrandRevision != "" && current != job.BrandRevision {
 		return
 	}
 
-	enrichCtx, cancel := context.WithTimeout(context.Background(), s.enrichTimeout)
+	enrichCtx, cancel := context.WithTimeout(s.lifecycleCtx, s.enrichTimeout)
 	defer cancel()
 
 	signals := s.enrichmentLookup(enrichCtx, job.Domain)
@@ -860,7 +874,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	applyEnrichmentSignals(&enriched, signals)
 
 	cacheKey := fmt.Sprintf("safe-zone:analysis:%s", job.Domain)
-	err := s.withRedis(context.Background(), func(redisCtx context.Context) error {
+	err := s.withRedis(s.lifecycleCtx, func(redisCtx context.Context) error {
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           enriched,
 			FeedRevision:     job.FeedRevision,

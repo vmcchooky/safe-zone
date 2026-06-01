@@ -54,6 +54,8 @@ type Engine struct {
 	tasks     []*registeredTask
 	triggerCh chan string
 	done      chan struct{}
+	ctx       context.Context
+	cancel    context.CancelFunc
 	wg        sync.WaitGroup
 	started   bool
 	stopped   bool
@@ -63,9 +65,12 @@ const tickInterval = 30 * time.Second
 
 // NewEngine creates an Engine with no tasks registered.
 func NewEngine() *Engine {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Engine{
 		triggerCh: make(chan string, 8),
 		done:      make(chan struct{}),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -110,6 +115,8 @@ func (e *Engine) Stop() {
 	}
 	e.stopped = true
 	e.mu.Unlock()
+
+	e.cancel()
 
 	close(e.done)
 	e.wg.Wait()
@@ -229,7 +236,7 @@ func (e *Engine) executeTask(rt *registeredTask) {
 	rt.state = "running"
 	e.mu.Unlock()
 
-	baseCtx := correlation.WithRunID(context.Background(), correlation.NewID("agent-"+rt.task.Name()))
+	baseCtx := correlation.WithRunID(e.ctx, correlation.NewID("agent-"+rt.task.Name()))
 	ctx, cancel := context.WithTimeout(baseCtx, rt.timeout)
 	defer cancel()
 

@@ -108,13 +108,16 @@ func TestRecoveryMiddleware_HTML(t *testing.T) {
 		t.Errorf("expected Content-Type to contain 'text/html', got '%s'", contentType)
 	}
 
-	// Kiểm tra xem body có chứa các thành phần của giao diện Glassmorphism hay không
+	// Kiểm tra xem body KHÔNG chứa thông tin lỗi nội bộ (bảo mật)
 	bodyStr := w.Body.String()
+	if strings.Contains(bodyStr, "database connection failure") {
+		t.Error("HTML response must NOT leak internal error details")
+	}
 	if !strings.Contains(bodyStr, "Hệ Thống Gặp Sự Cố") {
 		t.Error("HTML response does not contain error title")
 	}
-	if !strings.Contains(bodyStr, "database connection failure") {
-		t.Error("HTML response does not contain error details")
+	if !strings.Contains(bodyStr, "Mã sự cố") {
+		t.Error("HTML response should contain request ID reference")
 	}
 	if !strings.Contains(bodyStr, "Quay Lại Dashboard") {
 		t.Error("HTML response does not contain back to dashboard button")
