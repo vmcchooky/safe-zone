@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -595,6 +596,42 @@ func TestDisabledWhitelist(t *testing.T) {
 	}
 	if list != nil {
 		t.Fatal("nil store should return nil slice for GetWhitelist")
+	}
+}
+
+func TestUpdateWhitelistBulkInsertChunks(t *testing.T) {
+	db := newTestDB(t)
+
+	domains := make([]string, 0, whitelistInsertChunkSize*2+25)
+	for i := 0; i < whitelistInsertChunkSize*2+25; i++ {
+		domains = append(domains, fmt.Sprintf("domain-%04d.example", i))
+	}
+	domains = append(domains, "")
+	domains = append(domains, "domain-0001.example")
+	domains = append(domains, "domain-0500.example")
+
+	if err := db.UpdateWhitelist(domains); err != nil {
+		t.Fatalf("failed to bulk update whitelist: %v", err)
+	}
+
+	list, err := db.GetWhitelist()
+	if err != nil {
+		t.Fatalf("failed to read whitelist after bulk update: %v", err)
+	}
+
+	expected := whitelistInsertChunkSize*2 + 25
+	if len(list) != expected {
+		t.Fatalf("expected %d unique domains after chunked insert, got %d", expected, len(list))
+	}
+
+	for _, domain := range []string{"domain-0001.example", "domain-0500.example", "domain-1024.example"} {
+		ok, err := db.IsDomainWhitelisted(domain)
+		if err != nil {
+			t.Fatalf("IsDomainWhitelisted(%s) error: %v", domain, err)
+		}
+		if !ok {
+			t.Fatalf("expected %s to be whitelisted after chunked insert", domain)
+		}
 	}
 }
 

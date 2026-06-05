@@ -1,9 +1,9 @@
 package whois
 
 import (
-	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"strings"
@@ -42,6 +42,11 @@ var whoisServers = map[string]string{
 	"online": "whois.nic.online",
 	"club":   "whois.nic.club",
 	"vn":     "whois.dot.vn",
+}
+
+var whoisDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+	var d net.Dialer
+	return d.DialContext(ctx, network, address)
 }
 
 // datePatterns are tried in order to extract creation dates from WHOIS text.
@@ -90,8 +95,7 @@ func Lookup(ctx context.Context, domain string) Result {
 
 // query sends a WHOIS TCP query and returns the raw text response.
 func query(ctx context.Context, server, domain string) (string, error) {
-	var d net.Dialer
-	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(server, "43"))
+	conn, err := whoisDialContext(ctx, "tcp", net.JoinHostPort(server, "43"))
 	if err != nil {
 		return "", fmt.Errorf("whois dial %s: %w", server, err)
 	}
@@ -108,12 +112,10 @@ func query(ctx context.Context, server, domain string) (string, error) {
 	}
 
 	var sb strings.Builder
-	scanner := bufio.NewScanner(conn)
-	for scanner.Scan() {
-		sb.WriteString(scanner.Text())
-		sb.WriteByte('\n')
+	if _, err := io.Copy(&sb, conn); err != nil {
+		return "", fmt.Errorf("whois read: %w", err)
 	}
-	return sb.String(), scanner.Err()
+	return sb.String(), nil
 }
 
 // parseAndScore extracts date, registrar, and scores the Result.

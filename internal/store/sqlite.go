@@ -282,6 +282,7 @@ CREATE TABLE IF NOT EXISTS system_config (
 
 const telemetryBufferSize = 1000
 const cleanupInterval = 1 * time.Hour
+const whitelistInsertChunkSize = 500
 
 // New opens a SQLite database at the given path, runs migrations, and starts
 // background goroutines for async telemetry writes and periodic cleanup.
@@ -947,18 +948,18 @@ func (d *DB) UpdateWhitelist(domains []string) error {
 		return fmt.Errorf("delete old whitelist: %w", err)
 	}
 
-	stmt, err := tx.Prepare("INSERT OR IGNORE INTO whitelist_domains (domain) VALUES (?)")
-	if err != nil {
-		return fmt.Errorf("prepare whitelist insert: %w", err)
-	}
-	defer stmt.Close()
+	for start := 0; start < len(domains); start += whitelistInsertChunkSize {
+		end := start + whitelistInsertChunkSize
+		if end > len(domains) {
+			end = len(domains)
+		}
 
-	for _, domain := range domains {
-		if domain == "" {
+		query, args := buildWhitelistInsertQuery(domains[start:end])
+		if len(args) == 0 {
 			continue
 		}
-		if _, err := stmt.Exec(domain); err != nil {
-			return fmt.Errorf("insert whitelist domain %s: %w", domain, err)
+		if _, err := tx.Exec(query, args...); err != nil {
+			return fmt.Errorf("insert whitelist domains chunk [%d:%d]: %w", start, end, err)
 		}
 	}
 
@@ -967,6 +968,26 @@ func (d *DB) UpdateWhitelist(domains []string) error {
 	}
 
 	return nil
+}
+
+func buildWhitelistInsertQuery(domains []string) (string, []any) {
+	args := make([]any, 0, len(domains))
+	var builder strings.Builder
+	builder.Grow(len("INSERT OR IGNORE INTO whitelist_domains (domain) VALUES ") + len(domains)*5)
+	builder.WriteString("INSERT OR IGNORE INTO whitelist_domains (domain) VALUES ")
+
+	for _, domain := range domains {
+		if domain == "" {
+			continue
+		}
+		if len(args) > 0 {
+			builder.WriteString(",")
+		}
+		builder.WriteString("(?)")
+		args = append(args, domain)
+	}
+
+	return builder.String(), args
 }
 
 // IsDomainWhitelisted checks if the domain exists exactly in the SQLite whitelist table.

@@ -2,6 +2,9 @@ package agent
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -15,6 +18,14 @@ type Task interface {
 	Name() string
 	// Run executes the task. The context carries a deadline.
 	Run(ctx context.Context) error
+}
+
+type agentEventStore interface {
+	RecordAgentEvent(taskName, eventType, domain, details string) error
+}
+
+type taskAgentEventStoreProvider interface {
+	AgentEventStore() agentEventStore
 }
 
 // TaskStatus tracks the runtime state of a registered task.
@@ -193,8 +204,20 @@ func (e *Engine) loop() {
 
 func (e *Engine) runDueTasks() {
 	e.mu.Lock()
-	snapshot := make([]*registeredTask, len(e.tasks))
-	copy(snapshot, e.tasks)
+	now := time.Now()
+	snapshot := make([]*registeredTask, 0, len(e.tasks))
+	for _, rt := range e.tasks {
+		if !rt.enabled {
+			continue
+		}
+		if rt.state == "running" {
+			continue
+		}
+		if !rt.lastRun.IsZero() && now.Sub(rt.lastRun) < rt.interval {
+			continue
+		}
+		snapshot = append(snapshot, rt)
+	}
 	e.mu.Unlock()
 
 	for _, rt := range snapshot {
@@ -204,12 +227,6 @@ func (e *Engine) runDueTasks() {
 		default:
 		}
 
-		if !rt.enabled {
-			continue
-		}
-		if !rt.lastRun.IsZero() && time.Since(rt.lastRun) < rt.interval {
-			continue
-		}
 		e.executeTask(rt)
 	}
 }
@@ -233,17 +250,78 @@ func (e *Engine) runTaskByName(name string) {
 
 func (e *Engine) executeTask(rt *registeredTask) {
 	e.mu.Lock()
+	if e.stopped || rt.state == "running" {
+		e.mu.Unlock()
+		return
+	}
 	rt.state = "running"
+	e.wg.Add(1)
 	e.mu.Unlock()
 
-	baseCtx := correlation.WithRunID(e.ctx, correlation.NewID("agent-"+rt.task.Name()))
-	ctx, cancel := context.WithTimeout(baseCtx, rt.timeout)
-	defer cancel()
+	go func() {
+		defer e.wg.Done()
 
-	start := time.Now()
-	err := rt.task.Run(ctx)
-	elapsed := time.Since(start)
+		baseCtx := correlation.WithRunID(e.ctx, correlation.NewID("agent-"+rt.task.Name()))
+		ctx, cancel := context.WithTimeout(baseCtx, rt.timeout)
+		defer cancel()
 
+		start := time.Now()
+		var err error
+
+		defer func() {
+			elapsed := time.Since(start)
+			if recovered := recover(); recovered != nil {
+				panicErr := fmt.Errorf("panic: %v", recovered)
+				e.setTaskResult(rt, panicErr)
+
+				stack := string(debug.Stack())
+				logjson.Error("agent task panicked", correlation.Fields(ctx, map[string]any{
+					"service":     "core-api",
+					"task":        rt.task.Name(),
+					"duration_ms": elapsed.Milliseconds(),
+					"error":       panicErr.Error(),
+					"stack":       stack,
+				}))
+				recordTaskRuntimeEvent(rt.task, "task_panicked", map[string]any{
+					"error":       panicErr.Error(),
+					"duration_ms": elapsed.Milliseconds(),
+					"stack":       stack,
+				})
+				return
+			}
+
+			e.finishTask(rt, ctx, err, elapsed)
+		}()
+
+		err = rt.task.Run(ctx)
+	}()
+}
+
+func (e *Engine) finishTask(rt *registeredTask, ctx context.Context, err error, elapsed time.Duration) {
+	e.setTaskResult(rt, err)
+
+	if err != nil {
+		logjson.Error("agent task failed", correlation.Fields(ctx, map[string]any{
+			"service":     "core-api",
+			"task":        rt.task.Name(),
+			"duration_ms": elapsed.Milliseconds(),
+			"error":       err.Error(),
+		}))
+		recordTaskRuntimeEvent(rt.task, "task_failed", map[string]any{
+			"error":       err.Error(),
+			"duration_ms": elapsed.Milliseconds(),
+		})
+		return
+	}
+
+	logjson.Info("agent task completed", correlation.Fields(ctx, map[string]any{
+		"service":     "core-api",
+		"task":        rt.task.Name(),
+		"duration_ms": elapsed.Milliseconds(),
+	}))
+}
+
+func (e *Engine) setTaskResult(rt *registeredTask, err error) {
 	e.mu.Lock()
 	rt.lastRun = time.Now()
 	rt.runCount++
@@ -251,20 +329,39 @@ func (e *Engine) executeTask(rt *registeredTask) {
 		rt.state = "failed"
 		rt.lastErr = err.Error()
 		rt.errCount++
-		logjson.Error("agent task failed", correlation.Fields(ctx, map[string]any{
-			"service":     "core-api",
-			"task":        rt.task.Name(),
-			"duration_ms": elapsed.Milliseconds(),
-			"error":       err.Error(),
-		}))
 	} else {
 		rt.state = "idle"
 		rt.lastErr = ""
-		logjson.Info("agent task completed", correlation.Fields(ctx, map[string]any{
-			"service":     "core-api",
-			"task":        rt.task.Name(),
-			"duration_ms": elapsed.Milliseconds(),
-		}))
 	}
 	e.mu.Unlock()
+}
+
+func recordTaskRuntimeEvent(task Task, eventType string, details map[string]any) {
+	provider, ok := task.(taskAgentEventStoreProvider)
+	if !ok {
+		return
+	}
+
+	sink := provider.AgentEventStore()
+	if sink == nil {
+		return
+	}
+
+	payload, err := json.Marshal(details)
+	if err != nil {
+		logjson.Warn("agent task event marshal failed", map[string]any{
+			"service": "core-api",
+			"task":    task.Name(),
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	if err := sink.RecordAgentEvent(task.Name(), eventType, "", string(payload)); err != nil {
+		logjson.Warn("agent task event record failed", map[string]any{
+			"service": "core-api",
+			"task":    task.Name(),
+			"error":   err.Error(),
+		})
+	}
 }

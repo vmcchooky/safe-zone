@@ -24,6 +24,20 @@ func (t *mockTask) Run(ctx context.Context) error {
 	return nil
 }
 
+func waitForCondition(t *testing.T, timeout time.Duration, cond func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	t.Fatal("condition not met before timeout")
+}
+
 func TestEngineStartStop(t *testing.T) {
 	e := NewEngine()
 	task := &mockTask{name: "test"}
@@ -174,4 +188,134 @@ func TestEngineTaskTimeout(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestEngineDoesNotBlockOtherTasks(t *testing.T) {
+	e := NewEngine()
+
+	slowStarted := make(chan struct{})
+	slowRelease := make(chan struct{})
+	fastRan := make(chan struct{}, 1)
+
+	e.Register(&mockTask{
+		name: "slow",
+		runFunc: func(ctx context.Context) error {
+			close(slowStarted)
+			select {
+			case <-slowRelease:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}, time.Hour, time.Second, true)
+
+	e.Register(&mockTask{
+		name: "fast",
+		runFunc: func(ctx context.Context) error {
+			select {
+			case fastRan <- struct{}{}:
+			default:
+			}
+			return nil
+		},
+	}, time.Hour, time.Second, true)
+
+	e.Start()
+
+	waitForCondition(t, time.Second, func() bool {
+		select {
+		case <-slowStarted:
+			return true
+		default:
+			return false
+		}
+	})
+
+	waitForCondition(t, time.Second, func() bool {
+		select {
+		case <-fastRan:
+			return true
+		default:
+			return false
+		}
+	})
+
+	close(slowRelease)
+	e.Stop()
+}
+
+func TestEngineSkipsDuplicateRunsWhileTaskIsRunning(t *testing.T) {
+	e := NewEngine()
+
+	release := make(chan struct{})
+	task := &mockTask{
+		name: "single-flight",
+		runFunc: func(ctx context.Context) error {
+			select {
+			case <-release:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		},
+	}
+	e.Register(task, time.Hour, time.Second, true)
+
+	e.Start()
+
+	waitForCondition(t, time.Second, func() bool {
+		return task.calls.Load() == 1
+	})
+
+	e.runTaskByName("single-flight")
+	time.Sleep(50 * time.Millisecond)
+
+	if got := task.calls.Load(); got != 1 {
+		t.Fatalf("expected duplicate run to be skipped, got %d calls", got)
+	}
+
+	close(release)
+	e.Stop()
+}
+
+func TestEngineRecoversFromTaskPanic(t *testing.T) {
+	e := NewEngine()
+
+	panicTask := &mockTask{
+		name: "panic-task",
+		runFunc: func(ctx context.Context) error {
+			panic("kaboom")
+		},
+	}
+	healthyTask := &mockTask{name: "healthy"}
+
+	e.Register(panicTask, time.Hour, time.Second, true)
+	e.Register(healthyTask, time.Hour, time.Second, true)
+
+	e.Start()
+	defer e.Stop()
+
+	waitForCondition(t, time.Second, func() bool {
+		return panicTask.calls.Load() > 0 && healthyTask.calls.Load() > 0
+	})
+
+	status := e.Status()
+	for _, ts := range status.Tasks {
+		if ts.Name != "panic-task" {
+			continue
+		}
+		if ts.State != "failed" {
+			t.Fatalf("expected panic task state 'failed', got %q", ts.State)
+		}
+		if ts.LastError == "" {
+			t.Fatal("expected panic task to keep last_error")
+		}
+		if ts.ErrorCount == 0 {
+			t.Fatal("expected panic task error_count to increment")
+		}
+		return
+	}
+
+	t.Fatal("panic task not found in engine status")
 }
