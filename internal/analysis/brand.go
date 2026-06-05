@@ -53,6 +53,7 @@ func DefaultTrustedBrands() []Brand {
 		{Name: "chinhphu", OfficialDomain: "chinhphu.vn", AltDomains: []string{"chinhphu.gov.vn"}},
 		{Name: "bocongan", OfficialDomain: "bocongan.gov.vn", AltDomains: []string{"mps.gov.vn"}},
 		{Name: "baohiemxahoi", OfficialDomain: "baohiemxahoi.gov.vn", AltDomains: []string{"bhxh.gov.vn"}},
+		{Name: "vneid", OfficialDomain: "vneid.gov.vn"},
 		{Name: "vtv", OfficialDomain: "vtv.vn"},
 
 		{Name: "vietcombank", OfficialDomain: "vietcombank.com.vn", AltDomains: []string{"vietcombank.com"}},
@@ -69,6 +70,13 @@ func DefaultTrustedBrands() []Brand {
 		{Name: "hdbank", OfficialDomain: "hdbank.com.vn"},
 		{Name: "shb", OfficialDomain: "shb.com.vn"},
 		{Name: "scb", OfficialDomain: "scb.com.vn"},
+
+		{Name: "momo", OfficialDomain: "momo.vn"},
+		{Name: "zalopay", OfficialDomain: "zalopay.vn"},
+		{Name: "vnpay", OfficialDomain: "vnpay.vn"},
+		{Name: "shopee", OfficialDomain: "shopee.vn", AltDomains: []string{"shopee.com"}},
+		{Name: "tiki", OfficialDomain: "tiki.vn"},
+		{Name: "lazada", OfficialDomain: "lazada.vn", AltDomains: []string{"lazada.com"}},
 	})
 }
 

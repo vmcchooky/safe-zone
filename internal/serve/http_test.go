@@ -113,13 +113,13 @@ func TestRecoveryMiddleware_HTML(t *testing.T) {
 	if strings.Contains(bodyStr, "database connection failure") {
 		t.Error("HTML response must NOT leak internal error details")
 	}
-	if !strings.Contains(bodyStr, "Hệ Thống Gặp Sự Cố") {
+	if !strings.Contains(bodyStr, "Safe Zone hit a runtime error.") {
 		t.Error("HTML response does not contain error title")
 	}
-	if !strings.Contains(bodyStr, "Mã sự cố") {
+	if !strings.Contains(bodyStr, "Request ID") {
 		t.Error("HTML response should contain request ID reference")
 	}
-	if !strings.Contains(bodyStr, "Quay Lại Dashboard") {
+	if !strings.Contains(bodyStr, "Back to Dashboard") {
 		t.Error("HTML response does not contain back to dashboard button")
 	}
 

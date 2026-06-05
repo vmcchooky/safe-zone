@@ -19,7 +19,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -46,6 +48,7 @@ type app struct {
 	metrics        *observability.Registry
 	deploymentTier string
 	upstreamDoHURL string
+	upstreams      *upstreamResolver
 	upstreamClient *http.Client
 	blockPageIP    string
 	blockStrategy  string
@@ -83,12 +86,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	upstreamClient := &http.Client{Timeout: config.DurationMillis("SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS", 3*time.Second)}
+	upstreamURLs := config.String("SAFE_ZONE_UPSTREAM_DOH_URLS",
+		config.String("SAFE_ZONE_UPSTREAM_DOH_URL", "https://cloudflare-dns.com/dns-query"))
+	upstreams := newUpstreamResolver(upstreamURLs, upstreamClient)
+	probeInterval := config.DurationMillis("SAFE_ZONE_UPSTREAM_DOH_PROBE_INTERVAL_MS", 30*time.Second)
+	probeCtx, stopProbes := context.WithCancel(context.Background())
+	defer stopProbes()
+	if probeInterval > 0 {
+		go upstreams.probeLoop(probeCtx, probeInterval)
+	}
+
 	resolver := &app{
 		risk:           risk.NewServiceFromEnv(),
 		metrics:        observability.NewRegistry(),
 		deploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
-		upstreamDoHURL: config.String("SAFE_ZONE_UPSTREAM_DOH_URL", "https://cloudflare-dns.com/dns-query"),
-		upstreamClient: &http.Client{Timeout: config.DurationMillis("SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS", 3*time.Second)},
+		upstreamDoHURL: upstreams.primaryURL(),
+		upstreams:      upstreams,
+		upstreamClient: upstreamClient,
 		blockPageIP:    config.String("SAFE_ZONE_BLOCK_PAGE_IP", "127.0.0.1"),
 		blockStrategy:  blockStrategy,
 		dnsTTL:         uint32(ttlVal), // #nosec G115 -- bounds validated above
@@ -312,12 +327,13 @@ func (a *app) statusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service":         "dns-resolver",
-		"status":          "ok",
-		"mode":            "doh",
-		"deployment_tier": a.deploymentTier,
-		"upstream_doh":    a.upstreamDoHURL,
-		"redis":           a.risk.CacheStatus(r.Context()),
+		"service":                "dns-resolver",
+		"status":                 "ok",
+		"mode":                   "doh",
+		"deployment_tier":        a.deploymentTier,
+		"upstream_doh":           a.primaryUpstreamURL(),
+		"upstream_doh_resolvers": a.upstreamStatus(),
+		"redis":                  a.risk.CacheStatus(r.Context()),
 		"endpoints": []string{
 			"/",
 			"/healthz",
@@ -370,7 +386,7 @@ func (a *app) policyHandler(w http.ResponseWriter, r *http.Request) {
 		Policy:  policy,
 		Meta: map[string]string{
 			"mode":         "doh",
-			"upstream_doh": a.upstreamDoHURL,
+			"upstream_doh": a.primaryUpstreamURL(),
 		},
 	})
 }
@@ -445,14 +461,42 @@ func readDNSMessage(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 }
 
 func (a *app) forwardDoH(ctx context.Context, wire []byte) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.upstreamDoHURL, bytes.NewReader(wire))
+	if a.upstreams == nil {
+		a.upstreams = newUpstreamResolver(a.upstreamDoHURL, a.upstreamClient)
+	}
+	response, _, err := a.upstreams.forward(ctx, wire)
+	return response, err
+}
+
+func (a *app) primaryUpstreamURL() string {
+	if a.upstreams != nil {
+		return a.upstreams.primaryURL()
+	}
+	return a.upstreamDoHURL
+}
+
+func (a *app) upstreamStatus() map[string]any {
+	if a.upstreams == nil {
+		return map[string]any{
+			"active": a.upstreamDoHURL,
+			"urls":   []string{a.upstreamDoHURL},
+		}
+	}
+	return a.upstreams.status()
+}
+
+func doDoH(ctx context.Context, client *http.Client, upstreamURL string, wire []byte) ([]byte, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(wire))
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/dns-message")
 	req.Header.Set("Content-Type", "application/dns-message")
 
-	resp, err := a.upstreamClient.Do(req) // #nosec G704 -- URL is from trusted server config (SAFE_ZONE_UPSTREAM_DOH_URL)
+	resp, err := client.Do(req) // #nosec G107 -- URL is from trusted server configuration.
 	if err != nil {
 		return nil, err
 	}
@@ -463,6 +507,177 @@ func (a *app) forwardDoH(ctx context.Context, wire []byte) ([]byte, error) {
 	}
 
 	return io.ReadAll(io.LimitReader(resp.Body, 65535))
+}
+
+type upstreamResolver struct {
+	mu        sync.RWMutex
+	endpoints []upstreamEndpoint
+	client    *http.Client
+}
+
+type upstreamEndpoint struct {
+	URL       string        `json:"url"`
+	Healthy   bool          `json:"healthy"`
+	LatencyMS int64         `json:"latency_ms"`
+	Failures  int           `json:"failures"`
+	LastError string        `json:"last_error,omitempty"`
+	latency   time.Duration `json:"-"`
+}
+
+func newUpstreamResolver(raw string, client *http.Client) *upstreamResolver {
+	urls := parseUpstreamURLs(raw)
+	if len(urls) == 0 {
+		urls = []string{"https://cloudflare-dns.com/dns-query"}
+	}
+	endpoints := make([]upstreamEndpoint, 0, len(urls))
+	for _, endpointURL := range urls {
+		endpoints = append(endpoints, upstreamEndpoint{URL: endpointURL, Healthy: true})
+	}
+	return &upstreamResolver{endpoints: endpoints, client: client}
+}
+
+func parseUpstreamURLs(raw string) []string {
+	seen := map[string]struct{}{}
+	var urls []string
+	for _, part := range strings.Split(raw, ",") {
+		value := strings.TrimSpace(part)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		urls = append(urls, value)
+	}
+	return urls
+}
+
+func (u *upstreamResolver) primaryURL() string {
+	status := u.status()
+	if active, _ := status["active"].(string); active != "" {
+		return active
+	}
+	return "https://cloudflare-dns.com/dns-query"
+}
+
+func (u *upstreamResolver) status() map[string]any {
+	if u == nil {
+		return map[string]any{}
+	}
+	endpoints := u.orderedEndpoints()
+	active := ""
+	if len(endpoints) > 0 {
+		active = endpoints[0].URL
+	}
+	for i := range endpoints {
+		endpoints[i].LatencyMS = endpoints[i].latency.Milliseconds()
+	}
+	return map[string]any{
+		"active":    active,
+		"endpoints": endpoints,
+	}
+}
+
+func (u *upstreamResolver) orderedEndpoints() []upstreamEndpoint {
+	u.mu.RLock()
+	defer u.mu.RUnlock()
+	endpoints := append([]upstreamEndpoint(nil), u.endpoints...)
+	sort.SliceStable(endpoints, func(i, j int) bool {
+		if endpoints[i].Healthy != endpoints[j].Healthy {
+			return endpoints[i].Healthy
+		}
+		if endpoints[i].latency == 0 {
+			return false
+		}
+		if endpoints[j].latency == 0 {
+			return true
+		}
+		return endpoints[i].latency < endpoints[j].latency
+	})
+	return endpoints
+}
+
+func (u *upstreamResolver) forward(ctx context.Context, wire []byte) ([]byte, string, error) {
+	var lastErr error
+	for _, endpoint := range u.orderedEndpoints() {
+		started := time.Now()
+		response, err := doDoH(ctx, u.client, endpoint.URL, wire)
+		if err == nil {
+			u.markSuccess(endpoint.URL, time.Since(started))
+			return response, endpoint.URL, nil
+		}
+		lastErr = err
+		u.markFailure(endpoint.URL, err)
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no upstream DoH resolvers configured")
+	}
+	return nil, "", lastErr
+}
+
+func (u *upstreamResolver) markSuccess(endpointURL string, latency time.Duration) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for i := range u.endpoints {
+		if u.endpoints[i].URL == endpointURL {
+			u.endpoints[i].Healthy = true
+			u.endpoints[i].LatencyMS = latency.Milliseconds()
+			u.endpoints[i].latency = latency
+			u.endpoints[i].Failures = 0
+			u.endpoints[i].LastError = ""
+			return
+		}
+	}
+}
+
+func (u *upstreamResolver) markFailure(endpointURL string, err error) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	for i := range u.endpoints {
+		if u.endpoints[i].URL == endpointURL {
+			u.endpoints[i].Healthy = false
+			u.endpoints[i].Failures++
+			if err != nil {
+				u.endpoints[i].LastError = err.Error()
+			}
+			return
+		}
+	}
+}
+
+func (u *upstreamResolver) probeLoop(ctx context.Context, interval time.Duration) {
+	u.probeAll(ctx)
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			u.probeAll(ctx)
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (u *upstreamResolver) probeAll(ctx context.Context) {
+	query := new(dns.Msg)
+	query.SetQuestion(dns.Fqdn("example.com"), dns.TypeA)
+	wire, err := query.Pack()
+	if err != nil {
+		return
+	}
+	for _, endpoint := range u.orderedEndpoints() {
+		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+		started := time.Now()
+		_, err := doDoH(probeCtx, u.client, endpoint.URL, wire)
+		cancel()
+		if err != nil {
+			u.markFailure(endpoint.URL, err)
+			continue
+		}
+		u.markSuccess(endpoint.URL, time.Since(started))
+	}
 }
 
 func (a *app) blockedDNSResponse(query *dns.Msg) ([]byte, error) {

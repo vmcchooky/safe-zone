@@ -34,6 +34,14 @@ type TelemetryEntry struct {
 	ClientID   string   `json:"client_id,omitempty"`
 }
 
+// TelemetryFilter constrains recent telemetry queries at the SQL layer.
+type TelemetryFilter struct {
+	Verdict string    `json:"verdict,omitempty"`
+	Source  string    `json:"source,omitempty"`
+	Domain  string    `json:"domain,omitempty"`
+	Since   time.Time `json:"since,omitempty"`
+}
+
 // ClientGroup represents a policy group for clients.
 type ClientGroup struct {
 	ID              int64    `json:"id"`
@@ -116,6 +124,12 @@ type BlockReport struct {
 	Note      string `json:"note"`
 	Status    string `json:"status"`
 	CreatedAt string `json:"created_at"`
+}
+
+// BlockReportFilter constrains user report queries at the SQL layer.
+type BlockReportFilter struct {
+	Status string
+	Query  string
 }
 
 // DomainCount holds a domain and its occurrence count from audit queries.
@@ -460,6 +474,11 @@ func (d *DB) writeEntry(entry TelemetryEntry) {
 
 // QueryRecent returns the most recent telemetry entries with pagination.
 func (d *DB) QueryRecent(limit, offset int) ([]TelemetryEntry, error) {
+	return d.QueryRecentFiltered(TelemetryFilter{}, limit, offset)
+}
+
+// QueryRecentFiltered returns recent telemetry entries with server-side filtering and pagination.
+func (d *DB) QueryRecentFiltered(filter TelemetryFilter, limit, offset int) ([]TelemetryEntry, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -470,11 +489,14 @@ func (d *DB) QueryRecent(limit, offset int) ([]TelemetryEntry, error) {
 		offset = 0
 	}
 
+	where, args := telemetryWhereClause(filter)
+	args = append(args, limit, offset)
+
 	rows, err := d.db.Query(
 		`SELECT id, domain, verdict, score, confidence,
 		        COALESCE(reasons, '[]'), cache_hit, COALESCE(source, ''),
 		        analyzed_at, created_at, COALESCE(client_ip, ''), COALESCE(client_id, '')
-		 FROM analysis_log ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
+		 FROM analysis_log `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query recent: %w", err)
 	}
@@ -494,6 +516,31 @@ func (d *DB) QueryRecent(limit, offset int) ([]TelemetryEntry, error) {
 		entries = append(entries, e)
 	}
 	return entries, rows.Err()
+}
+
+func telemetryWhereClause(filter TelemetryFilter) (string, []any) {
+	var clauses []string
+	var args []any
+	if filter.Verdict != "" {
+		clauses = append(clauses, "verdict = ?")
+		args = append(args, strings.ToUpper(strings.TrimSpace(filter.Verdict)))
+	}
+	if filter.Source != "" {
+		clauses = append(clauses, "source = ?")
+		args = append(args, strings.TrimSpace(filter.Source))
+	}
+	if filter.Domain != "" {
+		clauses = append(clauses, "LOWER(domain) LIKE ?")
+		args = append(args, "%"+strings.ToLower(strings.TrimSpace(filter.Domain))+"%")
+	}
+	if !filter.Since.IsZero() {
+		clauses = append(clauses, "analyzed_at >= ?")
+		args = append(args, filter.Since.UTC().Format(time.RFC3339))
+	}
+	if len(clauses) == 0 {
+		return "", nil
+	}
+	return "WHERE " + strings.Join(clauses, " AND "), args
 }
 
 // QueryStats returns aggregate telemetry statistics since the given time.
@@ -1516,6 +1563,11 @@ func (d *DB) CreateBlockReport(domain, contact, note string) (int64, error) {
 
 // ListBlockReports retrieves block reports with pagination.
 func (d *DB) ListBlockReports(status string, limit, offset int) ([]BlockReport, error) {
+	return d.ListBlockReportsFiltered(BlockReportFilter{Status: status}, limit, offset)
+}
+
+// ListBlockReportsFiltered retrieves block reports with filtering and pagination.
+func (d *DB) ListBlockReportsFiltered(filter BlockReportFilter, limit, offset int) ([]BlockReport, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -1525,14 +1577,23 @@ func (d *DB) ListBlockReports(status string, limit, offset int) ([]BlockReport, 
 	if offset < 0 {
 		offset = 0
 	}
-	
+
 	query := `
 		SELECT id, domain, COALESCE(contact, ''), COALESCE(note, ''), status, created_at
 		FROM block_reports `
 	var args []any
-	if status != "" {
-		query += `WHERE status = ? `
-		args = append(args, status)
+	var clauses []string
+	if filter.Status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, strings.TrimSpace(filter.Status))
+	}
+	if filter.Query != "" {
+		needle := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+		clauses = append(clauses, "(LOWER(domain) LIKE ? OR LOWER(COALESCE(contact, '')) LIKE ? OR LOWER(COALESCE(note, '')) LIKE ?)")
+		args = append(args, needle, needle, needle)
+	}
+	if len(clauses) > 0 {
+		query += `WHERE ` + strings.Join(clauses, " AND ") + ` `
 	}
 	query += `ORDER BY id DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -1659,4 +1720,3 @@ func (d *DB) UpdateRetentionDays(days int) {
 	d.retentionDays = days
 	d.configMu.Unlock()
 }
-

@@ -245,9 +245,25 @@
         <div class="chart-footer">
           <span id="chart-legend">Loading...</span>
         </div>
+        <div class="telemetry-visual-grid">
+          <section class="mini-viz">
+            <div class="mini-viz-head"><span>Risk mix</span><strong id="risk-mix-label">0%</strong></div>
+            <div class="stacked-meter" id="risk-mix-meter" aria-label="Telemetry risk mix"></div>
+          </section>
+          <section class="mini-viz">
+            <div class="mini-viz-head"><span>Source mix</span><strong id="source-mix-label">current page</strong></div>
+            <div class="source-chip-row" id="source-mix"></div>
+          </section>
+        </div>
         
         <div class="panel-divider"></div>
         <div class="panel-head"><h2>Analysis History</h2><span id="telem-info">--</span></div>
+        <div class="filter-panel telemetry-filters" aria-label="Telemetry filters">
+          <label>Search<input id="telem-domain-filter" type="search" placeholder="domain contains..." autocomplete="off" spellcheck="false"></label>
+          <label>Verdict<select id="telem-verdict-filter"><option value="">All verdicts</option><option value="SAFE">Safe</option><option value="SUSPICIOUS">Suspicious</option><option value="MALICIOUS">Malicious</option><option value="INVALID">Invalid</option></select></label>
+          <label>Source<select id="telem-source-filter"><option value="">All sources</option><option value="cache">Cache</option><option value="lexical">Lexical</option><option value="feed">Feed</option><option value="ai">AI</option><option value="override">Override</option><option value="whitelist">Whitelist</option></select></label>
+          <button class="ghost btn-sm" id="telem-clear-filters" type="button">Clear</button>
+        </div>
         <div class="telemetry-table-wrap">
           <div class="telemetry-row header">
             <div>Domain</div><div>Verdict</div><div>Score</div><div>Source</div><div>Time</div><div></div>
@@ -262,20 +278,25 @@
       </div>
 
       <!-- User Reports Queue -->
-      <div class="panel user-reports-panel" style="margin-top: 20px;">
-        <div class="panel-head clickable" onclick="toggleReportsQueue()" style="cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none;">
+      <div class="panel user-reports-panel">
+        <div class="panel-head clickable queue-head" onclick="toggleReportsQueue()">
           <div>
             <span class="eyebrow">User Reports Queue</span>
-            <h2 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+            <h2 class="queue-title">
               False-Positive Review Tickets
-              <span class="badge" id="reports-count-badge" style="display: none; background: var(--warn); color: var(--bg); border-radius: 12px; padding: 2px 8px; font-size: 11px; font-weight: bold;">0</span>
+              <span class="badge report-count-badge" id="reports-count-badge">0</span>
             </h2>
           </div>
-          <span id="reports-toggle-icon" style="font-size: 18px; opacity: 0.7; transform: rotate(0deg); transition: transform 0.2s ease;">▼</span>
+          <span id="reports-toggle-icon" class="queue-toggle">▼</span>
         </div>
-        <div id="reports-queue-content" style="display: block; margin-top: 15px;">
+        <div id="reports-queue-content" class="queue-content">
+          <div class="filter-panel report-filters" aria-label="Report filters">
+            <label>Status<select id="reports-status-filter"><option value="">All reports</option><option value="pending">Pending</option><option value="resolved">Resolved</option><option value="archived">Archived</option></select></label>
+            <label>Search<input id="reports-search-filter" type="search" placeholder="domain, contact, note..." autocomplete="off" spellcheck="false"></label>
+            <button class="ghost btn-sm" id="reports-clear-filters" type="button">Clear</button>
+          </div>
           <div class="telemetry-table-wrap">
-            <div class="telemetry-row header" style="grid-template-columns: 2fr 1.5fr 3fr 1fr 1.5fr 2fr;">
+            <div class="telemetry-row header report-row">
               <div>Domain</div>
               <div>Contact</div>
               <div>Note</div>
@@ -773,8 +794,8 @@ const state = {
   activeTab: 'analysis',
   latest: null,
   recent: [],
-  telemetry: { stats: {}, items: [], page: 0, pageSize: 20, period: '24h', total: 0 },
-  reports: { page: 0, pageSize: 10, items: [] },
+  telemetry: { stats: {}, items: [], page: 0, pageSize: 20, period: '24h', total: 0, filters: { domain: '', verdict: '', source: '' } },
+  reports: { page: 0, pageSize: 10, items: [], filters: { status: 'pending', q: '' } },
   overrides: { items: [], filter: '' },
   brands: { items: [] },
   system: { health: {}, metrics: {}, status: {} },
@@ -1172,6 +1193,34 @@ document.querySelectorAll('.period-btn').forEach(btn => {
     loadTelemetry();
   });
 });
+
+const telemetryFilterInputs = [
+  ['telem-domain-filter', 'domain'],
+  ['telem-verdict-filter', 'verdict'],
+  ['telem-source-filter', 'source'],
+];
+let telemetryFilterTimer;
+telemetryFilterInputs.forEach(([id, key]) => {
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('input', () => {
+    state.telemetry.filters[key] = el.value.trim();
+    state.telemetry.page = 0;
+    clearTimeout(telemetryFilterTimer);
+    telemetryFilterTimer = setTimeout(loadTelemetryItems, 180);
+  });
+});
+if ($('telem-clear-filters')) {
+  $('telem-clear-filters').addEventListener('click', () => {
+    state.telemetry.filters = { domain: '', verdict: '', source: '' };
+    telemetryFilterInputs.forEach(([id]) => {
+      const el = $(id);
+      if (el) el.value = '';
+    });
+    state.telemetry.page = 0;
+    loadTelemetryItems();
+  });
+}
 $('telem-prev').addEventListener('click', () => {
   if (state.telemetry.page > 0) { state.telemetry.page--; loadTelemetryItems(); }
 });
@@ -1222,20 +1271,32 @@ function renderCacheHitMeter(s) {
 async function loadTelemetryItems() {
   const offset = state.telemetry.page * state.telemetry.pageSize;
   try {
-    const r = await fetch('/v1/telemetry/recent?limit=' + state.telemetry.pageSize + '&offset=' + offset);
+    const params = new URLSearchParams({
+      limit: String(state.telemetry.pageSize),
+      offset: String(offset),
+      period: state.telemetry.period,
+    });
+    const filters = state.telemetry.filters || {};
+    if (filters.domain) params.set('domain', filters.domain);
+    if (filters.verdict) params.set('verdict', filters.verdict);
+    if (filters.source) params.set('source', filters.source);
+    const r = await fetch('/v1/telemetry/recent?' + params.toString());
     const payload = await r.json();
     const items = payload.items || [];
     state.telemetry.items = items;
-    setTextWithMotion($('telem-info'), 'Page ' + (state.telemetry.page + 1));
+    const filterCount = Object.values(filters).filter(Boolean).length;
+    setTextWithMotion($('telem-info'), 'Page ' + (state.telemetry.page + 1) + (filterCount ? ' · ' + filterCount + ' filters' : ''));
     setTextWithMotion($('telem-page'), 'Page ' + (state.telemetry.page + 1));
     $('telem-prev').disabled = state.telemetry.page === 0;
     $('telem-next').disabled = items.length < state.telemetry.pageSize;
     $('telem-body').innerHTML = items.length
       ? items.map(renderTelemRow).join('')
       : '<div class="empty">No telemetry data for this period.</div>';
+    renderSourceMix(items);
     markInsertedRows($('telem-body'), '.telemetry-row');
   } catch {
     $('telem-body').innerHTML = '<div class="empty">Telemetry unavailable.</div>';
+    renderSourceMix([]);
   }
 }
 
@@ -1253,11 +1314,33 @@ function renderTelemRow(item) {
     '</div>';
 }
 
+function renderSourceMix(items) {
+  const el = $('source-mix');
+  if (!el) return;
+  if (!items.length) {
+    el.innerHTML = '<span class="source-chip muted">No page data</span>';
+    setTextWithMotion($('source-mix-label'), 'current page');
+    return;
+  }
+  const counts = items.reduce((acc, item) => {
+    const source = item.source || 'unknown';
+    acc[source] = (acc[source] || 0) + 1;
+    return acc;
+  }, {});
+  const total = items.length;
+  el.innerHTML = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .map(([source, count]) => '<span class="source-chip"><strong>' + esc(source) + '</strong>' + pct(count, total) + '</span>')
+    .join('');
+  setTextWithMotion($('source-mix-label'), total + ' rows');
+}
+
 function renderChart(s) {
   const safe    = s.safe || 0;
   const susp    = s.suspicious || 0;
   const mal     = s.malicious || 0;
   const meaningfulTotal = safe + susp + mal;
+  renderRiskMix(safe, susp, mal);
   const chartWrap = document.querySelector('.chart-wrap');
   if (chartWrap) {
     chartWrap.classList.toggle('telemetry-empty', meaningfulTotal === 0);
@@ -1300,6 +1383,20 @@ function renderChart(s) {
       animation: { duration: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 400 },
     },
   });
+}
+
+function renderRiskMix(safe, susp, mal) {
+  const total = safe + susp + mal;
+  const el = $('risk-mix-meter');
+  if (!el) return;
+  const safePct = total ? Math.round(safe / total * 100) : 0;
+  const suspPct = total ? Math.round(susp / total * 100) : 0;
+  const malPct = total ? Math.max(0, 100 - safePct - suspPct) : 0;
+  el.innerHTML =
+    '<span class="mix-safe" style="width:' + safePct + '%"></span>' +
+    '<span class="mix-suspicious" style="width:' + suspPct + '%"></span>' +
+    '<span class="mix-malicious" style="width:' + malPct + '%"></span>';
+  setTextWithMotion($('risk-mix-label'), total ? (suspPct + malPct) + '% risk' : '0%');
 }
 
 // ── Overrides tab ─────────────────────────────────────────────────────────────
@@ -2239,10 +2336,45 @@ function showToast(msg, type) {
 }
 
 // State for reports queue
+const reportFilterInputs = [
+  ['reports-status-filter', 'status'],
+  ['reports-search-filter', 'q'],
+];
+let reportFilterTimer;
+reportFilterInputs.forEach(([id, key]) => {
+  const el = $(id);
+  if (!el) return;
+  if (key === 'status') el.value = state.reports.filters.status;
+  el.addEventListener('input', () => {
+    state.reports.filters[key] = el.value.trim();
+    state.reports.page = 0;
+    clearTimeout(reportFilterTimer);
+    reportFilterTimer = setTimeout(loadReports, 180);
+  });
+});
+if ($('reports-clear-filters')) {
+  $('reports-clear-filters').addEventListener('click', () => {
+    state.reports.filters = { status: '', q: '' };
+    reportFilterInputs.forEach(([id]) => {
+      const el = $(id);
+      if (el) el.value = '';
+    });
+    state.reports.page = 0;
+    loadReports();
+  });
+}
+
 async function loadReports() {
   const offset = state.reports.page * state.reports.pageSize;
   try {
-    const r = await fetch('/v1/reports?limit=' + state.reports.pageSize + '&offset=' + offset);
+    const params = new URLSearchParams({
+      limit: String(state.reports.pageSize),
+      offset: String(offset),
+    });
+    const filters = state.reports.filters || {};
+    if (filters.status) params.set('status', filters.status);
+    if (filters.q) params.set('q', filters.q);
+    const r = await fetch('/v1/reports?' + params.toString());
     if (!r.ok) throw new Error('API error');
     const data = await r.json();
     const reports = data.reports || [];
@@ -2259,7 +2391,7 @@ async function loadReports() {
 
     if (!reports.length) {
       body.innerHTML = '<div class="empty">No reports found</div>';
-      $('reports-count-badge').style.display = 'none';
+      $('reports-count-badge').classList.remove('is-visible');
       return;
     }
 
@@ -2267,9 +2399,9 @@ async function loadReports() {
     const pendingCount = reports.filter(x => x.status === 'pending').length;
     if (pendingCount > 0) {
       $('reports-count-badge').textContent = pendingCount;
-      $('reports-count-badge').style.display = 'inline-block';
+      $('reports-count-badge').classList.add('is-visible');
     } else {
-      $('reports-count-badge').style.display = 'none';
+      $('reports-count-badge').classList.remove('is-visible');
     }
 
     body.innerHTML = reports.map(renderReportRow).join('');
@@ -2289,32 +2421,32 @@ function renderReportRow(report) {
   let actions = '';
   if (isPending) {
     actions = `
-      <div style="display:flex;gap:6px;">
-        <button class="ghost btn-sm ok" onclick="approveReport(${report.id}, ${JSON.stringify(report.domain).replace(/"/g, '&quot;')}, ${JSON.stringify(report.note).replace(/"/g, '&quot;')})" style="color:var(--safe)">Approve</button>
-        <button class="ghost btn-sm bad" onclick="dismissReport(${report.id})" style="color:var(--bad)">Dismiss</button>
+      <div class="report-actions">
+        <button class="ghost btn-sm ok text-safe" onclick="approveReport(${report.id}, ${JSON.stringify(report.domain).replace(/"/g, '&quot;')}, ${JSON.stringify(report.note).replace(/"/g, '&quot;')})">Approve</button>
+        <button class="ghost btn-sm bad text-bad" onclick="dismissReport(${report.id})">Dismiss</button>
       </div>
     `;
   } else {
-    actions = `<span style="color:var(--muted);font-size:11px;">Completed</span>`;
+    actions = `<span class="report-completed">Completed</span>`;
   }
 
   // Use dynamic badge styling for status
   let statusBadge = '';
   if (report.status === 'pending') {
-    statusBadge = `<span class="verdict SUSPICIOUS" style="padding:2px 6px;border-radius:4px;font-size:10px;">PENDING</span>`;
+    statusBadge = `<span class="verdict SUSPICIOUS report-status">PENDING</span>`;
   } else if (report.status === 'resolved') {
-    statusBadge = `<span class="verdict SAFE" style="padding:2px 6px;border-radius:4px;font-size:10px;">RESOLVED</span>`;
+    statusBadge = `<span class="verdict SAFE report-status">RESOLVED</span>`;
   } else {
-    statusBadge = `<span class="verdict" style="padding:2px 6px;border-radius:4px;font-size:10px;background:var(--panel);color:var(--muted);">ARCHIVED</span>`;
+    statusBadge = `<span class="verdict report-status archived">ARCHIVED</span>`;
   }
 
   return `
-    <div class="telemetry-row" style="grid-template-columns: 2fr 1.5fr 3fr 1fr 1.5fr 2fr; align-items: center; padding: 12px 16px;">
-      <div style="overflow-wrap:anywhere;font-weight:700">${escDomain}</div>
-      <div style="color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escContact}">${escContact}</div>
-      <div style="color:var(--muted);font-style:italic;" title="${escNote}">${escNote}</div>
+    <div class="telemetry-row report-row">
+      <div class="report-domain">${escDomain}</div>
+      <div class="report-contact" title="${escContact}">${escContact}</div>
+      <div class="report-note" title="${escNote}">${escNote}</div>
       <div>${statusBadge}</div>
-      <div style="color:var(--muted)">${timeStr}</div>
+      <div class="report-time">${timeStr}</div>
       <div>${actions}</div>
     </div>
   `;

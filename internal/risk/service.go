@@ -1261,10 +1261,15 @@ func (s *Service) DeleteBrand(ctx context.Context, id int64) error {
 
 // TelemetryRecent returns recent telemetry entries.
 func (s *Service) TelemetryRecent(limit, offset int) ([]store.TelemetryEntry, error) {
+	return s.TelemetryRecentFiltered(store.TelemetryFilter{}, limit, offset)
+}
+
+// TelemetryRecentFiltered returns recent telemetry entries constrained at the store layer.
+func (s *Service) TelemetryRecentFiltered(filter store.TelemetryFilter, limit, offset int) ([]store.TelemetryEntry, error) {
 	if s.store == nil {
 		return nil, nil
 	}
-	return s.store.QueryRecent(limit, offset)
+	return s.store.QueryRecentFiltered(filter, limit, offset)
 }
 
 // TelemetryStats returns aggregate telemetry statistics.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -12,7 +13,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"bytes"
 	"time"
 
 	"safe-zone/internal/agent"
@@ -710,7 +710,16 @@ func (a *app) telemetryRecentHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	entries, err := a.risk.TelemetryRecent(limit, offset)
+	filter := store.TelemetryFilter{
+		Verdict: strings.TrimSpace(r.URL.Query().Get("verdict")),
+		Source:  strings.TrimSpace(r.URL.Query().Get("source")),
+		Domain:  strings.TrimSpace(r.URL.Query().Get("domain")),
+	}
+	if period := strings.TrimSpace(r.URL.Query().Get("period")); period != "" {
+		filter.Since = telemetryPeriodSince(period)
+	}
+
+	entries, err := a.risk.TelemetryRecentFiltered(filter, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -718,7 +727,10 @@ func (a *app) telemetryRecentHandler(w http.ResponseWriter, r *http.Request) {
 	if entries == nil {
 		entries = []store.TelemetryEntry{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": entries})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items":  entries,
+		"filter": filter,
+	})
 }
 
 func (a *app) listReportsHandler(w http.ResponseWriter, r *http.Request) {
@@ -743,6 +755,7 @@ func (a *app) listReportsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	status := r.URL.Query().Get("status")
+	query := r.URL.Query().Get("q")
 
 	db := a.risk.StoreDB()
 	if db == nil || !db.Enabled() {
@@ -750,7 +763,10 @@ func (a *app) listReportsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reports, err := db.ListBlockReports(status, limit, offset)
+	reports, err := db.ListBlockReportsFiltered(store.BlockReportFilter{
+		Status: status,
+		Query:  query,
+	}, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list reports: "+err.Error())
 		return
@@ -761,6 +777,10 @@ func (a *app) listReportsHandler(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"reports": reports,
+		"filter": map[string]string{
+			"status": status,
+			"q":      query,
+		},
 	})
 }
 
@@ -829,6 +849,19 @@ func (a *app) telemetryStatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	stats.Period = period
 	writeJSON(w, http.StatusOK, stats)
+}
+
+func telemetryPeriodSince(period string) time.Time {
+	switch period {
+	case "7d":
+		return time.Now().Add(-7 * 24 * time.Hour)
+	case "30d":
+		return time.Now().Add(-30 * 24 * time.Hour)
+	case "24h", "":
+		return time.Now().Add(-24 * time.Hour)
+	default:
+		return time.Time{}
+	}
 }
 
 // --- Agent API ---
@@ -1630,4 +1663,3 @@ func (a *app) testAlertHandler(w http.ResponseWriter, r *http.Request) {
 		"status": "ok",
 	})
 }
-

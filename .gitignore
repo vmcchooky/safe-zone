@@ -20,4 +20,6 @@ ops/secrets/*
 deploy.tar.gz
 response.bin
 tmp_test.js
-
+'@ + $tmp + '@'
+*tmp*.tar.gz
+*.tmp
