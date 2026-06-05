@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -620,6 +621,10 @@ func (d *DB) UpsertOverride(domain, action, reason string) error {
 	if action != "allow" && action != "block" {
 		return fmt.Errorf("invalid action %q: must be 'allow' or 'block'", action)
 	}
+	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
+	if domain == "" {
+		return fmt.Errorf("override domain cannot be empty")
+	}
 	_, err := d.db.Exec(`
 		INSERT INTO local_overrides (domain, action, reason, updated_at)
 		VALUES (?, ?, ?, datetime('now'))
@@ -1196,8 +1201,10 @@ func (d *DB) AddMappingInt(mappingType, value string, groupID int64) (int64, err
 			return 0, fmt.Errorf("invalid IP address format: %s", value)
 		}
 	} else if mappingType == "cidr" {
-		if _, _, err := net.ParseCIDR(value); err != nil {
+		if _, ipNet, err := net.ParseCIDR(value); err != nil {
 			return 0, fmt.Errorf("invalid CIDR format %q: %w", value, err)
+		} else {
+			value = ipNet.String()
 		}
 	}
 
@@ -1278,7 +1285,7 @@ func (d *DB) UpsertGroupOverride(groupID int64, domain, action, reason string) e
 		return fmt.Errorf("invalid action %q: must be 'allow' or 'block'", action)
 	}
 
-	domain = strings.TrimSpace(strings.ToLower(domain))
+	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
 	if domain == "" {
 		return fmt.Errorf("override domain cannot be empty")
 	}
@@ -1480,6 +1487,12 @@ func (d *DB) loadCIDRCache() error {
 		}
 	}
 
+	sort.Slice(cache, func(i, j int) bool {
+		s1, _ := cache[i].ipNet.Mask.Size()
+		s2, _ := cache[j].ipNet.Mask.Size()
+		return s1 > s2
+	})
+
 	d.cidrMu.Lock()
 	d.cidrCache = cache
 	d.cidrMu.Unlock()
@@ -1491,6 +1504,7 @@ func (d *DB) CreateBlockReport(domain, contact, note string) (int64, error) {
 	if !d.Enabled() {
 		return 0, fmt.Errorf("sqlite store disabled")
 	}
+	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
 	res, err := d.db.Exec(`
 		INSERT INTO block_reports (domain, contact, note, status)
 		VALUES (?, ?, ?, 'pending')`, domain, contact, note)
