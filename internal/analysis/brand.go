@@ -334,6 +334,54 @@ var suspiciousTLDs = map[string]bool{
 	"bid":  true,
 }
 
+var cdnRoots = map[string]bool{
+	"akamaihd.net":          true,
+	"akamaized.net":         true,
+	"amazonaws.com":         true,
+	"azurecontainerapps.io": true,
+	"azureedge.net":         true,
+	"azurefd.net":           true,
+	"azurestaticapps.net":   true,
+	"azurewebsites.net":     true,
+	"b-cdn.net":             true,
+	"cachefly.net":          true,
+	"cdn77.org":             true,
+	"cloudflare.net":        true,
+	"cloudfront.net":        true,
+	"edgekey.net":           true,
+	"edgesuite.net":         true,
+	"fastly.net":            true,
+	"fastlylb.net":          true,
+	"firebaseapp.com":       true,
+	"fly.dev":               true,
+	"github.io":             true,
+	"githubusercontent.com": true,
+	"glitch.me":             true,
+	"herokuapp.com":         true,
+	"hwcdn.net":             true,
+	"netlify.app":           true,
+	"onrender.com":          true,
+	"pages.dev":             true,
+	"railway.app":           true,
+	"repl.co":               true,
+	"replit.app":            true,
+	"r2.dev":                true,
+	"stackpathdns.com":      true,
+	"surge.sh":              true,
+	"trafficmanager.net":    true,
+	"vercel.app":            true,
+	"workers.dev":           true,
+}
+
+// IsCDNRoot reports whether rootDomain is a shared CDN/cloud hosting root.
+func IsCDNRoot(rootDomain string) bool {
+	rootDomain = strings.ToLower(strings.TrimSpace(rootDomain))
+	if rootDomain == "" {
+		return false
+	}
+	return cdnRoots[rootDomain]
+}
+
 // ToSkeleton normalizes homoglyphs in a string into Latin equivalents.
 func ToSkeleton(s string) string {
 	runes := []rune(s)

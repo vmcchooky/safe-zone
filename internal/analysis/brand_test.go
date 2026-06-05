@@ -86,6 +86,28 @@ func TestGetRootDomain(t *testing.T) {
 	}
 }
 
+func TestIsCDNRoot(t *testing.T) {
+	tests := []struct {
+		rootDomain string
+		expected   bool
+	}{
+		{"cloudfront.net", true},
+		{"pages.dev", true},
+		{"vercel.app", true},
+		{"netlify.app", true},
+		{"amazonaws.com", true},
+		{"vietcombank.com.vn", false},
+		{"google.com", false},
+	}
+
+	for _, tc := range tests {
+		got := IsCDNRoot(tc.rootDomain)
+		if got != tc.expected {
+			t.Errorf("IsCDNRoot(%q) = %v; expected %v", tc.rootDomain, got, tc.expected)
+		}
+	}
+}
+
 func TestCheckBrandSpoofing(t *testing.T) {
 	tests := []struct {
 		domain          string

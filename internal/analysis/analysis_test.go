@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"strings"
 	"testing"
 
 	"safe-zone/internal/config"
@@ -126,6 +127,34 @@ func TestAnalyzeHighEntropySkipsTrustedBrandRoots(t *testing.T) {
 	}
 }
 
+func TestAnalyzeHighEntropySkipsCDNRoots(t *testing.T) {
+	result := Analyze("a1b2c3d4e5f6.cloudfront.net")
+
+	if result.Verdict != VerdictSafe {
+		t.Fatalf("expected random CDN subdomain to remain safe, got %s with score %d and reasons %v", result.Verdict, result.Score, result.Reasons)
+	}
+	if result.Score >= 40 {
+		t.Fatalf("expected random CDN subdomain score below suspicious threshold, got %d with reasons %v", result.Score, result.Reasons)
+	}
+	if containsReason(result.Reasons, highEntropyDGAReason) {
+		t.Fatalf("expected CDN root to skip entropy DGA reason, got %v", result.Reasons)
+	}
+}
+
+func TestAnalyzeCDNBrandSpoofingStillRuns(t *testing.T) {
+	result := Analyze("vietcombank-login.cloudfront.net")
+
+	if result.Verdict != VerdictMalicious {
+		t.Fatalf("expected brand spoofing on CDN subdomain to be malicious, got %s with score %d and reasons %v", result.Verdict, result.Score, result.Reasons)
+	}
+	if !containsReasonSubstring(result.Reasons, "suspicious brand subdomain usage (vietcombank)") {
+		t.Fatalf("expected CDN phishing domain to retain brand spoofing reason, got %v", result.Reasons)
+	}
+	if containsReason(result.Reasons, highEntropyDGAReason) {
+		t.Fatalf("expected CDN root to skip entropy DGA reason, got %v", result.Reasons)
+	}
+}
+
 func TestNormalizeDomain(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -158,6 +187,15 @@ func TestNormalizeDomain(t *testing.T) {
 func containsReason(reasons []string, needle string) bool {
 	for _, reason := range reasons {
 		if reason == needle {
+			return true
+		}
+	}
+	return false
+}
+
+func containsReasonSubstring(reasons []string, needle string) bool {
+	for _, reason := range reasons {
+		if strings.Contains(reason, needle) {
 			return true
 		}
 	}

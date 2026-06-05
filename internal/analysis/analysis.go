@@ -213,10 +213,12 @@ func (a *Analyzer) Analyze(input string) Result {
 	}
 
 	// 8. Shannon Entropy Analysis (DGA detection)
+	rootDomain := getRootDomain(domain)
 	mainLabel := getMainLabel(domain)
 	if len(mainLabel) >= 10 &&
 		!strings.Contains(mainLabel, "-") &&
 		!hasSuspiciousKeyword &&
+		!IsCDNRoot(rootDomain) &&
 		!IsTrustedBrandSuffix(domain, brands) {
 		entropy := ShannonEntropy(mainLabel)
 		if entropy > a.config.EntropyThreshold {
