@@ -1152,7 +1152,7 @@ function renderRecentItem(item) {
       '<span>' + fmtTime(item.analyzed_at) + '</span>' +
     '</div>' +
     '<div class="risk-intensity" style="--risk-level:' + clampScore(item.score) + '%"><span></span></div>' +
-    '<button class="ghost btn-sm" type="button" onclick="domainInput.value=' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + '; analyzeDomain(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Open dossier</button>' +
+    '<button class="ghost btn-sm" type="button" onclick="openDossier(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Open dossier</button>' +
     '</article>';
 }
 
@@ -1241,8 +1241,8 @@ async function loadTelemetryItems() {
 
 function renderTelemRow(item) {
   const actionCell = item.verdict === 'SAFE'
-    ? '<button class="ghost btn-sm" onclick="analyzeDomain(' + JSON.stringify(item.domain) + ')">Open</button>'
-    : '<button class="ghost btn-sm" onclick="openFalsePositiveReview(' + JSON.stringify(item.domain) + ')">Review</button>';
+    ? '<button class="ghost btn-sm" onclick="openDossier(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Open</button>'
+    : '<button class="ghost btn-sm" onclick="openFalsePositiveReview(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Review</button>';
   return '<div class="telemetry-row">' +
     '<div style="overflow-wrap:anywhere;font-weight:700">' + esc(item.domain) + '</div>' +
     '<div><span class="verdict ' + item.verdict + '">' + esc(item.verdict) + '</span></div>' +
@@ -1496,6 +1496,13 @@ function openOverrideEditor(domain, action) {
   $('ov-reason').value = 'manual operator review';
   ovAction.dispatchEvent(new Event('change'));
   $('ov-reason').focus();
+}
+
+function openDossier(domain) {
+  switchTab('analysis');
+  const input = document.getElementById('domain-input');
+  if (input) input.value = domain || '';
+  analyzeDomain(domain);
 }
 
 async function openFalsePositiveReview(domain) {
