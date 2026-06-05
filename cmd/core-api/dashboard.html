@@ -1112,7 +1112,7 @@ function renderFalsePositiveReviewPanel(item) {
     '<textarea id="fp-review-reason" placeholder="Example: verified legitimate partner portal, matched owner DNS/TLS, approved by ops review."></textarea>' +
     '<div class="review-actions">' +
       '<button type="button" class="btn-allow" onclick="submitFalsePositiveReview()">Allow / whitelist domain</button>' +
-      '<button type="button" class="ghost btn-sm" onclick="openOverrideEditor(' + JSON.stringify(item.domain) + ', \'allow\')">Open override form</button>' +
+      '<button type="button" class="ghost btn-sm" onclick="openOverrideEditor(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ', \'allow\')">Open override form</button>' +
     '</div>' +
   '</section>';
 }
@@ -1151,7 +1151,7 @@ function renderRecentItem(item) {
       '<span>' + fmtTime(item.analyzed_at) + '</span>' +
     '</div>' +
     '<div class="risk-intensity" style="--risk-level:' + clampScore(item.score) + '%"><span></span></div>' +
-    '<button class="ghost btn-sm" type="button" onclick="domainInput.value=' + JSON.stringify(item.domain) + '; analyzeDomain(' + JSON.stringify(item.domain) + ')">Open dossier</button>' +
+    '<button class="ghost btn-sm" type="button" onclick="domainInput.value=' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + '; analyzeDomain(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Open dossier</button>' +
     '</article>';
 }
 
@@ -1366,7 +1366,7 @@ function renderOverrideRow(item) {
     '<td><span class="' + badgeClass + '">' + esc(item.action) + '</span></td>' +
     '<td style="color:var(--muted)">' + esc(item.reason || '--') + '</td>' +
     '<td style="color:var(--muted)">' + fmtTime(item.updated_at) + '</td>' +
-    '<td><button class="ghost btn-sm btn-danger" onclick="deleteOverride(' + JSON.stringify(item.domain) + ')">Delete</button></td>' +
+    '<td><button class="ghost btn-sm btn-danger" onclick="deleteOverride(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Delete</button></td>' +
     '</tr>';
 }
 
@@ -1649,7 +1649,7 @@ async function loadAgentStatus() {
             '<td>' + fmtTime(t.next_run) + '</td>' +
             '<td>' + t.run_count + ' / ' + t.error_count + '</td>' +
             '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(t.last_error) + '">' + lastErr + '</td>' +
-            '<td><button class="ghost btn-sm" onclick="triggerAgentTask(' + JSON.stringify(t.name) + ')">Trigger</button></td>' +
+            '<td><button class="ghost btn-sm" onclick="triggerAgentTask(' + JSON.stringify(t.name).replace(/"/g, '&quot;') + ')">Trigger</button></td>' +
             '</tr>';
         });
         
@@ -1865,7 +1865,7 @@ function renderGroupOverrideRow(item, group_id) {
     '<td><span class="' + badgeClass + '">' + esc(item.action) + '</span></td>' +
     '<td style="color:var(--muted)">' + esc(item.reason || '--') + '</td>' +
     '<td style="color:var(--muted)">' + fmtTime(item.updated_at) + '</td>' +
-    '<td><button class="ghost btn-sm btn-danger" onclick="deleteGroupOverride(' + group_id + ', ' + JSON.stringify(item.domain) + ')">Delete</button></td>' +
+    '<td><button class="ghost btn-sm btn-danger" onclick="deleteGroupOverride(' + group_id + ', ' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Delete</button></td>' +
     '</tr>';
 }
 
@@ -2284,7 +2284,7 @@ function renderReportRow(report) {
   if (isPending) {
     actions = `
       <div style="display:flex;gap:6px;">
-        <button class="ghost btn-sm ok" onclick="approveReport(${report.id}, ${JSON.stringify(report.domain)}, ${JSON.stringify(report.note)})" style="color:var(--safe)">Approve</button>
+        <button class="ghost btn-sm ok" onclick="approveReport(${report.id}, ${JSON.stringify(report.domain).replace(/"/g, '&quot;')}, ${JSON.stringify(report.note).replace(/"/g, '&quot;')})" style="color:var(--safe)">Approve</button>
         <button class="ghost btn-sm bad" onclick="dismissReport(${report.id})" style="color:var(--bad)">Dismiss</button>
       </div>
     `;
