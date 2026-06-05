@@ -173,8 +173,18 @@ func (d *DB) SeedDefaultBrands() error {
 		return nil
 	}
 	for _, brand := range analysis.DefaultTrustedBrands() {
-		if _, err := d.CreateBrand(context.Background(), brand); err != nil && !isUniqueConstraint(err) {
-			return err
+		brand = normalizeBrandForStore(brand)
+		altJSON, _ := json.Marshal(brand.AltDomains)
+		_, err := d.db.Exec(`
+			INSERT INTO trusted_brands (name, official_domain, alt_domains, updated_at)
+			VALUES (?, ?, ?, datetime('now'))
+			ON CONFLICT(name) DO UPDATE SET
+				official_domain = excluded.official_domain,
+				alt_domains = excluded.alt_domains,
+				updated_at = datetime('now')`,
+			brand.Name, brand.OfficialDomain, string(altJSON))
+		if err != nil {
+			return fmt.Errorf("seed brand %q: %w", brand.Name, err)
 		}
 	}
 	return nil

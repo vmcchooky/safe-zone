@@ -34,20 +34,31 @@ type BrandStore interface {
 // DefaultTrustedBrands returns the built-in brand seed used when persistence is unavailable.
 func DefaultTrustedBrands() []Brand {
 	return cloneBrands([]Brand{
-		{Name: "google", OfficialDomain: "google.com", AltDomains: []string{"google.com.vn", "google.co.uk", "google.com.sg"}},
+		{Name: "google", OfficialDomain: "google.com", AltDomains: []string{
+			"google.com.vn", "google.co.uk", "google.com.sg", "googleusercontent.com",
+			"googlesyndication.com", "googletagservices.com", "googletagmanager.com",
+			"google-analytics.com", "googleapis.com", "gstatic.com", "googlevideo.com",
+			"youtube.com", "youtu.be", "ytimg.com", "ggpht.com", "gvt1.com", "doubleclick.net",
+		}},
 		{Name: "binance", OfficialDomain: "binance.com", AltDomains: []string{"binance.us", "binance.info"}},
 		{Name: "paypal", OfficialDomain: "paypal.com", AltDomains: []string{"paypal.me"}},
-		{Name: "facebook", OfficialDomain: "facebook.com", AltDomains: []string{"fb.com", "messenger.com"}},
+		{Name: "facebook", OfficialDomain: "facebook.com", AltDomains: []string{
+			"fb.com", "messenger.com", "fbcdn.net", "fbsbx.com",
+		}},
 		{Name: "apple", OfficialDomain: "apple.com", AltDomains: []string{"icloud.com"}},
-		{Name: "microsoft", OfficialDomain: "microsoft.com", AltDomains: []string{"live.com", "outlook.com", "office.com"}},
+		{Name: "microsoft", OfficialDomain: "microsoft.com", AltDomains: []string{
+			"live.com", "outlook.com", "office.com", "microsoftonline.com", "sharepoint.com",
+			"office365.com", "windows.net", "windows.com", "azure.com", "visualstudio.com",
+			"aspnetcdn.com", "msn.com", "bing.com",
+		}},
 		{Name: "amazon", OfficialDomain: "amazon.com"},
 		{Name: "netflix", OfficialDomain: "netflix.com"},
-		{Name: "instagram", OfficialDomain: "instagram.com"},
+		{Name: "instagram", OfficialDomain: "instagram.com", AltDomains: []string{"cdninstagram.com"}},
 		{Name: "twitter", OfficialDomain: "twitter.com", AltDomains: []string{"x.com"}},
 		{Name: "metamask", OfficialDomain: "metamask.io"},
 		{Name: "coinbase", OfficialDomain: "coinbase.com"},
 		{Name: "trustwallet", OfficialDomain: "trustwallet.com"},
-		{Name: "yahoo", OfficialDomain: "yahoo.com"},
+		{Name: "yahoo", OfficialDomain: "yahoo.com", AltDomains: []string{"yimg.com"}},
 		{Name: "linkedin", OfficialDomain: "linkedin.com"},
 
 		{Name: "chinhphu", OfficialDomain: "chinhphu.vn", AltDomains: []string{"chinhphu.gov.vn"}},
@@ -569,7 +580,7 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 		}
 
 		// 3. Suspicious Brand Keyword Mention
-		if strings.Contains(rootDomain, brand.Name) || strings.Contains(skeletonRootDomain, brand.Name) {
+		if isSuspiciousLabel(getMainLabel(rootDomain), brand.Name) || isSuspiciousLabel(getMainLabel(skeletonRootDomain), brand.Name) {
 			penalty := brandSpoofingScore
 			if suspiciousTLDs[tld] {
 				penalty += 20
@@ -593,8 +604,7 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 			}
 
 			if i < len(labels)-rootPartsCount {
-				if label == brand.Name || strings.Contains(label, brand.Name) ||
-					skLabel == brand.Name || strings.Contains(skLabel, brand.Name) {
+				if isSuspiciousLabel(label, brand.Name) || isSuspiciousLabel(skLabel, brand.Name) {
 					penalty := brandSpoofingScore - 10
 					if suspiciousTLDs[tld] {
 						penalty += 20
@@ -611,4 +621,24 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 func isVietnamGovernmentRoot(rootDomain string) bool {
 	rootDomain = strings.ToLower(strings.TrimSpace(rootDomain))
 	return rootDomain == "gov.vn" || strings.HasSuffix(rootDomain, ".gov.vn")
+}
+
+// isSuspiciousLabel checks if a label suspiciously uses a brand name,
+// preventing false positives for short brand names like "shb" matching "dashboard".
+func isSuspiciousLabel(label, brandName string) bool {
+	label = strings.ToLower(label)
+	brandName = strings.ToLower(brandName)
+	if label == brandName {
+		return true
+	}
+	parts := strings.Split(label, "-")
+	for _, p := range parts {
+		if p == brandName {
+			return true
+		}
+	}
+	if len(brandName) < 6 {
+		return false
+	}
+	return strings.Contains(label, brandName)
 }
