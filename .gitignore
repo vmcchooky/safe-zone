@@ -10,3 +10,14 @@ tmp/
 ops/certs/dot/*.pem
 ops/secrets/*
 !ops/secrets/README.md
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Temp and deploy artifacts
+deploy.tar.gz
+response.bin
+tmp_test.js
+

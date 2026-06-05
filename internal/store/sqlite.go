@@ -1501,7 +1501,7 @@ func (d *DB) CreateBlockReport(domain, contact, note string) (int64, error) {
 }
 
 // ListBlockReports retrieves block reports with pagination.
-func (d *DB) ListBlockReports(limit, offset int) ([]BlockReport, error) {
+func (d *DB) ListBlockReports(status string, limit, offset int) ([]BlockReport, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -1511,9 +1511,19 @@ func (d *DB) ListBlockReports(limit, offset int) ([]BlockReport, error) {
 	if offset < 0 {
 		offset = 0
 	}
-	rows, err := d.db.Query(`
+	
+	query := `
 		SELECT id, domain, COALESCE(contact, ''), COALESCE(note, ''), status, created_at
-		FROM block_reports ORDER BY id DESC LIMIT ? OFFSET ?`, limit, offset)
+		FROM block_reports `
+	var args []any
+	if status != "" {
+		query += `WHERE status = ? `
+		args = append(args, status)
+	}
+	query += `ORDER BY id DESC LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+
+	rows, err := d.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list block reports: %w", err)
 	}

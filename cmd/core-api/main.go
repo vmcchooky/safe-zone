@@ -742,6 +742,7 @@ func (a *app) listReportsHandler(w http.ResponseWriter, r *http.Request) {
 			offset = n
 		}
 	}
+	status := r.URL.Query().Get("status")
 
 	db := a.risk.StoreDB()
 	if db == nil || !db.Enabled() {
@@ -749,7 +750,7 @@ func (a *app) listReportsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reports, err := db.ListBlockReports(limit, offset)
+	reports, err := db.ListBlockReports(status, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list reports: "+err.Error())
 		return
