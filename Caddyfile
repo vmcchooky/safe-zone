@@ -14,13 +14,16 @@
 }
 
 http:// {
-	@report path /block/report
-	reverse_proxy @report core-api:8080 {
-		header_up X-Blocked-Domain {http.request.host}
-		header_up X-Original-Path {uri}
-	}
+	route {
+		@assets path /assets/*
+		reverse_proxy @assets core-api:8080
 
-	handle {
+		@report path /block/report
+		reverse_proxy @report core-api:8080 {
+			header_up X-Blocked-Domain {http.request.host}
+			header_up X-Original-Path {uri}
+		}
+
 		rewrite * /block
 		reverse_proxy core-api:8080 {
 			header_up X-Blocked-Domain {http.request.host}

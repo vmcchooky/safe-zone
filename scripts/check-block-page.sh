@@ -22,6 +22,19 @@ curl -fsS \
 grep -q "This site was blocked" "$tmp_html"
 grep -q "$blocked_domain" "$tmp_html"
 
+echo "Checking HTTP sinkhole block page assets..."
+curl -fsS \
+  -H "Host: ${blocked_domain}" \
+  "http://${public_ip}/assets/safe-zone.css" \
+  -o "$tmp_html"
+grep -q "Quarantine Gate block page" "$tmp_html"
+
+curl -fsS \
+  -H "Host: ${blocked_domain}" \
+  "http://${public_ip}/assets/quorix.min.js" \
+  -o "$tmp_html"
+grep -q "Quorix UI" "$tmp_html"
+
 echo "Checking HTTPS canonical block page..."
 curl -fsS \
   "https://${public_host}/block?domain=${blocked_domain}&path=%2F" \
