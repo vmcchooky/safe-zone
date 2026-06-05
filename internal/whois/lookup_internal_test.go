@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestQueryReadsLongWhoisLines(t *testing.T) {
@@ -55,5 +56,46 @@ func TestQueryReadsLongWhoisLines(t *testing.T) {
 
 	if !strings.Contains(raw, longLine) {
 		t.Fatal("expected long WHOIS line to be preserved in response")
+	}
+}
+
+func TestQueryAppliesDefaultTimeoutWithoutContextDeadline(t *testing.T) {
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() {
+		_ = clientConn.Close()
+		_ = serverConn.Close()
+	})
+
+	go func() {
+		defer serverConn.Close()
+		scanner := bufio.NewScanner(serverConn)
+		if !scanner.Scan() {
+			return
+		}
+		_, _ = fmt.Fprint(serverConn, "Creation Date: 2024-01-01T00:00:00Z\n")
+	}()
+
+	originalDial := whoisDialContext
+	var capturedDeadline time.Time
+	var sawDeadline bool
+	whoisDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		capturedDeadline, sawDeadline = ctx.Deadline()
+		return clientConn, nil
+	}
+	t.Cleanup(func() {
+		whoisDialContext = originalDial
+	})
+
+	start := time.Now()
+	if _, err := query(context.Background(), "mock.whois.local", "example.com"); err != nil {
+		t.Fatalf("query returned error: %v", err)
+	}
+	if !sawDeadline {
+		t.Fatal("expected query to apply a default deadline when context has none")
+	}
+
+	timeout := capturedDeadline.Sub(start)
+	if timeout < 4*time.Second || timeout > 6*time.Second {
+		t.Fatalf("expected default timeout near 5s, got %s", timeout)
 	}
 }

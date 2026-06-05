@@ -217,7 +217,7 @@ func (a *Analyzer) Analyze(input string) Result {
 	if len(mainLabel) >= 10 &&
 		!strings.Contains(mainLabel, "-") &&
 		!hasSuspiciousKeyword &&
-		!isTrustedBrandRoot(getRootDomain(domain), brands) {
+		!IsTrustedBrandSuffix(domain, brands) {
 		entropy := ShannonEntropy(mainLabel)
 		if entropy > a.config.EntropyThreshold {
 			score += a.config.EntropyScore

@@ -29,6 +29,7 @@ const defaultThreatFeedKey = "safe-zone:threat:feed"
 const brandRevisionKey = "safe-zone:analysis:trusted-brands:revision"
 const threatFeedReason = "matched local threat feed"
 const analysisAlgorithmRevision = "2026-05-osint-v1"
+const geminiKeySyncCooldown = 10 * time.Second
 
 type Options struct {
 	Redis          *cache.Redis
@@ -62,31 +63,34 @@ type Options struct {
 }
 
 type Service struct {
-	lifecycleCtx     context.Context
-	lifecycleCancel  context.CancelFunc
-	redis            *cache.Redis
-	redisTimeout     time.Duration
-	ttlAllowed       time.Duration
-	ttlSuspicious    time.Duration
-	ttlBlocked       time.Duration
-	recentLimit      int64
-	recentTTL        time.Duration
-	threatFeedKey    string
-	feedRevisionKey  string
-	ai               *ai.Client
-	whitelist        *Whitelist
-	analyzer         *analysis.Analyzer
-	store            *store.DB
-	brandStore       analysis.BrandStore
-	enrichEnabled    bool
-	enrichTimeout    time.Duration
-	enrichQueue      chan enrichmentJob
-	enrichDone       chan struct{}
-	enrichWG         sync.WaitGroup
-	enrichMu         sync.Mutex
-	enrichInFlight   map[string]struct{}
-	enrichmentLookup func(context.Context, string) enrichmentSignals
-	osint            *osint.Service
+	lifecycleCtx      context.Context
+	lifecycleCancel   context.CancelFunc
+	redis             *cache.Redis
+	redisTimeout      time.Duration
+	ttlAllowed        time.Duration
+	ttlSuspicious     time.Duration
+	ttlBlocked        time.Duration
+	recentLimit       int64
+	recentTTL         time.Duration
+	threatFeedKey     string
+	feedRevisionKey   string
+	aiMu              sync.Mutex
+	ai                *ai.Client
+	cachedGeminiKey   string
+	lastGeminiKeySync time.Time
+	whitelist         *Whitelist
+	analyzer          *analysis.Analyzer
+	store             *store.DB
+	brandStore        analysis.BrandStore
+	enrichEnabled     bool
+	enrichTimeout     time.Duration
+	enrichQueue       chan enrichmentJob
+	enrichDone        chan struct{}
+	enrichWG          sync.WaitGroup
+	enrichMu          sync.Mutex
+	enrichInFlight    map[string]struct{}
+	enrichmentLookup  func(context.Context, string) enrichmentSignals
+	osint             *osint.Service
 }
 
 type ClientInfo struct {
@@ -636,6 +640,10 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 }
 
 func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result {
+	if analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) {
+		return analysis.Result{}
+	}
+
 	matched, err := s.matchThreatFeed(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
@@ -661,31 +669,69 @@ func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result
 }
 
 func (s *Service) syncAIClient() {
-	if s == nil || s.store == nil {
+	if s == nil || s.store == nil || !s.store.Enabled() {
 		return
 	}
-	customKey, err := s.store.GetSystemConfig("gemini_api_key")
-	if err == nil && customKey != "" {
-		if s.ai == nil {
-			s.ai = ai.NewClient(ai.Config{Provider: "gemini"})
-		}
-		s.ai.SetGeminiAPIKey(customKey)
+
+	s.aiMu.Lock()
+	defer s.aiMu.Unlock()
+
+	now := time.Now()
+	if !s.lastGeminiKeySync.IsZero() && now.Sub(s.lastGeminiKeySync) < geminiKeySyncCooldown {
+		return
 	}
+	s.lastGeminiKeySync = now
+
+	customKey, err := s.store.GetSystemConfig("gemini_api_key")
+	if err != nil {
+		return
+	}
+	customKey = strings.TrimSpace(customKey)
+
+	if customKey == s.cachedGeminiKey {
+		if customKey != "" && s.ai == nil {
+			s.ai = ai.NewClient(ai.Config{Provider: "gemini"})
+			s.ai.SetGeminiAPIKey(customKey)
+		}
+		return
+	}
+
+	if customKey == "" {
+		if s.cachedGeminiKey != "" && s.ai != nil {
+			s.ai.SetGeminiAPIKey("")
+			if !s.ai.Enabled() {
+				s.ai = nil
+			}
+		}
+		s.cachedGeminiKey = ""
+		return
+	}
+
+	if s.ai == nil {
+		s.ai = ai.NewClient(ai.Config{Provider: "gemini"})
+	}
+	s.ai.SetGeminiAPIKey(customKey)
+	s.cachedGeminiKey = customKey
 }
 
 func (s *Service) refineWithAI(ctx context.Context, current analysis.Result) analysis.Result {
 	if s == nil {
 		return current
 	}
-	s.syncAIClient()
-	if s.ai == nil {
-		return current
-	}
 	if current.Verdict != analysis.VerdictSuspicious {
 		return current
 	}
+	s.syncAIClient()
 
-	aiResult, err := s.ai.Refine(ctx, current.Domain, current)
+	s.aiMu.Lock()
+	client := s.ai
+	if client == nil {
+		s.aiMu.Unlock()
+		return current
+	}
+	aiResult, err := client.Refine(ctx, current.Domain, current)
+	s.aiMu.Unlock()
+
 	if err != nil {
 		logjson.Warn("local ai refinement failed", correlation.Fields(ctx, map[string]any{
 			"service": "risk",
@@ -710,6 +756,20 @@ func (s *Service) refineWithAI(ctx context.Context, current analysis.Result) ana
 	}
 	current.Reasons = append(current.Reasons, aiResult.Reasons...)
 	return current
+}
+
+func (s *Service) trustedBrands(ctx context.Context) []analysis.Brand {
+	if s == nil || s.brandStore == nil {
+		return analysis.DefaultTrustedBrands()
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	brands, err := s.brandStore.ListBrands(ctx)
+	if err != nil || len(brands) == 0 {
+		return analysis.DefaultTrustedBrands()
+	}
+	return brands
 }
 
 func (s *Service) lookupOSINT(ctx context.Context, domain string, result analysis.Result, mode osintLookupMode, force bool) osint.Report {
@@ -1296,6 +1356,8 @@ func (s *Service) AIClient() *ai.Client {
 		return nil
 	}
 	s.syncAIClient()
+	s.aiMu.Lock()
+	defer s.aiMu.Unlock()
 	return s.ai
 }
 

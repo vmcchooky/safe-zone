@@ -1008,6 +1008,48 @@ func (d *DB) IsDomainWhitelisted(domain string) (bool, error) {
 	return true, nil
 }
 
+// GetWhitelistCount returns the number of domains stored in the SQLite whitelist table.
+func (d *DB) GetWhitelistCount() (int, error) {
+	if !d.Enabled() {
+		return 0, nil
+	}
+
+	var count int
+	if err := d.db.QueryRow("SELECT COUNT(*) FROM whitelist_domains").Scan(&count); err != nil {
+		return 0, fmt.Errorf("count whitelist domains: %w", err)
+	}
+	return count, nil
+}
+
+// StreamWhitelist iterates sequentially over whitelist domains without allocating
+// an intermediate slice of all rows in memory.
+func (d *DB) StreamWhitelist(fn func(string) error) error {
+	if !d.Enabled() || fn == nil {
+		return nil
+	}
+
+	rows, err := d.db.Query("SELECT domain FROM whitelist_domains")
+	if err != nil {
+		return fmt.Errorf("query whitelist domains: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var domain string
+		if err := rows.Scan(&domain); err != nil {
+			return fmt.Errorf("scan whitelist domain: %w", err)
+		}
+		if err := fn(domain); err != nil {
+			return fmt.Errorf("stream whitelist domain %s: %w", domain, err)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate whitelist domains: %w", err)
+	}
+	return nil
+}
+
 // GetWhitelist retrieves all domains in the SQLite whitelist table.
 func (d *DB) GetWhitelist() ([]string, error) {
 	if !d.Enabled() {

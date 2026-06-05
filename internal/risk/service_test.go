@@ -119,6 +119,23 @@ func TestThreatFeedSuffixMatch(t *testing.T) {
 	}
 }
 
+func TestThreatFeedTrustedBrandSuffixBypass(t *testing.T) {
+	service, closeService := newTestServiceWithRedis(t)
+	defer closeService()
+
+	if _, err := service.redis.SetAdd(context.Background(), defaultThreatFeedKey, "googlevideo.com"); err != nil {
+		t.Fatal(err)
+	}
+
+	result := service.Analyze(context.Background(), "r7---sn-8pxuuxa-nbo6l.googlevideo.com", ClientInfo{})
+	if result.Verdict != analysis.VerdictSafe {
+		t.Fatalf("expected trusted brand suffix to bypass noisy feed match, got %s with reasons %v", result.Verdict, result.Reasons)
+	}
+	if hasReasonContaining(result.Reasons, threatFeedReason) {
+		t.Fatalf("expected no threat feed reason for trusted brand suffix, got %v", result.Reasons)
+	}
+}
+
 func TestRuntimeBrandStoreUpdatesAnalyzer(t *testing.T) {
 	server, err := miniredis.Run()
 	if err != nil {
@@ -309,6 +326,53 @@ func TestAnalysisRevisionInvalidatesLegacySafeCache(t *testing.T) {
 	}
 	if result.Verdict != analysis.VerdictMalicious {
 		t.Fatalf("expected re-analysis to mark malicious, got %s with reasons %v", result.Verdict, result.Reasons)
+	}
+}
+
+func TestAIClientSyncRespectsCooldownAndDisablesDeletedDBKey(t *testing.T) {
+	service := newTestServiceWithStore(t)
+
+	if err := service.StoreDB().SetSystemConfig("gemini_api_key", "first-key"); err != nil {
+		t.Fatal(err)
+	}
+	if client := service.AIClient(); client == nil || !client.Enabled() {
+		t.Fatal("expected AI client to be enabled after syncing DB key")
+	}
+	if service.cachedGeminiKey != "first-key" {
+		t.Fatalf("expected cached key to be first-key, got %q", service.cachedGeminiKey)
+	}
+
+	if err := service.StoreDB().SetSystemConfig("gemini_api_key", "second-key"); err != nil {
+		t.Fatal(err)
+	}
+	_ = service.AIClient()
+	if service.cachedGeminiKey != "first-key" {
+		t.Fatalf("expected cooldown to keep cached key unchanged, got %q", service.cachedGeminiKey)
+	}
+
+	service.aiMu.Lock()
+	service.lastGeminiKeySync = time.Now().Add(-geminiKeySyncCooldown - time.Second)
+	service.aiMu.Unlock()
+
+	if client := service.AIClient(); client == nil || !client.Enabled() {
+		t.Fatal("expected AI client to remain enabled after refreshing DB key")
+	}
+	if service.cachedGeminiKey != "second-key" {
+		t.Fatalf("expected cached key to refresh after cooldown, got %q", service.cachedGeminiKey)
+	}
+
+	if err := service.StoreDB().SetSystemConfig("gemini_api_key", ""); err != nil {
+		t.Fatal(err)
+	}
+	service.aiMu.Lock()
+	service.lastGeminiKeySync = time.Now().Add(-geminiKeySyncCooldown - time.Second)
+	service.aiMu.Unlock()
+
+	if client := service.AIClient(); client != nil {
+		t.Fatalf("expected AI client to be disabled after DB key removal, got %#v", client)
+	}
+	if service.cachedGeminiKey != "" {
+		t.Fatalf("expected cached key to be cleared, got %q", service.cachedGeminiKey)
 	}
 }
 

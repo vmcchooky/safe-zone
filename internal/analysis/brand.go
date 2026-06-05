@@ -440,14 +440,21 @@ func cloneBrands(brands []Brand) []Brand {
 	return cloned
 }
 
-// isTrustedBrandRoot checks if the root domain belongs to any official or alternative domains of trusted brands.
-func isTrustedBrandRoot(rootDomain string, brands []Brand) bool {
+// IsTrustedBrandSuffix reports whether a domain is an official trusted brand
+// domain or a subdomain beneath one of its official or alternative domains.
+func IsTrustedBrandSuffix(domain string, brands []Brand) bool {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return false
+	}
 	for _, brand := range brands {
-		if rootDomain == brand.OfficialDomain {
+		brand = normalizeBrandRecord(brand)
+		official := brand.OfficialDomain
+		if official != "" && (domain == official || strings.HasSuffix(domain, "."+official)) {
 			return true
 		}
 		for _, alt := range brand.AltDomains {
-			if rootDomain == alt {
+			if domain == alt || strings.HasSuffix(domain, "."+alt) {
 				return true
 			}
 		}
@@ -481,9 +488,8 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 		return false, "", 0
 	}
 
-	// If the root domain belongs to a trusted brand, subdomains under it are owned by that brand
-	// and are exempt from spoofing checks of other brands.
-	if isTrustedBrandRoot(rootDomain, brands) {
+	// If the domain already belongs to a trusted brand suffix, bypass spoofing checks.
+	if IsTrustedBrandSuffix(domain, brands) {
 		return false, "", 0
 	}
 

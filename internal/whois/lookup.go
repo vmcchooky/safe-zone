@@ -49,6 +49,8 @@ var whoisDialContext = func(ctx context.Context, network, address string) (net.C
 	return d.DialContext(ctx, network, address)
 }
 
+const defaultQueryTimeout = 5 * time.Second
+
 // datePatterns are tried in order to extract creation dates from WHOIS text.
 var datePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)creation date:\s*(.+)`),
@@ -95,16 +97,23 @@ func Lookup(ctx context.Context, domain string) Result {
 
 // query sends a WHOIS TCP query and returns the raw text response.
 func query(ctx context.Context, server, domain string) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, defaultQueryTimeout)
+		defer cancel()
+	}
+
 	conn, err := whoisDialContext(ctx, "tcp", net.JoinHostPort(server, "43"))
 	if err != nil {
 		return "", fmt.Errorf("whois dial %s: %w", server, err)
 	}
 	defer conn.Close()
 
-	// Set deadline from ctx if possible.
-	if deadline, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(deadline)
-	}
+	deadline, _ := ctx.Deadline()
+	_ = conn.SetDeadline(deadline)
 
 	_, err = fmt.Fprintf(conn, "%s\r\n", domain)
 	if err != nil {

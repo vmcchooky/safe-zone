@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -132,6 +135,52 @@ func TestBrandCRUDAndDefaultSeed(t *testing.T) {
 	}
 	if _, err := db.GetBrand(ctx, created.ID); err == nil {
 		t.Fatal("expected deleted brand to be absent")
+	}
+}
+
+func TestWhitelistCountAndStream(t *testing.T) {
+	db := newTestDB(t)
+	domains := []string{"google.com", "facebook.com", "googlevideo.com"}
+
+	if err := db.UpdateWhitelist(domains); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := db.GetWhitelistCount()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != len(domains) {
+		t.Fatalf("expected whitelist count %d, got %d", len(domains), count)
+	}
+
+	var streamed []string
+	if err := db.StreamWhitelist(func(domain string) error {
+		streamed = append(streamed, domain)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	sort.Strings(domains)
+	sort.Strings(streamed)
+	if !reflect.DeepEqual(streamed, domains) {
+		t.Fatalf("expected streamed whitelist %v, got %v", domains, streamed)
+	}
+}
+
+func TestStreamWhitelistPropagatesCallbackError(t *testing.T) {
+	db := newTestDB(t)
+	if err := db.UpdateWhitelist([]string{"google.com"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sentinel := errors.New("stop")
+	err := db.StreamWhitelist(func(domain string) error {
+		return sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("expected callback error to propagate, got %v", err)
 	}
 }
 

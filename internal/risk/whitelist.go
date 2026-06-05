@@ -32,18 +32,18 @@ func NewWhitelist(db *store.DB) *Whitelist {
 	}
 }
 
-// LoadFromDB reads all whitelisted domains from SQLite and constructs the Bloom Filter in RAM.
+// LoadFromDB streams the SQLite whitelist and constructs the Bloom Filter in RAM.
 func (w *Whitelist) LoadFromDB() error {
 	if w == nil || w.db == nil || !w.db.Enabled() {
 		return nil
 	}
 
-	domains, err := w.db.GetWhitelist()
+	count, err := w.db.GetWhitelistCount()
 	if err != nil {
-		return fmt.Errorf("get whitelist from db: %w", err)
+		return fmt.Errorf("count whitelist from db: %w", err)
 	}
 
-	if len(domains) == 0 {
+	if count == 0 {
 		w.mu.Lock()
 		w.bloom = nil
 		w.mu.Unlock()
@@ -51,9 +51,12 @@ func (w *Whitelist) LoadFromDB() error {
 	}
 
 	// Create Bloom Filter with 1% false positive rate
-	bf := NewBloomFilter(len(domains), 0.01)
-	for _, d := range domains {
-		bf.Add(d)
+	bf := NewBloomFilter(count, 0.01)
+	if err := w.db.StreamWhitelist(func(domain string) error {
+		bf.Add(domain)
+		return nil
+	}); err != nil {
+		return fmt.Errorf("stream whitelist from db: %w", err)
 	}
 
 	w.mu.Lock()
@@ -64,7 +67,7 @@ func (w *Whitelist) LoadFromDB() error {
 		"service":  "risk",
 		"storage":  "sqlite",
 		"strategy": "bloom",
-		"domains":  len(domains),
+		"domains":  count,
 		"size_kb":  float64(bf.m) / 8.0 / 1024.0,
 		"hashes":   bf.k,
 	})
@@ -207,8 +210,8 @@ func (w *Whitelist) Metrics() WhitelistMetrics {
 
 	var loaded int
 	if w.db != nil && w.db.Enabled() {
-		if domains, err := w.db.GetWhitelist(); err == nil {
-			loaded = len(domains)
+		if count, err := w.db.GetWhitelistCount(); err == nil {
+			loaded = count
 		}
 	} else {
 		loaded = len(w.allowed)
@@ -230,4 +233,3 @@ func (w *Whitelist) Metrics() WhitelistMetrics {
 		FPR:           0.01, // 1% false positive rate
 	}
 }
-
