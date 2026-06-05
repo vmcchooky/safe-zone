@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -276,6 +277,13 @@ func New(path string, retentionDays int) (*DB, error) {
 	}
 	if retentionDays <= 0 {
 		retentionDays = 30
+	}
+
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("create sqlite directory %s: %w", dir, err)
+		}
 	}
 
 	sqlDB, err := sql.Open("sqlite", path)
