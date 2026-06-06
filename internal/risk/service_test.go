@@ -168,6 +168,160 @@ func TestAnalysisConfigReloadMetadataTracksSource(t *testing.T) {
 	}
 }
 
+func TestUpdateAnalysisConfigPublishFailureDoesNotFail(t *testing.T) {
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverClosed := false
+	defer func() {
+		if !serverClosed {
+			redisServer.Close()
+		}
+	}()
+
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig: config.DefaultAnalysisConfig(),
+		Redis:          cache.NewRedis(redisServer.Addr(), "", 0),
+		RedisTimeout:   50 * time.Millisecond,
+		Store:          db,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	redisServer.Close()
+	serverClosed = true
+
+	cfg := service.GetAnalysisConfig()
+	cfg.LongDomainLength = 12
+	cfg.LongDomainScore = 31
+	if err := service.UpdateAnalysisConfig(context.Background(), cfg); err != nil {
+		t.Fatalf("expected update to succeed when publish fails, got %v", err)
+	}
+
+	got := service.GetAnalysisConfig()
+	if got.LongDomainLength != cfg.LongDomainLength || got.LongDomainScore != cfg.LongDomainScore {
+		t.Fatalf("expected local config apply after publish failure, got %#v", got)
+	}
+
+	stored, err := db.GetAnalysisConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored == nil {
+		t.Fatal("expected config to be persisted even when publish fails")
+	}
+	if stored.LongDomainLength != cfg.LongDomainLength || stored.LongDomainScore != cfg.LongDomainScore {
+		t.Fatalf("expected stored config to match update, got %#v", stored)
+	}
+
+	revision, source, reloadedAt := service.currentConfigReloadState()
+	if revision != analysisConfigRevision(cfg) {
+		t.Fatalf("expected local revision %q, got %q", analysisConfigRevision(cfg), revision)
+	}
+	if source != configReloadSourceLocalWrite {
+		t.Fatalf("expected local write source after publish failure, got %q", source)
+	}
+	if reloadedAt.IsZero() {
+		t.Fatal("expected reload timestamp after publish failure")
+	}
+}
+
+func TestResetAnalysisConfigPublishesReloadEvent(t *testing.T) {
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisServer.Close()
+
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	nonDefault := config.DefaultAnalysisConfig()
+	nonDefault.LongDomainLength = 77
+	if err := db.SetAnalysisConfig(nonDefault); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig: config.DefaultAnalysisConfig(),
+		Redis:          cache.NewRedis(redisServer.Addr(), "", 0),
+		RedisTimeout:   time.Second,
+		Store:          db,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	ch, closeSub, err := service.redis.Subscribe(context.Background(), defaultAnalysisConfigReloadChannel)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if err := closeSub(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	defaults := config.DefaultAnalysisConfig()
+	resetCfg, err := service.ResetAnalysisConfig(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysisConfigRevision(resetCfg) != analysisConfigRevision(defaults) {
+		t.Fatalf("expected reset config to return defaults, got %#v", resetCfg)
+	}
+
+	select {
+	case raw, ok := <-ch:
+		if !ok {
+			t.Fatal("expected reset publish event before subscription closed")
+		}
+
+		var event analysisConfigReloadEvent
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			t.Fatalf("expected valid reload event JSON, got %q: %v", raw, err)
+		}
+		if event.Type != analysisConfigReloadEventType {
+			t.Fatalf("expected event type %q, got %q", analysisConfigReloadEventType, event.Type)
+		}
+		if event.Revision != analysisConfigRevision(defaults) {
+			t.Fatalf("expected event revision %q, got %q", analysisConfigRevision(defaults), event.Revision)
+		}
+		if event.UpdatedAt == "" {
+			t.Fatal("expected event updated_at to be populated")
+		}
+		if event.Source != configReloadSourceLocalWrite {
+			t.Fatalf("expected event source %q, got %q", configReloadSourceLocalWrite, event.Source)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for reset reload event")
+	}
+
+	stored, err := db.GetAnalysisConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored == nil {
+		t.Fatal("expected reset config to be persisted")
+	}
+	if analysisConfigRevision(*stored) != analysisConfigRevision(defaults) {
+		t.Fatalf("expected stored config to reset to defaults, got %#v", stored)
+	}
+}
+
 func TestPolicyBlocksOnlyMalicious(t *testing.T) {
 	service := NewService(Options{
 		AnalysisConfig: config.DefaultAnalysisConfig(),

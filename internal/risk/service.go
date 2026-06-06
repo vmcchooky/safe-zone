@@ -28,15 +28,17 @@ import (
 const recentAnalysisKey = "safe-zone:analysis:recent"
 const defaultThreatFeedKey = "safe-zone:threat:feed"
 const brandRevisionKey = "safe-zone:analysis:trusted-brands:revision"
+const defaultAnalysisConfigReloadChannel = "safe-zone:config:analysis:updated"
 const threatFeedReason = "matched local threat feed"
 const analysisAlgorithmRevision = "2026-06-smart-osint-v2"
 const geminiKeySyncCooldown = 10 * time.Second
 
 const (
-	configReloadSourceStartup    = "startup"
-	configReloadSourceLocalWrite = "local_write"
-	configReloadSourcePubSub     = "pubsub"
-	configReloadSourceReconcile  = "reconcile"
+	analysisConfigReloadEventType = "analysis_config_updated"
+	configReloadSourceStartup     = "startup"
+	configReloadSourceLocalWrite  = "local_write"
+	configReloadSourcePubSub      = "pubsub"
+	configReloadSourceReconcile   = "reconcile"
 )
 
 type Options struct {
@@ -157,6 +159,13 @@ type enrichmentSignals struct {
 	DNSFailed bool
 	TLS       tlsinspect.Result
 	WHOIS     whois.Result
+}
+
+type analysisConfigReloadEvent struct {
+	Type      string `json:"type"`
+	Revision  string `json:"revision"`
+	UpdatedAt string `json:"updated_at"`
+	Source    string `json:"source"`
 }
 
 type AnalyzeOptions struct {
@@ -1194,12 +1203,42 @@ func (s *Service) GetAnalysisConfig() config.AnalysisConfig {
 	return s.analysisConfig.Clone()
 }
 
-func (s *Service) UpdateAnalysisConfig(_ context.Context, cfg config.AnalysisConfig) error {
+func (s *Service) publishAnalysisConfigReloadEvent(ctx context.Context, revision string) {
+	if s == nil || revision == "" {
+		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	event := analysisConfigReloadEvent{
+		Type:      analysisConfigReloadEventType,
+		Revision:  revision,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source:    configReloadSourceLocalWrite,
+	}
+	err := s.withRedis(ctx, func(redisCtx context.Context) error {
+		return s.redis.PublishJSON(redisCtx, defaultAnalysisConfigReloadChannel, event)
+	})
+	if err != nil && !errors.Is(err, cache.ErrDisabled) {
+		logjson.Warn("analysis config reload publish failed", correlation.Fields(ctx, map[string]any{
+			"service":  "risk",
+			"channel":  defaultAnalysisConfigReloadChannel,
+			"revision": revision,
+			"error":    err.Error(),
+		}))
+	}
+}
+
+func (s *Service) UpdateAnalysisConfig(ctx context.Context, cfg config.AnalysisConfig) error {
 	if s == nil {
 		return fmt.Errorf("risk service not configured")
 	}
 	if err := cfg.Validate(); err != nil {
 		return err
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	cfg = cfg.Clone()
 	if s.store == nil || !s.store.Enabled() {
@@ -1208,7 +1247,8 @@ func (s *Service) UpdateAnalysisConfig(_ context.Context, cfg config.AnalysisCon
 	if err := s.store.SetAnalysisConfig(cfg); err != nil {
 		return err
 	}
-	s.applyAnalysisConfig(cfg, configReloadSourceLocalWrite)
+	revision := s.applyAnalysisConfig(cfg, configReloadSourceLocalWrite)
+	s.publishAnalysisConfigReloadEvent(ctx, revision)
 	return nil
 }
 
