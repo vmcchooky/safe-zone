@@ -3,11 +3,13 @@ package risk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -319,6 +321,255 @@ func TestResetAnalysisConfigPublishesReloadEvent(t *testing.T) {
 	}
 	if analysisConfigRevision(*stored) != analysisConfigRevision(defaults) {
 		t.Fatalf("expected stored config to reset to defaults, got %#v", stored)
+	}
+}
+
+func TestAnalysisConfigReloadSubscriberIgnoresCurrentRevisionEvent(t *testing.T) {
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisServer.Close()
+
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initialCfg := config.DefaultAnalysisConfig()
+	initialCfg.LongDomainLength = 77
+	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig:      config.DefaultAnalysisConfig(),
+		Redis:               cache.NewRedis(redisServer.Addr(), "", 0),
+		RedisTimeout:        time.Second,
+		Store:               db,
+		ConfigReloadEnabled: true,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	waitForPubSubSubscribers(t, redisServer, service.configReloadChan, 1)
+
+	revision, source, reloadedAt := service.currentConfigReloadState()
+	if revision == "" {
+		t.Fatal("expected initial revision to be tracked")
+	}
+
+	updatedCfg := service.GetAnalysisConfig()
+	updatedCfg.LongDomainLength = 11
+	updatedCfg.LongDomainScore = 33
+	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := service.redis.PublishJSON(context.Background(), service.configReloadChan, analysisConfigReloadEvent{
+		Type:      analysisConfigReloadEventType,
+		Revision:  revision,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source:    "other-node",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	time.Sleep(150 * time.Millisecond)
+
+	gotRevision, gotSource, gotReloadedAt := service.currentConfigReloadState()
+	if gotRevision != revision {
+		t.Fatalf("expected same revision after self-loop event, got %q want %q", gotRevision, revision)
+	}
+	if gotSource != source {
+		t.Fatalf("expected same reload source after self-loop event, got %q want %q", gotSource, source)
+	}
+	if !gotReloadedAt.Equal(reloadedAt) {
+		t.Fatalf("expected self-loop event to avoid apply; reload time changed from %s to %s", reloadedAt, gotReloadedAt)
+	}
+	if got := service.GetAnalysisConfig(); got.LongDomainLength != initialCfg.LongDomainLength {
+		t.Fatalf("expected self-loop event to avoid SQLite reload, got length %d want %d", got.LongDomainLength, initialCfg.LongDomainLength)
+	}
+}
+
+func TestAnalysisConfigReloadSubscriberAppliesRemoteRevision(t *testing.T) {
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisServer.Close()
+
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initialCfg := config.DefaultAnalysisConfig()
+	initialCfg.LongDomainLength = 77
+	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig:      config.DefaultAnalysisConfig(),
+		Redis:               cache.NewRedis(redisServer.Addr(), "", 0),
+		RedisTimeout:        time.Second,
+		Store:               db,
+		ConfigReloadEnabled: true,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	waitForPubSubSubscribers(t, redisServer, service.configReloadChan, 1)
+
+	updatedCfg := service.GetAnalysisConfig()
+	updatedCfg.LongDomainLength = 12
+	updatedCfg.LongDomainScore = 41
+	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	nextRevision := analysisConfigRevision(updatedCfg)
+	if err := service.redis.PublishJSON(context.Background(), service.configReloadChan, analysisConfigReloadEvent{
+		Type:      analysisConfigReloadEventType,
+		Revision:  nextRevision,
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source:    "core-api",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForCondition(t, time.Second, func() bool {
+		revision, source, _ := service.currentConfigReloadState()
+		return revision == nextRevision && source == configReloadSourcePubSub
+	}, "expected pubsub event to reload config from store")
+
+	got := service.GetAnalysisConfig()
+	if got.LongDomainLength != updatedCfg.LongDomainLength || got.LongDomainScore != updatedCfg.LongDomainScore {
+		t.Fatalf("expected remote config to be applied, got %#v want %#v", got, updatedCfg)
+	}
+}
+
+func TestAnalysisConfigReloadSubscriberRetriesAfterDisconnect(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initialCfg := config.DefaultAnalysisConfig()
+	initialCfg.LongDomainLength = 77
+	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig: initialCfg,
+		Store:          db,
+	})
+	service.configReloadChan = "test-analysis-config-reload"
+	service.configReloadOn = true
+	service.reloadBackoffMin = 10 * time.Millisecond
+	service.reloadBackoffMax = 20 * time.Millisecond
+
+	firstMessages := make(chan string)
+	secondMessages := make(chan string, 1)
+	var subscribeAttempts atomic.Int32
+	service.subscribeReload = func(ctx context.Context, channel string) (<-chan string, func() error, error) {
+		switch subscribeAttempts.Add(1) {
+		case 1:
+			return firstMessages, func() error { return nil }, nil
+		case 2:
+			return secondMessages, func() error { return nil }, nil
+		default:
+			<-ctx.Done()
+			return nil, func() error { return nil }, ctx.Err()
+		}
+	}
+
+	service.configReloadWG.Add(1)
+	go service.runConfigReloadSubscriber()
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	waitForCondition(t, time.Second, func() bool {
+		return subscribeAttempts.Load() >= 1
+	}, "expected initial subscribe attempt")
+
+	close(firstMessages)
+
+	updatedCfg := service.GetAnalysisConfig()
+	updatedCfg.LongDomainLength = 15
+	updatedCfg.LongDomainScore = 29
+	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForCondition(t, time.Second, func() bool {
+		return subscribeAttempts.Load() >= 2
+	}, "expected subscriber to retry after disconnect")
+
+	eventPayload, err := json.Marshal(analysisConfigReloadEvent{
+		Type:      analysisConfigReloadEventType,
+		Revision:  analysisConfigRevision(updatedCfg),
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source:    "core-api",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondMessages <- string(eventPayload)
+
+	waitForCondition(t, time.Second, func() bool {
+		revision, source, _ := service.currentConfigReloadState()
+		return revision == analysisConfigRevision(updatedCfg) && source == configReloadSourcePubSub
+	}, "expected retried subscriber to apply remote reload")
+}
+
+func TestAnalysisConfigReloadSubscriberShutdownInterruptsBackoff(t *testing.T) {
+	service := NewService(Options{AnalysisConfig: config.DefaultAnalysisConfig()})
+	service.configReloadChan = "test-analysis-config-reload"
+	service.configReloadOn = true
+	service.reloadBackoffMin = time.Second
+	service.reloadBackoffMax = time.Second
+
+	var subscribeAttempts atomic.Int32
+	service.subscribeReload = func(ctx context.Context, channel string) (<-chan string, func() error, error) {
+		subscribeAttempts.Add(1)
+		return nil, nil, errors.New("boom")
+	}
+
+	done := make(chan struct{})
+	service.configReloadWG.Add(1)
+	go func() {
+		service.runConfigReloadSubscriber()
+		close(done)
+	}()
+
+	waitForCondition(t, time.Second, func() bool {
+		return subscribeAttempts.Load() >= 1
+	}, "expected subscriber to enter backoff after failure")
+
+	startedClose := time.Now()
+	if err := service.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-done:
+		if time.Since(startedClose) > 250*time.Millisecond {
+			t.Fatalf("expected shutdown to interrupt backoff promptly, took %s", time.Since(startedClose))
+		}
+	case <-time.After(250 * time.Millisecond):
+		t.Fatal("expected subscriber to exit promptly during shutdown")
 	}
 }
 
@@ -916,6 +1167,31 @@ func newTestServiceWithRedis(t *testing.T) (*Service, func()) {
 		}
 		server.Close()
 	}
+}
+
+func waitForPubSubSubscribers(t *testing.T, server *miniredis.Miniredis, channel string, want int) {
+	t.Helper()
+
+	waitForCondition(t, time.Second, func() bool {
+		return server.PubSubNumSub(channel)[channel] == want
+	}, "expected pubsub subscriber count to match")
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, condition func() bool, description string) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if condition() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if condition() {
+		return
+	}
+	t.Fatal(description)
 }
 
 func hasReasonContaining(reasons []string, needle string) bool {

@@ -32,6 +32,9 @@ const defaultAnalysisConfigReloadChannel = "safe-zone:config:analysis:updated"
 const threatFeedReason = "matched local threat feed"
 const analysisAlgorithmRevision = "2026-06-smart-osint-v2"
 const geminiKeySyncCooldown = 10 * time.Second
+const defaultAnalysisConfigReloadPollInterval = 30 * time.Second
+const analysisConfigReloadBackoffMin = 250 * time.Millisecond
+const analysisConfigReloadBackoffMax = 5 * time.Second
 
 const (
 	analysisConfigReloadEventType = "analysis_config_updated"
@@ -63,6 +66,11 @@ type Options struct {
 	AnalysisConfig config.AnalysisConfig
 	Store          *store.DB
 	BrandCacheTTL  time.Duration
+	// Analysis config hot-reload orchestration.
+	ConfigReloadChannel      string
+	ConfigReloadPollInterval time.Duration
+	ConfigReloadEnabled      bool
+	NodeRole                 string
 	// Enrichment (TLS + WHOIS)
 	EnrichEnabled   bool
 	EnrichTimeout   time.Duration
@@ -98,6 +106,14 @@ type Service struct {
 	configRevision    string
 	lastReloadSource  string
 	lastReloadTime    time.Time
+	configReloadWG    sync.WaitGroup
+	configReloadChan  string
+	configReloadPoll  time.Duration
+	configReloadOn    bool
+	nodeRole          string
+	subscribeReload   func(context.Context, string) (<-chan string, func() error, error)
+	reloadBackoffMin  time.Duration
+	reloadBackoffMax  time.Duration
 	store             *store.DB
 	brandStore        analysis.BrandStore
 	enrichEnabled     bool
@@ -201,6 +217,10 @@ func NewService(options Options) *Service {
 	if recentLimit <= 0 {
 		recentLimit = 25
 	}
+	configReloadChannel := strings.TrimSpace(options.ConfigReloadChannel)
+	if configReloadChannel == "" {
+		configReloadChannel = defaultAnalysisConfigReloadChannel
+	}
 	threatFeedKey := options.ThreatFeedKey
 	if threatFeedKey == "" {
 		threatFeedKey = defaultThreatFeedKey
@@ -248,28 +268,37 @@ func NewService(options Options) *Service {
 
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	svc := &Service{
-		lifecycleCtx:    lifecycleCtx,
-		lifecycleCancel: lifecycleCancel,
-		redis:           options.Redis,
-		redisTimeout:    options.RedisTimeout,
-		ttlAllowed:      options.TTLAllowed,
-		ttlSuspicious:   options.TTLSuspicious,
-		ttlBlocked:      options.TTLBlocked,
-		recentLimit:     recentLimit,
-		recentTTL:       configDuration(options.RecentTTL, 24*time.Hour),
-		threatFeedKey:   threatFeedKey,
-		feedRevisionKey: feed.RevisionKey(threatFeedKey),
-		ai:              aiClient,
-		aiShared:        aiShared,
-		whitelist:       wl,
-		store:           options.Store,
-		brandStore:      brandStore,
-		enrichEnabled:   options.EnrichEnabled,
-		enrichTimeout:   options.EnrichTimeout,
-		enrichDone:      make(chan struct{}),
-		enrichInFlight:  make(map[string]struct{}),
-		whoisCacheTTL:   configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
-		osint:           options.OSINT,
+		lifecycleCtx:     lifecycleCtx,
+		lifecycleCancel:  lifecycleCancel,
+		redis:            options.Redis,
+		redisTimeout:     options.RedisTimeout,
+		ttlAllowed:       options.TTLAllowed,
+		ttlSuspicious:    options.TTLSuspicious,
+		ttlBlocked:       options.TTLBlocked,
+		recentLimit:      recentLimit,
+		recentTTL:        configDuration(options.RecentTTL, 24*time.Hour),
+		threatFeedKey:    threatFeedKey,
+		feedRevisionKey:  feed.RevisionKey(threatFeedKey),
+		ai:               aiClient,
+		aiShared:         aiShared,
+		whitelist:        wl,
+		store:            options.Store,
+		brandStore:       brandStore,
+		configReloadChan: configReloadChannel,
+		configReloadPoll: configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
+		configReloadOn:   options.ConfigReloadEnabled,
+		nodeRole:         strings.TrimSpace(options.NodeRole),
+		reloadBackoffMin: analysisConfigReloadBackoffMin,
+		reloadBackoffMax: analysisConfigReloadBackoffMax,
+		enrichEnabled:    options.EnrichEnabled,
+		enrichTimeout:    options.EnrichTimeout,
+		enrichDone:       make(chan struct{}),
+		enrichInFlight:   make(map[string]struct{}),
+		whoisCacheTTL:    configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
+		osint:            options.OSINT,
+	}
+	if svc.redis != nil {
+		svc.subscribeReload = svc.redis.Subscribe
 	}
 	svc.enrichmentLookup = svc.defaultEnrichmentLookup
 	svc.applyAnalysisConfig(analysisConfig, configReloadSourceStartup)
@@ -280,6 +309,10 @@ func NewService(options Options) *Service {
 			go svc.enrichmentWorker()
 		}
 	}
+	if svc.shouldRunConfigReloadSubscriber() {
+		svc.configReloadWG.Add(1)
+		go svc.runConfigReloadSubscriber()
+	}
 	return svc
 }
 
@@ -288,6 +321,196 @@ func configDuration(value, fallback time.Duration) time.Duration {
 		return fallback
 	}
 	return value
+}
+
+func (s *Service) shouldRunConfigReloadSubscriber() bool {
+	if s == nil {
+		return false
+	}
+	if !s.configReloadOn || s.configReloadChan == "" || s.subscribeReload == nil {
+		return false
+	}
+	if s.redis == nil || !s.redis.Enabled() {
+		return false
+	}
+	if s.store == nil || !s.store.Enabled() {
+		return false
+	}
+	return true
+}
+
+func (s *Service) runConfigReloadSubscriber() {
+	defer s.configReloadWG.Done()
+
+	backoff := configDuration(s.reloadBackoffMin, analysisConfigReloadBackoffMin)
+	maxBackoff := configDuration(s.reloadBackoffMax, analysisConfigReloadBackoffMax)
+	if maxBackoff < backoff {
+		maxBackoff = backoff
+	}
+
+	for {
+		if s.lifecycleCtx.Err() != nil {
+			return
+		}
+
+		messages, closeSub, err := s.subscribeReload(s.lifecycleCtx, s.configReloadChan)
+		if err != nil {
+			if s.lifecycleCtx.Err() != nil {
+				return
+			}
+			logjson.Warn("analysis config reload subscribe failed; retrying", map[string]any{
+				"service":   "risk",
+				"channel":   s.configReloadChan,
+				"backoff":   backoff.String(),
+				"error":     err.Error(),
+				"node_role": s.nodeRole,
+			})
+			if !waitForContextOrTimeout(s.lifecycleCtx, backoff) {
+				return
+			}
+			backoff = nextConfigReloadBackoff(backoff, maxBackoff)
+			continue
+		}
+
+		backoff = configDuration(s.reloadBackoffMin, analysisConfigReloadBackoffMin)
+		err = s.consumeConfigReloadMessages(messages)
+		if closeSub != nil {
+			_ = closeSub()
+		}
+		if s.lifecycleCtx.Err() != nil {
+			return
+		}
+
+		logFields := map[string]any{
+			"service":   "risk",
+			"channel":   s.configReloadChan,
+			"backoff":   backoff.String(),
+			"node_role": s.nodeRole,
+		}
+		if err != nil && !errors.Is(err, context.Canceled) {
+			logFields["error"] = err.Error()
+		}
+		logjson.Warn("analysis config reload subscriber disconnected; retrying", logFields)
+
+		if !waitForContextOrTimeout(s.lifecycleCtx, backoff) {
+			return
+		}
+		backoff = nextConfigReloadBackoff(backoff, maxBackoff)
+	}
+}
+
+func (s *Service) consumeConfigReloadMessages(messages <-chan string) error {
+	for {
+		select {
+		case <-s.lifecycleCtx.Done():
+			return s.lifecycleCtx.Err()
+		case raw, ok := <-messages:
+			if !ok {
+				return errors.New("subscription closed")
+			}
+			s.handleConfigReloadMessage(raw)
+		}
+	}
+}
+
+func (s *Service) handleConfigReloadMessage(raw string) {
+	if s == nil {
+		return
+	}
+
+	var event analysisConfigReloadEvent
+	if err := json.Unmarshal([]byte(raw), &event); err != nil {
+		logjson.Warn("analysis config reload event decode failed", map[string]any{
+			"service": "risk",
+			"channel": s.configReloadChan,
+			"error":   err.Error(),
+		})
+		return
+	}
+	if event.Type != analysisConfigReloadEventType || event.Revision == "" {
+		return
+	}
+	if event.Revision == s.currentConfigRevision() {
+		return
+	}
+
+	oldRevision, newRevision, applied, err := s.reloadAnalysisConfigFromStore(configReloadSourcePubSub)
+	if err != nil {
+		logjson.Warn("analysis config reload from store failed", map[string]any{
+			"service":        "risk",
+			"channel":        s.configReloadChan,
+			"event_revision": event.Revision,
+			"event_source":   event.Source,
+			"error":          err.Error(),
+		})
+		return
+	}
+	if !applied {
+		return
+	}
+
+	logjson.Info("analysis config reload applied", map[string]any{
+		"service":       "risk",
+		"channel":       s.configReloadChan,
+		"old_revision":  oldRevision,
+		"new_revision":  newRevision,
+		"event_source":  event.Source,
+		"event_time":    event.UpdatedAt,
+		"reload_source": configReloadSourcePubSub,
+		"node_role":     s.nodeRole,
+	})
+}
+
+func (s *Service) reloadAnalysisConfigFromStore(source string) (string, string, bool, error) {
+	if s == nil || s.store == nil || !s.store.Enabled() {
+		return "", "", false, fmt.Errorf("store not configured")
+	}
+
+	storedConfig, err := s.store.GetAnalysisConfig()
+	if err != nil {
+		return "", "", false, err
+	}
+	if storedConfig == nil {
+		currentRevision := s.currentConfigRevision()
+		return currentRevision, currentRevision, false, nil
+	}
+
+	cfg := storedConfig.Clone()
+	nextRevision := analysisConfigRevision(cfg)
+	currentRevision := s.currentConfigRevision()
+	if nextRevision == currentRevision {
+		return currentRevision, nextRevision, false, nil
+	}
+
+	appliedRevision := s.applyAnalysisConfig(cfg, source)
+	return currentRevision, appliedRevision, true, nil
+}
+
+func nextConfigReloadBackoff(current, max time.Duration) time.Duration {
+	if current <= 0 {
+		return max
+	}
+	next := current * 2
+	if next < current || next > max {
+		return max
+	}
+	return next
+}
+
+func waitForContextOrTimeout(ctx context.Context, delay time.Duration) bool {
+	if delay <= 0 {
+		return ctx.Err() == nil
+	}
+
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
 }
 
 func (s *Service) Close() error {
@@ -300,6 +523,7 @@ func (s *Service) Close() error {
 		close(s.enrichDone)
 		s.enrichWG.Wait()
 	}
+	s.configReloadWG.Wait()
 	if s.redis != nil {
 		redisErr = s.redis.Close()
 	}
@@ -1210,20 +1434,28 @@ func (s *Service) publishAnalysisConfigReloadEvent(ctx context.Context, revision
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	channel := s.configReloadChan
+	if channel == "" {
+		channel = defaultAnalysisConfigReloadChannel
+	}
+	eventSource := configReloadSourceLocalWrite
+	if s.nodeRole != "" {
+		eventSource = s.nodeRole
+	}
 
 	event := analysisConfigReloadEvent{
 		Type:      analysisConfigReloadEventType,
 		Revision:  revision,
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		Source:    configReloadSourceLocalWrite,
+		Source:    eventSource,
 	}
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		return s.redis.PublishJSON(redisCtx, defaultAnalysisConfigReloadChannel, event)
+		return s.redis.PublishJSON(redisCtx, channel, event)
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("analysis config reload publish failed", correlation.Fields(ctx, map[string]any{
 			"service":  "risk",
-			"channel":  defaultAnalysisConfigReloadChannel,
+			"channel":  channel,
 			"revision": revision,
 			"error":    err.Error(),
 		}))
