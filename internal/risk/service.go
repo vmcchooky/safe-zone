@@ -153,6 +153,20 @@ type CacheStatus struct {
 	Error      string `json:"error,omitempty"`
 }
 
+type AnalysisConfigReloadStatus struct {
+	Enabled          bool   `json:"enabled"`
+	Channel          string `json:"channel,omitempty"`
+	PollInterval     string `json:"poll_interval,omitempty"`
+	NodeRole         string `json:"node_role,omitempty"`
+	Revision         string `json:"revision,omitempty"`
+	LastReloadSource string `json:"last_reload_source,omitempty"`
+	LastReloadAt     string `json:"last_reload_at,omitempty"`
+	RedisConfigured  bool   `json:"redis_configured"`
+	StoreConfigured  bool   `json:"store_configured"`
+	SubscriberActive bool   `json:"subscriber_active"`
+	ReconcilerActive bool   `json:"reconciler_active"`
+}
+
 type analysisCacheEntry struct {
 	Result           analysis.Result `json:"result"`
 	FeedRevision     string          `json:"feed_revision,omitempty"`
@@ -313,6 +327,10 @@ func NewService(options Options) *Service {
 		svc.configReloadWG.Add(1)
 		go svc.runConfigReloadSubscriber()
 	}
+	if svc.shouldRunConfigReloadReconciler() {
+		svc.configReloadWG.Add(1)
+		go svc.runConfigReloadReconciler()
+	}
 	return svc
 }
 
@@ -337,6 +355,19 @@ func (s *Service) shouldRunConfigReloadSubscriber() bool {
 		return false
 	}
 	return true
+}
+
+func (s *Service) shouldRunConfigReloadReconciler() bool {
+	if s == nil {
+		return false
+	}
+	if !s.configReloadOn {
+		return false
+	}
+	if s.store == nil || !s.store.Enabled() {
+		return false
+	}
+	return configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval) > 0
 }
 
 func (s *Service) runConfigReloadSubscriber() {
@@ -413,6 +444,27 @@ func (s *Service) consumeConfigReloadMessages(messages <-chan string) error {
 	}
 }
 
+func (s *Service) runConfigReloadReconciler() {
+	defer s.configReloadWG.Done()
+
+	interval := configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval)
+	if interval <= 0 {
+		return
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.lifecycleCtx.Done():
+			return
+		case <-ticker.C:
+			s.reconcileAnalysisConfig()
+		}
+	}
+}
+
 func (s *Service) handleConfigReloadMessage(raw string) {
 	if s == nil {
 		return
@@ -430,7 +482,18 @@ func (s *Service) handleConfigReloadMessage(raw string) {
 	if event.Type != analysisConfigReloadEventType || event.Revision == "" {
 		return
 	}
-	if event.Revision == s.currentConfigRevision() {
+	currentRevision := s.currentConfigRevision()
+	if event.Revision == currentRevision {
+		logjson.Info("analysis config reload ignored", map[string]any{
+			"service":          "risk",
+			"channel":          s.configReloadChan,
+			"event_revision":   event.Revision,
+			"current_revision": currentRevision,
+			"event_source":     event.Source,
+			"event_time":       event.UpdatedAt,
+			"ignore_reason":    "duplicate_or_self_loop",
+			"node_role":        s.nodeRole,
+		})
 		return
 	}
 
@@ -457,6 +520,35 @@ func (s *Service) handleConfigReloadMessage(raw string) {
 		"event_source":  event.Source,
 		"event_time":    event.UpdatedAt,
 		"reload_source": configReloadSourcePubSub,
+		"node_role":     s.nodeRole,
+	})
+}
+
+func (s *Service) reconcileAnalysisConfig() {
+	if s == nil {
+		return
+	}
+
+	oldRevision, newRevision, applied, err := s.reloadAnalysisConfigFromStore(configReloadSourceReconcile)
+	if err != nil {
+		logjson.Warn("analysis config reconciliation failed", map[string]any{
+			"service":       "risk",
+			"poll_interval": configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval).String(),
+			"error":         err.Error(),
+			"node_role":     s.nodeRole,
+		})
+		return
+	}
+	if !applied {
+		return
+	}
+
+	logjson.Info("analysis config reconciliation applied", map[string]any{
+		"service":       "risk",
+		"old_revision":  oldRevision,
+		"new_revision":  newRevision,
+		"poll_interval": configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval).String(),
+		"reload_source": configReloadSourceReconcile,
 		"node_role":     s.nodeRole,
 	})
 }
@@ -1427,6 +1519,30 @@ func (s *Service) GetAnalysisConfig() config.AnalysisConfig {
 	return s.analysisConfig.Clone()
 }
 
+func (s *Service) AnalysisConfigReloadStatus() AnalysisConfigReloadStatus {
+	if s == nil {
+		return AnalysisConfigReloadStatus{}
+	}
+
+	revision, source, reloadedAt := s.currentConfigReloadState()
+	status := AnalysisConfigReloadStatus{
+		Enabled:          s.configReloadOn,
+		Channel:          s.configReloadChan,
+		PollInterval:     configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval).String(),
+		NodeRole:         s.nodeRole,
+		Revision:         revision,
+		LastReloadSource: source,
+		RedisConfigured:  s.redis != nil && s.redis.Enabled(),
+		StoreConfigured:  s.store != nil && s.store.Enabled(),
+		SubscriberActive: s.shouldRunConfigReloadSubscriber(),
+		ReconcilerActive: s.shouldRunConfigReloadReconciler(),
+	}
+	if !reloadedAt.IsZero() {
+		status.LastReloadAt = reloadedAt.UTC().Format(time.RFC3339Nano)
+	}
+	return status
+}
+
 func (s *Service) publishAnalysisConfigReloadEvent(ctx context.Context, revision string) {
 	if s == nil || revision == "" {
 		return
@@ -1458,6 +1574,16 @@ func (s *Service) publishAnalysisConfigReloadEvent(ctx context.Context, revision
 			"channel":  channel,
 			"revision": revision,
 			"error":    err.Error(),
+		}))
+		return
+	}
+	if err == nil {
+		logjson.Info("analysis config reload published", correlation.Fields(ctx, map[string]any{
+			"service":      "risk",
+			"channel":      channel,
+			"revision":     revision,
+			"event_source": eventSource,
+			"node_role":    s.nodeRole,
 		}))
 	}
 }

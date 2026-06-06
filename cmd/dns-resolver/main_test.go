@@ -77,6 +77,16 @@ func TestStatusHandlerRoot(t *testing.T) {
 	if redis["status"] != "disabled" {
 		t.Fatalf("expected disabled redis status, got %#v", redis["status"])
 	}
+	reloadStatus, ok := payload["analysis_config_reload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected analysis_config_reload object, got %#v", payload["analysis_config_reload"])
+	}
+	if reloadStatus["revision"] == "" {
+		t.Fatalf("expected analysis config revision, got %#v", reloadStatus["revision"])
+	}
+	if reloadStatus["last_reload_source"] != "startup" {
+		t.Fatalf("expected startup reload source, got %#v", reloadStatus["last_reload_source"])
+	}
 
 	endpoints, ok := payload["endpoints"].([]any)
 	if !ok || len(endpoints) == 0 {
@@ -134,6 +144,13 @@ func TestMetricsHandlerRoot(t *testing.T) {
 	}
 	if payload["service"] != "dns-resolver" {
 		t.Fatalf("expected dns-resolver service, got %#v", payload["service"])
+	}
+	reloadStatus, ok := payload["analysis_config_reload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected analysis_config_reload object, got %#v", payload["analysis_config_reload"])
+	}
+	if reloadStatus["revision"] == "" {
+		t.Fatalf("expected analysis config revision in metrics payload, got %#v", reloadStatus["revision"])
 	}
 	metrics, ok := payload["metrics"].(map[string]any)
 	if !ok {

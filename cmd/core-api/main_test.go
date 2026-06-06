@@ -22,7 +22,7 @@ import (
 )
 
 func TestStatusEndpointHTTP(t *testing.T) {
-	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}), metrics: observability.NewRegistry()}
+	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond, ConfigReloadEnabled: true}), metrics: observability.NewRegistry()}
 	app.deploymentTier = "budget-vps"
 	defer func() {
 		if err := app.risk.Close(); err != nil {
@@ -76,6 +76,18 @@ func TestStatusEndpointHTTP(t *testing.T) {
 	}
 	if payload.Redis == nil || payload.Redis.Status != "disabled" {
 		t.Fatalf("expected disabled redis status, got %#v", payload.Redis)
+	}
+	if payload.AnalysisConfig == nil {
+		t.Fatal("expected analysis config reload status")
+	}
+	if !payload.AnalysisConfig.Enabled {
+		t.Fatal("expected analysis config reload feature to be enabled by default")
+	}
+	if payload.AnalysisConfig.Revision == "" {
+		t.Fatal("expected current analysis config revision")
+	}
+	if payload.AnalysisConfig.LastReloadSource != "startup" {
+		t.Fatalf("expected startup reload source, got %q", payload.AnalysisConfig.LastReloadSource)
 	}
 	if payload.FeedSync == nil || payload.FeedSync.Status != "disabled" {
 		t.Fatalf("expected disabled feed sync status, got %#v", payload.FeedSync)
@@ -260,7 +272,7 @@ func TestAnalyzeEndpointIncludesOSINTEvidence(t *testing.T) {
 }
 
 func TestMetricsEndpointHTTP(t *testing.T) {
-	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}), metrics: observability.NewRegistry(), deploymentTier: "budget-vps"}
+	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond, ConfigReloadEnabled: true}), metrics: observability.NewRegistry(), deploymentTier: "budget-vps"}
 	defer func() {
 		if err := app.risk.Close(); err != nil {
 			t.Fatal(err)
@@ -302,6 +314,13 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	}
 	if _, ok := metrics["request_summary"].(map[string]any); !ok {
 		t.Fatalf("expected request_summary map, got %#v", metrics["request_summary"])
+	}
+	reloadStatus, ok := payload["analysis_config_reload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected analysis_config_reload object, got %#v", payload["analysis_config_reload"])
+	}
+	if reloadStatus["revision"] == "" {
+		t.Fatalf("expected analysis config revision in metrics payload, got %#v", reloadStatus["revision"])
 	}
 }
 

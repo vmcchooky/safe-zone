@@ -128,6 +128,22 @@ Updates are validated, persisted in SQLite, hot-reloaded into the analyzer, and
 invalidate analysis cache entries through a deterministic configuration
 revision.
 
+For multi-node deployments, analysis-config propagation is controlled by:
+
+- `SAFE_ZONE_CONFIG_RELOAD_ENABLED=true`
+- `SAFE_ZONE_CONFIG_RELOAD_CHANNEL=safe-zone:config:analysis:updated`
+- `SAFE_ZONE_CONFIG_RELOAD_POLL_SECONDS=30`
+
+`core-api` and `dns-resolver` now tag reload events with their process role by
+default, publish only revision invalidations over Redis Pub/Sub, and fall back
+to periodic SQLite reconciliation when a node misses an event.
+
+Operator visibility:
+
+- `GET /` exposes `analysis_config_reload` with the loaded revision, last reload source, channel, and runtime subscriber/reconciler state.
+- `GET /metrics` includes the same `analysis_config_reload` snapshot for lightweight debugging.
+- Structured logs now show publish success/failure, duplicate or self-loop ignores, subscriber retries, Pub/Sub applies, and reconciliation self-heals.
+
 ## Secrets
 
 Sensitive settings can be supplied either directly as `VAR=value` or indirectly through `VAR_FILE=./ops/secrets/name`.

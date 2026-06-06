@@ -98,7 +98,7 @@ func main() {
 	}
 
 	resolver := &app{
-		risk:           risk.NewServiceFromEnv(),
+		risk:           risk.NewServiceFromEnvForRole("dns-resolver"),
 		metrics:        observability.NewRegistry(),
 		deploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 		upstreamDoHURL: upstreams.primaryURL(),
@@ -117,6 +117,7 @@ func main() {
 		}
 	}()
 	logCacheStatus("dns-resolver", resolver.risk)
+	logAnalysisConfigReloadStatus("dns-resolver", resolver.risk)
 
 	// --- Rate limiting ---
 	rlEnabled := config.Bool("SAFE_ZONE_RATELIMIT_ENABLED", true)
@@ -334,6 +335,7 @@ func (a *app) statusHandler(w http.ResponseWriter, r *http.Request) {
 		"upstream_doh":           a.primaryUpstreamURL(),
 		"upstream_doh_resolvers": a.upstreamStatus(),
 		"redis":                  a.risk.CacheStatus(r.Context()),
+		"analysis_config_reload": a.risk.AnalysisConfigReloadStatus(),
 		"endpoints": []string{
 			"/",
 			"/healthz",
@@ -352,9 +354,10 @@ func (a *app) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service": "dns-resolver",
-		"status":  "ok",
-		"metrics": a.metrics.Snapshot(),
+		"service":                "dns-resolver",
+		"status":                 "ok",
+		"metrics":                a.metrics.Snapshot(),
+		"analysis_config_reload": a.risk.AnalysisConfigReloadStatus(),
 		"upstream_doh": map[string]any{
 			"failures_total": dohFailureCount(a.metrics),
 		},
@@ -718,6 +721,24 @@ func logCacheStatus(service string, riskService *risk.Service) {
 	logjson.Warn("redis cache unavailable at startup", map[string]any{
 		"service": service,
 		"error":   status.Error,
+	})
+}
+
+func logAnalysisConfigReloadStatus(service string, riskService *risk.Service) {
+	status := riskService.AnalysisConfigReloadStatus()
+	logjson.Info("analysis config reload status", map[string]any{
+		"service":            service,
+		"enabled":            status.Enabled,
+		"channel":            status.Channel,
+		"poll_interval":      status.PollInterval,
+		"node_role":          status.NodeRole,
+		"revision":           status.Revision,
+		"last_reload_source": status.LastReloadSource,
+		"last_reload_at":     status.LastReloadAt,
+		"redis_configured":   status.RedisConfigured,
+		"store_configured":   status.StoreConfigured,
+		"subscriber_active":  status.SubscriberActive,
+		"reconciler_active":  status.ReconcilerActive,
 	})
 }
 

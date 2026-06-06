@@ -38,15 +38,16 @@ type RateLimitingStatus struct {
 }
 
 type statusResponse struct {
-	Service        string              `json:"service"`
-	Status         string              `json:"status"`
-	Mode           string              `json:"mode,omitempty"`
-	DeploymentTier string              `json:"deployment_tier,omitempty"`
-	Redis          *risk.CacheStatus   `json:"redis,omitempty"`
-	FeedSync       *feed.StatusSummary `json:"feed_sync,omitempty"`
-	Endpoints      []string            `json:"endpoints,omitempty"`
-	RateLimiting   *RateLimitingStatus `json:"rate_limiting,omitempty"`
-	Time           string              `json:"time"`
+	Service        string                           `json:"service"`
+	Status         string                           `json:"status"`
+	Mode           string                           `json:"mode,omitempty"`
+	DeploymentTier string                           `json:"deployment_tier,omitempty"`
+	Redis          *risk.CacheStatus                `json:"redis,omitempty"`
+	AnalysisConfig *risk.AnalysisConfigReloadStatus `json:"analysis_config_reload,omitempty"`
+	FeedSync       *feed.StatusSummary              `json:"feed_sync,omitempty"`
+	Endpoints      []string                         `json:"endpoints,omitempty"`
+	RateLimiting   *RateLimitingStatus              `json:"rate_limiting,omitempty"`
+	Time           string                           `json:"time"`
 }
 
 type app struct {
@@ -90,7 +91,7 @@ func main() {
 	feedStaleAfter := config.DurationSeconds("SAFE_ZONE_AGENT_FEED_STALE_AFTER_SECONDS", 36*time.Hour)
 
 	api := &app{
-		risk:           risk.NewServiceFromEnv(),
+		risk:           risk.NewServiceFromEnvForRole("core-api"),
 		metrics:        observability.NewRegistry(),
 		deploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 		sessionSecret:  security.sessionSecret,
@@ -111,6 +112,7 @@ func main() {
 		}
 	}()
 	logCacheStatus("core-api", api.risk)
+	logAnalysisConfigReloadStatus("core-api", api.risk)
 
 	// --- Rate limiting ---
 	rlEnabled := config.Bool("SAFE_ZONE_RATELIMIT_ENABLED", true)
@@ -345,6 +347,7 @@ func (a *app) statusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cacheStatus := a.risk.CacheStatus(r.Context())
+	analysisConfigStatus := a.risk.AnalysisConfigReloadStatus()
 	feedStatus := a.feedStatus(r.Context())
 	writeJSON(w, http.StatusOK, statusResponse{
 		Service:        "core-api",
@@ -352,6 +355,7 @@ func (a *app) statusHandler(w http.ResponseWriter, r *http.Request) {
 		Mode:           "api",
 		DeploymentTier: a.deploymentTier,
 		Redis:          &cacheStatus,
+		AnalysisConfig: &analysisConfigStatus,
 		FeedSync:       &feedStatus,
 		Endpoints: []string{
 			"/",
@@ -385,11 +389,12 @@ func (a *app) metricsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"service":   "core-api",
-		"status":    "ok",
-		"metrics":   a.metrics.Snapshot(),
-		"feed_sync": a.feedStatus(r.Context()),
-		"time":      time.Now().UTC().Format(time.RFC3339Nano),
+		"service":                "core-api",
+		"status":                 "ok",
+		"metrics":                a.metrics.Snapshot(),
+		"feed_sync":              a.feedStatus(r.Context()),
+		"analysis_config_reload": a.risk.AnalysisConfigReloadStatus(),
+		"time":                   time.Now().UTC().Format(time.RFC3339Nano),
 	})
 }
 
@@ -473,6 +478,24 @@ func logCacheStatus(service string, riskService *risk.Service) {
 	logjson.Warn("redis cache unavailable at startup", map[string]any{
 		"service": service,
 		"error":   status.Error,
+	})
+}
+
+func logAnalysisConfigReloadStatus(service string, riskService *risk.Service) {
+	status := riskService.AnalysisConfigReloadStatus()
+	logjson.Info("analysis config reload status", map[string]any{
+		"service":            service,
+		"enabled":            status.Enabled,
+		"channel":            status.Channel,
+		"poll_interval":      status.PollInterval,
+		"node_role":          status.NodeRole,
+		"revision":           status.Revision,
+		"last_reload_source": status.LastReloadSource,
+		"last_reload_at":     status.LastReloadAt,
+		"redis_configured":   status.RedisConfigured,
+		"store_configured":   status.StoreConfigured,
+		"subscriber_active":  status.SubscriberActive,
+		"reconciler_active":  status.ReconcilerActive,
 	})
 }
 

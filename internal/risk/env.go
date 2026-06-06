@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"strings"
 	"time"
 
 	"safe-zone/internal/ai"
@@ -12,6 +13,10 @@ import (
 )
 
 func NewServiceFromEnv() *Service {
+	return NewServiceFromEnvForRole("")
+}
+
+func NewServiceFromEnvForRole(nodeRole string) *Service {
 	readSecret := func(key string) string {
 		value, err := config.SecretStringE(key)
 		if err != nil {
@@ -98,6 +103,7 @@ func NewServiceFromEnv() *Service {
 		ConfigReloadChannel:      config.String("SAFE_ZONE_CONFIG_RELOAD_CHANNEL", defaultAnalysisConfigReloadChannel),
 		ConfigReloadPollInterval: config.DurationSeconds("SAFE_ZONE_CONFIG_RELOAD_POLL_SECONDS", defaultAnalysisConfigReloadPollInterval),
 		ConfigReloadEnabled:      config.Bool("SAFE_ZONE_CONFIG_RELOAD_ENABLED", true),
+		NodeRole:                 strings.TrimSpace(nodeRole),
 		EnrichEnabled:            config.Bool("SAFE_ZONE_ENRICH_ENABLED", true),
 		EnrichTimeout:            config.DurationMillis("SAFE_ZONE_ENRICH_TIMEOUT_MS", 3*time.Second),
 		EnrichQueueSize:          config.Int("SAFE_ZONE_ENRICH_QUEUE_SIZE", 256),

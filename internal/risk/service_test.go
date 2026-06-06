@@ -170,6 +170,56 @@ func TestAnalysisConfigReloadMetadataTracksSource(t *testing.T) {
 	}
 }
 
+func TestAnalysisConfigReloadStatusExposesCurrentState(t *testing.T) {
+	service := NewService(Options{
+		AnalysisConfig:           config.DefaultAnalysisConfig(),
+		ConfigReloadChannel:      "safe-zone:test:analysis-config",
+		ConfigReloadPollInterval: 45 * time.Second,
+		ConfigReloadEnabled:      true,
+		NodeRole:                 "core-api",
+	})
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	status := service.AnalysisConfigReloadStatus()
+	if !status.Enabled {
+		t.Fatal("expected config reload status to be enabled")
+	}
+	if status.Channel != "safe-zone:test:analysis-config" {
+		t.Fatalf("expected custom channel, got %q", status.Channel)
+	}
+	if status.PollInterval != "45s" {
+		t.Fatalf("expected poll interval 45s, got %q", status.PollInterval)
+	}
+	if status.NodeRole != "core-api" {
+		t.Fatalf("expected node role core-api, got %q", status.NodeRole)
+	}
+	if status.Revision == "" {
+		t.Fatal("expected config revision in status")
+	}
+	if status.LastReloadSource != configReloadSourceStartup {
+		t.Fatalf("expected startup reload source, got %q", status.LastReloadSource)
+	}
+	if status.LastReloadAt == "" {
+		t.Fatal("expected last reload time in status")
+	}
+	if status.RedisConfigured {
+		t.Fatal("expected redis to be disabled in status")
+	}
+	if status.StoreConfigured {
+		t.Fatal("expected store to be disabled in status")
+	}
+	if status.SubscriberActive {
+		t.Fatal("expected subscriber to be inactive without redis and store")
+	}
+	if status.ReconcilerActive {
+		t.Fatal("expected reconciler to be inactive without store")
+	}
+}
+
 func TestUpdateAnalysisConfigPublishFailureDoesNotFail(t *testing.T) {
 	redisServer, err := miniredis.Run()
 	if err != nil {
@@ -570,6 +620,99 @@ func TestAnalysisConfigReloadSubscriberShutdownInterruptsBackoff(t *testing.T) {
 		}
 	case <-time.After(250 * time.Millisecond):
 		t.Fatal("expected subscriber to exit promptly during shutdown")
+	}
+}
+
+func TestAnalysisConfigReconcilerAppliesMissedRevision(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initialCfg := config.DefaultAnalysisConfig()
+	initialCfg.LongDomainLength = 77
+	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig:           config.DefaultAnalysisConfig(),
+		Store:                    db,
+		ConfigReloadEnabled:      true,
+		ConfigReloadPollInterval: 10 * time.Millisecond,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	updatedCfg := service.GetAnalysisConfig()
+	updatedCfg.LongDomainLength = 12
+	updatedCfg.LongDomainScore = 41
+	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForCondition(t, time.Second, func() bool {
+		revision, source, _ := service.currentConfigReloadState()
+		return revision == analysisConfigRevision(updatedCfg) && source == configReloadSourceReconcile
+	}, "expected reconciliation loop to self-heal missed config revision")
+
+	got := service.GetAnalysisConfig()
+	if got.LongDomainLength != updatedCfg.LongDomainLength || got.LongDomainScore != updatedCfg.LongDomainScore {
+		t.Fatalf("expected reconciled config to match store, got %#v want %#v", got, updatedCfg)
+	}
+}
+
+func TestAnalysisConfigReconcilerDoesNotReapplySameRevision(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	initialCfg := config.DefaultAnalysisConfig()
+	initialCfg.LongDomainLength = 77
+	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig:           config.DefaultAnalysisConfig(),
+		Store:                    db,
+		ConfigReloadEnabled:      true,
+		ConfigReloadPollInterval: 10 * time.Millisecond,
+	})
+	defer func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	updatedCfg := service.GetAnalysisConfig()
+	updatedCfg.LongDomainLength = 15
+	updatedCfg.LongDomainScore = 29
+	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+		t.Fatal(err)
+	}
+
+	waitForCondition(t, time.Second, func() bool {
+		revision, source, _ := service.currentConfigReloadState()
+		return revision == analysisConfigRevision(updatedCfg) && source == configReloadSourceReconcile
+	}, "expected reconciliation loop to apply updated revision once")
+
+	revision, source, reloadedAt := service.currentConfigReloadState()
+	time.Sleep(75 * time.Millisecond)
+
+	gotRevision, gotSource, gotReloadedAt := service.currentConfigReloadState()
+	if gotRevision != revision {
+		t.Fatalf("expected revision to stay stable after reconcile, got %q want %q", gotRevision, revision)
+	}
+	if gotSource != source {
+		t.Fatalf("expected reload source to stay %q after redundant polls, got %q", source, gotSource)
+	}
+	if !gotReloadedAt.Equal(reloadedAt) {
+		t.Fatalf("expected unchanged revision to avoid reapply; reload time changed from %s to %s", reloadedAt, gotReloadedAt)
 	}
 }
 
@@ -1140,6 +1283,23 @@ func TestLocalAITimeoutFailsOpenFromEnv(t *testing.T) {
 	result := service.Analyze(context.Background(), "secure-login-example.com", ClientInfo{})
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("expected suspicious result to remain unchanged on ai timeout, got %s", result.Verdict)
+	}
+}
+
+func TestNewServiceFromEnvForRoleSetsDefaultNodeRole(t *testing.T) {
+	t.Setenv("SAFE_ZONE_REDIS_ADDR", "")
+	t.Setenv("SAFE_ZONE_SQLITE_PATH", filepath.Join(t.TempDir(), "env.db"))
+
+	service := NewServiceFromEnvForRole("dns-resolver")
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	status := service.AnalysisConfigReloadStatus()
+	if status.NodeRole != "dns-resolver" {
+		t.Fatalf("expected node role dns-resolver, got %q", status.NodeRole)
 	}
 }
 
