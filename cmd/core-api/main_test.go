@@ -123,6 +123,23 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 		t.Fatalf("expected updated config, got %d", got)
 	}
 
+	patchReq, _ := http.NewRequest(http.MethodPut, server.URL+"/v1/config/analysis", strings.NewReader(`{"keywords":[]}`))
+	patchReq.Header.Set("Authorization", "Bearer testkey")
+	patchResp, err := http.DefaultClient.Do(patchReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer patchResp.Body.Close()
+	if patchResp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(patchResp.Body)
+		t.Fatalf("expected empty keywords update 200, got %d: %s", patchResp.StatusCode, data)
+	}
+	if got := app.risk.GetAnalysisConfig(); got.LongDomainLength != 44 {
+		t.Fatalf("expected omitted fields to preserve current values, got %+v", got)
+	} else if len(got.Keywords) != 0 {
+		t.Fatalf("expected empty keyword list to be preserved, got %v", got.Keywords)
+	}
+
 	resetReq, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/config/analysis/reset", nil)
 	resetReq.Header.Set("Authorization", "Bearer testkey")
 	resetResp, err := http.DefaultClient.Do(resetReq)

@@ -1536,7 +1536,7 @@ func (a *app) analysisConfigHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPut:
 		r.Body = http.MaxBytesReader(w, r.Body, 32768)
 		defer r.Body.Close()
-		var cfg config.AnalysisConfig
+		cfg := a.risk.GetAnalysisConfig()
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&cfg); err != nil {

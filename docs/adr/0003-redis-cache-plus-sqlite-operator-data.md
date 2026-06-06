@@ -19,3 +19,4 @@ Redis fits short-lived analysis cache entries, feed sets, and simple in-memory-f
 - Redis stays optional for availability; cache-dependent paths fail open.
 - SQLite becomes the local source of truth for operator workflows.
 - Backup procedures must cover both Redis snapshots and SQLite data.
+- Runtime analysis-config hot reload is process-local today; a multi-node deployment will need a broadcast path such as Redis Pub/Sub so every `core-api` node refreshes in-memory analyzers after config changes.

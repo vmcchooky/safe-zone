@@ -141,6 +141,19 @@ func TestAnalyzeHighEntropySkipsCDNRoots(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAllowsDisablingKeywordScoring(t *testing.T) {
+	cfg := config.DefaultAnalysisConfig()
+	cfg.Keywords = []string{}
+	cfg.BrandSpoofingScore = 0
+	cfg.EntropyScore = 0
+	analyzer := NewAnalyzer(cfg)
+
+	result := analyzer.Analyze("secure-login-wallet-example.com")
+	if containsReason(result.Reasons, "phishing keyword pattern") {
+		t.Fatalf("expected keyword scoring to be disabled, got %v", result.Reasons)
+	}
+}
+
 func TestAnalyzeCDNBrandSpoofingStillRuns(t *testing.T) {
 	result := Analyze("vietcombank-login.cloudfront.net")
 

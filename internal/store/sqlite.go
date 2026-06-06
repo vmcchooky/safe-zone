@@ -336,6 +336,10 @@ func New(path string, retentionDays int) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
 	}
+	if path == ":memory:" {
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
+	}
 
 	// Apply performance pragmas.
 	pragmas := []string{

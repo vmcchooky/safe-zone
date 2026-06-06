@@ -63,7 +63,7 @@ func LoadAnalysisConfig(path string) AnalysisConfig {
 		return defaults
 	}
 
-	var cfg AnalysisConfig
+	cfg := defaults.Clone()
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		logjson.Warn("analysis config parse failed, using defaults", map[string]any{
 			"path":  path,
@@ -76,11 +76,8 @@ func LoadAnalysisConfig(path string) AnalysisConfig {
 }
 
 func (c AnalysisConfig) GetKeywords() []string {
-	// Fallback to defaults if empty due to misconfiguration
-	if len(c.Keywords) == 0 {
-		return DefaultAnalysisConfig().Keywords
-	}
-	// Allocate a new slice to avoid concurrent modification / race condition on underlying array
+	// Allocate a new slice to avoid concurrent modification / race condition on underlying array.
+	// An empty list is a valid runtime setting and disables keyword-based lexical scoring.
 	kw := make([]string, len(c.Keywords))
 	for i, k := range c.Keywords {
 		kw[i] = strings.ToLower(k)
@@ -123,8 +120,8 @@ func (c AnalysisConfig) Validate() error {
 	if c.EntropyThreshold < 0 || c.EntropyThreshold > 8 {
 		return fmt.Errorf("entropy_threshold must be between 0 and 8")
 	}
-	if len(c.Keywords) == 0 || len(c.Keywords) > 200 {
-		return fmt.Errorf("keywords must contain between 1 and 200 entries")
+	if len(c.Keywords) > 200 {
+		return fmt.Errorf("keywords must contain at most 200 entries")
 	}
 	seen := make(map[string]struct{}, len(c.Keywords))
 	for _, keyword := range c.Keywords {

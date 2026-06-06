@@ -46,6 +46,29 @@ func TestNewDisabledWhenPathEmpty(t *testing.T) {
 	}
 }
 
+func TestInMemoryDatabaseSupportsSystemConfig(t *testing.T) {
+	db, err := New(":memory:", 30)
+	if err != nil {
+		t.Fatalf("failed to create in-memory db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("failed to close in-memory db: %v", err)
+		}
+	})
+
+	if err := db.SetSystemConfig("analysis_config", `{"long_domain_length":40}`); err != nil {
+		t.Fatalf("expected in-memory system config write to succeed: %v", err)
+	}
+	got, err := db.GetSystemConfig("analysis_config")
+	if err != nil {
+		t.Fatalf("expected in-memory system config read to succeed: %v", err)
+	}
+	if got == "" {
+		t.Fatal("expected persisted in-memory system config value")
+	}
+}
+
 func TestOSINTEvidenceRoundTrip(t *testing.T) {
 	db := newTestDB(t)
 	expires := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
