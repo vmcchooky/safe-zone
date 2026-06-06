@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -84,6 +85,70 @@ func (r *Redis) SetJSON(ctx context.Context, key string, value any, ttl time.Dur
 	}
 
 	return r.client.Set(ctx, key, encoded, ttl).Err()
+}
+
+func (r *Redis) PublishJSON(ctx context.Context, channel string, value any) error {
+	if !r.Enabled() {
+		return ErrDisabled
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+
+	return r.client.Publish(ctx, channel, encoded).Err()
+}
+
+func (r *Redis) Subscribe(ctx context.Context, channel string) (<-chan string, func() error, error) {
+	if !r.Enabled() {
+		return nil, nil, ErrDisabled
+	}
+
+	pubsub := r.client.Subscribe(ctx, channel)
+	if _, err := pubsub.Receive(ctx); err != nil {
+		_ = pubsub.Close()
+		return nil, nil, err
+	}
+
+	source := pubsub.Channel()
+	messages := make(chan string, 100)
+	done := make(chan struct{})
+
+	var (
+		closeOnce sync.Once
+		closeErr  error
+	)
+	closeSub := func() error {
+		closeOnce.Do(func() {
+			close(done)
+			closeErr = pubsub.Close()
+		})
+		return closeErr
+	}
+
+	go func() {
+		defer close(messages)
+
+		for {
+			select {
+			case <-done:
+				return
+			case msg, ok := <-source:
+				if !ok {
+					return
+				}
+
+				select {
+				case <-done:
+					return
+				case messages <- msg.Payload:
+				}
+			}
+		}
+	}()
+
+	return messages, closeSub, nil
 }
 
 func (r *Redis) GetString(ctx context.Context, key string) (string, error) {

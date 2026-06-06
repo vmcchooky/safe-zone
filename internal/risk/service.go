@@ -32,6 +32,13 @@ const threatFeedReason = "matched local threat feed"
 const analysisAlgorithmRevision = "2026-06-smart-osint-v2"
 const geminiKeySyncCooldown = 10 * time.Second
 
+const (
+	configReloadSourceStartup    = "startup"
+	configReloadSourceLocalWrite = "local_write"
+	configReloadSourcePubSub     = "pubsub"
+	configReloadSourceReconcile  = "reconcile"
+)
+
 type Options struct {
 	Redis          *cache.Redis
 	RedisTimeout   time.Duration
@@ -87,6 +94,8 @@ type Service struct {
 	analyzerMu        sync.RWMutex
 	analysisConfig    config.AnalysisConfig
 	configRevision    string
+	lastReloadSource  string
+	lastReloadTime    time.Time
 	store             *store.DB
 	brandStore        analysis.BrandStore
 	enrichEnabled     bool
@@ -244,9 +253,6 @@ func NewService(options Options) *Service {
 		ai:              aiClient,
 		aiShared:        aiShared,
 		whitelist:       wl,
-		analyzer:        analysis.NewAnalyzerWithBrandStore(analysisConfig, brandStore),
-		analysisConfig:  analysisConfig.Clone(),
-		configRevision:  analysisConfigRevision(analysisConfig),
 		store:           options.Store,
 		brandStore:      brandStore,
 		enrichEnabled:   options.EnrichEnabled,
@@ -257,6 +263,7 @@ func NewService(options Options) *Service {
 		osint:           options.OSINT,
 	}
 	svc.enrichmentLookup = svc.defaultEnrichmentLookup
+	svc.applyAnalysisConfig(analysisConfig, configReloadSourceStartup)
 	if svc.enrichEnabled && svc.redis != nil && svc.redis.Enabled() && svc.enrichTimeout > 0 {
 		svc.enrichQueue = make(chan enrichmentJob, enrichQueueSize)
 		svc.enrichWG.Add(enrichWorkers)
@@ -1141,10 +1148,41 @@ func analysisConfigRevision(cfg config.AnalysisConfig) string {
 	return fmt.Sprintf("%x", sum[:8])
 }
 
+func (s *Service) applyAnalysisConfigLocked(cfg config.AnalysisConfig) {
+	s.analysisConfig = cfg
+	s.configRevision = analysisConfigRevision(cfg)
+	s.analyzer = analysis.NewAnalyzerWithBrandStore(cfg, s.brandStore)
+}
+
+func (s *Service) applyAnalysisConfig(cfg config.AnalysisConfig, source string) string {
+	if s == nil {
+		return ""
+	}
+	cfg = cfg.Clone()
+	appliedAt := time.Now().UTC()
+
+	s.analyzerMu.Lock()
+	defer s.analyzerMu.Unlock()
+
+	s.applyAnalysisConfigLocked(cfg)
+	s.lastReloadSource = source
+	s.lastReloadTime = appliedAt
+	return s.configRevision
+}
+
 func (s *Service) currentConfigRevision() string {
 	s.analyzerMu.RLock()
 	defer s.analyzerMu.RUnlock()
 	return s.configRevision
+}
+
+func (s *Service) currentConfigReloadState() (string, string, time.Time) {
+	if s == nil {
+		return "", "", time.Time{}
+	}
+	s.analyzerMu.RLock()
+	defer s.analyzerMu.RUnlock()
+	return s.configRevision, s.lastReloadSource, s.lastReloadTime
 }
 
 func (s *Service) GetAnalysisConfig() config.AnalysisConfig {
@@ -1170,12 +1208,7 @@ func (s *Service) UpdateAnalysisConfig(_ context.Context, cfg config.AnalysisCon
 	if err := s.store.SetAnalysisConfig(cfg); err != nil {
 		return err
 	}
-
-	s.analyzerMu.Lock()
-	s.analysisConfig = cfg
-	s.configRevision = analysisConfigRevision(cfg)
-	s.analyzer = analysis.NewAnalyzerWithBrandStore(cfg, s.brandStore)
-	s.analyzerMu.Unlock()
+	s.applyAnalysisConfig(cfg, configReloadSourceLocalWrite)
 	return nil
 }
 

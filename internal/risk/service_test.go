@@ -104,6 +104,70 @@ func TestNewServiceLoadsStoredAnalysisConfig(t *testing.T) {
 	}
 }
 
+func TestGetAnalysisConfigReturnsDeepClone(t *testing.T) {
+	service := NewService(Options{AnalysisConfig: config.DefaultAnalysisConfig()})
+	defer func() { _ = service.Close() }()
+
+	cfg := service.GetAnalysisConfig()
+	cfg.LongDomainLength = 99
+	cfg.Keywords[0] = "tampered"
+
+	got := service.GetAnalysisConfig()
+	if got.LongDomainLength == 99 {
+		t.Fatal("expected scalar mutation on returned config to not affect service state")
+	}
+	if got.Keywords[0] == "tampered" {
+		t.Fatal("expected slice mutation on returned config to not affect service state")
+	}
+}
+
+func TestAnalysisConfigReloadMetadataTracksSource(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig: config.DefaultAnalysisConfig(),
+		Store:          db,
+	})
+	defer func() { _ = service.Close() }()
+
+	startupRevision, startupSource, startupTime := service.currentConfigReloadState()
+	if startupRevision == "" {
+		t.Fatal("expected startup config revision to be tracked")
+	}
+	if startupSource != configReloadSourceStartup {
+		t.Fatalf("expected startup source %q, got %q", configReloadSourceStartup, startupSource)
+	}
+	if startupTime.IsZero() {
+		t.Fatal("expected startup reload time to be tracked")
+	}
+
+	cfg := service.GetAnalysisConfig()
+	cfg.LongDomainLength = 77
+	if err := service.UpdateAnalysisConfig(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	revision, source, reloadedAt := service.currentConfigReloadState()
+	if revision == "" {
+		t.Fatal("expected updated config revision to be tracked")
+	}
+	if revision == startupRevision {
+		t.Fatal("expected config revision to change after update")
+	}
+	if source != configReloadSourceLocalWrite {
+		t.Fatalf("expected reload source %q, got %q", configReloadSourceLocalWrite, source)
+	}
+	if reloadedAt.IsZero() {
+		t.Fatal("expected reload time to be tracked after update")
+	}
+	if reloadedAt.Before(startupTime) {
+		t.Fatal("expected reload time to move forward or stay monotonic")
+	}
+}
+
 func TestPolicyBlocksOnlyMalicious(t *testing.T) {
 	service := NewService(Options{
 		AnalysisConfig: config.DefaultAnalysisConfig(),
