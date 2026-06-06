@@ -15,6 +15,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"safe-zone/internal/config"
 	"safe-zone/internal/logjson"
 )
 
@@ -136,6 +137,20 @@ type BlockReportFilter struct {
 type DomainCount struct {
 	Domain string `json:"domain"`
 	Count  int    `json:"count"`
+}
+
+type WhoisCacheEntry struct {
+	Domain         string
+	Found          bool
+	RegisteredDate time.Time
+	DomainAgeDays  int
+	Registrar      string
+	PrivacyGuard   bool
+	Score          int
+	Reasons        []string
+	RawText        string
+	CachedAt       time.Time
+	ExpiresAt      time.Time
 }
 
 type cidrMapping struct {
@@ -278,6 +293,21 @@ CREATE TABLE IF NOT EXISTS system_config (
     value TEXT NOT NULL,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS whois_cache (
+    domain TEXT PRIMARY KEY,
+    found INTEGER NOT NULL DEFAULT 0,
+    registered_date TEXT,
+    domain_age_days INTEGER NOT NULL DEFAULT 0,
+    registrar TEXT DEFAULT '',
+    privacy_guard INTEGER NOT NULL DEFAULT 0,
+    score INTEGER NOT NULL DEFAULT 0,
+    reasons TEXT NOT NULL DEFAULT '[]',
+    raw_text TEXT DEFAULT '',
+    cached_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_whois_cache_expires ON whois_cache(expires_at);
 `
 
 const telemetryBufferSize = 1000
@@ -597,6 +627,12 @@ func (d *DB) cleanup() {
 			"service": "store",
 			"cutoff":  cutoff,
 			"removed": n,
+		})
+	}
+	if _, err := d.db.Exec(`DELETE FROM whois_cache WHERE expires_at <= ?`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		logjson.Error("whois cache cleanup failed", map[string]any{
+			"service": "store",
+			"error":   err.Error(),
 		})
 	}
 }
@@ -1728,6 +1764,113 @@ func (d *DB) SetSystemConfig(key, value string) error {
 	`, key, value)
 	if err != nil {
 		return fmt.Errorf("set system config for key %s: %w", key, err)
+	}
+	return nil
+}
+
+func (d *DB) GetAnalysisConfig() (*config.AnalysisConfig, error) {
+	value, err := d.GetSystemConfig("analysis_config")
+	if err != nil || value == "" {
+		return nil, err
+	}
+	var cfg config.AnalysisConfig
+	if err := json.Unmarshal([]byte(value), &cfg); err != nil {
+		return nil, fmt.Errorf("decode analysis config: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validate stored analysis config: %w", err)
+	}
+	cloned := cfg.Clone()
+	return &cloned, nil
+}
+
+func (d *DB) SetAnalysisConfig(cfg config.AnalysisConfig) error {
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	encoded, err := json.Marshal(cfg.Clone())
+	if err != nil {
+		return fmt.Errorf("encode analysis config: %w", err)
+	}
+	return d.SetSystemConfig("analysis_config", string(encoded))
+}
+
+func (d *DB) GetWhoisCache(domain string, now time.Time) (WhoisCacheEntry, bool, error) {
+	if !d.Enabled() {
+		return WhoisCacheEntry{}, false, fmt.Errorf("sqlite store disabled")
+	}
+	var (
+		entry                   WhoisCacheEntry
+		found, privacyGuard     int
+		registeredDate, reasons string
+		cachedAt, expiresAt     string
+	)
+	err := d.db.QueryRow(`
+		SELECT domain, found, COALESCE(registered_date, ''), domain_age_days,
+		       COALESCE(registrar, ''), privacy_guard, score, reasons,
+		       COALESCE(raw_text, ''), cached_at, expires_at
+		FROM whois_cache WHERE domain = ? AND expires_at > ?
+	`, domain, now.UTC().Format(time.RFC3339Nano)).Scan(
+		&entry.Domain, &found, &registeredDate, &entry.DomainAgeDays,
+		&entry.Registrar, &privacyGuard, &entry.Score, &reasons,
+		&entry.RawText, &cachedAt, &expiresAt,
+	)
+	if err == sql.ErrNoRows {
+		return WhoisCacheEntry{}, false, nil
+	}
+	if err != nil {
+		return WhoisCacheEntry{}, false, fmt.Errorf("get whois cache: %w", err)
+	}
+	entry.Found = found != 0
+	entry.PrivacyGuard = privacyGuard != 0
+	if registeredDate != "" {
+		entry.RegisteredDate, _ = time.Parse(time.RFC3339Nano, registeredDate)
+	}
+	entry.CachedAt, _ = time.Parse(time.RFC3339Nano, cachedAt)
+	entry.ExpiresAt, _ = time.Parse(time.RFC3339Nano, expiresAt)
+	if err := json.Unmarshal([]byte(reasons), &entry.Reasons); err != nil {
+		return WhoisCacheEntry{}, false, fmt.Errorf("decode whois cache reasons: %w", err)
+	}
+	return entry, true, nil
+}
+
+func (d *DB) SetWhoisCache(domain string, entry WhoisCacheEntry, ttl time.Duration) error {
+	if !d.Enabled() {
+		return fmt.Errorf("sqlite store disabled")
+	}
+	if ttl <= 0 {
+		return fmt.Errorf("whois cache ttl must be positive")
+	}
+	reasons, err := json.Marshal(entry.Reasons)
+	if err != nil {
+		return fmt.Errorf("encode whois cache reasons: %w", err)
+	}
+	now := time.Now().UTC()
+	registeredDate := ""
+	if !entry.RegisteredDate.IsZero() {
+		registeredDate = entry.RegisteredDate.UTC().Format(time.RFC3339Nano)
+	}
+	_, err = d.db.Exec(`
+		INSERT INTO whois_cache (
+			domain, found, registered_date, domain_age_days, registrar,
+			privacy_guard, score, reasons, raw_text, cached_at, expires_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(domain) DO UPDATE SET
+			found = excluded.found,
+			registered_date = excluded.registered_date,
+			domain_age_days = excluded.domain_age_days,
+			registrar = excluded.registrar,
+			privacy_guard = excluded.privacy_guard,
+			score = excluded.score,
+			reasons = excluded.reasons,
+			raw_text = excluded.raw_text,
+			cached_at = excluded.cached_at,
+			expires_at = excluded.expires_at
+	`, domain, entry.Found, registeredDate, entry.DomainAgeDays, entry.Registrar,
+		entry.PrivacyGuard, entry.Score, string(reasons), entry.RawText,
+		now.Format(time.RFC3339Nano), now.Add(ttl).Format(time.RFC3339Nano))
+	if err != nil {
+		return fmt.Errorf("set whois cache: %w", err)
 	}
 	return nil
 }

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"safe-zone/internal/store"
 )
 
 func TestQueryReadsLongWhoisLines(t *testing.T) {
@@ -97,5 +99,42 @@ func TestQueryAppliesDefaultTimeoutWithoutContextDeadline(t *testing.T) {
 	timeout := capturedDeadline.Sub(start)
 	if timeout < 4*time.Second || timeout > 6*time.Second {
 		t.Fatalf("expected default timeout near 5s, got %s", timeout)
+	}
+}
+
+func TestLookupWithCacheAvoidsSecondNetworkQuery(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	clientConn, serverConn := net.Pipe()
+	var calls int
+	originalDial := whoisDialContext
+	whoisDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		calls++
+		if calls > 1 {
+			return nil, fmt.Errorf("unexpected second WHOIS query")
+		}
+		return clientConn, nil
+	}
+	t.Cleanup(func() { whoisDialContext = originalDial })
+
+	go func() {
+		defer serverConn.Close()
+		scanner := bufio.NewScanner(serverConn)
+		if scanner.Scan() {
+			_, _ = fmt.Fprint(serverConn, "Creation Date: 2024-01-01T00:00:00Z\nRegistrar: Cache Test\n")
+		}
+	}()
+
+	first := LookupWithCache(context.Background(), "sub.example.com", db, time.Hour)
+	second := LookupWithCache(context.Background(), "example.com", db, time.Hour)
+	if !first.Found || !second.Found || second.Registrar != "Cache Test" {
+		t.Fatalf("unexpected results: first=%#v second=%#v", first, second)
+	}
+	if calls != 1 {
+		t.Fatalf("expected one WHOIS query, got %d", calls)
 	}
 }

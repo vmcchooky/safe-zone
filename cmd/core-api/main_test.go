@@ -88,6 +88,56 @@ func TestStatusEndpointHTTP(t *testing.T) {
 	}
 }
 
+func TestAnalysisConfigEndpoints(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	app := &app{
+		risk:        risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), Store: db}),
+		adminAPIKey: "testkey",
+	}
+	defer func() { _ = app.risk.Close() }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/config/analysis", app.requireAuthFunc(app.analysisConfigHandler))
+	mux.HandleFunc("/v1/config/analysis/reset", app.requireAuthFunc(app.analysisConfigResetHandler))
+	server := httptest.NewServer(mux)
+	defer server.Close()
+
+	cfg := config.DefaultAnalysisConfig()
+	cfg.LongDomainLength = 44
+	body, _ := json.Marshal(cfg)
+	req, _ := http.NewRequest(http.MethodPut, server.URL+"/v1/config/analysis", strings.NewReader(string(body)))
+	req.Header.Set("Authorization", "Bearer testkey")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected update 200, got %d: %s", resp.StatusCode, data)
+	}
+	if got := app.risk.GetAnalysisConfig().LongDomainLength; got != 44 {
+		t.Fatalf("expected updated config, got %d", got)
+	}
+
+	resetReq, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/config/analysis/reset", nil)
+	resetReq.Header.Set("Authorization", "Bearer testkey")
+	resetResp, err := http.DefaultClient.Do(resetReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resetResp.Body.Close()
+	if resetResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected reset 200, got %d", resetResp.StatusCode)
+	}
+	if got := app.risk.GetAnalysisConfig().LongDomainLength; got != config.DefaultAnalysisConfig().LongDomainLength {
+		t.Fatalf("expected default config after reset, got %d", got)
+	}
+}
+
 func TestAnalyzeEndpointStillWorks(t *testing.T) {
 	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}), metrics: observability.NewRegistry(), deploymentTier: "budget-vps"}
 	defer func() {
@@ -500,7 +550,7 @@ func TestDashboardEndpointHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	content2 := string(body2)
-	for _, fragment := range []string{"Safe Zone Dashboard", "Domain Inspection"} {
+	for _, fragment := range []string{"Safe Zone Dashboard", "Domain Inspection", "Analysis Scoring", "setting-analysis-config", "resetAnalysisConfig"} {
 		if !strings.Contains(content2, fragment) {
 			t.Fatalf("expected dashboard content to contain %q, got: %s", fragment, content2)
 		}

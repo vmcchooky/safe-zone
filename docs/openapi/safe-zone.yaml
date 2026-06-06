@@ -161,6 +161,42 @@ paths:
       responses:
         "200":
           description: Telemetry stats
+  /v1/config/analysis:
+    get:
+      summary: Get active lexical analysis configuration
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Active analysis configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisConfig"
+    put:
+      summary: Validate, persist, and hot-reload lexical analysis configuration
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisConfig"
+      responses:
+        "200":
+          description: Updated analysis configuration
+  /v1/config/analysis/reset:
+    post:
+      summary: Reset lexical analysis configuration to defaults
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Default analysis configuration
   /v1/auth/login:
     post:
       summary: Login to dashboard
@@ -264,3 +300,41 @@ components:
           enum: [allow, block]
         reason:
           type: string
+    AnalysisConfig:
+      type: object
+      required:
+        - punycode_score
+        - long_domain_length
+        - long_domain_score
+        - hyphen_count_threshold
+        - hyphen_score
+        - digit_ratio_threshold
+        - digit_ratio_score
+        - mixed_script_score
+        - keywords
+        - keyword_base_score
+        - keyword_match_score
+        - keyword_multiple_bonus
+        - brand_spoofing_score
+        - entropy_threshold
+        - entropy_score
+      properties:
+        punycode_score: {type: integer, minimum: 0, maximum: 100}
+        long_domain_length: {type: integer, minimum: 10, maximum: 253}
+        long_domain_score: {type: integer, minimum: 0, maximum: 100}
+        hyphen_count_threshold: {type: integer, minimum: 1, maximum: 20}
+        hyphen_score: {type: integer, minimum: 0, maximum: 100}
+        digit_ratio_threshold: {type: number, minimum: 0, maximum: 1}
+        digit_ratio_score: {type: integer, minimum: 0, maximum: 100}
+        mixed_script_score: {type: integer, minimum: 0, maximum: 100}
+        keywords:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items: {type: string, maxLength: 64}
+        keyword_base_score: {type: integer, minimum: 0, maximum: 100}
+        keyword_match_score: {type: integer, minimum: 0, maximum: 100}
+        keyword_multiple_bonus: {type: integer, minimum: 0, maximum: 100}
+        brand_spoofing_score: {type: integer, minimum: 0, maximum: 100}
+        entropy_threshold: {type: number, minimum: 0, maximum: 8}
+        entropy_score: {type: integer, minimum: 0, maximum: 100}

@@ -45,6 +45,65 @@ func TestAnalyzeWithoutRedis(t *testing.T) {
 	}
 }
 
+func TestUpdateAnalysisConfigInvalidatesCachedAnalysis(t *testing.T) {
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisServer.Close()
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultAnalysisConfig()
+	cfg.LongDomainLength = 253
+	cfg.EntropyThreshold = 8
+	service := NewService(Options{
+		Redis:          cache.NewRedis(redisServer.Addr(), "", 0),
+		RedisTimeout:   time.Second,
+		AnalysisConfig: cfg,
+		Store:          db,
+	})
+	defer func() { _ = service.Close() }()
+
+	first := service.Analyze(context.Background(), "averylongdomainname-example.com", ClientInfo{})
+	if first.CacheHit {
+		t.Fatal("first analysis should not hit cache")
+	}
+
+	cfg.LongDomainLength = 10
+	cfg.LongDomainScore = 30
+	if err := service.UpdateAnalysisConfig(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+	second := service.Analyze(context.Background(), "averylongdomainname-example.com", ClientInfo{})
+	if second.CacheHit {
+		t.Fatal("config revision should invalidate cached analysis")
+	}
+	if second.Score <= first.Score {
+		t.Fatalf("expected updated config to increase score: first=%d second=%d", first.Score, second.Score)
+	}
+}
+
+func TestNewServiceLoadsStoredAnalysisConfig(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.DefaultAnalysisConfig()
+	cfg.LongDomainLength = 77
+	if err := db.SetAnalysisConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{AnalysisConfig: config.DefaultAnalysisConfig(), Store: db})
+	defer func() { _ = service.Close() }()
+	if got := service.GetAnalysisConfig().LongDomainLength; got != 77 {
+		t.Fatalf("expected stored config to win, got %d", got)
+	}
+}
+
 func TestPolicyBlocksOnlyMalicious(t *testing.T) {
 	service := NewService(Options{
 		AnalysisConfig: config.DefaultAnalysisConfig(),

@@ -2,6 +2,7 @@ package risk
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -57,6 +58,7 @@ type Options struct {
 	EnrichEnabled   bool
 	EnrichTimeout   time.Duration
 	EnrichQueueSize int
+	WhoisCacheTTL   time.Duration
 	// OSINT evidence lookup for API/dashboard paths.
 	OSINT *osint.Service
 	// Enrichment worker pool size. Defaults to 1 if not set.
@@ -82,6 +84,9 @@ type Service struct {
 	lastGeminiKeySync time.Time
 	whitelist         *Whitelist
 	analyzer          *analysis.Analyzer
+	analyzerMu        sync.RWMutex
+	analysisConfig    config.AnalysisConfig
+	configRevision    string
 	store             *store.DB
 	brandStore        analysis.BrandStore
 	enrichEnabled     bool
@@ -92,6 +97,7 @@ type Service struct {
 	enrichMu          sync.Mutex
 	enrichInFlight    map[string]struct{}
 	enrichmentLookup  func(context.Context, string) enrichmentSignals
+	whoisCacheTTL     time.Duration
 	osint             *osint.Service
 }
 
@@ -125,15 +131,17 @@ type analysisCacheEntry struct {
 	FeedRevision     string          `json:"feed_revision,omitempty"`
 	BrandRevision    string          `json:"brand_revision,omitempty"`
 	AnalysisRevision string          `json:"analysis_revision,omitempty"`
+	ConfigRevision   string          `json:"config_revision,omitempty"`
 	OSINTCheckedAt   string          `json:"osint_checked_at,omitempty"`
 	EnrichedAt       string          `json:"enriched_at,omitempty"`
 }
 
 type enrichmentJob struct {
-	Domain        string
-	Result        analysis.Result
-	FeedRevision  string
-	BrandRevision string
+	Domain         string
+	Result         analysis.Result
+	FeedRevision   string
+	BrandRevision  string
+	ConfigRevision string
 }
 
 type enrichmentSignals struct {
@@ -156,6 +164,21 @@ const (
 )
 
 func NewService(options Options) *Service {
+	analysisConfig := options.AnalysisConfig
+	if err := analysisConfig.Validate(); err != nil {
+		analysisConfig = config.DefaultAnalysisConfig()
+	}
+	if options.Store != nil && options.Store.Enabled() {
+		if storedConfig, err := options.Store.GetAnalysisConfig(); err == nil && storedConfig != nil {
+			analysisConfig = storedConfig.Clone()
+		} else if err != nil {
+			logjson.Warn("stored analysis config invalid; using configured defaults", map[string]any{
+				"service": "risk",
+				"error":   err.Error(),
+			})
+		}
+	}
+
 	recentLimit := options.RecentLimit
 	if recentLimit <= 0 {
 		recentLimit = 25
@@ -207,30 +230,33 @@ func NewService(options Options) *Service {
 
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	svc := &Service{
-		lifecycleCtx:     lifecycleCtx,
-		lifecycleCancel:  lifecycleCancel,
-		redis:            options.Redis,
-		redisTimeout:     options.RedisTimeout,
-		ttlAllowed:       options.TTLAllowed,
-		ttlSuspicious:    options.TTLSuspicious,
-		ttlBlocked:       options.TTLBlocked,
-		recentLimit:      recentLimit,
-		recentTTL:        configDuration(options.RecentTTL, 24*time.Hour),
-		threatFeedKey:    threatFeedKey,
-		feedRevisionKey:  feed.RevisionKey(threatFeedKey),
-		ai:               aiClient,
-		aiShared:         aiShared,
-		whitelist:        wl,
-		analyzer:         analysis.NewAnalyzerWithBrandStore(options.AnalysisConfig, brandStore),
-		store:            options.Store,
-		brandStore:       brandStore,
-		enrichEnabled:    options.EnrichEnabled,
-		enrichTimeout:    options.EnrichTimeout,
-		enrichDone:       make(chan struct{}),
-		enrichInFlight:   make(map[string]struct{}),
-		enrichmentLookup: defaultEnrichmentLookup,
-		osint:            options.OSINT,
+		lifecycleCtx:    lifecycleCtx,
+		lifecycleCancel: lifecycleCancel,
+		redis:           options.Redis,
+		redisTimeout:    options.RedisTimeout,
+		ttlAllowed:      options.TTLAllowed,
+		ttlSuspicious:   options.TTLSuspicious,
+		ttlBlocked:      options.TTLBlocked,
+		recentLimit:     recentLimit,
+		recentTTL:       configDuration(options.RecentTTL, 24*time.Hour),
+		threatFeedKey:   threatFeedKey,
+		feedRevisionKey: feed.RevisionKey(threatFeedKey),
+		ai:              aiClient,
+		aiShared:        aiShared,
+		whitelist:       wl,
+		analyzer:        analysis.NewAnalyzerWithBrandStore(analysisConfig, brandStore),
+		analysisConfig:  analysisConfig.Clone(),
+		configRevision:  analysisConfigRevision(analysisConfig),
+		store:           options.Store,
+		brandStore:      brandStore,
+		enrichEnabled:   options.EnrichEnabled,
+		enrichTimeout:   options.EnrichTimeout,
+		enrichDone:      make(chan struct{}),
+		enrichInFlight:  make(map[string]struct{}),
+		whoisCacheTTL:   configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
+		osint:           options.OSINT,
 	}
+	svc.enrichmentLookup = svc.defaultEnrichmentLookup
 	if svc.enrichEnabled && svc.redis != nil && svc.redis.Enabled() && svc.enrichTimeout > 0 {
 		svc.enrichQueue = make(chan enrichmentJob, enrichQueueSize)
 		svc.enrichWG.Add(enrichWorkers)
@@ -278,7 +304,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 	var evidence []osint.Evidence
 
 	if err != nil {
-		result = s.analyzer.Analyze(domain)
+		result = s.analyzeLexical(domain)
 		cacheHit = false
 	} else {
 		// Get group
@@ -353,7 +379,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) Policy {
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {
-		res := s.analyzer.Analyze(domain)
+		res := s.analyzeLexical(domain)
 		return Policy{
 			Domain:   domain,
 			Policy:   "block",
@@ -554,13 +580,14 @@ func (s *Service) CacheStatus(ctx context.Context) CacheStatus {
 func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLookupMode, forceOSINT bool) (analysis.Result, bool, []osint.Evidence) {
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {
-		return s.analyzer.Analyze(domain), false, nil
+		return s.analyzeLexical(domain), false, nil
 	}
 
 	// 1. Check Cache
 	cacheKey := fmt.Sprintf("safe-zone:analysis:%s", normalized)
 	currentRevision := s.currentFeedRevision(ctx)
 	currentBrandRevision := s.currentBrandRevision(ctx)
+	currentConfigRevision := s.currentConfigRevision()
 	var cached analysis.Result
 	var cachedEntry analysisCacheEntry
 	err = s.withRedis(ctx, func(redisCtx context.Context) error {
@@ -568,6 +595,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		found, err := s.redis.GetJSON(redisCtx, cacheKey, &entry)
 		if err == nil && found && entry.Result.Domain != "" {
 			if entry.AnalysisRevision == analysisAlgorithmRevision &&
+				entry.ConfigRevision == currentConfigRevision &&
 				(currentRevision == "" || entry.FeedRevision == currentRevision) &&
 				(currentBrandRevision == "" || entry.BrandRevision == currentBrandRevision) {
 				cached = entry.Result
@@ -587,10 +615,11 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	if err == nil && cached.Domain != "" {
 		if shouldEnqueueEnrichment(cached) && cachedEntryNeedsEnrichment(cachedEntry) {
 			s.enqueueEnrichment(ctx, enrichmentJob{
-				Domain:        normalized,
-				Result:        cached,
-				FeedRevision:  cachedEntry.FeedRevision,
-				BrandRevision: cachedEntry.BrandRevision,
+				Domain:         normalized,
+				Result:         cached,
+				FeedRevision:   cachedEntry.FeedRevision,
+				BrandRevision:  cachedEntry.BrandRevision,
+				ConfigRevision: cachedEntry.ConfigRevision,
 			})
 		}
 		report := s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
@@ -609,16 +638,17 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	result := s.feedResult(ctx, normalized)
 	if result.Domain == "" {
 		// 3. Lexical Analysis
-		result = s.analyzer.Analyze(normalized)
+		result = s.analyzeLexical(normalized)
 	}
 	// 4. AI Refinement
 	result = s.refineWithAI(ctx, result)
 	if shouldEnqueueEnrichment(result) {
 		s.enqueueEnrichment(ctx, enrichmentJob{
-			Domain:        normalized,
-			Result:        result,
-			FeedRevision:  currentRevision,
-			BrandRevision: currentBrandRevision,
+			Domain:         normalized,
+			Result:         result,
+			FeedRevision:   currentRevision,
+			BrandRevision:  currentBrandRevision,
+			ConfigRevision: currentConfigRevision,
 		})
 	}
 	// 5. OSINT public-warning evidence. API/dashboard can fetch on demand;
@@ -633,6 +663,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			FeedRevision:     currentRevision,
 			BrandRevision:    currentBrandRevision,
 			AnalysisRevision: analysisAlgorithmRevision,
+			ConfigRevision:   currentConfigRevision,
 		}, s.ttlFor(result.Verdict))
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
@@ -827,6 +858,7 @@ func (s *Service) applyOSINT(ctx context.Context, domain string, result analysis
 			FeedRevision:     feedRevision,
 			BrandRevision:    s.currentBrandRevision(ctx),
 			AnalysisRevision: analysisAlgorithmRevision,
+			ConfigRevision:   s.currentConfigRevision(),
 			OSINTCheckedAt:   report.CheckedAt,
 		}, s.ttlFor(updated.Verdict))
 	})
@@ -932,6 +964,9 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	if current := s.currentBrandRevision(s.lifecycleCtx); current != "" && job.BrandRevision != "" && current != job.BrandRevision {
 		return
 	}
+	if current := s.currentConfigRevision(); current != job.ConfigRevision {
+		return
+	}
 
 	enrichCtx, cancel := context.WithTimeout(s.lifecycleCtx, s.enrichTimeout)
 	defer cancel()
@@ -947,6 +982,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 			FeedRevision:     job.FeedRevision,
 			BrandRevision:    job.BrandRevision,
 			AnalysisRevision: analysisAlgorithmRevision,
+			ConfigRevision:   job.ConfigRevision,
 			EnrichedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 		}, s.ttlFor(enriched.Verdict))
 	})
@@ -959,7 +995,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	}
 }
 
-func defaultEnrichmentLookup(ctx context.Context, domain string) enrichmentSignals {
+func (s *Service) defaultEnrichmentLookup(ctx context.Context, domain string) enrichmentSignals {
 	var (
 		dnsFailed   bool
 		tlsResult   tlsinspect.Result
@@ -985,7 +1021,7 @@ func defaultEnrichmentLookup(ctx context.Context, domain string) enrichmentSigna
 	}()
 	go func() {
 		defer wg.Done()
-		whoisResult = whois.Lookup(ctx, domain)
+		whoisResult = whois.LookupWithCache(ctx, domain, s.store, s.whoisCacheTTL)
 	}()
 	wg.Wait()
 	return enrichmentSignals{
@@ -1090,6 +1126,65 @@ func (s *Service) ttlFor(verdict analysis.Verdict) time.Duration {
 	default:
 		return s.ttlAllowed
 	}
+}
+
+func (s *Service) analyzeLexical(domain string) analysis.Result {
+	s.analyzerMu.RLock()
+	analyzer := s.analyzer
+	s.analyzerMu.RUnlock()
+	return analyzer.Analyze(domain)
+}
+
+func analysisConfigRevision(cfg config.AnalysisConfig) string {
+	encoded, _ := json.Marshal(cfg.Clone())
+	sum := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", sum[:8])
+}
+
+func (s *Service) currentConfigRevision() string {
+	s.analyzerMu.RLock()
+	defer s.analyzerMu.RUnlock()
+	return s.configRevision
+}
+
+func (s *Service) GetAnalysisConfig() config.AnalysisConfig {
+	if s == nil {
+		return config.DefaultAnalysisConfig()
+	}
+	s.analyzerMu.RLock()
+	defer s.analyzerMu.RUnlock()
+	return s.analysisConfig.Clone()
+}
+
+func (s *Service) UpdateAnalysisConfig(_ context.Context, cfg config.AnalysisConfig) error {
+	if s == nil {
+		return fmt.Errorf("risk service not configured")
+	}
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	cfg = cfg.Clone()
+	if s.store == nil || !s.store.Enabled() {
+		return fmt.Errorf("store not configured")
+	}
+	if err := s.store.SetAnalysisConfig(cfg); err != nil {
+		return err
+	}
+
+	s.analyzerMu.Lock()
+	s.analysisConfig = cfg
+	s.configRevision = analysisConfigRevision(cfg)
+	s.analyzer = analysis.NewAnalyzerWithBrandStore(cfg, s.brandStore)
+	s.analyzerMu.Unlock()
+	return nil
+}
+
+func (s *Service) ResetAnalysisConfig(ctx context.Context) (config.AnalysisConfig, error) {
+	defaults := config.DefaultAnalysisConfig()
+	if err := s.UpdateAnalysisConfig(ctx, defaults); err != nil {
+		return config.AnalysisConfig{}, err
+	}
+	return defaults.Clone(), nil
 }
 
 func (s *Service) withRedis(parent context.Context, fn func(context.Context) error) error {

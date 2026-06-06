@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"safe-zone/internal/analysis"
+	"safe-zone/internal/config"
 )
 
 func newTestDB(t *testing.T) *DB {
@@ -995,5 +996,51 @@ func TestGetEffectiveOverride(t *testing.T) {
 	}
 	if len(ovs) != 1 {
 		t.Fatalf("expected 1 group override after deletion, got %d", len(ovs))
+	}
+}
+
+func TestWhoisCacheRoundTripAndExpiry(t *testing.T) {
+	db := newTestDB(t)
+	entry := WhoisCacheEntry{
+		Domain:         "example.com",
+		Found:          true,
+		RegisteredDate: time.Now().Add(-30 * 24 * time.Hour).UTC(),
+		DomainAgeDays:  30,
+		Registrar:      "Example Registrar",
+		PrivacyGuard:   true,
+		Score:          5,
+		Reasons:        []string{"whois: privacy guard enabled"},
+		RawText:        "raw whois",
+	}
+	if err := db.SetWhoisCache(entry.Domain, entry, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+
+	got, ok, err := db.GetWhoisCache(entry.Domain, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !ok || got.Registrar != entry.Registrar || got.RawText != entry.RawText || len(got.Reasons) != 1 {
+		t.Fatalf("unexpected cached entry: %#v", got)
+	}
+
+	if _, ok, err := db.GetWhoisCache(entry.Domain, time.Now().Add(2*time.Hour)); err != nil || ok {
+		t.Fatalf("expected expired cache miss, ok=%v err=%v", ok, err)
+	}
+}
+
+func TestAnalysisConfigStoreRoundTrip(t *testing.T) {
+	db := newTestDB(t)
+	cfg := config.DefaultAnalysisConfig()
+	cfg.LongDomainLength = 40
+	if err := db.SetAnalysisConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	got, err := db.GetAnalysisConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.LongDomainLength != 40 {
+		t.Fatalf("unexpected config: %#v", got)
 	}
 }

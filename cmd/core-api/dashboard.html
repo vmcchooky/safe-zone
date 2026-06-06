@@ -627,6 +627,26 @@
         </div>
       </div>
 
+      <!-- Panel: Analysis Scoring -->
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">Risk Engine</span>
+            <h2>Analysis Scoring</h2>
+          </div>
+        </div>
+        <div class="panel-body" style="padding: 20px; display: grid; gap: 16px;">
+          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+            Tune lexical-analysis thresholds. Invalid or unsafe values are rejected by the API, and Reset restores production defaults.
+          </p>
+          <textarea id="setting-analysis-config" spellcheck="false" style="min-height: 360px; width: 100%; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;"></textarea>
+          <div style="display: flex; gap: 12px; margin-top: 8px;">
+            <button onclick="saveAnalysisConfig()" class="btn-allow" style="min-height: 40px; padding: 0 20px;">Save Scoring Configuration</button>
+            <button onclick="resetAnalysisConfig()" class="ghost" style="min-height: 40px; padding: 0 20px;">Reset to Defaults</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Panel: Alert Notifications -->
       <div class="panel">
         <div class="panel-head">
@@ -2160,7 +2180,10 @@ function togglePasswordVisibility(id) {
 
 async function loadSettings() {
   try {
-    const r = await fetch('/v1/settings');
+    const [r, configResponse] = await Promise.all([
+      fetch('/v1/settings'),
+      fetch('/v1/config/analysis')
+    ]);
     if (!r.ok) { const err = await r.json(); throw new Error(err.error || 'Failed to load settings'); }
     const data = await r.json();
     
@@ -2169,6 +2192,10 @@ async function loadSettings() {
     
     if (keyInput) keyInput.value = data.gemini_api_key || '';
     if (webhookInput) webhookInput.value = data.agent_webhook_url || '';
+    if (!configResponse.ok) { const err = await configResponse.json(); throw new Error(err.error || 'Failed to load analysis config'); }
+    const analysisConfig = await configResponse.json();
+    const configInput = document.getElementById('setting-analysis-config');
+    if (configInput) configInput.value = JSON.stringify(analysisConfig, null, 2);
   } catch (err) {
     showToast('Error loading settings: ' + err.message, 'err');
   }
@@ -2362,6 +2389,36 @@ if ($('reports-clear-filters')) {
     state.reports.page = 0;
     loadReports();
   });
+}
+
+async function saveAnalysisConfig() {
+  try {
+    const input = document.getElementById('setting-analysis-config');
+    const config = JSON.parse(input.value);
+    const r = await fetch('/v1/config/analysis', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    });
+    if (!r.ok) { const err = await r.json(); throw new Error(err.error || 'Failed to save analysis config'); }
+    input.value = JSON.stringify(await r.json(), null, 2);
+    showToast('Analysis scoring configuration saved', 'ok');
+  } catch (err) {
+    showToast('Error saving analysis config: ' + err.message, 'err');
+  }
+}
+
+async function resetAnalysisConfig() {
+  if (!confirm('Reset analysis scoring configuration to defaults?')) return;
+  try {
+    const r = await fetch('/v1/config/analysis/reset', { method: 'POST' });
+    if (!r.ok) { const err = await r.json(); throw new Error(err.error || 'Failed to reset analysis config'); }
+    const input = document.getElementById('setting-analysis-config');
+    if (input) input.value = JSON.stringify(await r.json(), null, 2);
+    showToast('Analysis scoring configuration reset to defaults', 'ok');
+  } catch (err) {
+    showToast('Error resetting analysis config: ' + err.message, 'err');
+  }
 }
 
 async function loadReports() {

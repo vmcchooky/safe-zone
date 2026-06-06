@@ -112,6 +112,22 @@ Defaults:
 
 The AI path is fail-open: if Gemini is unavailable or returns invalid JSON, analysis continues with lexical and threat-feed results. OSINT warning-page checks use deterministic attacker/victim context rules first and ask the configured AI provider only when the role is unclear.
 
+## Dynamic Analysis Configuration
+
+WHOIS responses are cached in SQLite for seven days by default. Override the
+TTL with `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS`.
+
+Authenticated administrators can inspect and tune lexical scoring without
+restarting the service:
+
+- `GET /v1/config/analysis`
+- `PUT /v1/config/analysis`
+- `POST /v1/config/analysis/reset`
+
+Updates are validated, persisted in SQLite, hot-reloaded into the analyzer, and
+invalidate analysis cache entries through a deterministic configuration
+revision.
+
 ## Secrets
 
 Sensitive settings can be supplied either directly as `VAR=value` or indirectly through `VAR_FILE=./ops/secrets/name`.

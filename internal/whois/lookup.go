@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"safe-zone/internal/store"
 )
 
 // Result contains WHOIS domain age analysis results.
@@ -50,6 +52,7 @@ var whoisDialContext = func(ctx context.Context, network, address string) (net.C
 }
 
 const defaultQueryTimeout = 5 * time.Second
+const defaultCacheTTL = 7 * 24 * time.Hour
 
 // datePatterns are tried in order to extract creation dates from WHOIS text.
 var datePatterns = []*regexp.Regexp{
@@ -76,9 +79,33 @@ var privacyKeywords = []string{
 // Lookup queries WHOIS for the registered domain and returns a scored Result.
 // Returns a zero-score Result on any error (fail-open).
 func Lookup(ctx context.Context, domain string) Result {
+	return LookupWithCache(ctx, domain, nil, defaultCacheTTL)
+}
+
+// LookupWithCache queries WHOIS with an optional SQLite cache.
+func LookupWithCache(ctx context.Context, domain string, db *store.DB, ttl time.Duration) Result {
 	registered := RegisteredDomain(domain)
 	if registered == "" {
 		return Result{Reasons: []string{}}
+	}
+	if ttl <= 0 {
+		ttl = defaultCacheTTL
+	}
+	if db != nil && db.Enabled() {
+		if cached, ok, err := db.GetWhoisCache(registered, time.Now()); err == nil && ok {
+			if cached.RawText != "" {
+				return parseAndScore(cached.RawText)
+			}
+			return Result{
+				Found:          cached.Found,
+				RegisteredDate: cached.RegisteredDate,
+				DomainAgeDays:  cached.DomainAgeDays,
+				Registrar:      cached.Registrar,
+				PrivacyGuard:   cached.PrivacyGuard,
+				Score:          cached.Score,
+				Reasons:        append([]string(nil), cached.Reasons...),
+			}
+		}
 	}
 
 	tld := tldOf(registered)
@@ -92,7 +119,21 @@ func Lookup(ctx context.Context, domain string) Result {
 		return Result{Reasons: []string{}} // network error — fail open
 	}
 
-	return parseAndScore(raw)
+	result := parseAndScore(raw)
+	if db != nil && db.Enabled() {
+		_ = db.SetWhoisCache(registered, store.WhoisCacheEntry{
+			Domain:         registered,
+			Found:          result.Found,
+			RegisteredDate: result.RegisteredDate,
+			DomainAgeDays:  result.DomainAgeDays,
+			Registrar:      result.Registrar,
+			PrivacyGuard:   result.PrivacyGuard,
+			Score:          result.Score,
+			Reasons:        append([]string(nil), result.Reasons...),
+			RawText:        raw,
+		}, ttl)
+	}
+	return result
 }
 
 // query sends a WHOIS TCP query and returns the raw text response.

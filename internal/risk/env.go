@@ -24,6 +24,14 @@ func NewServiceFromEnv() *Service {
 		}
 		return value
 	}
+	whoisCacheDays := config.Int("SAFE_ZONE_WHOIS_CACHE_TTL_DAYS", 7)
+	if whoisCacheDays < 1 || whoisCacheDays > 365 {
+		logjson.Warn("invalid WHOIS cache TTL; using 7 days", map[string]any{
+			"service": "risk",
+			"value":   whoisCacheDays,
+		})
+		whoisCacheDays = 7
+	}
 
 	redisCache := cache.NewRedis(
 		config.String("SAFE_ZONE_REDIS_ADDR", ""),
@@ -91,6 +99,7 @@ func NewServiceFromEnv() *Service {
 		EnrichTimeout:   config.DurationMillis("SAFE_ZONE_ENRICH_TIMEOUT_MS", 3*time.Second),
 		EnrichQueueSize: config.Int("SAFE_ZONE_ENRICH_QUEUE_SIZE", 256),
 		EnrichWorkers:   config.Int("SAFE_ZONE_ENRICH_WORKERS", 2),
+		WhoisCacheTTL:   time.Duration(whoisCacheDays) * 24 * time.Hour,
 		OSINT:           osintService,
 	})
 }

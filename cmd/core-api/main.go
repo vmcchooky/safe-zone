@@ -288,6 +288,8 @@ func main() {
 	mux.HandleFunc("/v1/settings", api.requireAuthFunc(api.settingsHandler))
 	mux.HandleFunc("/v1/settings/test-ai", api.requireAuthFunc(api.testAIHandler))
 	mux.HandleFunc("/v1/settings/test-alert", api.requireAuthFunc(api.testAlertHandler))
+	mux.HandleFunc("/v1/config/analysis", api.requireAuthFunc(api.analysisConfigHandler))
+	mux.HandleFunc("/v1/config/analysis/reset", api.requireAuthFunc(api.analysisConfigResetHandler))
 	mux.Handle("/assets/", http.FileServer(http.FS(assetsFS)))
 	mux.HandleFunc("/dashboard", api.dashboardHandler)
 	mux.HandleFunc("/dashboard/", api.dashboardHandler)
@@ -1525,6 +1527,43 @@ func (a *app) settingsHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (a *app) analysisConfigHandler(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		writeJSON(w, http.StatusOK, a.risk.GetAnalysisConfig())
+	case http.MethodPut:
+		r.Body = http.MaxBytesReader(w, r.Body, 32768)
+		defer r.Body.Close()
+		var cfg config.AnalysisConfig
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid analysis config JSON: "+err.Error())
+			return
+		}
+		if err := a.risk.UpdateAnalysisConfig(r.Context(), cfg); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, a.risk.GetAnalysisConfig())
+	default:
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (a *app) analysisConfigResetHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	cfg, err := a.risk.ResetAnalysisConfig(r.Context())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, cfg)
 }
 
 func (a *app) testAIHandler(w http.ResponseWriter, r *http.Request) {
