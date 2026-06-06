@@ -23,6 +23,8 @@ import (
 	"safe-zone/internal/store"
 	"safe-zone/internal/tlsinspect"
 	"safe-zone/internal/whois"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const recentAnalysisKey = "safe-zone:analysis:recent"
@@ -1416,13 +1418,17 @@ func (s *Service) matchThreatFeed(parent context.Context, domain string) (bool, 
 
 func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (bool, error) {
 	var matched bool
+	currentTime := float64(time.Now().Unix())
 	err := s.withRedis(parent, func(ctx context.Context) error {
 		for _, candidate := range candidates {
-			exists, err := s.redis.SetIsMember(ctx, s.threatFeedKey, candidate)
+			score, err := s.redis.ZScore(ctx, s.threatFeedKey, candidate)
 			if err != nil {
+				if errors.Is(err, redis.Nil) {
+					continue
+				}
 				return err
 			}
-			if exists {
+			if score >= currentTime {
 				matched = true
 				return nil
 			}

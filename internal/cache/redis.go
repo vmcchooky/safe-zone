@@ -242,6 +242,33 @@ func (r *Redis) SetIsMember(ctx context.Context, key, member string) (bool, erro
 	return r.client.SIsMember(ctx, key, member).Result()
 }
 
+func (r *Redis) ZAdd(ctx context.Context, key string, members ...redis.Z) (int64, error) {
+	if !r.Enabled() {
+		return 0, ErrDisabled
+	}
+	if len(members) == 0 {
+		return 0, nil
+	}
+
+	return r.client.ZAdd(ctx, key, members...).Result()
+}
+
+func (r *Redis) ZScore(ctx context.Context, key, member string) (float64, error) {
+	if !r.Enabled() {
+		return 0, ErrDisabled
+	}
+
+	return r.client.ZScore(ctx, key, member).Result()
+}
+
+func (r *Redis) ZRemRangeByScore(ctx context.Context, key string, min, max string) (int64, error) {
+	if !r.Enabled() {
+		return 0, ErrDisabled
+	}
+
+	return r.client.ZRemRangeByScore(ctx, key, min, max).Result()
+}
+
 func (r *Redis) PushJSON(ctx context.Context, key string, value any, maxLen int64) error {
 	if !r.Enabled() {
 		return ErrDisabled

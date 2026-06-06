@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/cache"
@@ -754,7 +755,7 @@ func TestThreatFeedExactMatch(t *testing.T) {
 	service, closeService := newTestServiceWithRedis(t)
 	defer closeService()
 
-	if _, err := service.redis.SetAdd(context.Background(), defaultThreatFeedKey, "bad.test"); err != nil {
+	if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{Score: float64(time.Now().Add(time.Hour).Unix()), Member: "bad.test"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -774,7 +775,7 @@ func TestThreatFeedSuffixMatch(t *testing.T) {
 	service, closeService := newTestServiceWithRedis(t)
 	defer closeService()
 
-	if _, err := service.redis.SetAdd(context.Background(), defaultThreatFeedKey, "bad.test"); err != nil {
+	if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{Score: float64(time.Now().Add(time.Hour).Unix()), Member: "bad.test"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -794,7 +795,7 @@ func TestThreatFeedTrustedBrandSuffixBypass(t *testing.T) {
 	service, closeService := newTestServiceWithRedis(t)
 	defer closeService()
 
-	if _, err := service.redis.SetAdd(context.Background(), defaultThreatFeedKey, "googlevideo.com"); err != nil {
+	if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{Score: float64(time.Now().Add(time.Hour).Unix()), Member: "googlevideo.com"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -951,7 +952,7 @@ func TestFeedRevisionInvalidatesCachedAnalysis(t *testing.T) {
 		t.Fatal("expected second analysis to hit cache before feed revision changes")
 	}
 
-	if _, err := service.redis.SetAdd(context.Background(), defaultThreatFeedKey, "fresh-safe-example.test"); err != nil {
+	if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{Score: float64(time.Now().Add(time.Hour).Unix()), Member: "fresh-safe-example.test"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.redis.Increment(context.Background(), feed.RevisionKey(defaultThreatFeedKey)); err != nil {

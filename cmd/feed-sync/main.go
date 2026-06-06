@@ -38,8 +38,9 @@ func main() {
 	redisDB := flag.Int("redis-db", config.Int("SAFE_ZONE_REDIS_DB", 0), "Redis database")
 	key := flag.String("key", config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey), "Redis Set key for threat feed")
 	dryRun := flag.Bool("dry-run", false, "parse feed and report counts without writing Redis")
-	replace := flag.Bool("replace", true, "delete the target set before writing parsed domains")
+	replace := flag.Bool("replace", false, "delete the target set before writing parsed domains")
 	timeout := flag.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
+	ttlDays := flag.Int("ttl-days", config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14), "number of days before threat domains expire")
 	flag.Parse()
 
 	if strings.TrimSpace(*source) == "" {
@@ -65,6 +66,7 @@ func main() {
 		ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
 		ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
 		CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
+		TTL:                        time.Duration(*ttlDays) * 24 * time.Hour,
 	})
 	if err != nil {
 		logjson.Error("feed sync failed", correlation.Fields(ctx, map[string]any{

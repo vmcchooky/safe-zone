@@ -133,11 +133,11 @@ func TestSyncWritesToRedis(t *testing.T) {
 		}
 	}()
 
-	if ok, err := redisCache.SetIsMember(context.Background(), DefaultThreatFeedKey, "bad.test"); err != nil || !ok {
-		t.Fatalf("expected bad.test in redis feed set, ok=%v err=%v", ok, err)
+	if score, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, "bad.test"); err != nil || score == 0 {
+		t.Fatalf("expected bad.test in redis feed set with score, score=%v err=%v", score, err)
 	}
-	if ok, err := redisCache.SetIsMember(context.Background(), DefaultThreatFeedKey, "evil.test"); err != nil || !ok {
-		t.Fatalf("expected evil.test in redis feed set, ok=%v err=%v", ok, err)
+	if score, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, "evil.test"); err != nil || score == 0 {
+		t.Fatalf("expected evil.test in redis feed set with score, score=%v err=%v", score, err)
 	}
 	revision, err := redisCache.GetInt64(context.Background(), RevisionKey(DefaultThreatFeedKey))
 	if err != nil {

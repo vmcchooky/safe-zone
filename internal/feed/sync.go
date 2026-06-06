@@ -12,7 +12,11 @@ import (
 	"time"
 
 	"safe-zone/internal/cache"
+	"safe-zone/internal/correlation"
+	"safe-zone/internal/logjson"
 	"safe-zone/internal/safefile"
+
+	"github.com/redis/go-redis/v9"
 )
 
 const DefaultThreatFeedKey = "safe-zone:threat:feed"
@@ -34,6 +38,7 @@ type SyncOptions struct {
 	ParserDriftInvalidRatio    float64
 	ParserDriftMinInvalid      int
 	CacheInvalidationMinWrites int64
+	TTL                        time.Duration
 }
 
 type SyncReport struct {
@@ -129,13 +134,20 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	var (
 		stats   ParseStats
 		written int64
-		batch   []string
+		batch   []redis.Z
 	)
+	
+	expireScore := float64(time.Now().Add(options.TTL).Unix())
+	if options.TTL <= 0 {
+		// Default to 14 days if TTL is not provided or <= 0
+		expireScore = float64(time.Now().Add(14 * 24 * time.Hour).Unix())
+	}
+
 	flush := func() error {
 		if len(batch) == 0 {
 			return nil
 		}
-		n, err := redisCache.SetAdd(ctx, targetKey, batch...)
+		n, err := redisCache.ZAdd(ctx, targetKey, batch...)
 		if err != nil {
 			return err
 		}
@@ -145,7 +157,7 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	}
 
 	err = ParseEach(reader, func(domain string) error {
-		batch = append(batch, domain)
+		batch = append(batch, redis.Z{Score: expireScore, Member: domain})
 		if len(batch) >= defaultRedisBatchSize {
 			return flush()
 		}
@@ -163,6 +175,16 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		}
 		return fail(err)
 	}
+
+	// Clean up expired items
+	currentScore := fmt.Sprintf("%d", time.Now().Unix())
+	if _, err := redisCache.ZRemRangeByScore(ctx, targetKey, "-inf", currentScore); err != nil {
+		logjson.Warn("failed to cleanup expired feed domains", correlation.Fields(ctx, map[string]any{
+			"error": err.Error(),
+			"key":   targetKey,
+		}))
+	}
+
 	if stagingKey != "" {
 		if stats.Valid == 0 {
 			if err := redisCache.Delete(ctx, options.Key); err != nil {
