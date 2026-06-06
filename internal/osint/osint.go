@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/cache"
@@ -34,6 +35,12 @@ const (
 const (
 	defaultMaxBytes = 512 * 1024
 	strongEvidence  = 0.85
+	roleAttacker    = "attacker"
+	roleVictim      = "victim"
+	roleUnclear     = "unclear"
+	contextRadius   = 220
+	maxRoleContexts = 4
+	cacheRevision   = "v2"
 )
 
 var warningTerms = []string{
@@ -71,6 +78,11 @@ type Report struct {
 	SourcesChecked int        `json:"sources_checked"`
 }
 
+type DomainRoleClassifier interface {
+	Enabled() bool
+	ClassifyDomainRole(ctx context.Context, domain string, contexts []string) (string, error)
+}
+
 type Options struct {
 	Enabled             bool
 	Mode                string
@@ -83,6 +95,7 @@ type Options struct {
 	HTTPClient          *http.Client
 	MaxBytes            int64
 	AllowPrivateSources bool
+	RoleClassifier      DomainRoleClassifier
 }
 
 type Service struct {
@@ -97,6 +110,7 @@ type Service struct {
 	httpClient          *http.Client
 	maxBytes            int64
 	allowPrivateSources bool
+	roleClassifier      DomainRoleClassifier
 	mu                  sync.Mutex
 	memory              map[string]Report
 }
@@ -139,6 +153,7 @@ func NewService(options Options) *Service {
 		httpClient:          client,
 		maxBytes:            maxBytes,
 		allowPrivateSources: options.AllowPrivateSources,
+		roleClassifier:      options.RoleClassifier,
 		memory:              make(map[string]Report),
 	}
 }
@@ -347,7 +362,15 @@ func (s *Service) fetchSource(ctx context.Context, domain, source string) (Evide
 		return Evidence{}, nil
 	}
 
+	role := s.classifyDomainRole(ctx, domain, content)
+	if role == roleVictim {
+		return Evidence{}, nil
+	}
+
 	sourceType, confidence := s.sourceTrust(parsed.Hostname())
+	if role == roleUnclear {
+		confidence *= 0.6
+	}
 	return Evidence{
 		Domain:       domain,
 		SourceURL:    parsed.String(),
@@ -357,6 +380,115 @@ func (s *Service) fetchSource(ctx context.Context, domain, source string) (Evide
 		MatchedTerms: matches,
 		RetrievedAt:  time.Now().UTC().Format(time.RFC3339Nano),
 	}, nil
+}
+
+func (s *Service) classifyDomainRole(ctx context.Context, domain, content string) string {
+	contexts := extractContext(content, domain)
+	if len(contexts) == 0 {
+		return roleUnclear
+	}
+
+	if role := heuristicDomainRole(domain, contexts); role != roleUnclear {
+		return role
+	}
+	if s == nil || s.roleClassifier == nil || !s.roleClassifier.Enabled() {
+		return roleUnclear
+	}
+
+	role, err := s.roleClassifier.ClassifyDomainRole(ctx, domain, contexts)
+	if err != nil {
+		logjson.Warn("osint ai context classification failed; using heuristic fallback", correlation.Fields(ctx, map[string]any{
+			"service": "osint",
+			"domain":  domain,
+			"error":   err.Error(),
+		}))
+		return roleUnclear
+	}
+	switch strings.ToLower(strings.TrimSpace(role)) {
+	case roleAttacker:
+		return roleAttacker
+	case roleVictim:
+		return roleVictim
+	default:
+		return roleUnclear
+	}
+}
+
+func extractContext(content, domain string) []string {
+	lower := strings.ToLower(content)
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" || len(domain) > len(lower) {
+		return nil
+	}
+
+	contexts := make([]string, 0, 2)
+	for start := 0; start+len(domain) <= len(lower); {
+		index := strings.Index(lower[start:], domain)
+		if index < 0 {
+			break
+		}
+		index += start
+		left := index - contextRadius
+		if left < 0 {
+			left = 0
+		}
+		for left < index && !utf8.RuneStart(lower[left]) {
+			left++
+		}
+		right := index + len(domain) + contextRadius
+		if right > len(lower) {
+			right = len(lower)
+		}
+		for right < len(lower) && !utf8.RuneStart(lower[right]) {
+			right--
+		}
+		contexts = append(contexts, strings.Join(strings.Fields(lower[left:right]), " "))
+		if len(contexts) >= maxRoleContexts {
+			break
+		}
+		start = index + len(domain)
+	}
+	return normalizeList(contexts)
+}
+
+func heuristicDomainRole(domain string, contexts []string) string {
+	quotedDomain := regexp.QuoteMeta(strings.ToLower(strings.TrimSpace(domain)))
+	attackerPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`\b` + quotedDomain + `\b\s*(?:là|la|:|-)?[^.\n<>]{0,100}(?:giả mạo|gia mao|lừa đảo|lua dao|phishing|scam|mạo danh|mao danh)`),
+		regexp.MustCompile(`\b(?:cảnh báo|canh bao)[^.\n<>]{0,100}\b` + quotedDomain + `\b`),
+	}
+	victimPatterns := []*regexp.Regexp{
+		regexp.MustCompile(`(?:giả mạo|gia mao|mạo danh|mao danh)[^.\n<>]{0,100}\b` + quotedDomain + `\b`),
+		regexp.MustCompile(`\b` + quotedDomain + `\b[^.\n<>]{0,100}(?:chính thức|chinh thuc|hợp pháp|hop phap|bị giả mạo|bi gia mao)`),
+		regexp.MustCompile(`\b` + quotedDomain + `\b[^.\n<>]{0,60}(?:không phải|khong phai)[^.\n<>]{0,60}(?:giả mạo|gia mao|lừa đảo|lua dao|phishing|scam)`),
+		regexp.MustCompile(`(?:chính thức|chinh thuc|hợp pháp|hop phap)[^.\n<>]{0,60}\b` + quotedDomain + `\b`),
+	}
+
+	var attackerScore, victimScore int
+	for _, context := range contexts {
+		lower := strings.ToLower(context)
+		for _, pattern := range attackerPatterns {
+			if pattern.MatchString(lower) {
+				attackerScore++
+			}
+		}
+		for _, pattern := range victimPatterns {
+			if pattern.MatchString(lower) {
+				// An explicit "giả mạo <domain>" or legitimate-site marker is
+				// stronger than a broad warning term elsewhere in the excerpt.
+				victimScore += 3
+			}
+		}
+	}
+
+	switch {
+	case attackerScore > victimScore:
+		return roleAttacker
+	case victimScore > attackerScore:
+		return roleVictim
+	default:
+		return roleUnclear
+	}
 }
 
 func (s *Service) validateSource(ctx context.Context, parsed *url.URL) error {
@@ -439,7 +571,7 @@ func (s *Service) withRedis(parent context.Context, fn func(context.Context) err
 }
 
 func cacheKey(domain string) string {
-	return "safe-zone:osint:evidence:" + domain
+	return "safe-zone:osint:evidence:" + cacheRevision + ":" + domain
 }
 
 func expired(report Report) bool {

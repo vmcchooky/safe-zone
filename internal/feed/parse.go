@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/url"
 	"strings"
 
@@ -121,6 +122,11 @@ func parseTextStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, o
 			}
 			field = stripComment(strings.TrimSpace(field))
 			if field == "" {
+				continue
+			}
+			// Hosts-format feeds start with a sinkhole IP such as 0.0.0.0 or
+			// 127.0.0.1. It is metadata, not an invalid domain candidate.
+			if net.ParseIP(strings.Trim(field, "[]")) != nil {
 				continue
 			}
 			parsedAny = true

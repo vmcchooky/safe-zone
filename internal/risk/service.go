@@ -28,7 +28,7 @@ const recentAnalysisKey = "safe-zone:analysis:recent"
 const defaultThreatFeedKey = "safe-zone:threat:feed"
 const brandRevisionKey = "safe-zone:analysis:trusted-brands:revision"
 const threatFeedReason = "matched local threat feed"
-const analysisAlgorithmRevision = "2026-05-osint-v1"
+const analysisAlgorithmRevision = "2026-06-smart-osint-v2"
 const geminiKeySyncCooldown = 10 * time.Second
 
 type Options struct {
@@ -40,6 +40,7 @@ type Options struct {
 	RecentLimit    int64
 	RecentTTL      time.Duration
 	ThreatFeedKey  string
+	AIClient       *ai.Client
 	AIProvider     string
 	GeminiBaseURL  string
 	GeminiAPIKey   string
@@ -76,6 +77,7 @@ type Service struct {
 	feedRevisionKey   string
 	aiMu              sync.Mutex
 	ai                *ai.Client
+	aiShared          bool
 	cachedGeminiKey   string
 	lastGeminiKeySync time.Time
 	whitelist         *Whitelist
@@ -162,17 +164,21 @@ func NewService(options Options) *Service {
 	if threatFeedKey == "" {
 		threatFeedKey = defaultThreatFeedKey
 	}
-	aiClient := ai.NewClient(ai.Config{
-		Provider:      options.AIProvider,
-		GeminiBaseURL: options.GeminiBaseURL,
-		GeminiAPIKey:  options.GeminiAPIKey,
-		GeminiModel:   options.GeminiModel,
-		GeminiTimeout: options.GeminiTimeout,
-		OllamaBaseURL: options.OllamaBaseURL,
-		OllamaModel:   options.OllamaModel,
-		OllamaTimeout: options.OllamaTimeout,
-	})
-	if !aiClient.Enabled() {
+	aiClient := options.AIClient
+	aiShared := aiClient != nil
+	if aiClient == nil {
+		aiClient = ai.NewClient(ai.Config{
+			Provider:      options.AIProvider,
+			GeminiBaseURL: options.GeminiBaseURL,
+			GeminiAPIKey:  options.GeminiAPIKey,
+			GeminiModel:   options.GeminiModel,
+			GeminiTimeout: options.GeminiTimeout,
+			OllamaBaseURL: options.OllamaBaseURL,
+			OllamaModel:   options.OllamaModel,
+			OllamaTimeout: options.OllamaTimeout,
+		})
+	}
+	if !aiClient.Enabled() && !aiShared {
 		aiClient = nil
 	}
 
@@ -213,6 +219,7 @@ func NewService(options Options) *Service {
 		threatFeedKey:    threatFeedKey,
 		feedRevisionKey:  feed.RevisionKey(threatFeedKey),
 		ai:               aiClient,
+		aiShared:         aiShared,
 		whitelist:        wl,
 		analyzer:         analysis.NewAnalyzerWithBrandStore(options.AnalysisConfig, brandStore),
 		store:            options.Store,
@@ -699,7 +706,7 @@ func (s *Service) syncAIClient() {
 	if customKey == "" {
 		if s.cachedGeminiKey != "" && s.ai != nil {
 			s.ai.SetGeminiAPIKey("")
-			if !s.ai.Enabled() {
+			if !s.ai.Enabled() && !s.aiShared {
 				s.ai = nil
 			}
 		}
@@ -725,7 +732,7 @@ func (s *Service) refineWithAI(ctx context.Context, current analysis.Result) ana
 
 	s.aiMu.Lock()
 	client := s.ai
-	if client == nil {
+	if client == nil || !client.Enabled() {
 		s.aiMu.Unlock()
 		return current
 	}
@@ -1358,6 +1365,9 @@ func (s *Service) AIClient() *ai.Client {
 	s.syncAIClient()
 	s.aiMu.Lock()
 	defer s.aiMu.Unlock()
+	if s.ai == nil || !s.ai.Enabled() {
+		return nil
+	}
 	return s.ai
 }
 

@@ -227,6 +227,22 @@ func TestReadStatusSummaryMarksStale(t *testing.T) {
 	}
 }
 
+func TestResolveProductionVNPreset(t *testing.T) {
+	sources, err := ResolveSources("", ProductionVNPreset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sources) != 4 {
+		t.Fatalf("expected 4 production-vn sources, got %d", len(sources))
+	}
+	if !strings.Contains(strings.Join(sources, "\n"), "phishdestroy/destroylist") {
+		t.Fatal("expected production-vn preset to include PhishDestroy")
+	}
+	if !strings.Contains(strings.Join(sources, "\n"), "Phishing-Database/Phishing.Database") {
+		t.Fatal("expected production-vn preset to include Phishing.Database")
+	}
+}
+
 func writeGzipFile(t *testing.T, path string, content string) {
 	t.Helper()
 

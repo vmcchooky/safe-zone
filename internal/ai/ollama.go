@@ -74,44 +74,14 @@ func (o *OllamaClient) Refine(ctx context.Context, domain string, current analys
 	}
 
 	prompt := buildPrompt(domain, current)
-	reqBody, err := json.Marshal(ollamaGenerateRequest{
-		Model:  o.model,
-		Prompt: prompt,
-		Stream: false,
-		Format: "json", // Instructs Ollama to guarantee structured JSON output
-	})
+	text, err := o.generateText(ctx, prompt)
 	if err != nil {
-		return analysis.Result{}, err
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, o.timeout)
-	defer cancel()
-
-	requestURL := fmt.Sprintf("%s/api/generate", o.baseURL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(reqBody))
-	if err != nil {
-		return analysis.Result{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := o.http.Do(req)
-	if err != nil {
-		return analysis.Result{}, fmt.Errorf("calling local ollama failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return analysis.Result{}, fmt.Errorf("ollama returned HTTP %d", resp.StatusCode)
-	}
-
-	var envelope ollamaGenerateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
 		return analysis.Result{}, err
 	}
 
 	var parsed Result
-	if err := json.Unmarshal([]byte(extractJSON(envelope.Response)), &parsed); err != nil {
-		return analysis.Result{}, fmt.Errorf("invalid ollama response JSON: %w (raw: %s)", err, envelope.Response)
+	if err := json.Unmarshal([]byte(extractJSON(text)), &parsed); err != nil {
+		return analysis.Result{}, fmt.Errorf("invalid ollama response JSON: %w (raw: %s)", err, text)
 	}
 
 	result := analysis.Result{Domain: current.Domain}
@@ -147,4 +117,47 @@ func (o *OllamaClient) Refine(ctx context.Context, domain string, current analys
 	}
 
 	return result, nil
+}
+
+func (o *OllamaClient) generateText(ctx context.Context, prompt string) (string, error) {
+	if !o.Enabled() {
+		return "", errors.New("ollama provider disabled")
+	}
+
+	reqBody, err := json.Marshal(ollamaGenerateRequest{
+		Model:  o.model,
+		Prompt: prompt,
+		Stream: false,
+		Format: "json", // Instructs Ollama to guarantee structured JSON output
+	})
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, o.timeout)
+	defer cancel()
+
+	requestURL := fmt.Sprintf("%s/api/generate", o.baseURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.http.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("calling local ollama failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("ollama returned HTTP %d", resp.StatusCode)
+	}
+
+	var envelope ollamaGenerateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return "", err
+	}
+
+	return envelope.Response, nil
 }

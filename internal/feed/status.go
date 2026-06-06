@@ -13,6 +13,7 @@ import (
 
 const (
 	ProductionFreePreset           = "production-free"
+	ProductionVNPreset             = "production-vn"
 	defaultStaleAfter              = 36 * time.Hour
 	defaultParserDriftInvalidRatio = 0.20
 	defaultParserDriftMinInvalid   = 25
@@ -22,6 +23,13 @@ const (
 var productionFreeSources = []string{
 	"https://urlhaus.abuse.ch/downloads/csv_recent/",
 	"https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+}
+
+var productionVNSources = []string{
+	"https://urlhaus.abuse.ch/downloads/csv_recent/",
+	"https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+	"https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt",
+	"https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt",
 }
 
 type SourceStatus struct {
@@ -93,9 +101,17 @@ func ResolveSources(rawSources string, preset string) ([]string, error) {
 		return nil, nil
 	case ProductionFreePreset:
 		return ProductionFreeSources(), nil
+	case ProductionVNPreset:
+		return ProductionVNSources(), nil
 	default:
 		return nil, fmt.Errorf("unknown threat feed preset %q", preset)
 	}
+}
+
+func ProductionVNSources() []string {
+	out := make([]string, len(productionVNSources))
+	copy(out, productionVNSources)
+	return out
 }
 
 func ProductionFreeSources() []string {

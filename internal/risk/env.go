@@ -3,6 +3,7 @@ package risk
 import (
 	"time"
 
+	"safe-zone/internal/ai"
 	"safe-zone/internal/cache"
 	"safe-zone/internal/config"
 	"safe-zone/internal/logjson"
@@ -41,6 +42,17 @@ func NewServiceFromEnv() *Service {
 		})
 	}
 
+	aiClient := ai.NewClient(ai.Config{
+		Provider:      config.String("SAFE_ZONE_AI_PROVIDER", "gemini"),
+		GeminiBaseURL: config.String("SAFE_ZONE_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
+		GeminiAPIKey:  readSecret("SAFE_ZONE_GEMINI_API_KEY"),
+		GeminiModel:   config.String("SAFE_ZONE_GEMINI_MODEL", "gemini-2.5-flash-lite"),
+		GeminiTimeout: config.DurationMillis("SAFE_ZONE_GEMINI_TIMEOUT_MS", 3*time.Second),
+		OllamaBaseURL: config.String("SAFE_ZONE_OLLAMA_BASE_URL", "http://localhost:11434"),
+		OllamaModel:   config.String("SAFE_ZONE_OLLAMA_MODEL", "gemma2:2b"),
+		OllamaTimeout: config.DurationMillis("SAFE_ZONE_OLLAMA_TIMEOUT_MS", 5000*time.Millisecond),
+	})
+
 	osintService := osint.NewService(osint.Options{
 		Enabled:        config.Bool("SAFE_ZONE_OSINT_ENABLED", false),
 		Mode:           config.String("SAFE_ZONE_OSINT_MODE", "background_on_demand"),
@@ -50,6 +62,7 @@ func NewServiceFromEnv() *Service {
 		Sources:        osint.SplitList(config.String("SAFE_ZONE_OSINT_SOURCES", "")),
 		Redis:          redisCache,
 		RedisTimeout:   config.DurationMillis("SAFE_ZONE_REDIS_TIMEOUT_MS", 250*time.Millisecond),
+		RoleClassifier: aiClient,
 	})
 
 	return NewService(Options{
@@ -61,6 +74,7 @@ func NewServiceFromEnv() *Service {
 		RecentLimit:     int64(config.Int("SAFE_ZONE_DASHBOARD_RECENT_LIMIT", 25)),
 		RecentTTL:       config.DurationSeconds("SAFE_ZONE_RECENT_ANALYSIS_TTL_SECONDS", 24*time.Hour),
 		ThreatFeedKey:   config.String("SAFE_ZONE_THREAT_FEED_KEY", defaultThreatFeedKey),
+		AIClient:        aiClient,
 		AIProvider:      config.String("SAFE_ZONE_AI_PROVIDER", "gemini"),
 		GeminiBaseURL:   config.String("SAFE_ZONE_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
 		GeminiAPIKey:    readSecret("SAFE_ZONE_GEMINI_API_KEY"),

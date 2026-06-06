@@ -78,6 +78,15 @@ SAFE_ZONE_AGENT_FEED_PRESET=production-free
 
 That preset currently expands to URLhaus recent CSV plus the OpenPhish community feed. `core-api` exposes feed freshness, stale warnings, parser-drift warnings, and feed revision metadata on `/` and `/metrics` when Redis is enabled.
 
+For a broader phishing/scam set suited to Vietnamese deployments, use
+`SAFE_ZONE_AGENT_FEED_PRESET=production-vn`. It adds PhishDestroy Primary
+Active and Phishing.Database Active to the minimal global preset. These are
+global feeds selected as a broader baseline for Vietnamese deployments, not
+Vietnam-specific feeds. General ad/tracker hosts lists are intentionally
+excluded because every threat-feed match is treated as malicious. See
+`docs/threat-intelligence-sources.md` for the source policy, additive-sync
+retention limitation, and planned API/DNSBL/STIX/TAXII connectors.
+
 The DoH endpoint accepts standard DNS wire-format GET or POST requests at:
 
 ```text
@@ -101,7 +110,7 @@ Defaults:
 - `SAFE_ZONE_GEMINI_MODEL`: `gemini-2.5-flash-lite`
 - `SAFE_ZONE_GEMINI_TIMEOUT_MS`: `3000`
 
-The AI path is fail-open: if Gemini is unavailable or returns invalid JSON, analysis continues with lexical and threat-feed results.
+The AI path is fail-open: if Gemini is unavailable or returns invalid JSON, analysis continues with lexical and threat-feed results. OSINT warning-page checks use deterministic attacker/victim context rules first and ask the configured AI provider only when the role is unclear.
 
 ## Secrets
 

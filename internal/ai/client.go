@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"safe-zone/internal/analysis"
@@ -36,6 +37,7 @@ type Config struct {
 
 // Client acts as the unified AI refinement manager. It implements the Provider interface.
 type Client struct {
+	mu           sync.RWMutex
 	providerType string
 	gemini       *GeminiClient
 	ollama       *OllamaClient
@@ -43,6 +45,7 @@ type Client struct {
 
 // GeminiClient implements Provider for Google Gemini API.
 type GeminiClient struct {
+	mu      sync.RWMutex
 	baseURL string
 	apiKey  string
 	model   string
@@ -129,33 +132,45 @@ func (c *Client) Enabled() bool {
 	if c == nil {
 		return false
 	}
-	switch c.providerType {
+	providerType, gemini, ollama := c.providers()
+	switch providerType {
 	case "gemini":
-		return c.gemini.Enabled()
+		return gemini != nil && gemini.Enabled()
 	case "ollama":
-		return c.ollama.Enabled()
+		return ollama != nil && ollama.Enabled()
 	case "hybrid":
-		return (c.ollama != nil && c.ollama.Enabled()) || (c.gemini != nil && c.gemini.Enabled())
+		return (ollama != nil && ollama.Enabled()) || (gemini != nil && gemini.Enabled())
 	default:
 		return false
 	}
 }
 
+func (c *Client) providers() (string, *GeminiClient, *OllamaClient) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.providerType, c.gemini, c.ollama
+}
+
 // Refine routes refinement requests to the chosen provider, supporting automatic fallback in hybrid mode.
 func (c *Client) Refine(ctx context.Context, domain string, current analysis.Result) (analysis.Result, error) {
-	if !c.Enabled() {
+	if c == nil {
 		return analysis.Result{}, errors.New("ai client disabled")
 	}
 
-	switch c.providerType {
+	providerType, gemini, ollama := c.providers()
+	switch providerType {
 	case "gemini":
-		return c.gemini.Refine(ctx, domain, current)
+		if gemini != nil && gemini.Enabled() {
+			return gemini.Refine(ctx, domain, current)
+		}
 	case "ollama":
-		return c.ollama.Refine(ctx, domain, current)
+		if ollama != nil && ollama.Enabled() {
+			return ollama.Refine(ctx, domain, current)
+		}
 	case "hybrid":
 		// Try local Ollama first
-		if c.ollama != nil && c.ollama.Enabled() {
-			res, err := c.ollama.Refine(ctx, domain, current)
+		if ollama != nil && ollama.Enabled() {
+			res, err := ollama.Refine(ctx, domain, current)
 			if err == nil {
 				return res, nil
 			}
@@ -166,13 +181,14 @@ func (c *Client) Refine(ctx context.Context, domain string, current analysis.Res
 			}))
 		}
 		// Fallback to Gemini
-		if c.gemini != nil && c.gemini.Enabled() {
-			return c.gemini.Refine(ctx, domain, current)
+		if gemini != nil && gemini.Enabled() {
+			return gemini.Refine(ctx, domain, current)
 		}
 		return analysis.Result{}, errors.New("no enabled AI providers in hybrid mode")
 	default:
 		return analysis.Result{}, errors.New("unknown AI provider type")
 	}
+	return analysis.Result{}, errors.New("ai client disabled")
 }
 
 // NewGeminiClient creates a new client for Google's Gemini API.
@@ -210,7 +226,12 @@ func NewGeminiClient(baseURL, apiKey, model string, timeout time.Duration) *Gemi
 
 // Enabled implements Provider for Gemini.
 func (g *GeminiClient) Enabled() bool {
-	return g != nil && g.apiKey != "" && g.http != nil
+	if g == nil {
+		return false
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.apiKey != "" && g.http != nil
 }
 
 // Refine implements Provider for Gemini.
@@ -220,49 +241,7 @@ func (g *GeminiClient) Refine(ctx context.Context, domain string, current analys
 	}
 
 	prompt := buildPrompt(domain, current)
-	reqBody, err := json.Marshal(generateRequest{
-		Contents: []content{{
-			Role:  "user",
-			Parts: []part{{Text: prompt}},
-		}},
-		Config: generationConfig{
-			Temperature:      0,
-			ResponseMimeType: "application/json",
-		},
-	})
-	if err != nil {
-		return analysis.Result{}, err
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, g.timeout)
-	defer cancel()
-
-	requestURL := fmt.Sprintf("%s/models/%s:generateContent?key=%s", g.baseURL, url.PathEscape(g.model), url.QueryEscape(g.apiKey))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(reqBody))
-	if err != nil {
-		return analysis.Result{}, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := g.http.Do(req)
-	if err != nil {
-		return analysis.Result{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return analysis.Result{}, fmt.Errorf("gemini returned HTTP %d", resp.StatusCode)
-	}
-
-	var envelope generateResponse
-	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return analysis.Result{}, err
-	}
-	if envelope.Error.Message != "" {
-		return analysis.Result{}, errors.New(envelope.Error.Message)
-	}
-
-	text, err := firstResponseText(envelope)
+	text, err := g.generateText(ctx, prompt)
 	if err != nil {
 		return analysis.Result{}, err
 	}
@@ -305,6 +284,80 @@ func (g *GeminiClient) Refine(ctx context.Context, domain string, current analys
 	}
 
 	return result, nil
+}
+
+func (g *GeminiClient) generateText(ctx context.Context, prompt string) (string, error) {
+	baseURL, apiKey, model, timeout, httpClient, enabled := g.requestConfig()
+	if !enabled {
+		return "", errors.New("gemini provider disabled")
+	}
+
+	reqBody, err := json.Marshal(generateRequest{
+		Contents: []content{{
+			Role:  "user",
+			Parts: []part{{Text: prompt}},
+		}},
+		Config: generationConfig{
+			Temperature:      0,
+			ResponseMimeType: "application/json",
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	requestURL := fmt.Sprintf("%s/models/%s:generateContent?key=%s", baseURL, url.PathEscape(model), url.QueryEscape(apiKey))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("gemini returned HTTP %d", resp.StatusCode)
+	}
+
+	var envelope generateResponse
+	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
+		return "", err
+	}
+	if envelope.Error.Message != "" {
+		return "", errors.New(envelope.Error.Message)
+	}
+
+	return firstResponseText(envelope)
+}
+
+func (g *GeminiClient) requestConfig() (string, string, string, time.Duration, *http.Client, bool) {
+	if g == nil {
+		return "", "", "", 0, nil, false
+	}
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.baseURL, g.apiKey, g.model, g.timeout, g.http, g.apiKey != "" && g.http != nil
+}
+
+func (g *GeminiClient) setAPIKey(key string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.apiKey = key
+	if g.http == nil && key != "" {
+		g.http = &http.Client{
+			Timeout: g.timeout,
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
+			},
+		}
+	}
 }
 
 func firstResponseText(envelope generateResponse) (string, error) {
@@ -358,18 +411,12 @@ func (c *Client) SetGeminiAPIKey(key string) {
 		return
 	}
 	key = strings.TrimSpace(key)
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.gemini == nil {
 		c.gemini = NewGeminiClient("", key, "", 3*time.Second)
 	} else {
-		c.gemini.apiKey = key
-		if c.gemini.http == nil && key != "" {
-			c.gemini.http = &http.Client{
-				Timeout: c.gemini.timeout,
-				Transport: &http.Transport{
-					TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12},
-				},
-			}
-		}
+		c.gemini.setAPIKey(key)
 	}
 	if c.providerType == "none" || c.providerType == "" {
 		c.providerType = "gemini"

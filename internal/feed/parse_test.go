@@ -51,3 +51,24 @@ func TestParseRejectsOverlongTextLine(t *testing.T) {
 		t.Fatalf("expected overlong line error, got %v", err)
 	}
 }
+
+func TestParseHostsFileFormatIgnoresSinkholeIPs(t *testing.T) {
+	result, err := Parse(strings.NewReader(`
+0.0.0.0 phishing.test
+127.0.0.1 scam.test # inline comment
+::1 ipv6-sinkhole.test
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Stats.Valid != 3 {
+		t.Fatalf("expected 3 valid domains, got %d", result.Stats.Valid)
+	}
+	if result.Stats.Invalid != 0 {
+		t.Fatalf("expected sinkhole IPs not to count as invalid, got %d", result.Stats.Invalid)
+	}
+	if got := strings.Join(result.Domains, ","); got != "phishing.test,scam.test,ipv6-sinkhole.test" {
+		t.Fatalf("unexpected domains: %s", got)
+	}
+}
