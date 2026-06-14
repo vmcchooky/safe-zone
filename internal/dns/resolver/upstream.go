@@ -26,7 +26,8 @@ func DoDoH(ctx context.Context, client *http.Client, upstreamURL string, wire []
 	req.Header.Set("Accept", "application/dns-message")
 	req.Header.Set("Content-Type", "application/dns-message")
 
-	resp, err := client.Do(req) // #nosec G107 -- URL is from trusted server configuration.
+	// #nosec G107 G704 -- URL is from trusted server configuration.
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}

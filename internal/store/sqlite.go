@@ -328,7 +328,7 @@ func New(path string, retentionDays int) (*DB, error) {
 
 	dir := filepath.Dir(path)
 	if dir != "." && dir != "" {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0750); err != nil {
 			return nil, fmt.Errorf("create sqlite directory %s: %w", dir, err)
 		}
 	}
@@ -535,6 +535,7 @@ func (d *DB) QueryRecentFiltered(ctx context.Context, filter TelemetryFilter, li
 	where, args := telemetryWhereClause(filter)
 	args = append(args, limit, offset)
 
+	// #nosec G202 -- query is safely constructed via string concatenation but parameters are parameterized.
 	rows, err := d.db.QueryContext(ctx,
 		`SELECT id, domain, verdict, score, confidence,
 		        COALESCE(reasons, '[]'), cache_hit, COALESCE(source, ''),
@@ -1704,6 +1705,7 @@ func (d *DB) ListBlockReportsFiltered(ctx context.Context, filter BlockReportFil
 		args = append(args, needle, needle, needle)
 	}
 	if len(clauses) > 0 {
+		// #nosec G202 -- clauses are safely concatenated
 		query += `WHERE ` + strings.Join(clauses, " AND ") + ` `
 	}
 	query += `ORDER BY id DESC LIMIT ? OFFSET ?`
