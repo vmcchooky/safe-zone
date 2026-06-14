@@ -15,6 +15,7 @@ func getFreeDiskSpace(path string) (float64, error) {
 		return 0, err
 	}
 	// Available blocks * block size
+	// #nosec G115 -- block counts and sizes are positive and won't overflow
 	freeBytes := uint64(stat.Bavail) * uint64(stat.Bsize)
 	return float64(freeBytes) / 1024.0 / 1024.0 / 1024.0, nil // in GB
 }
