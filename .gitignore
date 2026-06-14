@@ -23,3 +23,9 @@ tmp_test.js
 '@ + $tmp + '@'
 *tmp*.tar.gz
 *.tmp
+
+# Scripts and IDEs
+*.py
+.idea/
+.vscode/
+coverage.txt
