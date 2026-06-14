@@ -109,7 +109,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 
 			if t.store != nil && t.store.Enabled() {
 				details := fmt.Sprintf(`{"source":"%s","error":"%s"}`, source, err.Error())
-				_ = t.store.RecordAgentEvent("feedsync", "feed_error", "", details)
+				_ = t.store.RecordAgentEvent(context.Background(), "feedsync", "feed_error", "", details)
 			}
 			continue
 		}
@@ -119,9 +119,9 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 
 		if t.store != nil && t.store.Enabled() {
 			detailsJSON, _ := json.Marshal(report)
-			_ = t.store.RecordAgentEvent("feedsync", "feed_synced", "", string(detailsJSON))
+			_ = t.store.RecordAgentEvent(context.Background(), "feedsync", "feed_synced", "", string(detailsJSON))
 			if report.ParserDrift {
-				_ = t.store.RecordAgentEvent("feedsync", "feed_parser_drift", "", string(detailsJSON))
+				_ = t.store.RecordAgentEvent(context.Background(), "feedsync", "feed_parser_drift", "", string(detailsJSON))
 			}
 		}
 
@@ -147,7 +147,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 	summary := fmt.Sprintf(`{"sources_ok":%d,"sources_failed":%d,"total_written":%d}`,
 		sourcesOK, sourcesFailed, totalWritten)
 	if t.store != nil && t.store.Enabled() {
-		_ = t.store.RecordAgentEvent("feedsync", "feedsync_completed", "", summary)
+		_ = t.store.RecordAgentEvent(context.Background(), "feedsync", "feedsync_completed", "", summary)
 	}
 
 	logjson.Info("agent feed sync cycle done", correlation.Fields(ctx, map[string]any{

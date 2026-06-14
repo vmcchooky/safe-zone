@@ -261,7 +261,7 @@ func TestMiddleware_IPFromXForwardedFor(t *testing.T) {
 
 	send := func(xff string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
-		req.RemoteAddr = "proxy:1234"
+		req.RemoteAddr = "127.0.0.1:1234"
 		req.Header.Set("X-Forwarded-For", xff)
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, req)
@@ -288,7 +288,7 @@ func TestMiddleware_IPFromXRealIP(t *testing.T) {
 	}))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.RemoteAddr = "proxy:1234"
+	req.RemoteAddr = "127.0.0.1:1234"
 	req.Header.Set("X-Real-IP", "203.0.113.5")
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)

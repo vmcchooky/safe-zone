@@ -2,6 +2,7 @@ package risk
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -38,7 +39,7 @@ func (w *Whitelist) LoadFromDB() error {
 		return nil
 	}
 
-	count, err := w.db.GetWhitelistCount()
+	count, err := w.db.GetWhitelistCount(context.Background())
 	if err != nil {
 		return fmt.Errorf("count whitelist from db: %w", err)
 	}
@@ -52,7 +53,7 @@ func (w *Whitelist) LoadFromDB() error {
 
 	// Create Bloom Filter with 1% false positive rate
 	bf := NewBloomFilter(count, 0.01)
-	if err := w.db.StreamWhitelist(func(domain string) error {
+	if err := w.db.StreamWhitelist(context.Background(), func(domain string) error {
 		bf.Add(domain)
 		return nil
 	}); err != nil {
@@ -124,7 +125,7 @@ func (w *Whitelist) LoadFromFile(path string) error {
 
 	if w.db != nil && w.db.Enabled() {
 		// Import into SQLite database
-		if err := w.db.UpdateWhitelist(domains); err != nil {
+		if err := w.db.UpdateWhitelist(context.Background(), domains); err != nil {
 			return fmt.Errorf("load file to database: %w", err)
 		}
 		// Synchronize RAM Bloom Filter from DB
@@ -181,7 +182,7 @@ func (w *Whitelist) IsAllowed(domain string) bool {
 				continue
 			}
 			// Bloom Filter says Yes → Verify in SQLite (resolves the 1% false positive rate)
-			ok, err := w.db.IsDomainWhitelisted(candidate)
+			ok, err := w.db.IsDomainWhitelisted(context.Background(), candidate)
 			if err == nil && ok {
 				return true
 			}
@@ -210,7 +211,7 @@ func (w *Whitelist) Metrics() WhitelistMetrics {
 
 	var loaded int
 	if w.db != nil && w.db.Enabled() {
-		if count, err := w.db.GetWhitelistCount(); err == nil {
+		if count, err := w.db.GetWhitelistCount(context.Background()); err == nil {
 			loaded = count
 		}
 	} else {

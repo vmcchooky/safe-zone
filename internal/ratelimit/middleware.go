@@ -39,7 +39,7 @@ func NewTieredMiddleware(fallback *Limiter, tiers ...Tier) *TieredMiddleware {
 func (tm *TieredMiddleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		limiter := tm.limiterFor(r.URL.Path)
-		ip := clientIP(r)
+		ip := ClientIP(r)
 
 		if !limiter.Allow(ip) {
 			retryAfter := limiter.SecondsUntilNextToken(ip)
@@ -90,27 +90,62 @@ func sanitizeLog(s string) string {
 	}, s)
 }
 
-// clientIP extracts the real client IP from the request.
+var defaultTrustedProxies []net.IPNet
+
+func init() {
+	cidrs := []string{
+		"127.0.0.0/8",
+		"::1/128",
+		"172.16.0.0/12",
+		"10.0.0.0/8",
+		"192.168.0.0/16",
+	}
+	for _, c := range cidrs {
+		_, ipNet, err := net.ParseCIDR(c)
+		if err == nil {
+			defaultTrustedProxies = append(defaultTrustedProxies, *ipNet)
+		}
+	}
+}
+
+func isTrustedProxy(ip string) bool {
+	parsedIP := net.ParseIP(ip)
+	if parsedIP == nil {
+		return false
+	}
+	for _, network := range defaultTrustedProxies {
+		if network.Contains(parsedIP) {
+			return true
+		}
+	}
+	return false
+}
+
+// ClientIP extracts the real client IP from the request.
 // Priority: X-Forwarded-For (first) → X-Real-IP → RemoteAddr.
-func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		// X-Forwarded-For can be a comma-separated list; take the first.
-		if idx := strings.Index(xff, ","); idx != -1 {
-			xff = xff[:idx]
-		}
-		if ip := strings.TrimSpace(xff); ip != "" {
-			return ip
-		}
-	}
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		if ip := strings.TrimSpace(xri); ip != "" {
-			return ip
-		}
-	}
-	// Fall back to the remote address, stripping the port.
+// It only trusts X-Forwarded-For if the request comes from a trusted proxy.
+func ClientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
-		return r.RemoteAddr
+		host = r.RemoteAddr
 	}
+
+	if isTrustedProxy(host) {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			// X-Forwarded-For can be a comma-separated list; take the first.
+			if idx := strings.Index(xff, ","); idx != -1 {
+				xff = xff[:idx]
+			}
+			if ip := strings.TrimSpace(xff); ip != "" {
+				return ip
+			}
+		}
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			if ip := strings.TrimSpace(xri); ip != "" {
+				return ip
+			}
+		}
+	}
+
 	return host
 }

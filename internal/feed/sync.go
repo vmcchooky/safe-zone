@@ -136,7 +136,7 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		written int64
 		batch   []redis.Z
 	)
-	
+
 	expireScore := float64(time.Now().Add(options.TTL).Unix())
 	if options.TTL <= 0 {
 		// Default to 14 days if TTL is not provided or <= 0

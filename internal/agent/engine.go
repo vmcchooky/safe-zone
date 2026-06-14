@@ -21,7 +21,7 @@ type Task interface {
 }
 
 type agentEventStore interface {
-	RecordAgentEvent(taskName, eventType, domain, details string) error
+	RecordAgentEvent(ctx context.Context, taskName, eventType, domain, details string) error
 }
 
 type taskAgentEventStoreProvider interface {
@@ -357,7 +357,7 @@ func recordTaskRuntimeEvent(task Task, eventType string, details map[string]any)
 		return
 	}
 
-	if err := sink.RecordAgentEvent(task.Name(), eventType, "", string(payload)); err != nil {
+	if err := sink.RecordAgentEvent(context.Background(), task.Name(), eventType, "", string(payload)); err != nil {
 		logjson.Warn("agent task event record failed", map[string]any{
 			"service": "core-api",
 			"task":    task.Name(),

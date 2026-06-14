@@ -168,14 +168,14 @@ func (s *BrandStore) invalidate(parent context.Context) {
 	_ = s.redis.Delete(ctx, s.cacheKey)
 }
 
-func (d *DB) SeedDefaultBrands() error {
+func (d *DB) SeedDefaultBrands(ctx context.Context) error {
 	if !d.Enabled() {
 		return nil
 	}
 	for _, brand := range analysis.DefaultTrustedBrands() {
 		brand = normalizeBrandForStore(brand)
 		altJSON, _ := json.Marshal(brand.AltDomains)
-		_, err := d.db.Exec(`
+		_, err := d.db.ExecContext(ctx, `
 			INSERT INTO trusted_brands (name, official_domain, alt_domains, updated_at)
 			VALUES (?, ?, ?, datetime('now'))
 			ON CONFLICT(name) DO UPDATE SET
@@ -190,11 +190,11 @@ func (d *DB) SeedDefaultBrands() error {
 	return nil
 }
 
-func (d *DB) ListBrands(_ context.Context) ([]analysis.Brand, error) {
+func (d *DB) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, name, official_domain, COALESCE(alt_domains, '[]'), created_at, updated_at
 		FROM trusted_brands ORDER BY name ASC`)
 	if err != nil {
@@ -213,11 +213,11 @@ func (d *DB) ListBrands(_ context.Context) ([]analysis.Brand, error) {
 	return brands, rows.Err()
 }
 
-func (d *DB) GetBrand(_ context.Context, id int64) (analysis.Brand, error) {
+func (d *DB) GetBrand(ctx context.Context, id int64) (analysis.Brand, error) {
 	if !d.Enabled() {
 		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
 	}
-	row := d.db.QueryRow(`
+	row := d.db.QueryRowContext(ctx, `
 		SELECT id, name, official_domain, COALESCE(alt_domains, '[]'), created_at, updated_at
 		FROM trusted_brands WHERE id = ?`, id)
 	brand, err := scanBrand(row)
@@ -227,7 +227,7 @@ func (d *DB) GetBrand(_ context.Context, id int64) (analysis.Brand, error) {
 	return brand, err
 }
 
-func (d *DB) CreateBrand(_ context.Context, brand analysis.Brand) (analysis.Brand, error) {
+func (d *DB) CreateBrand(ctx context.Context, brand analysis.Brand) (analysis.Brand, error) {
 	if !d.Enabled() {
 		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
 	}
@@ -236,7 +236,7 @@ func (d *DB) CreateBrand(_ context.Context, brand analysis.Brand) (analysis.Bran
 	}
 	brand = normalizeBrandForStore(brand)
 	altJSON, _ := json.Marshal(brand.AltDomains)
-	res, err := d.db.Exec(`
+	res, err := d.db.ExecContext(ctx, `
 		INSERT INTO trusted_brands (name, official_domain, alt_domains, updated_at)
 		VALUES (?, ?, ?, datetime('now'))`,
 		brand.Name, brand.OfficialDomain, string(altJSON))
@@ -247,10 +247,10 @@ func (d *DB) CreateBrand(_ context.Context, brand analysis.Brand) (analysis.Bran
 	if err != nil {
 		return analysis.Brand{}, err
 	}
-	return d.GetBrand(context.Background(), id)
+	return d.GetBrand(ctx, id)
 }
 
-func (d *DB) UpdateBrand(_ context.Context, id int64, brand analysis.Brand) (analysis.Brand, error) {
+func (d *DB) UpdateBrand(ctx context.Context, id int64, brand analysis.Brand) (analysis.Brand, error) {
 	if !d.Enabled() {
 		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
 	}
@@ -259,7 +259,7 @@ func (d *DB) UpdateBrand(_ context.Context, id int64, brand analysis.Brand) (ana
 	}
 	brand = normalizeBrandForStore(brand)
 	altJSON, _ := json.Marshal(brand.AltDomains)
-	res, err := d.db.Exec(`
+	res, err := d.db.ExecContext(ctx, `
 		UPDATE trusted_brands
 		SET name = ?, official_domain = ?, alt_domains = ?, updated_at = datetime('now')
 		WHERE id = ?`,
@@ -270,14 +270,14 @@ func (d *DB) UpdateBrand(_ context.Context, id int64, brand analysis.Brand) (ana
 	if n, _ := res.RowsAffected(); n == 0 {
 		return analysis.Brand{}, fmt.Errorf("brand not found: id %d", id)
 	}
-	return d.GetBrand(context.Background(), id)
+	return d.GetBrand(ctx, id)
 }
 
-func (d *DB) DeleteBrand(_ context.Context, id int64) error {
+func (d *DB) DeleteBrand(ctx context.Context, id int64) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
-	res, err := d.db.Exec("DELETE FROM trusted_brands WHERE id = ?", id)
+	res, err := d.db.ExecContext(ctx, "DELETE FROM trusted_brands WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete brand id %d: %w", id, err)
 	}

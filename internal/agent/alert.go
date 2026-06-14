@@ -107,7 +107,7 @@ func (t *AlertTask) Name() string { return "alert" }
 func (t *AlertTask) Run(ctx context.Context) error {
 	webhookURL := t.config.WebhookURL
 	if t.store != nil && t.store.Enabled() {
-		if customURL, err := t.store.GetSystemConfig("agent_webhook_url"); err == nil && customURL != "" {
+		if customURL, err := t.store.GetSystemConfig(context.Background(), "agent_webhook_url"); err == nil && customURL != "" {
 			webhookURL = customURL
 		}
 	}
@@ -131,7 +131,7 @@ func (t *AlertTask) Run(ctx context.Context) error {
 	t.mu.Unlock()
 
 	// Query for alertable events since last check.
-	events, err := t.store.QueryAgentEvents(since, []string{
+	events, err := t.store.QueryAgentEvents(context.Background(), since, []string{
 		"auto_block", "feed_error",
 	}, 100)
 	if err != nil {
@@ -242,7 +242,7 @@ func (t *AlertTask) Run(ctx context.Context) error {
 	t.lastAlert = time.Now()
 	t.mu.Unlock()
 
-	_ = t.store.RecordAgentEvent("alert", "alert_sent", "",
+	_ = t.store.RecordAgentEvent(context.Background(), "alert", "alert_sent", "",
 		fmt.Sprintf(`{"events_count":%d,"critical_count":%d}`, len(events), len(criticalEvents)))
 
 	logjson.Info("agent alert triggered", correlation.Fields(ctx, map[string]any{
@@ -254,7 +254,7 @@ func (t *AlertTask) Run(ctx context.Context) error {
 
 	if len(errorsList) > 0 {
 		errStr := strings.Join(errorsList, "; ")
-		_ = t.store.RecordAgentEvent("alert", "alert_failed", "", errStr)
+		_ = t.store.RecordAgentEvent(context.Background(), "alert", "alert_failed", "", errStr)
 		return fmt.Errorf("send alert failures: %s", errStr)
 	}
 

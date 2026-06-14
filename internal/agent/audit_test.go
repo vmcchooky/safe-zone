@@ -70,7 +70,7 @@ func TestAuditTaskSkipsOverriddenDomain(t *testing.T) {
 	seedSuspiciousDomains(t, db, "already-blocked.test", 5)
 
 	// Pre-add an override — audit should skip this domain.
-	if err := db.UpsertOverride("already-blocked.test", "block", "manual block"); err != nil {
+	if err := db.UpsertOverride(context.Background(), "already-blocked.test", "block", "manual block"); err != nil {
 		t.Fatalf("upsert override: %v", err)
 	}
 
@@ -92,7 +92,7 @@ func TestAuditTaskSkipsOverriddenDomain(t *testing.T) {
 	}
 
 	// Verify the override is unchanged (still manual, not agent).
-	override, _ := db.GetOverride("already-blocked.test")
+	override, _ := db.GetOverride(context.Background(), "already-blocked.test")
 	if override == nil {
 		t.Fatal("expected override to still exist")
 	}
@@ -128,7 +128,7 @@ func TestAuditTaskLimitPerCycle(t *testing.T) {
 	// The audit should have processed at most MaxPerCycle domains.
 	// Verify via audit log events (each domain gets a "reviewed" or "auto_block" event,
 	// plus one "audit_completed" summary event).
-	events, _ := db.QueryAgentEvents(time.Now().Add(-1*time.Hour), nil, 100)
+	events, _ := db.QueryAgentEvents(context.Background(), time.Now().Add(-1*time.Hour), nil, 100)
 	if len(events) == 0 {
 		t.Error("expected at least some audit events")
 	}

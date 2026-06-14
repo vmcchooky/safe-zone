@@ -57,10 +57,10 @@ func TestInMemoryDatabaseSupportsSystemConfig(t *testing.T) {
 		}
 	})
 
-	if err := db.SetSystemConfig("analysis_config", `{"long_domain_length":40}`); err != nil {
+	if err := db.SetSystemConfig(context.Background(), "analysis_config", `{"long_domain_length":40}`); err != nil {
 		t.Fatalf("expected in-memory system config write to succeed: %v", err)
 	}
-	got, err := db.GetSystemConfig("analysis_config")
+	got, err := db.GetSystemConfig(context.Background(), "analysis_config")
 	if err != nil {
 		t.Fatalf("expected in-memory system config read to succeed: %v", err)
 	}
@@ -72,7 +72,7 @@ func TestInMemoryDatabaseSupportsSystemConfig(t *testing.T) {
 func TestOSINTEvidenceRoundTrip(t *testing.T) {
 	db := newTestDB(t)
 	expires := time.Now().Add(time.Hour).UTC().Format(time.RFC3339Nano)
-	err := db.ReplaceOSINTEvidence("baohiem-online.com", []OSINTEvidence{{
+	err := db.ReplaceOSINTEvidence(context.Background(), "baohiem-online.com", []OSINTEvidence{{
 		Domain:       "baohiem-online.com",
 		SourceURL:    "https://example.gov.vn/canh-bao",
 		SourceTitle:  "Cảnh báo",
@@ -86,7 +86,7 @@ func TestOSINTEvidenceRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, err := db.ListOSINTEvidence("baohiem-online.com", time.Now())
+	items, err := db.ListOSINTEvidence(context.Background(), "baohiem-online.com", time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,11 +166,11 @@ func TestWhitelistCountAndStream(t *testing.T) {
 	db := newTestDB(t)
 	domains := []string{"google.com", "facebook.com", "googlevideo.com"}
 
-	if err := db.UpdateWhitelist(domains); err != nil {
+	if err := db.UpdateWhitelist(context.Background(), domains); err != nil {
 		t.Fatal(err)
 	}
 
-	count, err := db.GetWhitelistCount()
+	count, err := db.GetWhitelistCount(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +179,7 @@ func TestWhitelistCountAndStream(t *testing.T) {
 	}
 
 	var streamed []string
-	if err := db.StreamWhitelist(func(domain string) error {
+	if err := db.StreamWhitelist(context.Background(), func(domain string) error {
 		streamed = append(streamed, domain)
 		return nil
 	}); err != nil {
@@ -195,12 +195,12 @@ func TestWhitelistCountAndStream(t *testing.T) {
 
 func TestStreamWhitelistPropagatesCallbackError(t *testing.T) {
 	db := newTestDB(t)
-	if err := db.UpdateWhitelist([]string{"google.com"}); err != nil {
+	if err := db.UpdateWhitelist(context.Background(), []string{"google.com"}); err != nil {
 		t.Fatal(err)
 	}
 
 	sentinel := errors.New("stop")
-	err := db.StreamWhitelist(func(domain string) error {
+	err := db.StreamWhitelist(context.Background(), func(domain string) error {
 		return sentinel
 	})
 	if !errors.Is(err, sentinel) {
@@ -213,11 +213,11 @@ func TestStreamWhitelistPropagatesCallbackError(t *testing.T) {
 func TestUpsertAndGetOverride(t *testing.T) {
 	db := newTestDB(t)
 
-	if err := db.UpsertOverride("evil.com", "block", "phishing site"); err != nil {
+	if err := db.UpsertOverride(context.Background(), "evil.com", "block", "phishing site"); err != nil {
 		t.Fatalf("upsert failed: %v", err)
 	}
 
-	override, err := db.GetOverride("evil.com")
+	override, err := db.GetOverride(context.Background(), "evil.com")
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
 	}
@@ -238,14 +238,14 @@ func TestUpsertAndGetOverride(t *testing.T) {
 func TestUpsertUpdatesExisting(t *testing.T) {
 	db := newTestDB(t)
 
-	if err := db.UpsertOverride("test.com", "block", "initial"); err != nil {
+	if err := db.UpsertOverride(context.Background(), "test.com", "block", "initial"); err != nil {
 		t.Fatalf("upsert failed: %v", err)
 	}
-	if err := db.UpsertOverride("test.com", "allow", "updated reason"); err != nil {
+	if err := db.UpsertOverride(context.Background(), "test.com", "allow", "updated reason"); err != nil {
 		t.Fatalf("upsert update failed: %v", err)
 	}
 
-	override, err := db.GetOverride("test.com")
+	override, err := db.GetOverride(context.Background(), "test.com")
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestUpsertUpdatesExisting(t *testing.T) {
 func TestUpsertInvalidAction(t *testing.T) {
 	db := newTestDB(t)
 
-	if err := db.UpsertOverride("test.com", "invalid", "reason"); err == nil {
+	if err := db.UpsertOverride(context.Background(), "test.com", "invalid", "reason"); err == nil {
 		t.Fatal("expected error for invalid action")
 	}
 }
@@ -268,12 +268,12 @@ func TestUpsertInvalidAction(t *testing.T) {
 func TestGetOverrideParentDomain(t *testing.T) {
 	db := newTestDB(t)
 
-	if err := db.UpsertOverride("example.com", "block", "block entire domain"); err != nil {
+	if err := db.UpsertOverride(context.Background(), "example.com", "block", "block entire domain"); err != nil {
 		t.Fatalf("upsert failed: %v", err)
 	}
 
 	// Subdomain should match parent override.
-	override, err := db.GetOverride("mail.example.com")
+	override, err := db.GetOverride(context.Background(), "mail.example.com")
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestGetOverrideParentDomain(t *testing.T) {
 	}
 
 	// Deep subdomain should also match.
-	override, err = db.GetOverride("deep.sub.example.com")
+	override, err = db.GetOverride(context.Background(), "deep.sub.example.com")
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestGetOverrideParentDomain(t *testing.T) {
 func TestGetOverrideNotFound(t *testing.T) {
 	db := newTestDB(t)
 
-	override, err := db.GetOverride("nonexistent.com")
+	override, err := db.GetOverride(context.Background(), "nonexistent.com")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -309,14 +309,14 @@ func TestGetOverrideNotFound(t *testing.T) {
 func TestDeleteOverride(t *testing.T) {
 	db := newTestDB(t)
 
-	if err := db.UpsertOverride("delete-me.com", "block", ""); err != nil {
+	if err := db.UpsertOverride(context.Background(), "delete-me.com", "block", ""); err != nil {
 		t.Fatalf("upsert failed: %v", err)
 	}
-	if err := db.DeleteOverride("delete-me.com"); err != nil {
+	if err := db.DeleteOverride(context.Background(), "delete-me.com"); err != nil {
 		t.Fatalf("delete failed: %v", err)
 	}
 
-	override, err := db.GetOverride("delete-me.com")
+	override, err := db.GetOverride(context.Background(), "delete-me.com")
 	if err != nil {
 		t.Fatalf("get failed: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestDeleteOverride(t *testing.T) {
 func TestDeleteOverrideNotFound(t *testing.T) {
 	db := newTestDB(t)
 
-	if err := db.DeleteOverride("nonexistent.com"); err == nil {
+	if err := db.DeleteOverride(context.Background(), "nonexistent.com"); err == nil {
 		t.Fatal("expected error for deleting nonexistent override")
 	}
 }
@@ -336,14 +336,14 @@ func TestDeleteOverrideNotFound(t *testing.T) {
 func TestListOverrides(t *testing.T) {
 	db := newTestDB(t)
 
-	if err := db.UpsertOverride("allow.com", "allow", "trusted"); err != nil {
+	if err := db.UpsertOverride(context.Background(), "allow.com", "allow", "trusted"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.UpsertOverride("block.com", "block", "dangerous"); err != nil {
+	if err := db.UpsertOverride(context.Background(), "block.com", "block", "dangerous"); err != nil {
 		t.Fatal(err)
 	}
 
-	all, err := db.ListOverrides("")
+	all, err := db.ListOverrides(context.Background(), "")
 	if err != nil {
 		t.Fatalf("list all failed: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestListOverrides(t *testing.T) {
 		t.Fatalf("expected 2 overrides, got %d", len(all))
 	}
 
-	allowed, err := db.ListOverrides("allow")
+	allowed, err := db.ListOverrides(context.Background(), "allow")
 	if err != nil {
 		t.Fatalf("list allow failed: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestListOverrides(t *testing.T) {
 		t.Fatalf("expected 1 allow override, got %d", len(allowed))
 	}
 
-	blocked, err := db.ListOverrides("block")
+	blocked, err := db.ListOverrides(context.Background(), "block")
 	if err != nil {
 		t.Fatalf("list block failed: %v", err)
 	}
@@ -397,7 +397,7 @@ func TestRecordAndQueryRecent(t *testing.T) {
 	// Give the async writer time to flush.
 	time.Sleep(100 * time.Millisecond)
 
-	entries, err := db.QueryRecent(10, 0)
+	entries, err := db.QueryRecent(context.Background(), 10, 0)
 	if err != nil {
 		t.Fatalf("query recent failed: %v", err)
 	}
@@ -429,7 +429,7 @@ func TestQueryRecentPagination(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond)
 
-	page1, err := db.QueryRecent(2, 0)
+	page1, err := db.QueryRecent(context.Background(), 2, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +437,7 @@ func TestQueryRecentPagination(t *testing.T) {
 		t.Fatalf("expected 2 entries on page 1, got %d", len(page1))
 	}
 
-	page2, err := db.QueryRecent(2, 2)
+	page2, err := db.QueryRecent(context.Background(), 2, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -460,7 +460,7 @@ func TestQueryStats(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	stats, err := db.QueryStats(now.Add(-1 * time.Hour))
+	stats, err := db.QueryStats(context.Background(), now.Add(-1*time.Hour))
 	if err != nil {
 		t.Fatalf("query stats failed: %v", err)
 	}
@@ -492,7 +492,7 @@ func TestTelemetryCleanup(t *testing.T) {
 
 	db.cleanup()
 
-	entries, err := db.QueryRecent(10, 0)
+	entries, err := db.QueryRecent(context.Background(), 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -540,7 +540,7 @@ func TestRecordAnalysisBufferFull(t *testing.T) {
 
 func TestDisabledGetOverride(t *testing.T) {
 	var db *DB
-	override, err := db.GetOverride("test.com")
+	override, err := db.GetOverride(context.Background(), "test.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,7 +551,7 @@ func TestDisabledGetOverride(t *testing.T) {
 
 func TestDisabledListOverrides(t *testing.T) {
 	var db *DB
-	overrides, err := db.ListOverrides("")
+	overrides, err := db.ListOverrides(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -562,7 +562,7 @@ func TestDisabledListOverrides(t *testing.T) {
 
 func TestDisabledQueryRecent(t *testing.T) {
 	var db *DB
-	entries, err := db.QueryRecent(10, 0)
+	entries, err := db.QueryRecent(context.Background(), 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -573,7 +573,7 @@ func TestDisabledQueryRecent(t *testing.T) {
 
 func TestDisabledQueryStats(t *testing.T) {
 	var db *DB
-	stats, err := db.QueryStats(time.Now())
+	stats, err := db.QueryStats(context.Background(), time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -589,12 +589,12 @@ func TestWhitelistStore(t *testing.T) {
 
 	domains := []string{"google.com", "facebook.com", "github.com", "google.com"} // includes duplicate
 
-	if err := db.UpdateWhitelist(domains); err != nil {
+	if err := db.UpdateWhitelist(context.Background(), domains); err != nil {
 		t.Fatalf("failed to update whitelist: %v", err)
 	}
 
 	// Verify duplicates are ignored and we only have unique entries
-	list, err := db.GetWhitelist()
+	list, err := db.GetWhitelist(context.Background())
 	if err != nil {
 		t.Fatalf("failed to get whitelist: %v", err)
 	}
@@ -604,7 +604,7 @@ func TestWhitelistStore(t *testing.T) {
 
 	// Verify lookup
 	for _, d := range []string{"google.com", "facebook.com", "github.com"} {
-		ok, err := db.IsDomainWhitelisted(d)
+		ok, err := db.IsDomainWhitelisted(context.Background(), d)
 		if err != nil {
 			t.Fatalf("IsDomainWhitelisted error for %s: %v", d, err)
 		}
@@ -614,7 +614,7 @@ func TestWhitelistStore(t *testing.T) {
 	}
 
 	// Negative lookup
-	ok, err := db.IsDomainWhitelisted("evil.com")
+	ok, err := db.IsDomainWhitelisted(context.Background(), "evil.com")
 	if err != nil {
 		t.Fatalf("IsDomainWhitelisted error: %v", err)
 	}
@@ -624,12 +624,12 @@ func TestWhitelistStore(t *testing.T) {
 
 	// Overwrite whitelist
 	newDomains := []string{"apple.com", "microsoft.com"}
-	if err := db.UpdateWhitelist(newDomains); err != nil {
+	if err := db.UpdateWhitelist(context.Background(), newDomains); err != nil {
 		t.Fatalf("failed to update whitelist: %v", err)
 	}
 
 	// Old domains should be gone
-	ok, err = db.IsDomainWhitelisted("google.com")
+	ok, err = db.IsDomainWhitelisted(context.Background(), "google.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -638,7 +638,7 @@ func TestWhitelistStore(t *testing.T) {
 	}
 
 	// New domains should be present
-	ok, err = db.IsDomainWhitelisted("apple.com")
+	ok, err = db.IsDomainWhitelisted(context.Background(), "apple.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -651,11 +651,11 @@ func TestDisabledWhitelist(t *testing.T) {
 	var db *DB
 
 	// Nil store should not error and return safe/empty defaults
-	if err := db.UpdateWhitelist([]string{"google.com"}); err != nil {
+	if err := db.UpdateWhitelist(context.Background(), []string{"google.com"}); err != nil {
 		t.Fatalf("nil store UpdateWhitelist should not error: %v", err)
 	}
 
-	ok, err := db.IsDomainWhitelisted("google.com")
+	ok, err := db.IsDomainWhitelisted(context.Background(), "google.com")
 	if err != nil {
 		t.Fatalf("nil store IsDomainWhitelisted should not error: %v", err)
 	}
@@ -663,7 +663,7 @@ func TestDisabledWhitelist(t *testing.T) {
 		t.Fatal("nil store should return false for IsDomainWhitelisted")
 	}
 
-	list, err := db.GetWhitelist()
+	list, err := db.GetWhitelist(context.Background())
 	if err != nil {
 		t.Fatalf("nil store GetWhitelist should not error: %v", err)
 	}
@@ -683,11 +683,11 @@ func TestUpdateWhitelistBulkInsertChunks(t *testing.T) {
 	domains = append(domains, "domain-0001.example")
 	domains = append(domains, "domain-0500.example")
 
-	if err := db.UpdateWhitelist(domains); err != nil {
+	if err := db.UpdateWhitelist(context.Background(), domains); err != nil {
 		t.Fatalf("failed to bulk update whitelist: %v", err)
 	}
 
-	list, err := db.GetWhitelist()
+	list, err := db.GetWhitelist(context.Background())
 	if err != nil {
 		t.Fatalf("failed to read whitelist after bulk update: %v", err)
 	}
@@ -698,7 +698,7 @@ func TestUpdateWhitelistBulkInsertChunks(t *testing.T) {
 	}
 
 	for _, domain := range []string{"domain-0001.example", "domain-0500.example", "domain-1024.example"} {
-		ok, err := db.IsDomainWhitelisted(domain)
+		ok, err := db.IsDomainWhitelisted(context.Background(), domain)
 		if err != nil {
 			t.Fatalf("IsDomainWhitelisted(%s) error: %v", domain, err)
 		}
@@ -714,7 +714,7 @@ func TestClientGroupsCRUD(t *testing.T) {
 	db := newTestDB(t)
 
 	// Test ListGroups initially has the 'default' group
-	groups, err := db.ListGroups()
+	groups, err := db.ListGroups(context.Background())
 	if err != nil {
 		t.Fatalf("failed to list groups: %v", err)
 	}
@@ -726,7 +726,7 @@ func TestClientGroupsCRUD(t *testing.T) {
 	}
 
 	// 1. Create a new group
-	kidsID, err := db.CreateGroup("kids", "Kids Policy", []string{"social_media", "adult"}, false, true)
+	kidsID, err := db.CreateGroup(context.Background(), "kids", "Kids Policy", []string{"social_media", "adult"}, false, true)
 	if err != nil {
 		t.Fatalf("failed to create kids group: %v", err)
 	}
@@ -735,7 +735,7 @@ func TestClientGroupsCRUD(t *testing.T) {
 	}
 
 	// Get Group and verify
-	g, err := db.GetGroup(kidsID)
+	g, err := db.GetGroup(context.Background(), kidsID)
 	if err != nil {
 		t.Fatalf("failed to get group: %v", err)
 	}
@@ -747,12 +747,12 @@ func TestClientGroupsCRUD(t *testing.T) {
 	}
 
 	// 2. Update Group
-	err = db.UpdateGroup(kidsID, "kids-updated", "Updated Description", []string{"gaming"}, true, false)
+	err = db.UpdateGroup(context.Background(), kidsID, "kids-updated", "Updated Description", []string{"gaming"}, true, false)
 	if err != nil {
 		t.Fatalf("failed to update group: %v", err)
 	}
 
-	g, err = db.GetGroup(kidsID)
+	g, err = db.GetGroup(context.Background(), kidsID)
 	if err != nil {
 		t.Fatalf("failed to get group after update: %v", err)
 	}
@@ -764,7 +764,7 @@ func TestClientGroupsCRUD(t *testing.T) {
 	}
 
 	// Get by name
-	gByName, err := db.GetGroupByName("kids-updated")
+	gByName, err := db.GetGroupByName(context.Background(), "kids-updated")
 	if err != nil {
 		t.Fatalf("failed to get group by name: %v", err)
 	}
@@ -773,18 +773,18 @@ func TestClientGroupsCRUD(t *testing.T) {
 	}
 
 	// 3. Attempt to delete default group (should fail)
-	err = db.DeleteGroup(1)
+	err = db.DeleteGroup(context.Background(), 1)
 	if err == nil {
 		t.Fatal("expected error when deleting default group, got nil")
 	}
 
 	// 4. Delete group
-	err = db.DeleteGroup(kidsID)
+	err = db.DeleteGroup(context.Background(), kidsID)
 	if err != nil {
 		t.Fatalf("failed to delete group: %v", err)
 	}
 
-	_, err = db.GetGroup(kidsID)
+	_, err = db.GetGroup(context.Background(), kidsID)
 	if err == nil {
 		t.Fatal("expected error getting deleted group, got nil")
 	}
@@ -794,45 +794,45 @@ func TestClientMappings(t *testing.T) {
 	db := newTestDB(t)
 
 	// Create group
-	grpID, err := db.CreateGroup("test-group", "Desc", []string{}, false, false)
+	grpID, err := db.CreateGroup(context.Background(), "test-group", "Desc", []string{}, false, false)
 	if err != nil {
 		t.Fatalf("failed to create group: %v", err)
 	}
 
 	// 1. Add mappings
-	ipMapID, err := db.AddMappingInt("ip", "192.168.1.10", grpID)
+	ipMapID, err := db.AddMappingInt(context.Background(), "ip", "192.168.1.10", grpID)
 	if err != nil {
 		t.Fatalf("failed to add IP mapping: %v", err)
 	}
 
-	cidrMapID, err := db.AddMappingInt("cidr", "10.0.0.0/24", grpID)
+	cidrMapID, err := db.AddMappingInt(context.Background(), "cidr", "10.0.0.0/24", grpID)
 	if err != nil {
 		t.Fatalf("failed to add CIDR mapping: %v", err)
 	}
 
-	clientIdMapID, err := db.AddMappingInt("client_id", "iphone-user", grpID)
+	clientIdMapID, err := db.AddMappingInt(context.Background(), "client_id", "iphone-user", grpID)
 	if err != nil {
 		t.Fatalf("failed to add Client ID mapping: %v", err)
 	}
 
 	// 2. Validate IP / CIDR validation
-	_, err = db.AddMappingInt("ip", "invalid-ip", grpID)
+	_, err = db.AddMappingInt(context.Background(), "ip", "invalid-ip", grpID)
 	if err == nil {
 		t.Fatal("expected error for invalid IP mapping, got nil")
 	}
 
-	_, err = db.AddMappingInt("cidr", "10.0.0.300/24", grpID)
+	_, err = db.AddMappingInt(context.Background(), "cidr", "10.0.0.300/24", grpID)
 	if err == nil {
 		t.Fatal("expected error for invalid CIDR mapping, got nil")
 	}
 
-	_, err = db.AddMappingInt("invalid_type", "value", grpID)
+	_, err = db.AddMappingInt(context.Background(), "invalid_type", "value", grpID)
 	if err == nil {
 		t.Fatal("expected error for invalid mapping type, got nil")
 	}
 
 	// 3. List and check
-	mappings, err := db.ListMappings()
+	mappings, err := db.ListMappings(context.Background())
 	if err != nil {
 		t.Fatalf("failed to list mappings: %v", err)
 	}
@@ -858,12 +858,12 @@ func TestClientMappings(t *testing.T) {
 	}
 
 	// 4. Delete mappings
-	err = db.DeleteMapping(ipMapID)
+	err = db.DeleteMapping(context.Background(), ipMapID)
 	if err != nil {
 		t.Fatalf("failed to delete mapping: %v", err)
 	}
 
-	mappings, err = db.ListMappings()
+	mappings, err = db.ListMappings(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -876,28 +876,28 @@ func TestGetGroupForClient(t *testing.T) {
 	db := newTestDB(t)
 
 	// Create test groups
-	kidsID, err := db.CreateGroup("kids", "Kids group", []string{}, false, false)
+	kidsID, err := db.CreateGroup(context.Background(), "kids", "Kids group", []string{}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	iotID, err := db.CreateGroup("iot", "IoT group", []string{}, false, false)
+	iotID, err := db.CreateGroup(context.Background(), "iot", "IoT group", []string{}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Add Mappings
 	// 1. CIDR block mapping for kids group
-	_, err = db.AddMappingInt("cidr", "192.168.1.0/24", kidsID)
+	_, err = db.AddMappingInt(context.Background(), "cidr", "192.168.1.0/24", kidsID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// 2. Specific IP mapping for iot group (within the CIDR range to test priority)
-	_, err = db.AddMappingInt("ip", "192.168.1.50", iotID)
+	_, err = db.AddMappingInt(context.Background(), "ip", "192.168.1.50", iotID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// 3. Client ID mapping for kids group
-	_, err = db.AddMappingInt("client_id", "my-tablet", kidsID)
+	_, err = db.AddMappingInt(context.Background(), "client_id", "my-tablet", kidsID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -917,7 +917,7 @@ func TestGetGroupForClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			grp, err := db.GetGroupForClient(tt.ip, tt.clientID)
+			grp, err := db.GetGroupForClient(context.Background(), tt.ip, tt.clientID)
 			if err != nil {
 				t.Fatalf("failed to resolve group: %v", err)
 			}
@@ -932,29 +932,29 @@ func TestGetEffectiveOverride(t *testing.T) {
 	db := newTestDB(t)
 
 	// Create test group
-	grpID, err := db.CreateGroup("vip", "VIP group", []string{}, false, false)
+	grpID, err := db.CreateGroup(context.Background(), "vip", "VIP group", []string{}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 1. Setup Group Override
-	err = db.UpsertGroupOverride(grpID, "youtube.com", "block", "kids block youtube")
+	err = db.UpsertGroupOverride(context.Background(), grpID, "youtube.com", "block", "kids block youtube")
 	if err != nil {
 		t.Fatalf("failed to upsert group override: %v", err)
 	}
 
 	// 2. Setup Global Overrides
-	err = db.UpsertOverride("youtube.com", "allow", "global allow youtube")
+	err = db.UpsertOverride(context.Background(), "youtube.com", "allow", "global allow youtube")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = db.UpsertOverride("facebook.com", "block", "global block facebook")
+	err = db.UpsertOverride(context.Background(), "facebook.com", "block", "global block facebook")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 3. Setup parent subdomain override
-	err = db.UpsertGroupOverride(grpID, "co.uk", "block", "block UK domains")
+	err = db.UpsertGroupOverride(context.Background(), grpID, "co.uk", "block", "block UK domains")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -976,7 +976,7 @@ func TestGetEffectiveOverride(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			override, err := db.GetEffectiveOverride(tt.groupID, tt.domain)
+			override, err := db.GetEffectiveOverride(context.Background(), tt.groupID, tt.domain)
 			if err != nil {
 				t.Fatalf("failed to get effective override: %v", err)
 			}
@@ -999,7 +999,7 @@ func TestGetEffectiveOverride(t *testing.T) {
 	}
 
 	// 4. Test ListGroupOverrides
-	ovs, err := db.ListGroupOverrides(grpID)
+	ovs, err := db.ListGroupOverrides(context.Background(), grpID)
 	if err != nil {
 		t.Fatalf("failed to list group overrides: %v", err)
 	}
@@ -1008,12 +1008,12 @@ func TestGetEffectiveOverride(t *testing.T) {
 	}
 
 	// 5. Test DeleteGroupOverride
-	err = db.DeleteGroupOverride(grpID, "youtube.com")
+	err = db.DeleteGroupOverride(context.Background(), grpID, "youtube.com")
 	if err != nil {
 		t.Fatalf("failed to delete group override: %v", err)
 	}
 
-	ovs, err = db.ListGroupOverrides(grpID)
+	ovs, err = db.ListGroupOverrides(context.Background(), grpID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1035,11 +1035,11 @@ func TestWhoisCacheRoundTripAndExpiry(t *testing.T) {
 		Reasons:        []string{"whois: privacy guard enabled"},
 		RawText:        "raw whois",
 	}
-	if err := db.SetWhoisCache(entry.Domain, entry, time.Hour); err != nil {
+	if err := db.SetWhoisCache(context.Background(), entry.Domain, entry, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 
-	got, ok, err := db.GetWhoisCache(entry.Domain, time.Now())
+	got, ok, err := db.GetWhoisCache(context.Background(), entry.Domain, time.Now())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1047,7 +1047,7 @@ func TestWhoisCacheRoundTripAndExpiry(t *testing.T) {
 		t.Fatalf("unexpected cached entry: %#v", got)
 	}
 
-	if _, ok, err := db.GetWhoisCache(entry.Domain, time.Now().Add(2*time.Hour)); err != nil || ok {
+	if _, ok, err := db.GetWhoisCache(context.Background(), entry.Domain, time.Now().Add(2*time.Hour)); err != nil || ok {
 		t.Fatalf("expected expired cache miss, ok=%v err=%v", ok, err)
 	}
 }
@@ -1056,10 +1056,10 @@ func TestAnalysisConfigStoreRoundTrip(t *testing.T) {
 	db := newTestDB(t)
 	cfg := config.DefaultAnalysisConfig()
 	cfg.LongDomainLength = 40
-	if err := db.SetAnalysisConfig(cfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	got, err := db.GetAnalysisConfig()
+	got, err := db.GetAnalysisConfig(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -96,7 +96,7 @@ func TestNewServiceLoadsStoredAnalysisConfig(t *testing.T) {
 	}
 	cfg := config.DefaultAnalysisConfig()
 	cfg.LongDomainLength = 77
-	if err := db.SetAnalysisConfig(cfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -265,7 +265,7 @@ func TestUpdateAnalysisConfigPublishFailureDoesNotFail(t *testing.T) {
 		t.Fatalf("expected local config apply after publish failure, got %#v", got)
 	}
 
-	stored, err := db.GetAnalysisConfig()
+	stored, err := db.GetAnalysisConfig(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,7 +302,7 @@ func TestResetAnalysisConfigPublishesReloadEvent(t *testing.T) {
 
 	nonDefault := config.DefaultAnalysisConfig()
 	nonDefault.LongDomainLength = 77
-	if err := db.SetAnalysisConfig(nonDefault); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), nonDefault); err != nil {
 		t.Fatal(err)
 	}
 
@@ -363,7 +363,7 @@ func TestResetAnalysisConfigPublishesReloadEvent(t *testing.T) {
 		t.Fatal("timed out waiting for reset reload event")
 	}
 
-	stored, err := db.GetAnalysisConfig()
+	stored, err := db.GetAnalysisConfig(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -389,7 +389,7 @@ func TestAnalysisConfigReloadSubscriberIgnoresCurrentRevisionEvent(t *testing.T)
 
 	initialCfg := config.DefaultAnalysisConfig()
 	initialCfg.LongDomainLength = 77
-	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), initialCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -416,7 +416,7 @@ func TestAnalysisConfigReloadSubscriberIgnoresCurrentRevisionEvent(t *testing.T)
 	updatedCfg := service.GetAnalysisConfig()
 	updatedCfg.LongDomainLength = 11
 	updatedCfg.LongDomainScore = 33
-	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), updatedCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -460,7 +460,7 @@ func TestAnalysisConfigReloadSubscriberAppliesRemoteRevision(t *testing.T) {
 
 	initialCfg := config.DefaultAnalysisConfig()
 	initialCfg.LongDomainLength = 77
-	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), initialCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -482,7 +482,7 @@ func TestAnalysisConfigReloadSubscriberAppliesRemoteRevision(t *testing.T) {
 	updatedCfg := service.GetAnalysisConfig()
 	updatedCfg.LongDomainLength = 12
 	updatedCfg.LongDomainScore = 41
-	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), updatedCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -515,7 +515,7 @@ func TestAnalysisConfigReloadSubscriberRetriesAfterDisconnect(t *testing.T) {
 
 	initialCfg := config.DefaultAnalysisConfig()
 	initialCfg.LongDomainLength = 77
-	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), initialCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -560,7 +560,7 @@ func TestAnalysisConfigReloadSubscriberRetriesAfterDisconnect(t *testing.T) {
 	updatedCfg := service.GetAnalysisConfig()
 	updatedCfg.LongDomainLength = 15
 	updatedCfg.LongDomainScore = 29
-	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), updatedCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -632,7 +632,7 @@ func TestAnalysisConfigReconcilerAppliesMissedRevision(t *testing.T) {
 
 	initialCfg := config.DefaultAnalysisConfig()
 	initialCfg.LongDomainLength = 77
-	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), initialCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -651,7 +651,7 @@ func TestAnalysisConfigReconcilerAppliesMissedRevision(t *testing.T) {
 	updatedCfg := service.GetAnalysisConfig()
 	updatedCfg.LongDomainLength = 12
 	updatedCfg.LongDomainScore = 41
-	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), updatedCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -674,7 +674,7 @@ func TestAnalysisConfigReconcilerDoesNotReapplySameRevision(t *testing.T) {
 
 	initialCfg := config.DefaultAnalysisConfig()
 	initialCfg.LongDomainLength = 77
-	if err := db.SetAnalysisConfig(initialCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), initialCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -693,7 +693,7 @@ func TestAnalysisConfigReconcilerDoesNotReapplySameRevision(t *testing.T) {
 	updatedCfg := service.GetAnalysisConfig()
 	updatedCfg.LongDomainLength = 15
 	updatedCfg.LongDomainScore = 29
-	if err := db.SetAnalysisConfig(updatedCfg); err != nil {
+	if err := db.SetAnalysisConfig(context.Background(), updatedCfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1004,7 +1004,7 @@ func TestAnalysisRevisionInvalidatesLegacySafeCache(t *testing.T) {
 func TestAIClientSyncRespectsCooldownAndDisablesDeletedDBKey(t *testing.T) {
 	service := newTestServiceWithStore(t)
 
-	if err := service.StoreDB().SetSystemConfig("gemini_api_key", "first-key"); err != nil {
+	if err := service.StoreDB().SetSystemConfig(context.Background(), "gemini_api_key", "first-key"); err != nil {
 		t.Fatal(err)
 	}
 	if client := service.AIClient(); client == nil || !client.Enabled() {
@@ -1014,7 +1014,7 @@ func TestAIClientSyncRespectsCooldownAndDisablesDeletedDBKey(t *testing.T) {
 		t.Fatalf("expected cached key to be first-key, got %q", service.cachedGeminiKey)
 	}
 
-	if err := service.StoreDB().SetSystemConfig("gemini_api_key", "second-key"); err != nil {
+	if err := service.StoreDB().SetSystemConfig(context.Background(), "gemini_api_key", "second-key"); err != nil {
 		t.Fatal(err)
 	}
 	_ = service.AIClient()
@@ -1033,7 +1033,7 @@ func TestAIClientSyncRespectsCooldownAndDisablesDeletedDBKey(t *testing.T) {
 		t.Fatalf("expected cached key to refresh after cooldown, got %q", service.cachedGeminiKey)
 	}
 
-	if err := service.StoreDB().SetSystemConfig("gemini_api_key", ""); err != nil {
+	if err := service.StoreDB().SetSystemConfig(context.Background(), "gemini_api_key", ""); err != nil {
 		t.Fatal(err)
 	}
 	service.aiMu.Lock()
@@ -1522,20 +1522,20 @@ func TestClientGroupPolicyDynamicEnforcement(t *testing.T) {
 
 	// 1. Tạo các Client Group
 	// CreateGroup(name, description string, blockCategories []string, strictPhishing, strictMalware bool)
-	kidsGroupID, err := db.CreateGroup("kids", "Kids group", []string{"social_media", "adult"}, false, true)
+	kidsGroupID, err := db.CreateGroup(context.Background(), "kids", "Kids group", []string{"social_media", "adult"}, false, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	devsGroupID, err := db.CreateGroup("devs", "Devs group", []string{}, false, false)
+	devsGroupID, err := db.CreateGroup(context.Background(), "devs", "Devs group", []string{}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// 2. Map IPs
-	if _, err := db.AddMappingInt("ip", "192.168.1.50", kidsGroupID); err != nil {
+	if _, err := db.AddMappingInt(context.Background(), "ip", "192.168.1.50", kidsGroupID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.AddMappingInt("ip", "192.168.1.100", devsGroupID); err != nil {
+	if _, err := db.AddMappingInt(context.Background(), "ip", "192.168.1.100", devsGroupID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1568,7 +1568,7 @@ func TestClientGroupPolicyDynamicEnforcement(t *testing.T) {
 
 	// 5. Test Group Override đè lên chính sách bình thường
 	// Thêm group override cho group devs: block facebook.com
-	if err := db.UpsertGroupOverride(devsGroupID, "facebook.com", "block", "focus time"); err != nil {
+	if err := db.UpsertGroupOverride(context.Background(), devsGroupID, "facebook.com", "block", "focus time"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1578,5 +1578,63 @@ func TestClientGroupPolicyDynamicEnforcement(t *testing.T) {
 	}
 	if len(pDevsSocPostOverride.Result.Reasons) == 0 || !strings.Contains(pDevsSocPostOverride.Result.Reasons[0], "admin override") {
 		t.Fatalf("expected admin override reason, got %v", pDevsSocPostOverride.Result.Reasons)
+	}
+}
+
+func TestAnalyzeNegativeCachingOnAITimeout(t *testing.T) {
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisServer.Close()
+	redisClient := cache.NewRedis(redisServer.Addr(), "", 0)
+
+	aiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer aiServer.Close()
+
+	dbPath := filepath.Join(t.TempDir(), "test.db")
+	storeDB, err := store.New(dbPath, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config.DefaultAnalysisConfig()
+	cfg.HyphenCountThreshold = 1
+	cfg.HyphenScore = 50
+	if err := storeDB.SetAnalysisConfig(context.Background(), cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	service := NewService(Options{
+		Redis:          redisClient,
+		RedisTimeout:   100 * time.Millisecond,
+		TTLSuspicious:  time.Hour,
+		TTLAllowed:     time.Hour,
+		TTLBlocked:     time.Hour,
+		Store:          storeDB,
+		AnalysisConfig: cfg,
+		OllamaBaseURL:  aiServer.URL,
+		AIProvider:     "ollama",
+		OllamaModel:    "llama3",
+	})
+	defer func() {
+		// ignore close errors in defer to prevent double-close panics
+		_ = service.Close()
+	}()
+
+	ctx := context.Background()
+	result := service.Analyze(ctx, "suspicious-timeout.com", ClientInfo{})
+	if result.Verdict != analysis.VerdictSuspicious {
+		t.Fatalf("expected verdict suspicious, got %s, score=%d", result.Verdict, result.Score)
+	}
+
+	ttl := redisServer.TTL("safe-zone:analysis:suspicious-timeout.com")
+	if ttl == 0 {
+		t.Fatal("expected cache TTL to be set")
+	}
+	if ttl > 3*time.Minute {
+		t.Fatalf("expected negative cache TTL (< 3m), got %v", ttl)
 	}
 }

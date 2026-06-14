@@ -65,8 +65,8 @@ func TestAlertTaskSendsWebhook(t *testing.T) {
 	}
 	defer db.Close()
 
-	_ = db.RecordAgentEvent("audit", "auto_block", "evil.test", `{"score":90}`)
-	_ = db.RecordAgentEvent("audit", "auto_block", "bad.test", `{"score":85}`)
+	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "evil.test", `{"score":90}`)
+	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "bad.test", `{"score":85}`)
 
 	time.Sleep(50 * time.Millisecond)
 
@@ -109,7 +109,7 @@ func TestAlertTaskWebhookError(t *testing.T) {
 	}
 	defer db.Close()
 
-	_ = db.RecordAgentEvent("audit", "auto_block", "evil.test", `{}`)
+	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "evil.test", `{}`)
 	time.Sleep(50 * time.Millisecond)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -215,7 +215,7 @@ func TestAlertTaskAdvancedChannels(t *testing.T) {
 	defer db.Close()
 
 	// Seed a critical Vietnam bank spoofing event
-	_ = db.RecordAgentEvent("audit", "auto_block", "vietcombbank.com.vn", `{"score":95}`)
+	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "vietcombbank.com.vn", `{"score":95}`)
 	time.Sleep(50 * time.Millisecond)
 
 	var mu sync.Mutex

@@ -1,4 +1,4 @@
-package main
+package handlers
 
 import (
 	_ "embed"
@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"safe-zone/internal/api/httputil"
 	"strings"
 	"time"
 
@@ -32,9 +33,9 @@ type blockPageData struct {
 	HTTPSLimitation bool
 }
 
-func (a *app) blockPageHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) BlockPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -61,15 +62,15 @@ func (a *app) blockPageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *app) blockReportHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) BlockReportHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
 	if err := r.ParseForm(); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid form body")
+		httputil.WriteError(w, http.StatusBadRequest, "invalid form body")
 		return
 	}
 
@@ -90,17 +91,17 @@ func (a *app) blockReportHandler(w http.ResponseWriter, r *http.Request) {
 		"reported_at":    time.Now().UTC().Format(time.RFC3339Nano),
 	})
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to serialize report")
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to serialize report")
 		return
 	}
 
-	if db := a.risk.StoreDB(); db != nil && db.Enabled() {
-		if _, err := db.CreateBlockReport(domain, contact, note); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to record report")
+	if db := h.Risk.StoreDB(); db != nil && db.Enabled() {
+		if _, err := db.CreateBlockReport(r.Context(), domain, contact, note); err != nil {
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to record report")
 			return
 		}
-		if err := db.RecordAgentEvent("block_page", "false_positive_report", domain, string(reportDetails)); err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to record report")
+		if err := db.RecordAgentEvent(r.Context(), "block_page", "false_positive_report", domain, string(reportDetails)); err != nil {
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to record report")
 			return
 		}
 	}

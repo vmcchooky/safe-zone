@@ -92,7 +92,7 @@ func LookupWithCache(ctx context.Context, domain string, db *store.DB, ttl time.
 		ttl = defaultCacheTTL
 	}
 	if db != nil && db.Enabled() {
-		if cached, ok, err := db.GetWhoisCache(registered, time.Now()); err == nil && ok {
+		if cached, ok, err := db.GetWhoisCache(ctx, registered, time.Now()); err == nil && ok {
 			if cached.RawText != "" {
 				return parseAndScore(cached.RawText)
 			}
@@ -121,7 +121,7 @@ func LookupWithCache(ctx context.Context, domain string, db *store.DB, ttl time.
 
 	result := parseAndScore(raw)
 	if db != nil && db.Enabled() {
-		_ = db.SetWhoisCache(registered, store.WhoisCacheEntry{
+		_ = db.SetWhoisCache(ctx, registered, store.WhoisCacheEntry{
 			Domain:         registered,
 			Found:          result.Found,
 			RegisteredDate: result.RegisteredDate,

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -336,9 +337,16 @@ func New(path string, retentionDays int) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
 	}
-	if path == ":memory:" {
+	if strings.Contains(path, ":memory:") {
 		sqlDB.SetMaxOpenConns(1)
 		sqlDB.SetMaxIdleConns(1)
+	} else {
+		// modernc.org/sqlite serializes writes internally. Limiting open
+		// connections prevents OS-level thread contention on the DB lock
+		// and avoids "database is locked" under concurrent load.
+		sqlDB.SetMaxOpenConns(2)
+		sqlDB.SetMaxIdleConns(2)
+		sqlDB.SetConnMaxLifetime(0) // reuse indefinitely
 	}
 
 	// Apply performance pragmas.
@@ -407,13 +415,13 @@ func New(path string, retentionDays int) (*DB, error) {
 		done:          make(chan struct{}),
 	}
 
-	if err := d.SeedDefaultBrands(); err != nil {
+	if err := d.SeedDefaultBrands(context.Background()); err != nil {
 		_ = sqlDB.Close() // #nosec G104 -- error path; primary error already captured
 		return nil, fmt.Errorf("seed default brands: %w", err)
 	}
 
 	// Auto-initialize default groups
-	if err := d.CreateDefaultGroups(); err != nil {
+	if err := d.CreateDefaultGroups(context.Background()); err != nil {
 		_ = sqlDB.Close() // #nosec G104 -- error path; primary error already captured
 		return nil, fmt.Errorf("create default groups: %w", err)
 	}
@@ -492,7 +500,7 @@ func (d *DB) writeEntry(entry TelemetryEntry) {
 	if entry.CacheHit {
 		cacheHit = 1
 	}
-	_, err := d.db.Exec(
+	_, err := d.db.ExecContext(context.Background(),
 		`INSERT INTO analysis_log (domain, verdict, score, confidence, reasons, cache_hit, source, analyzed_at, client_ip, client_id)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.Domain, entry.Verdict, entry.Score, entry.Confidence,
@@ -508,12 +516,12 @@ func (d *DB) writeEntry(entry TelemetryEntry) {
 }
 
 // QueryRecent returns the most recent telemetry entries with pagination.
-func (d *DB) QueryRecent(limit, offset int) ([]TelemetryEntry, error) {
-	return d.QueryRecentFiltered(TelemetryFilter{}, limit, offset)
+func (d *DB) QueryRecent(ctx context.Context, limit, offset int) ([]TelemetryEntry, error) {
+	return d.QueryRecentFiltered(ctx, TelemetryFilter{}, limit, offset)
 }
 
 // QueryRecentFiltered returns recent telemetry entries with server-side filtering and pagination.
-func (d *DB) QueryRecentFiltered(filter TelemetryFilter, limit, offset int) ([]TelemetryEntry, error) {
+func (d *DB) QueryRecentFiltered(ctx context.Context, filter TelemetryFilter, limit, offset int) ([]TelemetryEntry, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -527,7 +535,7 @@ func (d *DB) QueryRecentFiltered(filter TelemetryFilter, limit, offset int) ([]T
 	where, args := telemetryWhereClause(filter)
 	args = append(args, limit, offset)
 
-	rows, err := d.db.Query(
+	rows, err := d.db.QueryContext(ctx,
 		`SELECT id, domain, verdict, score, confidence,
 		        COALESCE(reasons, '[]'), cache_hit, COALESCE(source, ''),
 		        analyzed_at, created_at, COALESCE(client_ip, ''), COALESCE(client_id, '')
@@ -579,12 +587,12 @@ func telemetryWhereClause(filter TelemetryFilter) (string, []any) {
 }
 
 // QueryStats returns aggregate telemetry statistics since the given time.
-func (d *DB) QueryStats(since time.Time) (Stats, error) {
+func (d *DB) QueryStats(ctx context.Context, since time.Time) (Stats, error) {
 	if !d.Enabled() {
 		return Stats{}, nil
 	}
 	sinceStr := since.UTC().Format(time.RFC3339)
-	row := d.db.QueryRow(`
+	row := d.db.QueryRowContext(ctx, `
 		SELECT
 			COUNT(*) AS total,
 			COALESCE(SUM(CASE WHEN verdict = 'SAFE' THEN 1 ELSE 0 END), 0) AS safe,
@@ -616,8 +624,8 @@ func (d *DB) cleanupLoop() {
 }
 
 func (d *DB) cleanup() {
-	cutoff := time.Now().AddDate(0, 0, -d.GetRetentionDays()).UTC().Format(time.RFC3339)
-	result, err := d.db.Exec(`DELETE FROM analysis_log WHERE analyzed_at < ?`, cutoff)
+	cutoff := time.Now().AddDate(0, 0, -d.GetRetentionDays(context.Background())).UTC().Format(time.RFC3339)
+	result, err := d.db.ExecContext(context.Background(), `DELETE FROM analysis_log WHERE analyzed_at < ?`, cutoff)
 	if err != nil {
 		logjson.Error("telemetry cleanup failed", map[string]any{
 			"service": "store",
@@ -633,7 +641,7 @@ func (d *DB) cleanup() {
 			"removed": n,
 		})
 	}
-	if _, err := d.db.Exec(`DELETE FROM whois_cache WHERE expires_at <= ?`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	if _, err := d.db.ExecContext(context.Background(), `DELETE FROM whois_cache WHERE expires_at <= ?`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		logjson.Error("whois cache cleanup failed", map[string]any{
 			"service": "store",
 			"error":   err.Error(),
@@ -645,7 +653,7 @@ func (d *DB) cleanup() {
 
 // GetOverride checks if a domain (or any of its parent domains) has an override.
 // Returns nil if no override is found.
-func (d *DB) GetOverride(domain string) (*Override, error) {
+func (d *DB) GetOverride(ctx context.Context, domain string) (*Override, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -654,7 +662,7 @@ func (d *DB) GetOverride(domain string) (*Override, error) {
 	for i := 0; i < len(parts); i++ {
 		candidate := strings.Join(parts[i:], ".")
 		var o Override
-		err := d.db.QueryRow(
+		err := d.db.QueryRowContext(ctx,
 			`SELECT id, domain, action, reason, created_at, updated_at
 			 FROM local_overrides WHERE domain = ?`, candidate).
 			Scan(&o.ID, &o.Domain, &o.Action, &o.Reason, &o.CreatedAt, &o.UpdatedAt)
@@ -669,7 +677,7 @@ func (d *DB) GetOverride(domain string) (*Override, error) {
 }
 
 // ListOverrides returns all overrides, optionally filtered by action.
-func (d *DB) ListOverrides(action string) ([]Override, error) {
+func (d *DB) ListOverrides(ctx context.Context, action string) ([]Override, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -677,11 +685,11 @@ func (d *DB) ListOverrides(action string) ([]Override, error) {
 	var rows *sql.Rows
 	var err error
 	if action == "allow" || action == "block" {
-		rows, err = d.db.Query(
+		rows, err = d.db.QueryContext(ctx,
 			`SELECT id, domain, action, reason, created_at, updated_at
 			 FROM local_overrides WHERE action = ? ORDER BY updated_at DESC`, action)
 	} else {
-		rows, err = d.db.Query(
+		rows, err = d.db.QueryContext(ctx,
 			`SELECT id, domain, action, reason, created_at, updated_at
 			 FROM local_overrides ORDER BY updated_at DESC`)
 	}
@@ -702,7 +710,7 @@ func (d *DB) ListOverrides(action string) ([]Override, error) {
 }
 
 // UpsertOverride creates or updates an override for a domain.
-func (d *DB) UpsertOverride(domain, action, reason string) error {
+func (d *DB) UpsertOverride(ctx context.Context, domain, action, reason string) error {
 	if !d.Enabled() {
 		return nil
 	}
@@ -713,7 +721,7 @@ func (d *DB) UpsertOverride(domain, action, reason string) error {
 	if domain == "" {
 		return fmt.Errorf("override domain cannot be empty")
 	}
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO local_overrides (domain, action, reason, updated_at)
 		VALUES (?, ?, ?, datetime('now'))
 		ON CONFLICT(domain) DO UPDATE SET
@@ -728,11 +736,11 @@ func (d *DB) UpsertOverride(domain, action, reason string) error {
 }
 
 // DeleteOverride removes an override for a domain.
-func (d *DB) DeleteOverride(domain string) error {
+func (d *DB) DeleteOverride(ctx context.Context, domain string) error {
 	if !d.Enabled() {
 		return nil
 	}
-	result, err := d.db.Exec(`DELETE FROM local_overrides WHERE domain = ?`, domain)
+	result, err := d.db.ExecContext(ctx, `DELETE FROM local_overrides WHERE domain = ?`, domain)
 	if err != nil {
 		return fmt.Errorf("delete override %s: %w", domain, err)
 	}
@@ -745,11 +753,11 @@ func (d *DB) DeleteOverride(domain string) error {
 // --- Agent Audit Log ---
 
 // RecordAgentEvent writes an entry to the agent_audit_log table.
-func (d *DB) RecordAgentEvent(taskName, eventType, domain, details string) error {
+func (d *DB) RecordAgentEvent(ctx context.Context, taskName, eventType, domain, details string) error {
 	if !d.Enabled() {
 		return nil
 	}
-	_, err := d.db.Exec(
+	_, err := d.db.ExecContext(ctx,
 		`INSERT INTO agent_audit_log (task_name, event_type, domain, details) VALUES (?, ?, ?, ?)`,
 		taskName, eventType, domain, details,
 	)
@@ -760,7 +768,7 @@ func (d *DB) RecordAgentEvent(taskName, eventType, domain, details string) error
 }
 
 // QueryAgentEvents returns agent events since a given time, optionally filtered by event types.
-func (d *DB) QueryAgentEvents(since time.Time, eventTypes []string, limit int) ([]AgentEvent, error) {
+func (d *DB) QueryAgentEvents(ctx context.Context, since time.Time, eventTypes []string, limit int) ([]AgentEvent, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -788,9 +796,9 @@ func (d *DB) QueryAgentEvents(since time.Time, eventTypes []string, limit int) (
 			 WHERE created_at >= ? AND event_type IN (%s)
 			 ORDER BY created_at ASC LIMIT ?`,
 			strings.Join(placeholders, ","))
-		rows, err = d.db.Query(query, args...)
+		rows, err = d.db.QueryContext(ctx, query, args...)
 	} else {
-		rows, err = d.db.Query(
+		rows, err = d.db.QueryContext(ctx,
 			`SELECT id, task_name, event_type, COALESCE(domain, ''), COALESCE(details, ''), created_at
 			 FROM agent_audit_log
 			 WHERE created_at >= ?
@@ -814,7 +822,7 @@ func (d *DB) QueryAgentEvents(since time.Time, eventTypes []string, limit int) (
 
 // QuerySuspiciousDomains returns domains with verdict SUSPICIOUS that appeared
 // at least minOccurrences times since the given time, ordered by count descending.
-func (d *DB) QuerySuspiciousDomains(since time.Time, minOccurrences, limit int) ([]DomainCount, error) {
+func (d *DB) QuerySuspiciousDomains(ctx context.Context, since time.Time, minOccurrences, limit int) ([]DomainCount, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -826,7 +834,7 @@ func (d *DB) QuerySuspiciousDomains(since time.Time, minOccurrences, limit int) 
 	}
 
 	sinceStr := since.UTC().Format(time.RFC3339)
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT domain, COUNT(*) AS cnt
 		FROM analysis_log
 		WHERE verdict = 'SUSPICIOUS' AND analyzed_at >= ?
@@ -853,7 +861,7 @@ func (d *DB) QuerySuspiciousDomains(since time.Time, minOccurrences, limit int) 
 // QueryRecentAllowedOrSuspiciousDomains returns recently seen non-malicious
 // domains for background evidence checks. The caller applies domain-keyword
 // filtering so this query stays simple and index-friendly.
-func (d *DB) QueryRecentAllowedOrSuspiciousDomains(since time.Time, limit int) ([]DomainCount, error) {
+func (d *DB) QueryRecentAllowedOrSuspiciousDomains(ctx context.Context, since time.Time, limit int) ([]DomainCount, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -862,7 +870,7 @@ func (d *DB) QueryRecentAllowedOrSuspiciousDomains(since time.Time, limit int) (
 	}
 
 	sinceStr := since.UTC().Format(time.RFC3339)
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT domain, COUNT(*) AS cnt
 		FROM analysis_log
 		WHERE verdict IN ('SAFE', 'SUSPICIOUS') AND analyzed_at >= ?
@@ -885,7 +893,7 @@ func (d *DB) QueryRecentAllowedOrSuspiciousDomains(since time.Time, limit int) (
 	return results, rows.Err()
 }
 
-func (d *DB) ReplaceOSINTEvidence(domain string, evidence []OSINTEvidence) error {
+func (d *DB) ReplaceOSINTEvidence(ctx context.Context, domain string, evidence []OSINTEvidence) error {
 	if !d.Enabled() {
 		return nil
 	}
@@ -894,17 +902,17 @@ func (d *DB) ReplaceOSINTEvidence(domain string, evidence []OSINTEvidence) error
 		return fmt.Errorf("domain is required")
 	}
 
-	tx, err := d.db.Begin()
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin osint evidence transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.Exec(`DELETE FROM osint_evidence WHERE domain = ?`, domain); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM osint_evidence WHERE domain = ?`, domain); err != nil {
 		return fmt.Errorf("delete old osint evidence: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`
+	stmt, err := tx.PrepareContext(ctx, `
 		INSERT INTO osint_evidence
 			(domain, source_url, source_title, source_type, confidence, matched_terms, retrieved_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -918,7 +926,7 @@ func (d *DB) ReplaceOSINTEvidence(domain string, evidence []OSINTEvidence) error
 		if item.Domain == "" {
 			item.Domain = domain
 		}
-		if _, err := stmt.Exec(
+		if _, err := stmt.ExecContext(ctx,
 			item.Domain,
 			item.SourceURL,
 			item.SourceTitle,
@@ -935,7 +943,7 @@ func (d *DB) ReplaceOSINTEvidence(domain string, evidence []OSINTEvidence) error
 	return tx.Commit()
 }
 
-func (d *DB) ListOSINTEvidence(domain string, now time.Time) ([]OSINTEvidence, error) {
+func (d *DB) ListOSINTEvidence(ctx context.Context, domain string, now time.Time) ([]OSINTEvidence, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -944,7 +952,7 @@ func (d *DB) ListOSINTEvidence(domain string, now time.Time) ([]OSINTEvidence, e
 		return nil, fmt.Errorf("domain is required")
 	}
 	nowStr := now.UTC().Format(time.RFC3339Nano)
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, domain, source_url, COALESCE(source_title, ''), source_type, confidence,
 		       COALESCE(matched_terms, '[]'), retrieved_at, expires_at
 		FROM osint_evidence
@@ -972,18 +980,18 @@ func (d *DB) ListOSINTEvidence(domain string, now time.Time) ([]OSINTEvidence, e
 
 // UpdateWhitelist clears the existing whitelist and inserts a new set of domains
 // in a single highly optimized transaction.
-func (d *DB) UpdateWhitelist(domains []string) error {
+func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
 	if !d.Enabled() {
 		return nil
 	}
 
-	tx, err := d.db.Begin()
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin whitelist transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec("DELETE FROM whitelist_domains")
+	_, err = tx.ExecContext(ctx, "DELETE FROM whitelist_domains")
 	if err != nil {
 		return fmt.Errorf("delete old whitelist: %w", err)
 	}
@@ -998,7 +1006,7 @@ func (d *DB) UpdateWhitelist(domains []string) error {
 		if len(args) == 0 {
 			continue
 		}
-		if _, err := tx.Exec(query, args...); err != nil {
+		if _, err := tx.ExecContext(ctx, query, args...); err != nil {
 			return fmt.Errorf("insert whitelist domains chunk [%d:%d]: %w", start, end, err)
 		}
 	}
@@ -1031,13 +1039,13 @@ func buildWhitelistInsertQuery(domains []string) (string, []any) {
 }
 
 // IsDomainWhitelisted checks if the domain exists exactly in the SQLite whitelist table.
-func (d *DB) IsDomainWhitelisted(domain string) (bool, error) {
+func (d *DB) IsDomainWhitelisted(ctx context.Context, domain string) (bool, error) {
 	if !d.Enabled() {
 		return false, nil
 	}
 
 	var exists int
-	err := d.db.QueryRow("SELECT 1 FROM whitelist_domains WHERE domain = ? LIMIT 1", domain).Scan(&exists)
+	err := d.db.QueryRowContext(ctx, "SELECT 1 FROM whitelist_domains WHERE domain = ? LIMIT 1", domain).Scan(&exists)
 	if err == sql.ErrNoRows {
 		return false, nil
 	}
@@ -1049,13 +1057,13 @@ func (d *DB) IsDomainWhitelisted(domain string) (bool, error) {
 }
 
 // GetWhitelistCount returns the number of domains stored in the SQLite whitelist table.
-func (d *DB) GetWhitelistCount() (int, error) {
+func (d *DB) GetWhitelistCount(ctx context.Context) (int, error) {
 	if !d.Enabled() {
 		return 0, nil
 	}
 
 	var count int
-	if err := d.db.QueryRow("SELECT COUNT(*) FROM whitelist_domains").Scan(&count); err != nil {
+	if err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM whitelist_domains").Scan(&count); err != nil {
 		return 0, fmt.Errorf("count whitelist domains: %w", err)
 	}
 	return count, nil
@@ -1063,12 +1071,12 @@ func (d *DB) GetWhitelistCount() (int, error) {
 
 // StreamWhitelist iterates sequentially over whitelist domains without allocating
 // an intermediate slice of all rows in memory.
-func (d *DB) StreamWhitelist(fn func(string) error) error {
+func (d *DB) StreamWhitelist(ctx context.Context, fn func(string) error) error {
 	if !d.Enabled() || fn == nil {
 		return nil
 	}
 
-	rows, err := d.db.Query("SELECT domain FROM whitelist_domains")
+	rows, err := d.db.QueryContext(ctx, "SELECT domain FROM whitelist_domains")
 	if err != nil {
 		return fmt.Errorf("query whitelist domains: %w", err)
 	}
@@ -1091,12 +1099,12 @@ func (d *DB) StreamWhitelist(fn func(string) error) error {
 }
 
 // GetWhitelist retrieves all domains in the SQLite whitelist table.
-func (d *DB) GetWhitelist() ([]string, error) {
+func (d *DB) GetWhitelist(ctx context.Context) ([]string, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
 
-	rows, err := d.db.Query("SELECT domain FROM whitelist_domains")
+	rows, err := d.db.QueryContext(ctx, "SELECT domain FROM whitelist_domains")
 	if err != nil {
 		return nil, fmt.Errorf("query whitelist domains: %w", err)
 	}
@@ -1117,15 +1125,15 @@ func (d *DB) GetWhitelist() ([]string, error) {
 // --- Multi-Tenant CRUD and Dynamic Mapping Methods ---
 
 // CreateDefaultGroups auto-initializes the core 'default' policy group.
-func (d *DB) CreateDefaultGroups() error {
+func (d *DB) CreateDefaultGroups(ctx context.Context) error {
 	if !d.Enabled() {
 		return nil
 	}
 
 	var exists int
-	err := d.db.QueryRow("SELECT 1 FROM client_groups WHERE name = 'default'").Scan(&exists)
+	err := d.db.QueryRowContext(ctx, "SELECT 1 FROM client_groups WHERE name = 'default'").Scan(&exists)
 	if err == sql.ErrNoRows {
-		_, err = d.db.Exec(`
+		_, err = d.db.ExecContext(ctx, `
 			INSERT INTO client_groups (name, description, block_categories, strict_phishing, strict_malware)
 			VALUES ('default', 'Default policy group', '[]', 0, 1)`)
 		if err != nil {
@@ -1141,7 +1149,7 @@ func (d *DB) CreateDefaultGroups() error {
 }
 
 // CreateGroup creates a new client policy group.
-func (d *DB) CreateGroup(name, description string, blockCategories []string, strictPhishing, strictMalware bool) (int64, error) {
+func (d *DB) CreateGroup(ctx context.Context, name, description string, blockCategories []string, strictPhishing, strictMalware bool) (int64, error) {
 	if !d.Enabled() {
 		return 0, fmt.Errorf("sqlite store disabled")
 	}
@@ -1160,7 +1168,7 @@ func (d *DB) CreateGroup(name, description string, blockCategories []string, str
 		sm = 1
 	}
 
-	res, err := d.db.Exec(`
+	res, err := d.db.ExecContext(ctx, `
 		INSERT INTO client_groups (name, description, block_categories, strict_phishing, strict_malware)
 		VALUES (?, ?, ?, ?, ?)`,
 		name, description, string(blockCatsJSON), sp, sm)
@@ -1172,7 +1180,7 @@ func (d *DB) CreateGroup(name, description string, blockCategories []string, str
 }
 
 // UpdateGroup updates an existing client policy group.
-func (d *DB) UpdateGroup(id int64, name, description string, blockCategories []string, strictPhishing, strictMalware bool) error {
+func (d *DB) UpdateGroup(ctx context.Context, id int64, name, description string, blockCategories []string, strictPhishing, strictMalware bool) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
@@ -1196,7 +1204,7 @@ func (d *DB) UpdateGroup(id int64, name, description string, blockCategories []s
 		sm = 1
 	}
 
-	_, err = d.db.Exec(`
+	_, err = d.db.ExecContext(ctx, `
 		UPDATE client_groups
 		SET name = ?, description = ?, block_categories = ?, strict_phishing = ?, strict_malware = ?, updated_at = datetime('now')
 		WHERE id = ?`,
@@ -1209,7 +1217,7 @@ func (d *DB) UpdateGroup(id int64, name, description string, blockCategories []s
 }
 
 // DeleteGroup deletes a client policy group.
-func (d *DB) DeleteGroup(id int64) error {
+func (d *DB) DeleteGroup(ctx context.Context, id int64) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
@@ -1218,7 +1226,7 @@ func (d *DB) DeleteGroup(id int64) error {
 		return fmt.Errorf("cannot delete default policy group")
 	}
 
-	res, err := d.db.Exec("DELETE FROM client_groups WHERE id = ?", id)
+	res, err := d.db.ExecContext(ctx, "DELETE FROM client_groups WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete group id %d: %w", id, err)
 	}
@@ -1232,7 +1240,7 @@ func (d *DB) DeleteGroup(id int64) error {
 }
 
 // GetGroup retrieves a policy group by its ID.
-func (d *DB) GetGroup(id int64) (*ClientGroup, error) {
+func (d *DB) GetGroup(ctx context.Context, id int64) (*ClientGroup, error) {
 	if !d.Enabled() {
 		return nil, fmt.Errorf("sqlite store disabled")
 	}
@@ -1241,7 +1249,7 @@ func (d *DB) GetGroup(id int64) (*ClientGroup, error) {
 	var blockCatsJSON string
 	var sp, sm int
 
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT id, name, description, block_categories, strict_phishing, strict_malware, created_at, updated_at
 		FROM client_groups WHERE id = ?`, id).
 		Scan(&g.ID, &g.Name, &g.Description, &blockCatsJSON, &sp, &sm, &g.CreatedAt, &g.UpdatedAt)
@@ -1260,7 +1268,7 @@ func (d *DB) GetGroup(id int64) (*ClientGroup, error) {
 }
 
 // GetGroupByName retrieves a policy group by its unique name.
-func (d *DB) GetGroupByName(name string) (*ClientGroup, error) {
+func (d *DB) GetGroupByName(ctx context.Context, name string) (*ClientGroup, error) {
 	if !d.Enabled() {
 		return nil, fmt.Errorf("sqlite store disabled")
 	}
@@ -1269,7 +1277,7 @@ func (d *DB) GetGroupByName(name string) (*ClientGroup, error) {
 	var blockCatsJSON string
 	var sp, sm int
 
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT id, name, description, block_categories, strict_phishing, strict_malware, created_at, updated_at
 		FROM client_groups WHERE name = ?`, name).
 		Scan(&g.ID, &g.Name, &g.Description, &blockCatsJSON, &sp, &sm, &g.CreatedAt, &g.UpdatedAt)
@@ -1288,12 +1296,12 @@ func (d *DB) GetGroupByName(name string) (*ClientGroup, error) {
 }
 
 // ListGroups returns all defined client policy groups.
-func (d *DB) ListGroups() ([]ClientGroup, error) {
+func (d *DB) ListGroups(ctx context.Context) ([]ClientGroup, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
 
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, name, description, block_categories, strict_phishing, strict_malware, created_at, updated_at
 		FROM client_groups ORDER BY id ASC`)
 	if err != nil {
@@ -1318,7 +1326,7 @@ func (d *DB) ListGroups() ([]ClientGroup, error) {
 }
 
 // AddMapping maps a client identifier (IP, CIDR, or DoH Client ID) to a policy group.
-func (d *DB) AddMapping(mappingType, value, groupID string) (int64, error) {
+func (d *DB) AddMapping(ctx context.Context, mappingType, value, groupID string) (int64, error) {
 	// Group ID is actually an integer, parse it
 	var groupIDInt int64
 	_, err := fmt.Sscanf(groupID, "%d", &groupIDInt)
@@ -1326,11 +1334,11 @@ func (d *DB) AddMapping(mappingType, value, groupID string) (int64, error) {
 		// Try parsing from database fallback or direct call helper
 		return 0, fmt.Errorf("invalid group id: %w", err)
 	}
-	return d.AddMappingInt(mappingType, value, groupIDInt)
+	return d.AddMappingInt(ctx, mappingType, value, groupIDInt)
 }
 
 // AddMappingInt maps a client with group ID integer.
-func (d *DB) AddMappingInt(mappingType, value string, groupID int64) (int64, error) {
+func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, groupID int64) (int64, error) {
 	if !d.Enabled() {
 		return 0, fmt.Errorf("sqlite store disabled")
 	}
@@ -1358,7 +1366,7 @@ func (d *DB) AddMappingInt(mappingType, value string, groupID int64) (int64, err
 		}
 	}
 
-	res, err := d.db.Exec(`
+	res, err := d.db.ExecContext(ctx, `
 		INSERT INTO client_mappings (mapping_type, value, group_id)
 		VALUES (?, ?, ?)`,
 		mappingType, value, groupID)
@@ -1379,12 +1387,12 @@ func (d *DB) AddMappingInt(mappingType, value string, groupID int64) (int64, err
 }
 
 // DeleteMapping removes a client device mapping.
-func (d *DB) DeleteMapping(id int64) error {
+func (d *DB) DeleteMapping(ctx context.Context, id int64) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
 
-	res, err := d.db.Exec("DELETE FROM client_mappings WHERE id = ?", id)
+	res, err := d.db.ExecContext(ctx, "DELETE FROM client_mappings WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete mapping id %d: %w", id, err)
 	}
@@ -1399,12 +1407,12 @@ func (d *DB) DeleteMapping(id int64) error {
 }
 
 // ListMappings returns all registered client mappings with group names.
-func (d *DB) ListMappings() ([]ClientMapping, error) {
+func (d *DB) ListMappings(ctx context.Context) ([]ClientMapping, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
 
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT m.id, m.mapping_type, m.value, m.group_id, g.name, m.created_at
 		FROM client_mappings m
 		JOIN client_groups g ON m.group_id = g.id
@@ -1426,7 +1434,7 @@ func (d *DB) ListMappings() ([]ClientMapping, error) {
 }
 
 // UpsertGroupOverride creates or updates a domain override rule specific to a policy group.
-func (d *DB) UpsertGroupOverride(groupID int64, domain, action, reason string) error {
+func (d *DB) UpsertGroupOverride(ctx context.Context, groupID int64, domain, action, reason string) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
@@ -1440,7 +1448,7 @@ func (d *DB) UpsertGroupOverride(groupID int64, domain, action, reason string) e
 		return fmt.Errorf("override domain cannot be empty")
 	}
 
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO group_overrides (group_id, domain, action, reason, updated_at)
 		VALUES (?, ?, ?, ?, datetime('now'))
 		ON CONFLICT(group_id, domain) DO UPDATE SET
@@ -1456,13 +1464,13 @@ func (d *DB) UpsertGroupOverride(groupID int64, domain, action, reason string) e
 }
 
 // DeleteGroupOverride removes a group-specific domain override.
-func (d *DB) DeleteGroupOverride(groupID int64, domain string) error {
+func (d *DB) DeleteGroupOverride(ctx context.Context, groupID int64, domain string) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
 
 	domain = strings.TrimSpace(strings.ToLower(domain))
-	res, err := d.db.Exec("DELETE FROM group_overrides WHERE group_id = ? AND domain = ?", groupID, domain)
+	res, err := d.db.ExecContext(ctx, "DELETE FROM group_overrides WHERE group_id = ? AND domain = ?", groupID, domain)
 	if err != nil {
 		return fmt.Errorf("delete group override (group %d, %s): %w", groupID, domain, err)
 	}
@@ -1476,12 +1484,12 @@ func (d *DB) DeleteGroupOverride(groupID int64, domain string) error {
 }
 
 // ListGroupOverrides returns all override rules configured for a specific policy group.
-func (d *DB) ListGroupOverrides(groupID int64) ([]GroupOverride, error) {
+func (d *DB) ListGroupOverrides(ctx context.Context, groupID int64) ([]GroupOverride, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
 
-	rows, err := d.db.Query(`
+	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, group_id, domain, action, reason, created_at, updated_at
 		FROM group_overrides WHERE group_id = ?
 		ORDER BY updated_at DESC`, groupID)
@@ -1503,9 +1511,9 @@ func (d *DB) ListGroupOverrides(groupID int64) ([]GroupOverride, error) {
 
 // GetGroupForClient dynamically resolves the policy group for a client request.
 // It checks DoH ClientID mapping first, then exact IP, then CIDR ranges, and falls back to 'default'.
-func (d *DB) GetGroupForClient(clientIP, clientID string) (*ClientGroup, error) {
+func (d *DB) GetGroupForClient(ctx context.Context, clientIP, clientID string) (*ClientGroup, error) {
 	if !d.Enabled() {
-		return d.GetGroupByName("default")
+		return d.GetGroupByName(ctx, "default")
 	}
 
 	clientID = strings.TrimSpace(clientID)
@@ -1514,22 +1522,22 @@ func (d *DB) GetGroupForClient(clientIP, clientID string) (*ClientGroup, error) 
 	// 1. Check DoH Client ID mapping
 	if clientID != "" {
 		var groupID int64
-		err := d.db.QueryRow(
+		err := d.db.QueryRowContext(ctx,
 			"SELECT group_id FROM client_mappings WHERE mapping_type = 'client_id' AND value = ? LIMIT 1",
 			clientID).Scan(&groupID)
 		if err == nil {
-			return d.GetGroup(groupID)
+			return d.GetGroup(ctx, groupID)
 		}
 	}
 
 	// 2. Check exact IP mapping
 	if clientIP != "" {
 		var groupID int64
-		err := d.db.QueryRow(
+		err := d.db.QueryRowContext(ctx,
 			"SELECT group_id FROM client_mappings WHERE mapping_type = 'ip' AND value = ? LIMIT 1",
 			clientIP).Scan(&groupID)
 		if err == nil {
-			return d.GetGroup(groupID)
+			return d.GetGroup(ctx, groupID)
 		}
 	}
 
@@ -1549,18 +1557,18 @@ func (d *DB) GetGroupForClient(clientIP, clientID string) (*ClientGroup, error) 
 			d.cidrMu.RUnlock()
 
 			if matchedGroupID > 0 {
-				return d.GetGroup(matchedGroupID)
+				return d.GetGroup(ctx, matchedGroupID)
 			}
 		}
 	}
 
 	// 4. Fallback to default group
-	return d.GetGroupByName("default")
+	return d.GetGroupByName(ctx, "default")
 }
 
 // GetEffectiveOverride resolves allowed/blocked overrides specific to a policy group,
 // falling back to Global local_overrides with intelligent subdomain inheritance.
-func (d *DB) GetEffectiveOverride(groupID int64, domain string) (*Override, error) {
+func (d *DB) GetEffectiveOverride(ctx context.Context, groupID int64, domain string) (*Override, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -1575,7 +1583,7 @@ func (d *DB) GetEffectiveOverride(groupID int64, domain string) (*Override, erro
 		// A. Check Group Override first (Group preference)
 		var goid, ggroupID int64
 		var gdomain, gaction, greason, gcreated, gupdated string
-		err := d.db.QueryRow(`
+		err := d.db.QueryRowContext(ctx, `
 			SELECT id, group_id, domain, action, reason, created_at, updated_at
 			FROM group_overrides WHERE group_id = ? AND domain = ?`,
 			groupID, candidate).
@@ -1596,7 +1604,7 @@ func (d *DB) GetEffectiveOverride(groupID int64, domain string) (*Override, erro
 
 		// B. Check Global Override second (Global inheritance fallback)
 		var o Override
-		err = d.db.QueryRow(`
+		err = d.db.QueryRowContext(ctx, `
 			SELECT id, domain, action, reason, created_at, updated_at
 			FROM local_overrides WHERE domain = ?`, candidate).
 			Scan(&o.ID, &o.Domain, &o.Action, &o.Reason, &o.CreatedAt, &o.UpdatedAt)
@@ -1616,7 +1624,7 @@ func (d *DB) loadCIDRCache() error {
 		return nil
 	}
 
-	rows, err := d.db.Query("SELECT group_id, value FROM client_mappings WHERE mapping_type = 'cidr'")
+	rows, err := d.db.QueryContext(context.Background(), "SELECT group_id, value FROM client_mappings WHERE mapping_type = 'cidr'")
 	if err != nil {
 		return err
 	}
@@ -1650,12 +1658,12 @@ func (d *DB) loadCIDRCache() error {
 }
 
 // CreateBlockReport creates a new block report entry.
-func (d *DB) CreateBlockReport(domain, contact, note string) (int64, error) {
+func (d *DB) CreateBlockReport(ctx context.Context, domain, contact, note string) (int64, error) {
 	if !d.Enabled() {
 		return 0, fmt.Errorf("sqlite store disabled")
 	}
 	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
-	res, err := d.db.Exec(`
+	res, err := d.db.ExecContext(ctx, `
 		INSERT INTO block_reports (domain, contact, note, status)
 		VALUES (?, ?, ?, 'pending')`, domain, contact, note)
 	if err != nil {
@@ -1665,12 +1673,12 @@ func (d *DB) CreateBlockReport(domain, contact, note string) (int64, error) {
 }
 
 // ListBlockReports retrieves block reports with pagination.
-func (d *DB) ListBlockReports(status string, limit, offset int) ([]BlockReport, error) {
-	return d.ListBlockReportsFiltered(BlockReportFilter{Status: status}, limit, offset)
+func (d *DB) ListBlockReports(ctx context.Context, status string, limit, offset int) ([]BlockReport, error) {
+	return d.ListBlockReportsFiltered(ctx, BlockReportFilter{Status: status}, limit, offset)
 }
 
 // ListBlockReportsFiltered retrieves block reports with filtering and pagination.
-func (d *DB) ListBlockReportsFiltered(filter BlockReportFilter, limit, offset int) ([]BlockReport, error) {
+func (d *DB) ListBlockReportsFiltered(ctx context.Context, filter BlockReportFilter, limit, offset int) ([]BlockReport, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -1701,7 +1709,7 @@ func (d *DB) ListBlockReportsFiltered(filter BlockReportFilter, limit, offset in
 	query += `ORDER BY id DESC LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 
-	rows, err := d.db.Query(query, args...)
+	rows, err := d.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list block reports: %w", err)
 	}
@@ -1719,11 +1727,11 @@ func (d *DB) ListBlockReportsFiltered(filter BlockReportFilter, limit, offset in
 }
 
 // UpdateBlockReportStatus updates the status of a specific block report.
-func (d *DB) UpdateBlockReportStatus(id int64, status string) error {
+func (d *DB) UpdateBlockReportStatus(ctx context.Context, id int64, status string) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
-	_, err := d.db.Exec(`UPDATE block_reports SET status = ? WHERE id = ?`, status, id)
+	_, err := d.db.ExecContext(ctx, `UPDATE block_reports SET status = ? WHERE id = ?`, status, id)
 	if err != nil {
 		return fmt.Errorf("update block report status: %w", err)
 	}
@@ -1731,22 +1739,22 @@ func (d *DB) UpdateBlockReportStatus(id int64, status string) error {
 }
 
 // ResolveBlockReportsForDomain marks all pending reports for a domain as resolved.
-func (d *DB) ResolveBlockReportsForDomain(domain string) error {
+func (d *DB) ResolveBlockReportsForDomain(ctx context.Context, domain string) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
-	_, err := d.db.Exec(`UPDATE block_reports SET status = 'resolved' WHERE domain = ? AND status = 'pending'`, domain)
+	_, err := d.db.ExecContext(ctx, `UPDATE block_reports SET status = 'resolved' WHERE domain = ? AND status = 'pending'`, domain)
 	return err
 }
 
 // GetSystemConfig retrieves the value of a system configuration key.
 // Returns an empty string and nil error if not found.
-func (d *DB) GetSystemConfig(key string) (string, error) {
+func (d *DB) GetSystemConfig(ctx context.Context, key string) (string, error) {
 	if !d.Enabled() {
 		return "", fmt.Errorf("sqlite store disabled")
 	}
 	var value string
-	err := d.db.QueryRow(`SELECT value FROM system_config WHERE key = ?`, key).Scan(&value)
+	err := d.db.QueryRowContext(ctx, `SELECT value FROM system_config WHERE key = ?`, key).Scan(&value)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -1757,11 +1765,11 @@ func (d *DB) GetSystemConfig(key string) (string, error) {
 }
 
 // SetSystemConfig sets the value of a system configuration key (upsert).
-func (d *DB) SetSystemConfig(key, value string) error {
+func (d *DB) SetSystemConfig(ctx context.Context, key, value string) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
-	_, err := d.db.Exec(`
+	_, err := d.db.ExecContext(ctx, `
 		INSERT INTO system_config (key, value, updated_at)
 		VALUES (?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
@@ -1772,8 +1780,8 @@ func (d *DB) SetSystemConfig(key, value string) error {
 	return nil
 }
 
-func (d *DB) GetAnalysisConfig() (*config.AnalysisConfig, error) {
-	value, err := d.GetSystemConfig("analysis_config")
+func (d *DB) GetAnalysisConfig(ctx context.Context) (*config.AnalysisConfig, error) {
+	value, err := d.GetSystemConfig(ctx, "analysis_config")
 	if err != nil || value == "" {
 		return nil, err
 	}
@@ -1788,7 +1796,7 @@ func (d *DB) GetAnalysisConfig() (*config.AnalysisConfig, error) {
 	return &cloned, nil
 }
 
-func (d *DB) SetAnalysisConfig(cfg config.AnalysisConfig) error {
+func (d *DB) SetAnalysisConfig(ctx context.Context, cfg config.AnalysisConfig) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -1796,10 +1804,10 @@ func (d *DB) SetAnalysisConfig(cfg config.AnalysisConfig) error {
 	if err != nil {
 		return fmt.Errorf("encode analysis config: %w", err)
 	}
-	return d.SetSystemConfig("analysis_config", string(encoded))
+	return d.SetSystemConfig(ctx, "analysis_config", string(encoded))
 }
 
-func (d *DB) GetWhoisCache(domain string, now time.Time) (WhoisCacheEntry, bool, error) {
+func (d *DB) GetWhoisCache(ctx context.Context, domain string, now time.Time) (WhoisCacheEntry, bool, error) {
 	if !d.Enabled() {
 		return WhoisCacheEntry{}, false, fmt.Errorf("sqlite store disabled")
 	}
@@ -1809,7 +1817,7 @@ func (d *DB) GetWhoisCache(domain string, now time.Time) (WhoisCacheEntry, bool,
 		registeredDate, reasons string
 		cachedAt, expiresAt     string
 	)
-	err := d.db.QueryRow(`
+	err := d.db.QueryRowContext(ctx, `
 		SELECT domain, found, COALESCE(registered_date, ''), domain_age_days,
 		       COALESCE(registrar, ''), privacy_guard, score, reasons,
 		       COALESCE(raw_text, ''), cached_at, expires_at
@@ -1838,7 +1846,7 @@ func (d *DB) GetWhoisCache(domain string, now time.Time) (WhoisCacheEntry, bool,
 	return entry, true, nil
 }
 
-func (d *DB) SetWhoisCache(domain string, entry WhoisCacheEntry, ttl time.Duration) error {
+func (d *DB) SetWhoisCache(ctx context.Context, domain string, entry WhoisCacheEntry, ttl time.Duration) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
@@ -1854,7 +1862,7 @@ func (d *DB) SetWhoisCache(domain string, entry WhoisCacheEntry, ttl time.Durati
 	if !entry.RegisteredDate.IsZero() {
 		registeredDate = entry.RegisteredDate.UTC().Format(time.RFC3339Nano)
 	}
-	_, err = d.db.Exec(`
+	_, err = d.db.ExecContext(ctx, `
 		INSERT INTO whois_cache (
 			domain, found, registered_date, domain_age_days, registrar,
 			privacy_guard, score, reasons, raw_text, cached_at, expires_at
@@ -1886,7 +1894,7 @@ type DatabaseStats struct {
 }
 
 // Stats computes SQLite database file size and free storage capacity.
-func (d *DB) Stats() DatabaseStats {
+func (d *DB) Stats(ctx context.Context) DatabaseStats {
 	if !d.Enabled() || d.dbPath == "" {
 		return DatabaseStats{}
 	}
@@ -1909,7 +1917,7 @@ func (d *DB) Stats() DatabaseStats {
 }
 
 // GetRetentionDays returns the active telemetry retention days thread-safely.
-func (d *DB) GetRetentionDays() int {
+func (d *DB) GetRetentionDays(ctx context.Context) int {
 	if d == nil {
 		return 30
 	}
@@ -1919,7 +1927,7 @@ func (d *DB) GetRetentionDays() int {
 }
 
 // UpdateRetentionDays updates the active telemetry retention days thread-safely.
-func (d *DB) UpdateRetentionDays(days int) {
+func (d *DB) UpdateRetentionDays(ctx context.Context, days int) {
 	if d == nil {
 		return
 	}

@@ -1,4 +1,14 @@
-package main
+import os
+import re
+
+main_path = "cmd/dns-resolver/main.go"
+with open(main_path, "r", encoding="utf-8") as f:
+    content = f.read()
+
+# We need to replace everything from `type policyResponse struct {` up to `func main() {`
+# And then replace inside `func main() {` to initialize the resolver correctly.
+
+new_content = """package main
 
 import (
 	"context"
@@ -296,3 +306,7 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 
 	return tls.X509KeyPair(certPEM, keyPEM)
 }
+"""
+
+with open(main_path, "w", encoding="utf-8") as f:
+    f.write(new_content)

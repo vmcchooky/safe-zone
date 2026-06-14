@@ -219,7 +219,7 @@ func NewService(options Options) *Service {
 		analysisConfig = config.DefaultAnalysisConfig()
 	}
 	if options.Store != nil && options.Store.Enabled() {
-		if storedConfig, err := options.Store.GetAnalysisConfig(); err == nil && storedConfig != nil {
+		if storedConfig, err := options.Store.GetAnalysisConfig(context.Background()); err == nil && storedConfig != nil {
 			analysisConfig = storedConfig.Clone()
 		} else if err != nil {
 			logjson.Warn("stored analysis config invalid; using configured defaults", map[string]any{
@@ -560,7 +560,7 @@ func (s *Service) reloadAnalysisConfigFromStore(source string) (string, string, 
 		return "", "", false, fmt.Errorf("store not configured")
 	}
 
-	storedConfig, err := s.store.GetAnalysisConfig()
+	storedConfig, err := s.store.GetAnalysisConfig(context.Background())
 	if err != nil {
 		return "", "", false, err
 	}
@@ -644,7 +644,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		// Get group
 		var group *store.ClientGroup
 		if s.store != nil && s.store.Enabled() {
-			g, err := s.store.GetGroupForClient(client.IP, client.ClientID)
+			g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID)
 			if err == nil {
 				group = g
 			}
@@ -655,7 +655,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 
 		// 1. Check Overrides
 		if s.store != nil && s.store.Enabled() {
-			override, err := s.store.GetEffectiveOverride(group.ID, normalized)
+			override, err := s.store.GetEffectiveOverride(context.Background(), group.ID, normalized)
 			if err == nil && override != nil {
 				verdict := analysis.VerdictSafe
 				score := 0
@@ -725,7 +725,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	// 1. Get Group for Client
 	var group *store.ClientGroup
 	if s.store != nil && s.store.Enabled() {
-		g, err := s.store.GetGroupForClient(client.IP, client.ClientID)
+		g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID)
 		if err == nil {
 			group = g
 		}
@@ -741,7 +741,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 
 	// 2. Check Overrides
 	if s.store != nil && s.store.Enabled() {
-		override, err := s.store.GetEffectiveOverride(group.ID, normalized)
+		override, err := s.store.GetEffectiveOverride(context.Background(), group.ID, normalized)
 		if err == nil && override != nil {
 			policyAction := override.Action
 			verdict := analysis.VerdictSafe
@@ -911,6 +911,8 @@ func (s *Service) CacheStatus(ctx context.Context) CacheStatus {
 	}
 }
 
+const negativeCacheTTL = 2 * time.Minute
+
 func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLookupMode, forceOSINT bool) (analysis.Result, bool, []osint.Evidence) {
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {
@@ -975,7 +977,14 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		result = s.analyzeLexical(normalized)
 	}
 	// 4. AI Refinement
-	result = s.refineWithAI(ctx, result)
+	aiContributed := false
+	if result.Verdict == analysis.VerdictSuspicious {
+		refined := s.refineWithAI(ctx, result)
+		if refined.Verdict != result.Verdict || len(refined.Reasons) > len(result.Reasons) {
+			aiContributed = true
+		}
+		result = refined
+	}
 	if shouldEnqueueEnrichment(result) {
 		s.enqueueEnrichment(ctx, enrichmentJob{
 			Domain:         normalized,
@@ -992,13 +1001,18 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 
 	// Cache the final result
 	err = s.withRedis(ctx, func(redisCtx context.Context) error {
+		ttl := s.ttlFor(result.Verdict)
+		// Nếu AI không contribute (timeout/lỗi), dùng TTL ngắn để retry sớm
+		if !aiContributed && result.Verdict == analysis.VerdictSuspicious {
+			ttl = negativeCacheTTL
+		}
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           result,
 			FeedRevision:     currentRevision,
 			BrandRevision:    currentBrandRevision,
 			AnalysisRevision: analysisAlgorithmRevision,
 			ConfigRevision:   currentConfigRevision,
-		}, s.ttlFor(result.Verdict))
+		}, ttl)
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("analysis cache write failed", correlation.Fields(ctx, map[string]any{
@@ -1054,7 +1068,7 @@ func (s *Service) syncAIClient() {
 	}
 	s.lastGeminiKeySync = now
 
-	customKey, err := s.store.GetSystemConfig("gemini_api_key")
+	customKey, err := s.store.GetSystemConfig(context.Background(), "gemini_api_key")
 	if err != nil {
 		return
 	}
@@ -1227,7 +1241,7 @@ func (s *Service) recordOSINTEvidence(report osint.Report) {
 			ExpiresAt:    expiresAt,
 		})
 	}
-	if err := s.store.ReplaceOSINTEvidence(report.Domain, items); err != nil {
+	if err := s.store.ReplaceOSINTEvidence(context.Background(), report.Domain, items); err != nil {
 		logjson.Warn("osint evidence store write failed", map[string]any{
 			"service": "risk",
 			"domain":  report.Domain,
@@ -1608,7 +1622,7 @@ func (s *Service) UpdateAnalysisConfig(ctx context.Context, cfg config.AnalysisC
 	if s.store == nil || !s.store.Enabled() {
 		return fmt.Errorf("store not configured")
 	}
-	if err := s.store.SetAnalysisConfig(cfg); err != nil {
+	if err := s.store.SetAnalysisConfig(ctx, cfg); err != nil {
 		return err
 	}
 	revision := s.applyAnalysisConfig(cfg, configReloadSourceLocalWrite)
@@ -1695,7 +1709,7 @@ func (s *Service) checkOverride(domain string) *analysis.Result {
 	if s.store == nil {
 		return nil
 	}
-	override, err := s.store.GetOverride(domain)
+	override, err := s.store.GetOverride(context.Background(), domain)
 	if err != nil {
 		logjson.Warn("override check failed", map[string]any{
 			"service": "risk",
@@ -1782,7 +1796,7 @@ func (s *Service) ListOverrides(action string) ([]store.Override, error) {
 	if s.store == nil {
 		return nil, nil
 	}
-	return s.store.ListOverrides(action)
+	return s.store.ListOverrides(context.Background(), action)
 }
 
 // UpsertOverride creates or updates a local override for a domain.
@@ -1794,7 +1808,7 @@ func (s *Service) UpsertOverride(domain, action, reason string) error {
 	if err != nil {
 		return fmt.Errorf("invalid domain: %w", err)
 	}
-	return s.store.UpsertOverride(normalized, action, reason)
+	return s.store.UpsertOverride(context.Background(), normalized, action, reason)
 }
 
 // DeleteOverride removes a local override for a domain.
@@ -1806,7 +1820,7 @@ func (s *Service) DeleteOverride(domain string) error {
 	if err != nil {
 		return fmt.Errorf("invalid domain: %w", err)
 	}
-	return s.store.DeleteOverride(normalized)
+	return s.store.DeleteOverride(context.Background(), normalized)
 }
 
 func (s *Service) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
@@ -1868,7 +1882,7 @@ func (s *Service) TelemetryRecentFiltered(filter store.TelemetryFilter, limit, o
 	if s.store == nil {
 		return nil, nil
 	}
-	return s.store.QueryRecentFiltered(filter, limit, offset)
+	return s.store.QueryRecentFiltered(context.Background(), filter, limit, offset)
 }
 
 // TelemetryStats returns aggregate telemetry statistics.
@@ -1876,7 +1890,7 @@ func (s *Service) TelemetryStats(since time.Time) (store.Stats, error) {
 	if s.store == nil {
 		return store.Stats{}, nil
 	}
-	return s.store.QueryStats(since)
+	return s.store.QueryStats(context.Background(), since)
 }
 
 // --- Accessors for Agent Engine ---
@@ -1943,7 +1957,7 @@ func (s *Service) storedOSINTEvidence(domain string) (osint.Report, bool) {
 	if err != nil {
 		return osint.Report{}, false
 	}
-	items, err := s.store.ListOSINTEvidence(normalized, time.Now())
+	items, err := s.store.ListOSINTEvidence(context.Background(), normalized, time.Now())
 	if err != nil || len(items) == 0 {
 		return osint.Report{}, false
 	}

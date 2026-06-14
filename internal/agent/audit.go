@@ -79,7 +79,7 @@ func (t *AuditTask) Run(ctx context.Context) error {
 	t.lastAudit = time.Now()
 	t.mu.Unlock()
 
-	domains, err := t.store.QuerySuspiciousDomains(since, t.config.MinOccurrences, t.config.MaxPerCycle)
+	domains, err := t.store.QuerySuspiciousDomains(context.Background(), since, t.config.MinOccurrences, t.config.MaxPerCycle)
 	if err != nil {
 		return fmt.Errorf("query suspicious domains: %w", err)
 	}
@@ -120,7 +120,7 @@ func (t *AuditTask) Run(ctx context.Context) error {
 
 	details := fmt.Sprintf(`{"audited":%d,"auto_blocked":%d,"skipped":%d,"errors":%d}`,
 		result.Audited, result.AutoBlocked, result.Skipped, result.Errors)
-	_ = t.store.RecordAgentEvent("audit", "audit_completed", "", details)
+	_ = t.store.RecordAgentEvent(context.Background(), "audit", "audit_completed", "", details)
 
 	logjson.Info("agent audit completed", correlation.Fields(ctx, map[string]any{
 		"service":      "core-api",
@@ -138,7 +138,7 @@ func (t *AuditTask) Run(ctx context.Context) error {
 // Returns "blocked", "skipped", or "reviewed".
 func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, error) {
 	// Skip if domain already has an override (respect admin intent).
-	existing, err := t.store.GetOverride(domain)
+	existing, err := t.store.GetOverride(context.Background(), domain)
 	if err != nil {
 		return "", fmt.Errorf("check override: %w", err)
 	}
@@ -215,7 +215,7 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 	// Decision: auto-block if malicious with high confidence.
 	if verdict == analysis.VerdictMalicious && confidence >= t.config.ConfidenceThreshold {
 		reason := fmt.Sprintf("agent: auto-block (enriched, score=%d, confidence=%.2f)", score, confidence)
-		if err := t.store.UpsertOverride(domain, "block", reason); err != nil {
+		if err := t.store.UpsertOverride(context.Background(), domain, "block", reason); err != nil {
 			return "", fmt.Errorf("upsert override: %w", err)
 		}
 
@@ -226,14 +226,14 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 		}
 
 		details := fmt.Sprintf(`{"score":%d,"confidence":%.2f,"reasons":%q}`, score, confidence, reasons)
-		_ = t.store.RecordAgentEvent("audit", "auto_block", domain, details)
+		_ = t.store.RecordAgentEvent(context.Background(), "audit", "auto_block", domain, details)
 
 		return "blocked", nil
 	}
 
 	// Reviewed but no action.
 	details := fmt.Sprintf(`{"score":%d,"confidence":%.2f,"verdict":"%s"}`, score, confidence, verdict)
-	_ = t.store.RecordAgentEvent("audit", "reviewed", domain, details)
+	_ = t.store.RecordAgentEvent(context.Background(), "audit", "reviewed", domain, details)
 
 	return "reviewed", nil
 }

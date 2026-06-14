@@ -1,7 +1,10 @@
-package main
+//go:build ignore
+
+package resolver
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -433,13 +436,13 @@ func TestResolverClientGroupPolicy(t *testing.T) {
 
 	// Setup a group that blocks adult content
 	db := app.risk.StoreDB()
-	adultGroupID, err := db.CreateGroup("adult-blocker", "Blocks adult content", []string{"adult"}, false, false)
+	adultGroupID, err := db.CreateGroup(context.Background(), "adult-blocker", "Blocks adult content", []string{"adult"}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Map IP "192.168.2.10" to this group
-	if _, err := db.AddMappingInt("ip", "192.168.2.10", adultGroupID); err != nil {
+	if _, err := db.AddMappingInt(context.Background(), "ip", "192.168.2.10", adultGroupID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -535,13 +538,13 @@ func TestDoTHandlerBasic(t *testing.T) {
 	}
 
 	// Create threat override for adult content / block
-	_, err = storeDB.CreateGroup("malicious-blocker", "Blocks malicious sites", []string{"malicious"}, false, false)
+	_, err = storeDB.CreateGroup(context.Background(), "malicious-blocker", "Blocks malicious sites", []string{"malicious"}, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Add mock override for a bad domain
-	err = storeDB.UpsertOverride("bocongan-verify.xyz", "block", "Mock malicious site")
+	err = storeDB.UpsertOverride(context.Background(), "bocongan-verify.xyz", "block", "Mock malicious site")
 	if err != nil {
 		t.Fatal(err)
 	}

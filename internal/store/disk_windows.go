@@ -1,9 +1,10 @@
 //go:build windows
+
 package store
 
 import (
-	"path/filepath"
 	"golang.org/x/sys/windows"
+	"path/filepath"
 )
 
 func getFreeDiskSpace(path string) (float64, error) {

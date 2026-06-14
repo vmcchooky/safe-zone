@@ -83,7 +83,7 @@ func TestWhitelistUpdateTaskSuccess(t *testing.T) {
 	}
 
 	// Verify database contains entries
-	ok, err := db.IsDomainWhitelisted("google.com")
+	ok, err := db.IsDomainWhitelisted(context.Background(), "google.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +103,7 @@ func TestWhitelistUpdateTaskSuccess(t *testing.T) {
 	}
 
 	// Verify audit logs were written
-	events, err := db.QueryAgentEvents(time.Now().Add(-1*time.Hour), []string{"whitelist_update_completed"}, 10)
+	events, err := db.QueryAgentEvents(context.Background(), time.Now().Add(-1*time.Hour), []string{"whitelist_update_completed"}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +128,7 @@ func TestWhitelistUpdateTaskDisabled(t *testing.T) {
 	}
 
 	// Verify nothing in DB
-	list, err := db.GetWhitelist()
+	list, err := db.GetWhitelist(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestWhitelistUpdateTaskHttpFailure(t *testing.T) {
 	}
 
 	// Verify audit logs recorded failure
-	events, err := db.QueryAgentEvents(time.Now().Add(-1*time.Hour), []string{"whitelist_update_failed"}, 10)
+	events, err := db.QueryAgentEvents(context.Background(), time.Now().Add(-1*time.Hour), []string{"whitelist_update_failed"}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}

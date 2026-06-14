@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -29,7 +30,7 @@ func TestWhitelistHybridCorrectness(t *testing.T) {
 	domains := []string{"google.com", "facebook.com", "my-awesome-domain.co.uk"}
 
 	// Save to DB
-	if err := db.UpdateWhitelist(domains); err != nil {
+	if err := db.UpdateWhitelist(context.Background(), domains); err != nil {
 		t.Fatalf("failed to populate whitelist table: %v", err)
 	}
 
@@ -86,7 +87,7 @@ func BenchmarkWhitelistLookup(b *testing.B) {
 	wl := NewWhitelist(db)
 
 	domains := []string{"google.com", "facebook.com", "apple.com", "amazon.com", "github.com"}
-	_ = db.UpdateWhitelist(domains)
+	_ = db.UpdateWhitelist(context.Background(), domains)
 	_ = wl.LoadFromDB()
 
 	b.ResetTimer()

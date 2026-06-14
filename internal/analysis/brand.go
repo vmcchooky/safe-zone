@@ -182,6 +182,27 @@ func (s *MemoryBrandStore) DeleteBrand(_ context.Context, id int64) error {
 	return errors.New("brand not found")
 }
 
+var intSlicePool = sync.Pool{
+	New: func() any {
+		s := make([]int, 0, 64)
+		return &s
+	},
+}
+
+var floatSlicePool = sync.Pool{
+	New: func() any {
+		s := make([]float64, 0, 64)
+		return &s
+	},
+}
+
+var runeSlicePool = sync.Pool{
+	New: func() any {
+		s := make([]rune, 0, 64)
+		return &s
+	},
+}
+
 // LevenshteinDistance calculates the minimum edit distance between two strings using runes.
 func LevenshteinDistance(s1, s2 string) int {
 	r1, r2 := []rune(s1), []rune(s2)
@@ -194,7 +215,17 @@ func LevenshteinDistance(s1, s2 string) int {
 		return len1
 	}
 
-	column := make([]int, len1+1)
+	ptr := intSlicePool.Get().(*[]int)
+	column := *ptr
+	if cap(column) < len1+1 {
+		column = make([]int, len1+1)
+	} else {
+		column = column[:len1+1]
+	}
+	defer func() {
+		*ptr = column
+		intSlicePool.Put(ptr)
+	}()
 	for y := 1; y <= len1; y++ {
 		column[y] = y
 	}
@@ -385,7 +416,19 @@ func IsCDNRoot(rootDomain string) bool {
 // ToSkeleton normalizes homoglyphs in a string into Latin equivalents.
 func ToSkeleton(s string) string {
 	runes := []rune(s)
-	skeleton := make([]rune, len(runes))
+	n := len(runes)
+
+	ptr := runeSlicePool.Get().(*[]rune)
+	skeleton := *ptr
+	if cap(skeleton) < n {
+		skeleton = make([]rune, n)
+	} else {
+		skeleton = skeleton[:n]
+	}
+	defer func() {
+		*ptr = skeleton
+		runeSlicePool.Put(ptr)
+	}()
 	for i, r := range runes {
 		if mapped, ok := homoglyphMap[r]; ok {
 			skeleton[i] = mapped
@@ -408,7 +451,17 @@ func WeightedLevenshteinDistance(s1, s2 string) float64 {
 		return float64(len1)
 	}
 
-	dp := make([]float64, len1+1)
+	ptr := floatSlicePool.Get().(*[]float64)
+	dp := *ptr
+	if cap(dp) < len1+1 {
+		dp = make([]float64, len1+1)
+	} else {
+		dp = dp[:len1+1]
+	}
+	defer func() {
+		*ptr = dp
+		floatSlicePool.Put(ptr)
+	}()
 	for y := 1; y <= len1; y++ {
 		dp[y] = float64(y)
 	}

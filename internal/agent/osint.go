@@ -46,7 +46,7 @@ func (t *OSINTTask) Run(ctx context.Context) error {
 		return nil
 	}
 
-	candidates, err := t.store.QueryRecentAllowedOrSuspiciousDomains(time.Now().Add(-t.config.Lookback), t.config.MaxPerCycle*3)
+	candidates, err := t.store.QueryRecentAllowedOrSuspiciousDomains(context.Background(), time.Now().Add(-t.config.Lookback), t.config.MaxPerCycle*3)
 	if err != nil {
 		return err
 	}
@@ -80,11 +80,11 @@ func (t *OSINTTask) Run(ctx context.Context) error {
 			if _, err := t.redis.SetAdd(ctx, t.config.ThreatKey, candidate.Domain); err == nil {
 				_ = t.redis.Delete(ctx, "safe-zone:analysis:"+candidate.Domain)
 				promoted++
-				_ = t.store.RecordAgentEvent("osint-audit", "threat_feed_promote", candidate.Domain, fmt.Sprintf(`{"evidence":%d}`, len(report.Evidence)))
+				_ = t.store.RecordAgentEvent(context.Background(), "osint-audit", "threat_feed_promote", candidate.Domain, fmt.Sprintf(`{"evidence":%d}`, len(report.Evidence)))
 			}
 		}
 	}
 
-	_ = t.store.RecordAgentEvent("osint-audit", "osint_audit_completed", "", fmt.Sprintf(`{"checked":%d,"promoted":%d,"skipped":%d}`, checked, promoted, skipped))
+	_ = t.store.RecordAgentEvent(context.Background(), "osint-audit", "osint_audit_completed", "", fmt.Sprintf(`{"checked":%d,"promoted":%d,"skipped":%d}`, checked, promoted, skipped))
 	return nil
 }

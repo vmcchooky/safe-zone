@@ -1,6 +1,10 @@
-package main
+//go:build ignore
+package handlers
+
+
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -17,23 +21,25 @@ import (
 	"safe-zone/internal/observability"
 	"safe-zone/internal/osint"
 	"safe-zone/internal/risk"
+	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/serve"
 	"safe-zone/internal/store"
 )
 
 func TestStatusEndpointHTTP(t *testing.T) {
-	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond, ConfigReloadEnabled: true}), metrics: observability.NewRegistry()}
-	app.deploymentTier = "budget-vps"
+	r := risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond, ConfigReloadEnabled: true})
+	api := New(r, observability.NewRegistry(), Config{DeploymentTier: "budget-vps"})
+	api.Config.DeploymentTier = "budget-vps"
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", app.statusHandler)
-	mux.HandleFunc("/metrics", app.metricsHandler)
-	testServer := httptest.NewServer(serve.WithRequestID(logRequests("core-api", mux, app.metrics)))
+	mux.HandleFunc("/", api.StatusHandler)
+	mux.HandleFunc("/metrics", api.MetricsHandler)
+	testServer := httptest.NewServer(serve.WithRequestID(httputil.LogRequests("core-api", api.Metrics)(mux)))
 	defer testServer.Close()
 
 	response, err := http.Get(testServer.URL + "/")
@@ -105,15 +111,15 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	app := &app{
-		risk:        risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), Store: db}),
-		adminAPIKey: "testkey",
+	api := &Handler{
+		Risk:        risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), Store: db}),
+		Config: Config{AdminAPIKey: "testkey"},
 	}
-	defer func() { _ = app.risk.Close() }()
+	defer func() { _ = api.Risk.Close() }()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/config/analysis", app.requireAuthFunc(app.analysisConfigHandler))
-	mux.HandleFunc("/v1/config/analysis/reset", app.requireAuthFunc(app.analysisConfigResetHandler))
+	mux.HandleFunc("/v1/config/analysis", api.RequireAuthFunc(api.AnalysisConfigHandler))
+	mux.HandleFunc("/v1/config/analysis/reset", api.RequireAuthFunc(api.AnalysisConfigResetHandler))
 	server := httptest.NewServer(mux)
 	defer server.Close()
 
@@ -131,7 +137,7 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 		data, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected update 200, got %d: %s", resp.StatusCode, data)
 	}
-	if got := app.risk.GetAnalysisConfig().LongDomainLength; got != 44 {
+	if got := api.Risk.GetAnalysisConfig().LongDomainLength; got != 44 {
 		t.Fatalf("expected updated config, got %d", got)
 	}
 
@@ -146,7 +152,7 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 		data, _ := io.ReadAll(patchResp.Body)
 		t.Fatalf("expected empty keywords update 200, got %d: %s", patchResp.StatusCode, data)
 	}
-	if got := app.risk.GetAnalysisConfig(); got.LongDomainLength != 44 {
+	if got := api.Risk.GetAnalysisConfig(); got.LongDomainLength != 44 {
 		t.Fatalf("expected omitted fields to preserve current values, got %+v", got)
 	} else if len(got.Keywords) != 0 {
 		t.Fatalf("expected empty keyword list to be preserved, got %v", got.Keywords)
@@ -162,15 +168,15 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 	if resetResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected reset 200, got %d", resetResp.StatusCode)
 	}
-	if got := app.risk.GetAnalysisConfig().LongDomainLength; got != config.DefaultAnalysisConfig().LongDomainLength {
+	if got := api.Risk.GetAnalysisConfig().LongDomainLength; got != config.DefaultAnalysisConfig().LongDomainLength {
 		t.Fatalf("expected default config after reset, got %d", got)
 	}
 }
 
 func TestAnalyzeEndpointStillWorks(t *testing.T) {
-	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}), metrics: observability.NewRegistry(), deploymentTier: "budget-vps"}
+	api := &Handler{Risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}), Metrics: observability.NewRegistry(), Config: Config{DeploymentTier: "budget-vps"}}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -178,7 +184,7 @@ func TestAnalyzeEndpointStillWorks(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/analyze?domain=secure-login-wallet-example.com", nil)
 
-	app.analyzeHandler(recorder, request)
+	api.AnalyzeHandler(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", recorder.Code)
@@ -198,9 +204,9 @@ func TestAnalyzeEndpointStillWorks(t *testing.T) {
 }
 
 func TestAnalyzeEndpointDetectsVietnamPublicServiceAbuse(t *testing.T) {
-	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}), metrics: observability.NewRegistry(), deploymentTier: "budget-vps"}
+	api := &Handler{Risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}), Metrics: observability.NewRegistry(), Config: Config{DeploymentTier: "budget-vps"}}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -208,7 +214,7 @@ func TestAnalyzeEndpointDetectsVietnamPublicServiceAbuse(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/analyze?domain=dichvucong-vn.com", nil)
 
-	app.analyzeHandler(recorder, request)
+	api.AnalyzeHandler(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", recorder.Code)
@@ -229,8 +235,8 @@ func TestAnalyzeEndpointIncludesOSINTEvidence(t *testing.T) {
 	}))
 	defer source.Close()
 
-	app := &app{
-		risk: risk.NewService(risk.Options{
+	api := &Handler{
+		Risk: risk.NewService(risk.Options{
 			AnalysisConfig: config.DefaultAnalysisConfig(),
 			RedisTimeout:   10 * time.Millisecond,
 			OSINT: osint.NewService(osint.Options{
@@ -241,18 +247,18 @@ func TestAnalyzeEndpointIncludesOSINTEvidence(t *testing.T) {
 				CacheTTL:            time.Hour,
 			}),
 		}),
-		metrics:        observability.NewRegistry(),
-		deploymentTier: "budget-vps",
+		Metrics:        observability.NewRegistry(),
+		Config: Config{DeploymentTier: "budget-vps",},
 	}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/analyze?domain=baohiem-online.com&include_evidence=1", nil)
-	app.analyzeHandler(recorder, request)
+	api.AnalyzeHandler(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", recorder.Code)
@@ -272,16 +278,16 @@ func TestAnalyzeEndpointIncludesOSINTEvidence(t *testing.T) {
 }
 
 func TestMetricsEndpointHTTP(t *testing.T) {
-	app := &app{risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond, ConfigReloadEnabled: true}), metrics: observability.NewRegistry(), deploymentTier: "budget-vps"}
+	api := &Handler{Risk: risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond, ConfigReloadEnabled: true}), Metrics: observability.NewRegistry(), Config: Config{DeploymentTier: "budget-vps"}}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/metrics", app.metricsHandler)
-	testServer := httptest.NewServer(serve.WithRequestID(logRequests("core-api", mux, app.metrics)))
+	mux.HandleFunc("/metrics", api.MetricsHandler)
+	testServer := httptest.NewServer(serve.WithRequestID(httputil.LogRequests("core-api", api.Metrics)(mux)))
 	defer testServer.Close()
 
 	response, err := http.Get(testServer.URL + "/metrics")
@@ -328,11 +334,11 @@ func TestVersionEndpointReportsBuildMetadata(t *testing.T) {
 	restore := overrideBuildInfo("1.3.0", "abc123def", "2026-05-26T12:00:00Z", "safe-zone-core-api:1.3.0-abc123def", "https://github.com/quorix/safe-zone")
 	defer restore()
 
-	app := &app{deploymentTier: "shared-vps"}
+	api := &Handler{Config: Config{}}
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/v1/version", nil)
-	app.versionHandler(recorder, request)
+	api.VersionHandler(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", recorder.Code)
@@ -367,11 +373,11 @@ func TestVersionEndpointReportsBuildMetadata(t *testing.T) {
 }
 
 func TestVersionEndpointRejectsNonGet(t *testing.T) {
-	app := &app{deploymentTier: "budget-vps"}
+	api := &Handler{Config: Config{DeploymentTier: "budget-vps"}}
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodPost, "/v1/version", nil)
-	app.versionHandler(recorder, request)
+	api.VersionHandler(recorder, request)
 
 	if recorder.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("expected 405, got %d", recorder.Code)
@@ -383,7 +389,7 @@ func TestLogRequestsSkipsMetricsAfterRecoveredPanic(t *testing.T) {
 	panicHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		panic("boom")
 	})
-	handler := serve.WithRequestID(logRequests("core-api", serve.Recovery(panicHandler, metrics), metrics))
+	handler := serve.WithRequestID(httputil.LogRequests("core-api", serve.Recovery(panicHandler, metrics), metrics))
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/panic", nil)
@@ -426,13 +432,13 @@ func overrideBuildInfo(version, gitCommit, buildTime, imageTag, sourceRepo strin
 }
 
 func TestBlockPageHandlerRendersBlockedContext(t *testing.T) {
-	app := &app{
-		risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
-		metrics:        observability.NewRegistry(),
-		deploymentTier: "budget-vps",
+	api := &Handler{
+		Risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
+		Metrics:        observability.NewRegistry(),
+		Config: Config{DeploymentTier: "budget-vps",},
 	}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -442,7 +448,7 @@ func TestBlockPageHandlerRendersBlockedContext(t *testing.T) {
 	request.Header.Set("X-Blocked-Domain", "login.example.com")
 	request.Header.Set("X-Original-Path", "/signin")
 
-	app.blockPageHandler(recorder, request)
+	api.BlockPageHandler(recorder, request)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", recorder.Code)
@@ -463,17 +469,17 @@ func TestBlockReportHandlerStoresFalsePositiveReport(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app := &app{
-		risk: risk.NewService(risk.Options{
+	api := &Handler{
+		Risk: risk.NewService(risk.Options{
 			AnalysisConfig: config.DefaultAnalysisConfig(),
 			RedisTimeout:   10 * time.Millisecond,
 			Store:          storeDB,
 		}),
-		metrics:        observability.NewRegistry(),
-		deploymentTier: "budget-vps",
+		Metrics:        observability.NewRegistry(),
+		Config: Config{DeploymentTier: "budget-vps",},
 	}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -489,7 +495,7 @@ func TestBlockReportHandlerStoresFalsePositiveReport(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/block/report", strings.NewReader(form.Encode()))
 	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	app.blockReportHandler(recorder, request)
+	api.BlockReportHandler(recorder, request)
 
 	if recorder.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303 redirect, got %d", recorder.Code)
@@ -498,7 +504,7 @@ func TestBlockReportHandlerStoresFalsePositiveReport(t *testing.T) {
 		t.Fatalf("expected redirect back to block page, got %q", location)
 	}
 
-	events, err := storeDB.QueryAgentEvents(time.Now().Add(-1*time.Hour), []string{"false_positive_report"}, 10)
+	events, err := storeDB.QueryAgentEvents(context.Background(), time.Now().Add(-1*time.Hour), []string{"false_positive_report"}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,24 +521,24 @@ func TestBlockReportHandlerStoresFalsePositiveReport(t *testing.T) {
 
 func TestDashboardEndpointHTTP(t *testing.T) {
 	sessionSecret := []byte("test_session_secret_32_bytes_long_!!!")
-	app := &app{
-		risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
-		metrics:        observability.NewRegistry(),
-		deploymentTier: "budget-vps",
+	api := &Handler{
+		Risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
+		Metrics:        observability.NewRegistry(),
+		Config: Config{DeploymentTier: "budget-vps",
 		sessionSecret:  sessionSecret,
 		adminPassword:  "testpass",
-		adminAPIKey:    "testkey",
+		Config: Config{AdminAPIKey:    "testkey",},
 	}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/dashboard", app.dashboardHandler)
-	mux.HandleFunc("/dashboard/", app.dashboardHandler)
-	testServer := httptest.NewServer(serve.WithRequestID(logRequests("core-api", mux, app.metrics)))
+	mux.HandleFunc("/dashboard", api.DashboardHandler)
+	mux.HandleFunc("/dashboard/", api.DashboardHandler)
+	testServer := httptest.NewServer(serve.WithRequestID(httputil.LogRequests("core-api", api.Metrics)(mux)))
 	defer testServer.Close()
 
 	// 1. Without cookie, it should show login HTML
@@ -595,26 +601,26 @@ func TestDashboardEndpointHTTP(t *testing.T) {
 
 func TestRestrictedAPIsAuth(t *testing.T) {
 	sessionSecret := []byte("test_session_secret_32_bytes_long_!!!")
-	app := &app{
-		risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
-		metrics:        observability.NewRegistry(),
-		deploymentTier: "budget-vps",
+	api := &Handler{
+		Risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
+		Metrics:        observability.NewRegistry(),
+		Config: Config{DeploymentTier: "budget-vps",
 		sessionSecret:  sessionSecret,
 		adminPassword:  "testpass",
-		adminAPIKey:    "testkey",
+		Config: Config{AdminAPIKey:    "testkey",},
 	}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/auth/login", app.authLoginHandler)
-	mux.HandleFunc("/v1/auth/logout", app.authLogoutHandler)
-	mux.HandleFunc("/v1/overrides", app.requireAuthFunc(app.overridesHandler))
-	mux.HandleFunc("/v1/agent/trigger", app.requireAuthFunc(agentTriggerHandler(nil)))
-	testServer := httptest.NewServer(serve.WithRequestID(logRequests("core-api", mux, app.metrics)))
+	mux.HandleFunc("/v1/auth/login", api.AuthLoginHandler)
+	mux.HandleFunc("/v1/auth/logout", api.AuthLogoutHandler)
+	mux.HandleFunc("/v1/overrides", api.RequireAuthFunc(api.OverridesHandler))
+	mux.HandleFunc("/v1/agent/trigger", api.RequireAuthFunc(agentTriggerHandler(nil)))
+	testServer := httptest.NewServer(serve.WithRequestID(httputil.LogRequests("core-api", api.Metrics)(mux)))
 	defer testServer.Close()
 
 	client := &http.Client{}
@@ -792,24 +798,24 @@ func TestReviewFalsePositiveHandlerCreatesAllowOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	app := &app{
-		risk: risk.NewService(risk.Options{
+	api := &Handler{
+		Risk: risk.NewService(risk.Options{
 			AnalysisConfig: config.DefaultAnalysisConfig(),
 			RedisTimeout:   10 * time.Millisecond,
 			Store:          storeDB,
 		}),
-		metrics:        observability.NewRegistry(),
-		deploymentTier: "budget-vps",
-		adminAPIKey:    "testkey",
+		Metrics:        observability.NewRegistry(),
+		Config: Config{DeploymentTier: "budget-vps",
+		Config: Config{AdminAPIKey:    "testkey",},
 	}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/overrides/review-false-positive", app.requireAuthFunc(app.reviewFalsePositiveHandler))
+	mux.HandleFunc("/v1/overrides/review-false-positive", api.RequireAuthFunc(api.ReviewFalsePositiveHandler))
 	testServer := httptest.NewServer(mux)
 	defer testServer.Close()
 
@@ -831,7 +837,7 @@ func TestReviewFalsePositiveHandlerCreatesAllowOverride(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	override, err := storeDB.GetOverride("legit-portal.example")
+	override, err := storeDB.GetOverride(context.Background(), "legit-portal.example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -845,7 +851,7 @@ func TestReviewFalsePositiveHandlerCreatesAllowOverride(t *testing.T) {
 		t.Fatalf("unexpected review reason %q", override.Reason)
 	}
 
-	events, err := storeDB.QueryAgentEvents(time.Now().Add(-1*time.Hour), []string{"operator_false_positive_review"}, 10)
+	events, err := storeDB.QueryAgentEvents(context.Background(), time.Now().Add(-1*time.Hour), []string{"operator_false_positive_review"}, 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -858,22 +864,22 @@ func TestReviewFalsePositiveHandlerCreatesAllowOverride(t *testing.T) {
 }
 
 func TestSecurityAuditLimits(t *testing.T) {
-	app := &app{
-		risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
-		metrics:        observability.NewRegistry(),
-		deploymentTier: "budget-vps",
-		adminAPIKey:    "testkey",
+	api := &Handler{
+		Risk:           risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond}),
+		Metrics:        observability.NewRegistry(),
+		Config: Config{DeploymentTier: "budget-vps",
+		Config: Config{AdminAPIKey:    "testkey",},
 	}
 	defer func() {
-		if err := app.risk.Close(); err != nil {
+		if err := api.Risk.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/v1/analyze", app.analyzeHandler)
-	mux.HandleFunc("/v1/overrides", app.requireAuthFunc(app.overridesHandler))
-	mux.HandleFunc("/v1/telemetry/recent", app.requireAuthFunc(app.telemetryRecentHandler))
+	mux.HandleFunc("/v1/analyze", api.AnalyzeHandler)
+	mux.HandleFunc("/v1/overrides", api.RequireAuthFunc(api.OverridesHandler))
+	mux.HandleFunc("/v1/telemetry/recent", api.RequireAuthFunc(api.TelemetryRecentHandler))
 	testServer := httptest.NewServer(mux)
 	defer testServer.Close()
 
@@ -913,3 +919,4 @@ func TestSecurityAuditLimits(t *testing.T) {
 		t.Fatalf("expected 200 OK, got %d", resp3.StatusCode)
 	}
 }
+

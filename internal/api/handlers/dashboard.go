@@ -1,8 +1,9 @@
-package main
+package handlers
 
 import (
 	"embed"
 	"net/http"
+	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/auth"
 )
 
@@ -13,11 +14,11 @@ var dashboardHTML string
 var loginHTML string
 
 //go:embed assets/*
-var assetsFS embed.FS
+var AssetsFS embed.FS
 
-func (a *app) dashboardHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
@@ -31,7 +32,7 @@ func (a *app) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify cookie
-	_, err = auth.VerifySessionCookieValue(cookie.Value, a.sessionSecret)
+	_, err = auth.VerifySessionCookieValue(cookie.Value, h.Config.SessionSecret)
 	if err != nil {
 		// Session is invalid or expired; clear cookie and show login page
 		http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is dynamically set via isHTTPS(r)
