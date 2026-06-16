@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"safe-zone/internal/cache"
 	"safe-zone/internal/config"
 	"safe-zone/internal/correlation"
+	"safe-zone/internal/domaintrie"
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
 	"safe-zone/internal/osint"
@@ -128,6 +131,8 @@ type Service struct {
 	enrichmentLookup  func(context.Context, string) enrichmentSignals
 	whoisCacheTTL     time.Duration
 	osint             *osint.Service
+
+	adblockTrie       *domaintrie.Trie
 }
 
 type ClientInfo struct {
@@ -312,6 +317,7 @@ func NewService(options Options) *Service {
 		enrichInFlight:   make(map[string]struct{}),
 		whoisCacheTTL:    configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
 		osint:            options.OSINT,
+		adblockTrie:      domaintrie.NewTrie(),
 	}
 	if svc.redis != nil {
 		svc.subscribeReload = svc.redis.Subscribe
@@ -333,6 +339,9 @@ func NewService(options Options) *Service {
 		svc.configReloadWG.Add(1)
 		go svc.runConfigReloadReconciler()
 	}
+	
+	go svc.runAdblockSync()
+
 	return svc
 }
 
@@ -799,6 +808,29 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		return policyResult
 	}
 
+	// 3.5 Check Adblock Trie
+	if s.isAdblockEnabled() && s.adblockTrie != nil && s.adblockTrie.Match(normalized) {
+		policyResult := Policy{
+			Domain: normalized,
+			Policy: "block",
+			Result: analysis.Result{
+				Domain:     normalized,
+				Verdict:    analysis.VerdictMalicious,
+				Confidence: 1.0,
+				Score:      100,
+				Reasons:    []string{"adblock"},
+				Category:   "adware",
+			},
+			CacheHit: false,
+		}
+		s.recordTelemetry(Analysis{
+			Result:     policyResult.Result,
+			CacheHit:   false,
+			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		}, client)
+		return policyResult
+	}
+
 	// 4. Get Threat Assessment
 	result, cacheHit, _ := s.analyze(ctx, normalized, osintLookupCachedOnly, false)
 
@@ -1052,6 +1084,99 @@ func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result
 		Score:      100,
 		Reasons:    []string{threatFeedReason},
 	}
+}
+
+func (s *Service) isAdblockEnabled() bool {
+	if s.store != nil && s.store.Enabled() {
+		val, err := s.store.GetSystemConfig(context.Background(), "adblock_enabled")
+		if err == nil && val != "" {
+			return val == "true" || val == "1"
+		}
+	}
+	return config.Bool("SAFE_ZONE_ADBLOCK_ENABLED", true)
+}
+
+func (s *Service) runAdblockSync() {
+	// First initial sync immediately if enabled
+	if s.isAdblockEnabled() {
+		s.syncAdblockLists()
+	}
+
+	ticker := time.NewTicker(config.DurationSeconds("SAFE_ZONE_ADBLOCK_INTERVAL_SECONDS", 12*time.Hour))
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.lifecycleCtx.Done():
+			return
+		case <-ticker.C:
+			if s.isAdblockEnabled() {
+				s.syncAdblockLists()
+			} else {
+				s.adblockTrie.Clear()
+			}
+		}
+	}
+}
+
+func (s *Service) syncAdblockLists() {
+	sources := config.String("SAFE_ZONE_ADBLOCK_SOURCES", "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
+	if sources == "" {
+		return
+	}
+
+	// Clear first, then insert directly to minimize RAM overhead
+	s.adblockTrie.Clear()
+
+	for _, source := range strings.Split(sources, ",") {
+		source = strings.TrimSpace(source)
+		if source == "" {
+			continue
+		}
+		
+		client := &http.Client{Timeout: 30 * time.Second}
+		req, err := http.NewRequestWithContext(s.lifecycleCtx, http.MethodGet, source, nil)
+		if err != nil {
+			logjson.Warn("failed to create request for adblock source", map[string]any{"source": source, "error": err.Error()})
+			continue
+		}
+		
+		resp, err := client.Do(req)
+		if err != nil {
+			logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
+			continue
+		}
+		
+		func() {
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				logjson.Warn("adblock source returned non-200", map[string]any{"source": source, "status": resp.StatusCode})
+				return
+			}
+			
+			scanner := bufio.NewScanner(resp.Body)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				
+				parts := strings.Fields(line)
+				var domain string
+				if len(parts) >= 2 && (parts[0] == "0.0.0.0" || parts[0] == "127.0.0.1") {
+					domain = parts[1]
+				} else if len(parts) == 1 {
+					domain = parts[0]
+				}
+				
+				if domain != "" && domain != "localhost" && domain != "local" && domain != "broadcasthost" {
+					s.adblockTrie.Add(domain)
+				}
+			}
+		}()
+	}
+	
+	logjson.Info("adblock trie synchronized", map[string]any{"domains": s.adblockTrie.Count()})
 }
 
 func (s *Service) syncAIClient() {
