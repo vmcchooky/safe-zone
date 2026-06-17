@@ -2,6 +2,7 @@ package risk
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -364,5 +365,69 @@ func TestAdblockSyncFallsBackToSourceCacheWhenRemoteFails(t *testing.T) {
 	result := service.Analyze(context.Background(), "sub.resilient-cache.test", ClientInfo{})
 	if result.Verdict != analysis.VerdictMalicious {
 		t.Fatalf("expected cached source to survive remote failure, got %s", result.Verdict)
+	}
+}
+
+type coordinatedAdblockReader struct {
+	payload []byte
+	ready   *sync.WaitGroup
+	release <-chan struct{}
+	offset  int
+	waited  bool
+}
+
+func (r *coordinatedAdblockReader) Read(p []byte) (int, error) {
+	if !r.waited {
+		r.waited = true
+		r.ready.Done()
+		<-r.release
+	}
+	if r.offset >= len(r.payload) {
+		return 0, io.EOF
+	}
+	n := copy(p, r.payload[r.offset:])
+	r.offset += n
+	return n, nil
+}
+
+func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
+	tempDir := t.TempDir()
+	serviceA := &Service{adblockDataRoot: tempDir}
+	serviceB := &Service{adblockDataRoot: tempDir}
+	source := "https://example.com/adblock.txt"
+
+	var ready sync.WaitGroup
+	ready.Add(2)
+	release := make(chan struct{})
+	errCh := make(chan error, 2)
+
+	runSave := func(service *Service) {
+		trie := domaintrie.NewTrie()
+		reader := &coordinatedAdblockReader{
+			payload: []byte("0.0.0.0 ads.concurrent.test\n"),
+			ready:   &ready,
+			release: release,
+		}
+		errCh <- service.saveAdblockSourceCache(source, reader, trie)
+	}
+
+	go runSave(serviceA)
+	go runSave(serviceB)
+
+	ready.Wait()
+	close(release)
+
+	for i := 0; i < 2; i++ {
+		if err := <-errCh; err != nil {
+			t.Fatalf("expected concurrent cache writes to succeed, got %v", err)
+		}
+	}
+
+	loadedTrie := domaintrie.NewTrie()
+	if !serviceA.loadAdblockSourceCache(source, loadedTrie) {
+		t.Fatal("expected source cache to be readable after concurrent writes")
+	}
+	if !loadedTrie.Match("ads.concurrent.test") {
+		t.Fatal("expected concurrent cache write to persist domain entry")
 	}
 }

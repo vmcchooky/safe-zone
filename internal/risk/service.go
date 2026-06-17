@@ -53,6 +53,8 @@ const (
 	configReloadSourceReconcile   = "reconcile"
 )
 
+var replaceFileLocks sync.Map
+
 type Options struct {
 	Redis           *cache.Redis
 	RedisTimeout    time.Duration
@@ -1133,14 +1135,12 @@ func (s *Service) isAdblockEnabled() bool {
 // refreshAdblockEnabled reads the adblock_enabled flag from store/env
 // and caches it atomically. Safe to call from any goroutine.
 func (s *Service) refreshAdblockEnabled() {
-	enabled := true // default
+	enabled := config.Bool("SAFE_ZONE_ADBLOCK_ENABLED", true)
 	if s.store != nil && s.store.Enabled() {
 		val, err := s.store.GetSystemConfig(context.Background(), "adblock_enabled")
 		if err == nil && val != "" {
 			enabled = val == "true" || val == "1"
 		}
-	} else {
-		enabled = config.Bool("SAFE_ZONE_ADBLOCK_ENABLED", true)
 	}
 	s.adblockEnabled.Store(enabled)
 }
@@ -1232,10 +1232,25 @@ func (s *Service) ensureAdblockSourceCacheRoot() error {
 }
 
 func replaceFile(tmpPath, finalPath string) error {
+	lock, _ := replaceFileLocks.LoadOrStore(finalPath, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	mu.Lock()
+	defer mu.Unlock()
+
 	if err := os.Remove(finalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return os.Rename(tmpPath, finalPath)
+}
+
+func createReplaceTempFile(finalPath string) (*os.File, string, error) {
+	dir := filepath.Dir(finalPath)
+	pattern := filepath.Base(finalPath) + ".tmp-*"
+	f, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return nil, "", err
+	}
+	return f, f.Name(), nil
 }
 
 func isRemoteAdblockSource(source string) bool {
@@ -1271,8 +1286,22 @@ func (s *Service) saveAdblockMeta(metaPath string, meta map[string]adblockSource
 		logjson.Warn("failed to create adblock data root", map[string]any{"error": err.Error()})
 		return
 	}
-	tmpMeta := metaPath + ".tmp"
-	if err := os.WriteFile(tmpMeta, metaData, 0o644); err != nil {
+	f, tmpMeta, err := createReplaceTempFile(metaPath)
+	if err != nil {
+		return
+	}
+	if _, err := f.Write(metaData); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpMeta)
+		return
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmpMeta)
+		return
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmpMeta)
 		return
 	}
 	if err := replaceFile(tmpMeta, metaPath); err != nil {
@@ -1319,8 +1348,7 @@ func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *
 		return err
 	}
 	finalPath := s.adblockSourceCachePath(source)
-	tmpPath := finalPath + ".tmp"
-	f, err := os.Create(tmpPath)
+	f, tmpPath, err := createReplaceTempFile(finalPath)
 	if err != nil {
 		return err
 	}
@@ -1521,8 +1549,7 @@ func (s *Service) saveAdblockCache(trie *domaintrie.Trie) {
 		return
 	}
 	finalPath := s.adblockCachePath()
-	tmpPath := finalPath + ".tmp"
-	f, err := os.Create(tmpPath)
+	f, tmpPath, err := createReplaceTempFile(finalPath)
 	if err != nil {
 		logjson.Warn("failed to create adblock cache temp file", map[string]any{"error": err.Error()})
 		return

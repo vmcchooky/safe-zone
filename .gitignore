@@ -33,5 +33,8 @@ coverage.txt
 
 # Runtime adblock cache/meta
 **/adblock_cache.txt
+**/adblock_cache.txt.tmp*
 **/adblock_meta.json
+**/adblock_meta.json.tmp*
 **/adblock_sources/
+**/adblock_sources/*.tmp*
