@@ -5339,6 +5339,10 @@ button {
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
 }
 
+.guest-banner[hidden] {
+  display: none !important;
+}
+
 .guest-banner strong {
   font-size: 0.82rem;
   letter-spacing: 0.08em;

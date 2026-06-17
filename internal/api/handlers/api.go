@@ -60,7 +60,7 @@ func HealthHandler(service string) http.HandlerFunc {
 }
 
 func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
+	if r.URL.Path != "/" && r.URL.Path != "/v1/status" {
 		http.NotFound(w, r)
 		return
 	}
@@ -84,6 +84,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		Adblock:        &adblockStatus,
 		Endpoints: []string{
 			"/",
+			"/v1/status",
 			"/healthz",
 			"/readyz",
 			"/block",
@@ -1082,6 +1083,12 @@ type settingsRequest struct {
 	TelemetryRetentionDays int    `json:"telemetry_retention_days"`
 }
 
+type settingsBundleResponse struct {
+	Settings       settingsResponse          `json:"settings"`
+	AnalysisConfig config.AnalysisConfig     `json:"analysis_config"`
+	GuestAccess    guestAccessStatusResponse `json:"guest_access"`
+}
+
 type testAlertEvent struct {
 	Type      string `json:"type"`
 	Domain    string `json:"domain,omitempty"`
@@ -1106,6 +1113,28 @@ func maskConfigValue(val string) string {
 	return val[:4] + strings.Repeat("*", len(val)-4)
 }
 
+func (h *Handler) loadSettingsResponse(ctx context.Context) (settingsResponse, error) {
+	db := h.Risk.StoreDB()
+	if db == nil || !db.Enabled() {
+		return settingsResponse{}, fmt.Errorf("database not configured")
+	}
+
+	apiKey, err := db.GetSystemConfig(ctx, "gemini_api_key")
+	if err != nil {
+		return settingsResponse{}, fmt.Errorf("failed to get gemini_api_key: %w", err)
+	}
+	webhookURL, err := db.GetSystemConfig(ctx, "agent_webhook_url")
+	if err != nil {
+		return settingsResponse{}, fmt.Errorf("failed to get agent_webhook_url: %w", err)
+	}
+
+	return settingsResponse{
+		GeminiAPIKey:           maskConfigValue(apiKey),
+		AgentWebhookURL:        maskConfigValue(webhookURL),
+		TelemetryRetentionDays: db.GetRetentionDays(ctx),
+	}, nil
+}
+
 func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	db := h.Risk.StoreDB()
 	if db == nil || !db.Enabled() {
@@ -1115,22 +1144,12 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case http.MethodGet:
-		apiKey, err := db.GetSystemConfig(r.Context(), "gemini_api_key")
+		resp, err := h.loadSettingsResponse(r.Context())
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, "failed to get gemini_api_key: "+err.Error())
+			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		webhookURL, err := db.GetSystemConfig(r.Context(), "agent_webhook_url")
-		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, "failed to get agent_webhook_url: "+err.Error())
-			return
-		}
-
-		httputil.WriteJSON(w, http.StatusOK, settingsResponse{
-			GeminiAPIKey:           maskConfigValue(apiKey),
-			AgentWebhookURL:        maskConfigValue(webhookURL),
-			TelemetryRetentionDays: db.GetRetentionDays(r.Context()),
-		})
+		httputil.WriteJSON(w, http.StatusOK, resp)
 
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 8192)
@@ -1189,6 +1208,30 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	default:
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+func (h *Handler) SettingsBundleHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	settings, err := h.loadSettingsResponse(r.Context())
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	guestCfg, err := h.loadGuestAccessConfig(r.Context())
+	if err != nil {
+		httputil.WriteError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
+
+	httputil.WriteJSON(w, http.StatusOK, settingsBundleResponse{
+		Settings:       settings,
+		AnalysisConfig: h.Risk.GetAnalysisConfig(),
+		GuestAccess:    guestAccessStatus(guestCfg),
+	})
 }
 
 func (h *Handler) AnalysisConfigHandler(w http.ResponseWriter, r *http.Request) {

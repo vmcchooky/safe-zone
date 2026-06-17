@@ -15,6 +15,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 
 	// System & Health
 	mux.HandleFunc("/", h.StatusHandler)
+	mux.HandleFunc("/v1/status", h.StatusHandler)
 	mux.HandleFunc("/healthz", handlers.HealthHandler("core-api"))
 	mux.HandleFunc("/readyz", handlers.HealthHandler("core-api"))
 	mux.HandleFunc("/v1/version", h.VersionHandler)
@@ -60,6 +61,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 
 	// Settings & Testing
 	mux.HandleFunc("/v1/settings", h.RequireAdminFunc(h.SettingsHandler))
+	mux.HandleFunc("/v1/settings/bundle", h.RequireAdminFunc(h.SettingsBundleHandler))
 	mux.HandleFunc("/v1/settings/test-ai", h.RequireAdminFunc(h.TestAIHandler))
 	mux.HandleFunc("/v1/settings/test-alert", h.RequireAdminFunc(h.TestAlertHandler))
 	mux.HandleFunc("/v1/settings/guest-access", h.RequireAdminFunc(h.GuestAccessHandler))
