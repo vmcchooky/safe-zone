@@ -56,6 +56,13 @@ type SyncReport struct {
 	FeedRevision      int64      `json:"feed_revision,omitempty"`
 }
 
+type OpenSourceResponse struct {
+	Reader     io.ReadCloser
+	Close      func()
+	StatusCode int
+	Header     http.Header
+}
+
 func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	if strings.TrimSpace(options.Source) == "" {
 		return SyncReport{}, errors.New("feed source is required")
@@ -232,6 +239,14 @@ func OpenSource(ctx context.Context, source string, client *http.Client) (io.Rea
 }
 
 func OpenSourceWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64) (io.ReadCloser, func(), error) {
+	resp, err := OpenSourceResponseWithin(ctx, source, client, fileRoot, maxBytes, nil)
+	if err != nil {
+		return nil, func() {}, err
+	}
+	return resp.Reader, resp.Close, nil
+}
+
+func OpenSourceResponseWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64, requestHeaders http.Header) (OpenSourceResponse, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -242,40 +257,63 @@ func OpenSourceWithin(ctx context.Context, source string, client *http.Client, f
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 		if err != nil {
-			return nil, func() {}, err
+			return OpenSourceResponse{}, err
+		}
+		for key, values := range requestHeaders {
+			for _, value := range values {
+				req.Header.Add(key, value)
+			}
 		}
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return nil, func() {}, err
+			return OpenSourceResponse{}, err
+		}
+		if resp.StatusCode == http.StatusNotModified {
+			_ = resp.Body.Close()
+			return OpenSourceResponse{
+				Close:      func() {},
+				StatusCode: resp.StatusCode,
+				Header:     resp.Header.Clone(),
+			}, nil
 		}
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			_ = resp.Body.Close()
-			return nil, func() {}, fmt.Errorf("feed source returned HTTP %d", resp.StatusCode)
+			return OpenSourceResponse{}, fmt.Errorf("feed source returned HTTP %d", resp.StatusCode)
 		}
 
 		reader, closeReader, err := wrapMaybeCompressedReadCloser(resp.Body, source, resp.Header.Get("Content-Encoding"))
 		if err != nil {
-			return nil, func() {}, err
+			return OpenSourceResponse{}, err
 		}
-		return limitReadCloser(reader, maxBytes), closeReader, nil
+		return OpenSourceResponse{
+			Reader:     limitReadCloser(reader, maxBytes),
+			Close:      closeReader,
+			StatusCode: resp.StatusCode,
+			Header:     resp.Header.Clone(),
+		}, nil
 	}
 
 	file, err := safefile.OpenWithin(fileRoot, source)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, func() {}, fmt.Errorf("feed source file does not exist: %s", source)
+			return OpenSourceResponse{}, fmt.Errorf("feed source file does not exist: %s", source)
 		}
-		return nil, func() {}, err
+		return OpenSourceResponse{}, err
 	}
 
 	reader, closeReader, err := wrapMaybeCompressedReadCloser(file, source, "")
 	if err != nil {
 		_ = file.Close()
-		return nil, func() {}, err
+		return OpenSourceResponse{}, err
 	}
 
-	return limitReadCloser(reader, maxBytes), closeReader, nil
+	return OpenSourceResponse{
+		Reader:     limitReadCloser(reader, maxBytes),
+		Close:      closeReader,
+		StatusCode: 0,
+		Header:     nil,
+	}, nil
 }
 
 func wrapMaybeCompressedReadCloser(body io.ReadCloser, source string, contentEncoding string) (io.ReadCloser, func(), error) {

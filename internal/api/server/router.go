@@ -27,6 +27,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 	// Authentication
 	mux.HandleFunc("/v1/auth/login", h.AuthLoginHandler)
 	mux.HandleFunc("/v1/auth/logout", h.AuthLogoutHandler)
+	mux.HandleFunc("/v1/auth/session", h.RequireAuthFunc(h.AuthSessionHandler))
 
 	// Analysis & OSINT
 	mux.HandleFunc("/v1/analyze", h.AnalyzeHandler)
@@ -34,15 +35,15 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 	mux.HandleFunc("/v1/analysis/recent", h.RecentAnalysisHandler)
 
 	// Admin / Overrides
-	mux.HandleFunc("/v1/overrides", h.RequireAuthFunc(h.OverridesHandler))
-	mux.HandleFunc("/v1/overrides/review-false-positive", h.RequireAuthFunc(h.ReviewFalsePositiveHandler))
+	mux.HandleFunc("/v1/overrides", h.RequireAdminForMutationFunc(h.OverridesHandler))
+	mux.HandleFunc("/v1/overrides/review-false-positive", h.RequireAdminFunc(h.ReviewFalsePositiveHandler))
 
 	// Reports
 	mux.HandleFunc("/v1/reports", h.RequireAuthFunc(h.ListReportsHandler))
-	mux.HandleFunc("/v1/reports/status", h.RequireAuthFunc(h.UpdateReportStatusHandler))
+	mux.HandleFunc("/v1/reports/status", h.RequireAdminFunc(h.UpdateReportStatusHandler))
 
 	// Brands
-	mux.HandleFunc("/v1/brands", h.RequireAuthFunc(serve.BrandHandler(h.Risk)))
+	mux.HandleFunc("/v1/brands", h.RequireAdminForMutationFunc(serve.BrandHandler(h.Risk)))
 
 	// Telemetry
 	mux.HandleFunc("/v1/telemetry/recent", h.RequireAuthFunc(h.TelemetryRecentHandler))
@@ -50,21 +51,22 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 
 	// Agent & System control
 	mux.HandleFunc("/v1/agent/status", h.RequireAuthFunc(h.AgentStatusHandler(agentEngine)))
-	mux.HandleFunc("/v1/agent/trigger", h.RequireAuthFunc(handlers.AgentTriggerHandler(agentEngine)))
+	mux.HandleFunc("/v1/agent/trigger", h.RequireAdminFunc(handlers.AgentTriggerHandler(agentEngine)))
 
 	// Groups & Mappings
-	mux.HandleFunc("/v1/groups", h.RequireAuthFunc(h.GroupsHandler))
-	mux.HandleFunc("/v1/mappings", h.RequireAuthFunc(h.MappingsHandler))
-	mux.HandleFunc("/v1/group-overrides", h.RequireAuthFunc(h.GroupOverridesHandler))
+	mux.HandleFunc("/v1/groups", h.RequireAdminForMutationFunc(h.GroupsHandler))
+	mux.HandleFunc("/v1/mappings", h.RequireAdminForMutationFunc(h.MappingsHandler))
+	mux.HandleFunc("/v1/group-overrides", h.RequireAdminForMutationFunc(h.GroupOverridesHandler))
 
 	// Settings & Testing
-	mux.HandleFunc("/v1/settings", h.RequireAuthFunc(h.SettingsHandler))
-	mux.HandleFunc("/v1/settings/test-ai", h.RequireAuthFunc(h.TestAIHandler))
-	mux.HandleFunc("/v1/settings/test-alert", h.RequireAuthFunc(h.TestAlertHandler))
+	mux.HandleFunc("/v1/settings", h.RequireAdminFunc(h.SettingsHandler))
+	mux.HandleFunc("/v1/settings/test-ai", h.RequireAdminFunc(h.TestAIHandler))
+	mux.HandleFunc("/v1/settings/test-alert", h.RequireAdminFunc(h.TestAlertHandler))
+	mux.HandleFunc("/v1/settings/guest-access", h.RequireAdminFunc(h.GuestAccessHandler))
 
 	// Config
-	mux.HandleFunc("/v1/config/analysis", h.RequireAuthFunc(h.AnalysisConfigHandler))
-	mux.HandleFunc("/v1/config/analysis/reset", h.RequireAuthFunc(h.AnalysisConfigResetHandler))
+	mux.HandleFunc("/v1/config/analysis", h.RequireAdminFunc(h.AnalysisConfigHandler))
+	mux.HandleFunc("/v1/config/analysis/reset", h.RequireAdminFunc(h.AnalysisConfigResetHandler))
 
 	// Static Assets & Dashboard
 	if assetsFS != nil {

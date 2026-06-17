@@ -5281,9 +5281,9 @@ button {
     gap: 8px;
   }
 
-  .pagination button {
-    flex: 0 0 auto;
-  }
+.pagination button {
+  flex: 0 0 auto;
+}
 }
 
 @media (max-width: 540px) {
@@ -5323,4 +5323,29 @@ button {
   .period-switcher .period-bar {
     flex: 1 1 auto;
   }
+}
+
+.guest-banner {
+  display: grid;
+  gap: 6px;
+  margin: 0 16px 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(246, 185, 75, 0.34);
+  border-radius: 18px;
+  color: #ffe6a8;
+  background:
+    linear-gradient(135deg, rgba(246, 185, 75, 0.14), rgba(255, 95, 134, 0.08)),
+    rgba(13, 17, 27, 0.9);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
+}
+
+.guest-banner strong {
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.guest-banner span {
+  color: var(--ink);
+  line-height: 1.55;
 }

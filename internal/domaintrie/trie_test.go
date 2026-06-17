@@ -184,3 +184,30 @@ func TestTrieDuplicateAdd(t *testing.T) {
 		t.Errorf("Expected count 1 after duplicate adds, got %d", count)
 	}
 }
+
+func TestTrieWildcardPrefixSanitized(t *testing.T) {
+	trie := NewTrie()
+	trie.Add("*.ads.example.com")
+
+	if count := trie.Count(); count != 1 {
+		t.Fatalf("Expected wildcard entry to normalize into one domain, got count %d", count)
+	}
+	if !trie.Match("ads.example.com") {
+		t.Fatalf("Expected normalized wildcard to match ads.example.com")
+	}
+	if !trie.Match("sub.ads.example.com") {
+		t.Fatalf("Expected normalized wildcard to match sub.ads.example.com")
+	}
+}
+
+func TestTrieRejectsInteriorWildcard(t *testing.T) {
+	trie := NewTrie()
+	trie.Add("sub.*.com")
+
+	if count := trie.Count(); count != 0 {
+		t.Fatalf("Expected interior wildcard domain to be rejected, got count %d", count)
+	}
+	if trie.Match("sub.foo.com") {
+		t.Fatalf("Interior wildcard domain should not match real hosts")
+	}
+}

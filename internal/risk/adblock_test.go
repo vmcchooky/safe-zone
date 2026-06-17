@@ -2,7 +2,11 @@ package risk
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +51,39 @@ func newTestServiceWithAdblock(t *testing.T, domains []string) *Service {
 		trie.Add(d)
 	}
 	service.adblockTrie.Store(trie)
+
+	t.Cleanup(func() {
+		_ = service.Close()
+	})
+
+	return service
+}
+
+func newManualAdblockSyncService(t *testing.T) *Service {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	t.Setenv("SAFE_ZONE_ADBLOCK_ENABLED", "false")
+
+	dbPath := filepath.Join(tempDir, "test.db")
+	storeDB, err := store.New(dbPath, 30)
+	if err != nil {
+		t.Fatalf("failed to create test store: %v", err)
+	}
+	if err := storeDB.SetSystemConfig(context.Background(), "adblock_enabled", "false"); err != nil {
+		t.Fatalf("failed to disable background adblock sync: %v", err)
+	}
+
+	service := NewService(Options{
+		AnalysisConfig:  config.DefaultAnalysisConfig(),
+		RedisTimeout:    10 * time.Millisecond,
+		TTLAllowed:      time.Hour,
+		TTLSuspicious:   time.Hour,
+		TTLBlocked:      time.Hour,
+		RecentLimit:     10,
+		Store:           storeDB,
+		AdblockFileRoot: tempDir,
+	})
 
 	t.Cleanup(func() {
 		_ = service.Close()
@@ -227,5 +264,105 @@ func TestAdblockPolicyWhitelistPriority(t *testing.T) {
 	pol := service.Policy(context.Background(), "ads.example.com", ClientInfo{})
 	if pol.Policy != "allow" {
 		t.Fatalf("expected whitelisted domain to bypass adblock in Policy, got %s", pol.Policy)
+	}
+}
+
+func TestAdblockWildcardEntryMatchesViaNormalization(t *testing.T) {
+	service := newTestServiceWithAdblock(t, []string{
+		"*.ads.example.com",
+	})
+
+	result := service.Analyze(context.Background(), "sub.ads.example.com", ClientInfo{})
+	if result.Verdict != analysis.VerdictMalicious {
+		t.Fatalf("expected wildcard adblock entry to block subdomain, got %s", result.Verdict)
+	}
+	if len(result.Reasons) == 0 || result.Reasons[0] != "adblock" {
+		t.Fatalf("expected reason 'adblock', got %v", result.Reasons)
+	}
+}
+
+func TestAdblockSyncReusesPerSourceCacheOn304(t *testing.T) {
+	service := newManualAdblockSyncService(t)
+
+	var mu sync.Mutex
+	sourceAMethods := []string{}
+	sourceBMethods := []string{}
+	sourceBIfNoneMatch := []string{}
+	sourceABody := "0.0.0.0 ads.one.test\n"
+	sourceAEtag := "a-v1"
+
+	sourceA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sourceAMethods = append(sourceAMethods, r.Method)
+		mu.Unlock()
+
+		if r.Header.Get("If-None-Match") == sourceAEtag {
+			sourceAEtag = "a-v2"
+			sourceABody = "0.0.0.0 ads.one.test\n0.0.0.0 ads.two.test\n"
+		}
+		w.Header().Set("ETag", sourceAEtag)
+		_, _ = w.Write([]byte(sourceABody))
+	}))
+	defer sourceA.Close()
+
+	sourceB := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sourceBMethods = append(sourceBMethods, r.Method)
+		sourceBIfNoneMatch = append(sourceBIfNoneMatch, r.Header.Get("If-None-Match"))
+		mu.Unlock()
+
+		if r.Header.Get("If-None-Match") == "b-v1" {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", "b-v1")
+		_, _ = w.Write([]byte("0.0.0.0 cache.keep.test\n"))
+	}))
+	defer sourceB.Close()
+
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", sourceA.URL+","+sourceB.URL)
+
+	service.syncAdblockLists()
+	service.syncAdblockLists()
+	service.adblockEnabled.Store(true)
+
+	if got := service.Analyze(context.Background(), "ads.two.test", ClientInfo{}); got.Verdict != analysis.VerdictMalicious {
+		t.Fatalf("expected changed source entry to be active after second sync, got %s", got.Verdict)
+	}
+	if got := service.Analyze(context.Background(), "sub.cache.keep.test", ClientInfo{}); got.Verdict != analysis.VerdictMalicious {
+		t.Fatalf("expected cached 304 source entry to remain active, got %s", got.Verdict)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(sourceAMethods, []string{http.MethodGet, http.MethodGet}) {
+		t.Fatalf("expected source A to be fetched twice with GET, got %v", sourceAMethods)
+	}
+	if !slices.Equal(sourceBMethods, []string{http.MethodGet, http.MethodGet}) {
+		t.Fatalf("expected source B to be fetched twice with GET, got %v", sourceBMethods)
+	}
+	if len(sourceBIfNoneMatch) != 2 || sourceBIfNoneMatch[1] != "b-v1" {
+		t.Fatalf("expected second source B request to send cached ETag, got %v", sourceBIfNoneMatch)
+	}
+}
+
+func TestAdblockSyncFallsBackToSourceCacheWhenRemoteFails(t *testing.T) {
+	service := newManualAdblockSyncService(t)
+
+	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("ETag", "stable-v1")
+		_, _ = w.Write([]byte("0.0.0.0 resilient-cache.test\n"))
+	}))
+
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", source.URL)
+
+	service.syncAdblockLists()
+	source.Close()
+	service.syncAdblockLists()
+	service.adblockEnabled.Store(true)
+
+	result := service.Analyze(context.Background(), "sub.resilient-cache.test", ClientInfo{})
+	if result.Verdict != analysis.VerdictMalicious {
+		t.Fatalf("expected cached source to survive remote failure, got %s", result.Verdict)
 	}
 }

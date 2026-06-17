@@ -895,21 +895,37 @@ func (h *Handler) AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	username := strings.TrimSpace(strings.ToLower(req.Username))
+
 	// Use ConstantTimeCompare with SHA-256 hashing to secure comparisons against timing attacks
-	userHash := sha256.Sum256([]byte(req.Username))
-	expectedUserHash := sha256.Sum256([]byte("admin"))
+	userHash := sha256.Sum256([]byte(username))
+	expectedUserHash := sha256.Sum256([]byte(auth.RoleAdmin))
 	passHash := sha256.Sum256([]byte(req.Password))
 	expectedPassHash := sha256.Sum256([]byte(h.Config.AdminPassword))
 
 	userMatch := subtle.ConstantTimeCompare(userHash[:], expectedUserHash[:]) == 1
 	passMatch := subtle.ConstantTimeCompare(passHash[:], expectedPassHash[:]) == 1
 
-	if !userMatch || !passMatch {
+	role := ""
+	if userMatch && passMatch {
+		role = auth.RoleAdmin
+	} else if username == auth.RoleGuest {
+		cfg, err := h.loadGuestAccessConfig(r.Context())
+		if err != nil {
+			httputil.WriteError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		if cfg.Exists() && cfg.Enabled && auth.VerifyPasswordHash(cfg.PasswordHash, req.Password) == nil {
+			role = auth.RoleGuest
+		}
+	}
+
+	if role == "" {
 		httputil.WriteError(w, http.StatusUnauthorized, "invalid username or password")
 		return
 	}
 
-	token, err := auth.GenerateSessionCookieValue("admin", 12*time.Hour, h.Config.SessionSecret)
+	token, err := auth.GenerateSessionCookieValueForRole(username, role, 12*time.Hour, h.Config.SessionSecret)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "failed to generate session")
 		return
@@ -934,15 +950,7 @@ func (h *Handler) AuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is dynamically set via isHTTPS(r)
-		Name:     "admin_session",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   isHTTPS(r),
-		SameSite: http.SameSiteLaxMode,
-	})
+	clearSessionCookie(w, r)
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
@@ -959,7 +967,8 @@ func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {
 			expectedHash := sha256.Sum256([]byte(h.Config.AdminAPIKey))
 
 			if subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1 {
-				next(w, r)
+				identity := authIdentity{Username: auth.RoleAdmin, Role: auth.RoleAdmin, AuthMethod: "bearer"}
+				next(w, r.WithContext(withAuthIdentity(r.Context(), identity)))
 				return
 			}
 		}
@@ -967,8 +976,18 @@ func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {
 		// 2. Check Session Cookie
 		cookie, err := r.Cookie("admin_session")
 		if err == nil && cookie.Value != "" {
-			_, err = auth.VerifySessionCookieValue(cookie.Value, h.Config.SessionSecret)
+			claims, err := auth.VerifySessionClaims(cookie.Value, h.Config.SessionSecret)
 			if err == nil {
+				if err := h.ensureGuestSessionActive(r.Context(), claims); err != nil {
+					if err == errGuestAccessRevoked {
+						clearSessionCookie(w, r)
+						httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
+						return
+					}
+					httputil.WriteError(w, http.StatusServiceUnavailable, "guest access validation unavailable")
+					return
+				}
+
 				// Cookie auth is active. Enforce CSRF protection for state-modifying requests.
 				if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete {
 					if csrfErr := h.VerifyCSRF(r); csrfErr != nil {
@@ -976,7 +995,12 @@ func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {
 						return
 					}
 				}
-				next(w, r)
+				identity := authIdentity{
+					Username:   claims.Username,
+					Role:       claims.Role,
+					AuthMethod: "cookie",
+				}
+				next(w, r.WithContext(withAuthIdentity(r.Context(), identity)))
 				return
 			}
 		}

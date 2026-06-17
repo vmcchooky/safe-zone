@@ -22,31 +22,35 @@ func (h *Handler) DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-
 	// Read cookie
 	cookie, err := r.Cookie("admin_session")
 	if err != nil || cookie.Value == "" {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(loginHTML))
 		return
 	}
 
 	// Verify cookie
-	_, err = auth.VerifySessionCookieValue(cookie.Value, h.Config.SessionSecret)
+	claims, err := auth.VerifySessionClaims(cookie.Value, h.Config.SessionSecret)
 	if err != nil {
 		// Session is invalid or expired; clear cookie and show login page
-		http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is dynamically set via isHTTPS(r)
-			Name:     "admin_session",
-			Value:    "",
-			Path:     "/",
-			MaxAge:   -1,
-			HttpOnly: true,
-			Secure:   isHTTPS(r),
-			SameSite: http.SameSiteLaxMode,
-		})
+		clearSessionCookie(w, r)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write([]byte(loginHTML))
 		return
 	}
 
+	if err := h.ensureGuestSessionActive(r.Context(), claims); err != nil {
+		if err == errGuestAccessRevoked {
+			clearSessionCookie(w, r)
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_, _ = w.Write([]byte(loginHTML))
+			return
+		}
+		http.Error(w, "guest access validation unavailable", http.StatusServiceUnavailable)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(dashboardHTML))
 }

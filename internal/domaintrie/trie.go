@@ -94,6 +94,17 @@ func normalizeDomain(domain string) string {
 	return ascii
 }
 
+func sanitizeDomain(domain string) string {
+	for strings.HasPrefix(domain, "*.") {
+		domain = strings.TrimPrefix(domain, "*.")
+	}
+	// Any remaining wildcard makes the host invalid for our suffix matcher.
+	if strings.Contains(domain, "*") {
+		return ""
+	}
+	return domain
+}
+
 // Add inserts a domain into the filter.
 // e.g., Add("ads.example.com")
 // Domains that are public suffixes (bare TLDs like "com", "vn", or multi-label
@@ -101,6 +112,7 @@ func normalizeDomain(domain string) string {
 // catastrophic over-blocking.
 func (t *Trie) Add(domain string) {
 	domain = normalizeDomain(domain)
+	domain = sanitizeDomain(domain)
 	if domain == "" {
 		return
 	}

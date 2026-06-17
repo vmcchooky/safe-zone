@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
@@ -89,6 +90,11 @@ type Options struct {
 	OSINT *osint.Service
 	// Enrichment worker pool size. Defaults to 1 if not set.
 	EnrichWorkers int
+}
+
+type adblockSourceMeta struct {
+	ETag         string `json:"etag,omitempty"`
+	LastModified string `json:"last_modified,omitempty"`
 }
 
 type Service struct {
@@ -1202,6 +1208,15 @@ func (s *Service) adblockCachePath() string {
 	return filepath.Join(s.adblockDataRoot, "adblock_cache.txt")
 }
 
+func (s *Service) adblockSourceCacheRoot() string {
+	return filepath.Join(s.adblockDataRoot, "adblock_sources")
+}
+
+func (s *Service) adblockSourceCachePath(source string) string {
+	sum := sha256.Sum256([]byte(source))
+	return filepath.Join(s.adblockSourceCacheRoot(), fmt.Sprintf("%x.txt", sum[:]))
+}
+
 func (s *Service) ensureAdblockDataRoot() error {
 	if strings.TrimSpace(s.adblockDataRoot) == "" {
 		return nil
@@ -1209,11 +1224,150 @@ func (s *Service) ensureAdblockDataRoot() error {
 	return os.MkdirAll(s.adblockDataRoot, 0o755)
 }
 
+func (s *Service) ensureAdblockSourceCacheRoot() error {
+	if err := s.ensureAdblockDataRoot(); err != nil {
+		return err
+	}
+	return os.MkdirAll(s.adblockSourceCacheRoot(), 0o755)
+}
+
 func replaceFile(tmpPath, finalPath string) error {
 	if err := os.Remove(finalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
 	return os.Rename(tmpPath, finalPath)
+}
+
+func isRemoteAdblockSource(source string) bool {
+	return strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://")
+}
+
+func loadAdblockMeta(metaPath string) map[string]adblockSourceMeta {
+	meta := make(map[string]adblockSourceMeta)
+	metaData, err := os.ReadFile(metaPath)
+	if err != nil {
+		return meta
+	}
+	_ = json.Unmarshal(metaData, &meta)
+	return meta
+}
+
+func adblockSourceMetaFromHeader(header http.Header) adblockSourceMeta {
+	if header == nil {
+		return adblockSourceMeta{}
+	}
+	return adblockSourceMeta{
+		ETag:         header.Get("ETag"),
+		LastModified: header.Get("Last-Modified"),
+	}
+}
+
+func (s *Service) saveAdblockMeta(metaPath string, meta map[string]adblockSourceMeta) {
+	metaData, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return
+	}
+	if err := s.ensureAdblockDataRoot(); err != nil {
+		logjson.Warn("failed to create adblock data root", map[string]any{"error": err.Error()})
+		return
+	}
+	tmpMeta := metaPath + ".tmp"
+	if err := os.WriteFile(tmpMeta, metaData, 0o644); err != nil {
+		return
+	}
+	if err := replaceFile(tmpMeta, metaPath); err != nil {
+		logjson.Warn("failed to rename adblock meta temp file", map[string]any{"error": err.Error()})
+		_ = os.Remove(tmpMeta)
+	}
+}
+
+func (s *Service) parseAdblockSource(reader io.Reader, trie *domaintrie.Trie) error {
+	scanner := bufio.NewScanner(reader)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if idx := strings.IndexByte(line, '#'); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+		if line == "" {
+			continue
+		}
+
+		parts := strings.Fields(line)
+		if len(parts) == 0 {
+			continue
+		}
+
+		startIdx := 0
+		if ip := net.ParseIP(parts[0]); ip != nil {
+			startIdx = 1
+		}
+
+		for _, domain := range parts[startIdx:] {
+			domain = strings.ToLower(domain)
+			if domain != "" && domain != "localhost" && domain != "local" && domain != "broadcasthost" {
+				trie.Add(domain)
+			}
+		}
+	}
+	return scanner.Err()
+}
+
+func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *domaintrie.Trie) error {
+	if err := s.ensureAdblockSourceCacheRoot(); err != nil {
+		return err
+	}
+	finalPath := s.adblockSourceCachePath(source)
+	tmpPath := finalPath + ".tmp"
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		return err
+	}
+
+	tee := io.TeeReader(reader, f)
+	parseErr := s.parseAdblockSource(tee, trie)
+	closeErr := f.Close()
+	if parseErr != nil {
+		_ = os.Remove(tmpPath)
+		return parseErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(tmpPath)
+		return closeErr
+	}
+	if err := syncPath(tmpPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	if err := replaceFile(tmpPath, finalPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
+}
+
+func syncPath(path string) error {
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return f.Sync()
+}
+
+func (s *Service) loadAdblockSourceCache(source string, trie *domaintrie.Trie) bool {
+	f, err := os.Open(s.adblockSourceCachePath(source))
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+
+	if err := s.parseAdblockSource(f, trie); err != nil {
+		logjson.Warn("error reading adblock source cache", map[string]any{"source": source, "error": err.Error()})
+		return false
+	}
+	return true
 }
 
 func (s *Service) runAdblockSync() {
@@ -1249,53 +1403,7 @@ func (s *Service) syncAdblockLists() {
 
 	client := &http.Client{Timeout: 60 * time.Second}
 	metaPath := s.adblockMetaPath()
-
-	var currentMeta = make(map[string]map[string]string)
-	if metaData, err := os.ReadFile(metaPath); err == nil {
-		_ = json.Unmarshal(metaData, &currentMeta)
-	}
-
-	// pendingMeta stores ETag/Last-Modified from HEAD responses.
-	// These are only committed into currentMeta when the corresponding
-	// source download succeeds, preventing silent data loss when a
-	// source is unreachable but its ETag is already persisted.
-	pendingMeta := make(map[string]map[string]string)
-
-	allSkipped := true
-	for _, source := range sourceList {
-		if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
-			req, err := http.NewRequestWithContext(s.lifecycleCtx, http.MethodHead, source, nil)
-			if err == nil {
-				if m, ok := currentMeta[source]; ok {
-					if m["etag"] != "" {
-						req.Header.Set("If-None-Match", m["etag"])
-					}
-					if m["last_modified"] != "" {
-						req.Header.Set("If-Modified-Since", m["last_modified"])
-					}
-				}
-				resp, err := client.Do(req)
-				if err == nil {
-					_ = resp.Body.Close()
-					if resp.StatusCode != http.StatusNotModified {
-						allSkipped = false
-						// Stage ETag/Last-Modified in pendingMeta;
-						// will only be committed on successful download.
-						pendingMeta[source] = map[string]string{
-							"etag":          resp.Header.Get("ETag"),
-							"last_modified": resp.Header.Get("Last-Modified"),
-						}
-					}
-				} else {
-					allSkipped = false
-				}
-			} else {
-				allSkipped = false
-			}
-		} else {
-			allSkipped = false
-		}
-	}
+	currentMeta := loadAdblockMeta(metaPath)
 
 	adTrie := s.adblockTrie.Load()
 	currentCount := 0
@@ -1303,78 +1411,72 @@ func (s *Service) syncAdblockLists() {
 		currentCount = adTrie.Count()
 	}
 
-	if allSkipped {
-		now := time.Now()
-		s.adblockLastSync.Store(now)
-		s.adblockOKCount.Store(int32(len(sourceList)))
-		s.adblockLastSyncOK.Store(true)
-		if currentCount > 0 {
-			logjson.Info("adblock sources unchanged, keeping current trie", nil)
-			return
-		}
-
-		newTrie := domaintrie.NewTrie()
-		if s.loadAdblockCache(newTrie) {
-			s.adblockTrie.Store(newTrie)
-			s.adblockLastSyncOK.Store(true)
-			logjson.Info("adblock sources unchanged, loaded from local cache", map[string]any{"domains": newTrie.Count()})
-			return
-		}
-	}
-
 	newTrie := domaintrie.NewTrie()
 	successCount := 0
+	networkCount := 0
+	cachedCount := 0
+	nextMeta := make(map[string]adblockSourceMeta, len(sourceList))
 
 	for _, source := range sourceList {
 		func() {
-			reader, closeReader, err := feed.OpenSourceWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024)
-			if err != nil {
-				logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
+			if !isRemoteAdblockSource(source) {
+				reader, closeReader, err := feed.OpenSourceWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024)
+				if err != nil {
+					logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
+					return
+				}
+				defer closeReader()
+				if err := s.parseAdblockSource(reader, newTrie); err != nil {
+					logjson.Warn("error while scanning adblock source", map[string]any{"source": source, "error": err.Error()})
+					return
+				}
+				successCount++
 				return
 			}
-			defer closeReader()
 
-			scanner := bufio.NewScanner(reader)
-			buf := make([]byte, 64*1024)
-			scanner.Buffer(buf, 10*1024*1024)
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				if idx := strings.IndexByte(line, '#'); idx >= 0 {
-					line = strings.TrimSpace(line[:idx])
-				}
-				if line == "" {
-					continue
-				}
-
-				parts := strings.Fields(line)
-				if len(parts) == 0 {
-					continue
-				}
-
-				startIdx := 0
-				if ip := net.ParseIP(parts[0]); ip != nil {
-					startIdx = 1
-				}
-
-				for _, domain := range parts[startIdx:] {
-					domain = strings.ToLower(domain)
-					if domain != "" && domain != "localhost" && domain != "local" && domain != "broadcasthost" {
-						newTrie.Add(domain)
-					}
-				}
+			requestHeaders := make(http.Header)
+			meta := currentMeta[source]
+			if meta.ETag != "" {
+				requestHeaders.Set("If-None-Match", meta.ETag)
+			}
+			if meta.LastModified != "" {
+				requestHeaders.Set("If-Modified-Since", meta.LastModified)
 			}
 
-			if err := scanner.Err(); err != nil {
-				logjson.Warn("error while scanning adblock source", map[string]any{"source": source, "error": err.Error()})
-			} else {
-				successCount++
-				// Commit pending meta only on successful parse.
-				// This prevents stale ETag from being persisted
-				// when download fails, which would cause 304
-				// on next sync and silently lose this source's rules.
-				if pm, ok := pendingMeta[source]; ok {
-					currentMeta[source] = pm
+			response, err := feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, requestHeaders)
+			if err == nil && response.StatusCode == http.StatusNotModified {
+				if s.loadAdblockSourceCache(source, newTrie) {
+					successCount++
+					cachedCount++
+					nextMeta[source] = meta
+					return
 				}
+				response, err = feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, nil)
+			}
+
+			if err == nil {
+				if response.Close != nil {
+					defer response.Close()
+				}
+				if response.Reader != nil {
+					if err := s.saveAdblockSourceCache(source, response.Reader, newTrie); err == nil {
+						successCount++
+						networkCount++
+						nextMeta[source] = adblockSourceMetaFromHeader(response.Header)
+						return
+					} else {
+						logjson.Warn("failed to refresh adblock source cache", map[string]any{"source": source, "error": err.Error()})
+					}
+				}
+			} else {
+				logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
+			}
+
+			if s.loadAdblockSourceCache(source, newTrie) {
+				successCount++
+				cachedCount++
+				nextMeta[source] = meta
+				return
 			}
 		}()
 	}
@@ -1386,22 +1488,14 @@ func (s *Service) syncAdblockLists() {
 		s.adblockLastSyncOK.Store(true)
 
 		s.saveAdblockCache(newTrie)
+		s.saveAdblockMeta(metaPath, nextMeta)
 
-		// Save meta atomically (tmp + rename).
-		if metaData, err := json.MarshalIndent(currentMeta, "", "  "); err == nil {
-			if err := s.ensureAdblockDataRoot(); err != nil {
-				logjson.Warn("failed to create adblock data root", map[string]any{"error": err.Error()})
-			}
-			tmpMeta := metaPath + ".tmp"
-			if err := os.WriteFile(tmpMeta, metaData, 0644); err == nil {
-				if err := replaceFile(tmpMeta, metaPath); err != nil {
-					logjson.Warn("failed to rename adblock meta temp file", map[string]any{"error": err.Error()})
-					_ = os.Remove(tmpMeta)
-				}
-			}
-		}
-
-		logjson.Info("adblock trie synchronized", map[string]any{"domains": newTrie.Count()})
+		logjson.Info("adblock trie synchronized", map[string]any{
+			"domains":              newTrie.Count(),
+			"sources_ok":           successCount,
+			"sources_network":      networkCount,
+			"sources_cached_reuse": cachedCount,
+		})
 	} else {
 		s.adblockOKCount.Store(int32(successCount))
 		s.adblockLastSync.Store(time.Now())

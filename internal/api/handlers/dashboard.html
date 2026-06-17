@@ -84,7 +84,7 @@
         <span class="nav-item-label">System</span>
         <div class="nav-tooltip" role="tooltip">System</div>
       </button>
-      <button class="tab-btn nav-item" role="tab" data-tab="settings" id="tab-btn-settings" title="Settings">
+      <button class="tab-btn nav-item" role="tab" data-tab="settings" id="tab-btn-settings" title="Settings" hidden>
         <div class="nav-item-icon"><svg><use href="#icon-settings"></use></svg></div>
         <span class="nav-item-label">Settings</span>
         <div class="nav-tooltip" role="tooltip">Settings</div>
@@ -115,6 +115,11 @@
         <span class="chip" id="rl-status"><strong>rate limit</strong> --</span>
       </div>
     </header>
+
+    <section class="guest-banner" id="guest-banner" hidden aria-live="polite">
+      <strong>Guest Read-only</strong>
+      <span id="guest-banner-message"></span>
+    </section>
 
     <section class="pulse-strip" aria-label="Operational pulse">
       <div class="metric"><span>Total 24h</span><strong id="metric-total">0</strong></div>
@@ -679,6 +684,39 @@
           </div>
         </div>
       </div>
+
+      <div class="panel" id="guest-access-panel" hidden>
+        <div class="panel-head">
+          <div>
+            <span class="eyebrow">Access Control</span>
+            <h2>Guest Account</h2>
+          </div>
+          <span class="chip" id="guest-access-status">Loading</span>
+        </div>
+        <div class="panel-body" style="padding: 20px; display: grid; gap: 16px;">
+          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+            Create, enable, disable, rotate, or delete the public read-only guest account.
+          </p>
+          <div class="settings-form-group" style="display: grid; gap: 8px;">
+            <label for="guest-password-input" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Guest Password</span>
+              <button class="ghost btn-sm" onclick="togglePasswordVisibility('guest-password-input')" type="button" style="min-height: 24px; padding: 0 8px; font-size: 11px;">
+                Show / Hide
+              </button>
+            </label>
+            <input type="password" id="guest-password-input" autocomplete="off" value="guestpass12" placeholder="Enter guest password" style="font-family: var(--font-mono); letter-spacing: 0.08em;">
+          </div>
+          <div class="recent-meta" id="guest-access-detail">
+            <span>username: guest</span>
+            <span>status: loading</span>
+          </div>
+          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px;">
+            <button onclick="createOrEnableGuestAccess()" class="btn-allow" style="min-height: 40px; padding: 0 20px;">Create / Enable Guest</button>
+            <button onclick="disableGuestAccess()" class="ghost" style="min-height: 40px; padding: 0 20px;">Disable Guest</button>
+            <button onclick="deleteGuestAccess()" class="ghost btn-danger" style="min-height: 40px; padding: 0 20px;">Delete Guest</button>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 
@@ -812,6 +850,14 @@ window.CHARTJS_AVAILABLE = false;
 // ── State ─────────────────────────────────────────────────────────────────────
 const state = {
   activeTab: 'analysis',
+  session: {
+    username: '',
+    role: 'guest',
+    readOnly: true,
+    canMutate: false,
+    canViewSettings: false,
+    guestMessage: '',
+  },
   latest: null,
   recent: [],
   telemetry: { stats: {}, items: [], page: 0, pageSize: 20, period: '24h', total: 0, filters: { domain: '', verdict: '', source: '' } },
@@ -849,6 +895,9 @@ const sidebarToggle   = $('sidebar-toggle');
 const mobileNavTrigger = $('mobile-nav-trigger');
 const mobileNavBackdrop = $('mobile-nav-backdrop');
 const currentPageTitle = $('current-page-title');
+const guestBanner = $('guest-banner');
+const guestBannerMessage = $('guest-banner-message');
+const settingsTabButton = $('tab-btn-settings');
 const pageTitles = {
   analysis: 'Domain Inspection',
   telemetry: 'Telemetry',
@@ -911,6 +960,122 @@ function closeModalShell(modal) {
   window.setTimeout(() => {
     modal.classList.remove('active', 'is-closing');
   }, 190);
+}
+
+const guestReadOnlyFallbackMessage = 'Khách không được quyền thay đổi hoặc áp dụng các chính sách mới vào hệ thống, nếu muốn hãy liên hệ với quản trị viên của Safe Zone DNS tại contact@quorix.io.vn.';
+const nativeFetch = window.fetch.bind(window);
+
+function sessionGuestMessage() {
+  return (state.session && state.session.guestMessage) || guestReadOnlyFallbackMessage;
+}
+
+function isReadOnlySession() {
+  return !!(state.session && state.session.readOnly);
+}
+
+function normalizeFetchPath(input) {
+  const raw = typeof input === 'string' ? input : ((input && input.url) || '');
+  try {
+    return new URL(raw, window.location.origin).pathname;
+  } catch {
+    return String(raw || '');
+  }
+}
+
+function isProtectedMutationRequest(input, init) {
+  const method = String((init && init.method) || 'GET').toUpperCase();
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) return false;
+
+  const path = normalizeFetchPath(input);
+  if (path === '/v1/analyze' || path === '/v1/auth/logout') return false;
+
+  const protectedPrefixes = [
+    '/v1/overrides',
+    '/v1/reports/status',
+    '/v1/brands',
+    '/v1/agent/trigger',
+    '/v1/groups',
+    '/v1/mappings',
+    '/v1/group-overrides',
+    '/v1/settings',
+    '/v1/config/analysis',
+  ];
+  return protectedPrefixes.some(prefix => path === prefix || path.startsWith(prefix + '/'));
+}
+
+window.fetch = function(input, init) {
+  if (isReadOnlySession() && isProtectedMutationRequest(input, init)) {
+    const error = sessionGuestMessage();
+    showToast(error, 'err');
+    return Promise.resolve(new Response(JSON.stringify({ error }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' }
+    }));
+  }
+  return nativeFetch(input, init);
+};
+
+function applySessionState() {
+  const canViewSettings = !!state.session.canViewSettings;
+  if (settingsTabButton) {
+    settingsTabButton.hidden = !canViewSettings;
+    settingsTabButton.style.display = canViewSettings ? '' : 'none';
+  }
+
+  const guestAccessPanel = $('guest-access-panel');
+  if (guestAccessPanel) {
+    guestAccessPanel.hidden = !canViewSettings;
+  }
+
+  if (guestBanner) {
+    if (state.session.readOnly) {
+      guestBanner.hidden = false;
+      guestBanner.classList.add('active');
+      setTextWithMotion(guestBannerMessage, sessionGuestMessage(), guestBanner);
+    } else {
+      guestBanner.hidden = true;
+      guestBanner.classList.remove('active');
+      if (guestBannerMessage) guestBannerMessage.textContent = '';
+    }
+  }
+
+  document.body.classList.toggle('guest-read-only', !!state.session.readOnly);
+
+  if (!canViewSettings && state.activeTab === 'settings') {
+    state.activeTab = 'analysis';
+    syncActiveTabState('analysis');
+  }
+}
+
+async function loadSession() {
+  try {
+    const r = await nativeFetch('/v1/auth/session');
+    if (r.status === 401 || r.status === 403) {
+      window.location.replace('/dashboard');
+      return false;
+    }
+    if (!r.ok) throw new Error('session unavailable');
+    const payload = await r.json();
+    state.session = {
+      username: payload.username || '',
+      role: payload.role || 'guest',
+      readOnly: !!payload.read_only,
+      canMutate: !!payload.can_mutate,
+      canViewSettings: !!payload.can_view_settings,
+      guestMessage: payload.guest_message || guestReadOnlyFallbackMessage,
+    };
+  } catch {
+    state.session = {
+      username: '',
+      role: 'guest',
+      readOnly: true,
+      canMutate: false,
+      canViewSettings: false,
+      guestMessage: guestReadOnlyFallbackMessage,
+    };
+  }
+  applySessionState();
+  return true;
 }
 
 // ── Command deck shell ────────────────────────────────────────────────────────
@@ -987,6 +1152,10 @@ document.querySelectorAll('.tab-btn[data-tab]').forEach(btn => {
 });
 
 function switchTab(name) {
+  if (name === 'settings' && !state.session.canViewSettings) {
+    showToast(sessionGuestMessage(), 'err');
+    name = 'analysis';
+  }
   state.activeTab = name;
   syncActiveTabState(name);
   if (mobileNavQuery.matches) closeMobileNav();
@@ -1011,7 +1180,7 @@ async function loadTabData(name) {
     case 'overrides': await Promise.all([loadOverrides(), loadBrands()]); break;
     case 'system':    await loadSystem(); break;
     case 'clients':   await loadClientsTab(); break;
-    case 'settings':  await loadSettings(); break;
+    case 'settings':  if (state.session.canViewSettings) await loadSettings(); break;
   }
 }
 
@@ -1144,6 +1313,12 @@ function renderFalsePositiveReviewPanel(item) {
   if (!item || !item.domain || item.verdict === 'SAFE') {
     return '';
   }
+  const actions = state.session.readOnly
+    ? '<div class="review-actions"><span class="report-completed">' + esc(sessionGuestMessage()) + '</span></div>'
+    : '<div class="review-actions">' +
+        '<button type="button" class="btn-allow" onclick="submitFalsePositiveReview()">Allow / whitelist domain</button>' +
+        '<button type="button" class="ghost btn-sm" onclick="openOverrideEditor(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ', \'allow\')">Open override form</button>' +
+      '</div>';
   return '<section class="review-panel">' +
     '<div class="review-head">' +
       '<div><span class="section-kicker">Operator Action</span><strong>False-positive review</strong></div>' +
@@ -1152,10 +1327,7 @@ function renderFalsePositiveReviewPanel(item) {
     '<p class="review-note">Use this when the domain was blocked or escalated incorrectly and should be pinned as allowed while follow-up review continues.</p>' +
     '<label for="fp-review-reason">Review note</label>' +
     '<textarea id="fp-review-reason" placeholder="Example: verified legitimate partner portal, matched owner DNS/TLS, approved by ops review."></textarea>' +
-    '<div class="review-actions">' +
-      '<button type="button" class="btn-allow" onclick="submitFalsePositiveReview()">Allow / whitelist domain</button>' +
-      '<button type="button" class="ghost btn-sm" onclick="openOverrideEditor(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ', \'allow\')">Open override form</button>' +
-    '</div>' +
+    actions +
   '</section>';
 }
 
@@ -1479,12 +1651,15 @@ function renderOverrides() {
 
 function renderOverrideRow(item) {
   const badgeClass = item.action === 'block' ? 'badge-block' : 'badge-allow';
+  const actionCell = state.session.readOnly
+    ? '<span class="report-completed">Read only</span>'
+    : '<button class="ghost btn-sm btn-danger" onclick="deleteOverride(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Delete</button>';
   return '<tr>' +
     '<td style="font-weight:700">' + esc(item.domain) + '</td>' +
     '<td><span class="' + badgeClass + '">' + esc(item.action) + '</span></td>' +
     '<td style="color:var(--muted)">' + esc(item.reason || '--') + '</td>' +
     '<td style="color:var(--muted)">' + fmtTime(item.updated_at) + '</td>' +
-    '<td><button class="ghost btn-sm btn-danger" onclick="deleteOverride(' + JSON.stringify(item.domain).replace(/"/g, '&quot;') + ')">Delete</button></td>' +
+    '<td>' + actionCell + '</td>' +
     '</tr>';
 }
 
@@ -1522,16 +1697,17 @@ function renderBrands() {
 
 function renderBrandRow(item) {
   const alts = (item.alt_domains || []).map(alt => `<span class="badge-allow" style="font-size:10px; padding: 2px 6px; margin: 2px; display: inline-block; border-radius: 4px;">${esc(alt)}</span>`).join('');
+  const actionCell = state.session.readOnly
+    ? '<span class="report-completed">Read only</span>'
+    : '<button class="ghost btn-sm" onclick="editBrand(' + item.id + ')" style="margin-right:8px;">Edit</button>' +
+      '<button class="ghost btn-sm btn-danger" onclick="deleteBrand(' + item.id + ')">Delete</button>';
   return '<tr>' +
     '<td style="color:var(--muted)">' + esc(item.id) + '</td>' +
     '<td style="font-weight:700">' + esc(item.name) + '</td>' +
     '<td><a href="http://' + esc(item.official_domain) + '" target="_blank" style="color:var(--accent); text-decoration:none;">' + esc(item.official_domain) + '</a></td>' +
     '<td>' + (alts || '<span style="color:var(--muted)">--</span>') + '</td>' +
     '<td style="color:var(--muted)">' + fmtTime(item.updated_at || item.created_at) + '</td>' +
-    '<td>' +
-      '<button class="ghost btn-sm" onclick="editBrand(' + item.id + ')" style="margin-right:8px;">Edit</button>' +
-      '<button class="ghost btn-sm btn-danger" onclick="deleteBrand(' + item.id + ')">Delete</button>' +
-    '</td>' +
+    '<td>' + actionCell + '</td>' +
     '</tr>';
 }
 
@@ -2179,10 +2355,14 @@ function togglePasswordVisibility(id) {
 }
 
 async function loadSettings() {
+  if (!state.session.canViewSettings) {
+    return;
+  }
   try {
-    const [r, configResponse] = await Promise.all([
+    const [r, configResponse, guestResponse] = await Promise.all([
       fetch('/v1/settings'),
-      fetch('/v1/config/analysis')
+      fetch('/v1/config/analysis'),
+      fetch('/v1/settings/guest-access')
     ]);
     if (!r.ok) { const err = await r.json(); throw new Error(err.error || 'Failed to load settings'); }
     const data = await r.json();
@@ -2196,12 +2376,18 @@ async function loadSettings() {
     const analysisConfig = await configResponse.json();
     const configInput = document.getElementById('setting-analysis-config');
     if (configInput) configInput.value = JSON.stringify(analysisConfig, null, 2);
+    if (!guestResponse.ok) { const err = await guestResponse.json(); throw new Error(err.error || 'Failed to load guest access'); }
+    renderGuestAccessStatus(await guestResponse.json());
   } catch (err) {
     showToast('Error loading settings: ' + err.message, 'err');
   }
 }
 
 async function saveSettings() {
+  if (!state.session.canViewSettings) {
+    showToast(sessionGuestMessage(), 'err');
+    return;
+  }
   try {
     const gemini_api_key = document.getElementById('setting-gemini-api-key').value.trim();
     const agent_webhook_url = document.getElementById('setting-agent-webhook').value.trim();
@@ -2226,6 +2412,10 @@ async function saveSettings() {
 }
 
 async function testAI() {
+  if (!state.session.canViewSettings) {
+    showToast(sessionGuestMessage(), 'err');
+    return;
+  }
   const resEl = document.getElementById('test-ai-result');
   if (resEl) {
     resEl.style.display = 'block';
@@ -2262,6 +2452,10 @@ async function testAI() {
 }
 
 async function sendTestAlert() {
+  if (!state.session.canViewSettings) {
+    showToast(sessionGuestMessage(), 'err');
+    return;
+  }
   const resEl = document.getElementById('test-alert-result');
   if (resEl) {
     resEl.style.display = 'block';
@@ -2320,8 +2514,13 @@ async function loadVersion() {
   }
 }
 
-refreshShell();
-loadVersion();
+async function initDashboard() {
+  const hasSession = await loadSession();
+  if (!hasSession) return;
+  await Promise.all([refreshShell(), loadVersion()]);
+}
+
+initDashboard();
 setInterval(refreshShell, 15000);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2392,6 +2591,10 @@ if ($('reports-clear-filters')) {
 }
 
 async function saveAnalysisConfig() {
+  if (!state.session.canViewSettings) {
+    showToast(sessionGuestMessage(), 'err');
+    return;
+  }
   try {
     const input = document.getElementById('setting-analysis-config');
     const config = JSON.parse(input.value);
@@ -2408,7 +2611,82 @@ async function saveAnalysisConfig() {
   }
 }
 
+function renderGuestAccessStatus(payload) {
+  const exists = !!(payload && payload.exists);
+  const enabled = !!(payload && payload.enabled);
+  const statusEl = $('guest-access-status');
+  const detailEl = $('guest-access-detail');
+  const statusText = !exists ? 'Not created' : (enabled ? 'Enabled' : 'Disabled');
+
+  if (statusEl) {
+    statusEl.className = 'chip' + (enabled ? ' ok' : '');
+    setTextWithMotion(statusEl, statusText, statusEl);
+  }
+  if (detailEl) {
+    detailEl.innerHTML =
+      '<span>username: guest</span>' +
+      '<span>status: ' + esc(statusText.toLowerCase()) + '</span>';
+  }
+}
+
+async function createOrEnableGuestAccess() {
+  const passwordInput = $('guest-password-input');
+  const password = passwordInput ? passwordInput.value.trim() : '';
+  if (!password) {
+    showToast('Guest password is required', 'err');
+    if (passwordInput) passwordInput.focus();
+    return;
+  }
+
+  try {
+    const r = await fetch('/v1/settings/guest-access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: true, password })
+    });
+    const payload = await r.json();
+    if (!r.ok) throw new Error(payload.error || 'Failed to create guest account');
+    renderGuestAccessStatus(payload);
+    showToast('Guest account created or enabled', 'ok');
+  } catch (err) {
+    showToast('Error: ' + err.message, 'err');
+  }
+}
+
+async function disableGuestAccess() {
+  try {
+    const r = await fetch('/v1/settings/guest-access', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: false })
+    });
+    const payload = await r.json();
+    if (!r.ok) throw new Error(payload.error || 'Failed to disable guest account');
+    renderGuestAccessStatus(payload);
+    showToast('Guest account disabled', 'ok');
+  } catch (err) {
+    showToast('Error: ' + err.message, 'err');
+  }
+}
+
+async function deleteGuestAccess() {
+  if (!confirm('Delete the guest account configuration?')) return;
+  try {
+    const r = await fetch('/v1/settings/guest-access', { method: 'DELETE' });
+    const payload = await r.json();
+    if (!r.ok) throw new Error(payload.error || 'Failed to delete guest account');
+    renderGuestAccessStatus({ exists: false, enabled: false });
+    showToast('Guest account deleted', 'ok');
+  } catch (err) {
+    showToast('Error: ' + err.message, 'err');
+  }
+}
+
 async function resetAnalysisConfig() {
+  if (!state.session.canViewSettings) {
+    showToast(sessionGuestMessage(), 'err');
+    return;
+  }
   if (!confirm('Reset analysis scoring configuration to defaults?')) return;
   try {
     const r = await fetch('/v1/config/analysis/reset', { method: 'POST' });
@@ -2477,12 +2755,14 @@ function renderReportRow(report) {
 
   let actions = '';
   if (isPending) {
-    actions = `
-      <div class="report-actions">
-        <button class="ghost btn-sm ok text-safe" onclick="approveReport(${report.id}, ${JSON.stringify(report.domain).replace(/"/g, '&quot;')}, ${JSON.stringify(report.note).replace(/"/g, '&quot;')})">Approve</button>
-        <button class="ghost btn-sm bad text-bad" onclick="dismissReport(${report.id})">Dismiss</button>
-      </div>
-    `;
+    actions = state.session.readOnly
+      ? `<span class="report-completed">Read only</span>`
+      : `
+        <div class="report-actions">
+          <button class="ghost btn-sm ok text-safe" onclick="approveReport(${report.id}, ${JSON.stringify(report.domain).replace(/"/g, '&quot;')}, ${JSON.stringify(report.note).replace(/"/g, '&quot;')})">Approve</button>
+          <button class="ghost btn-sm bad text-bad" onclick="dismissReport(${report.id})">Dismiss</button>
+        </div>
+      `;
   } else {
     actions = `<span class="report-completed">Completed</span>`;
   }
