@@ -21,7 +21,11 @@ func TestClassifyCategory(t *testing.T) {
 		{"doubleclick.net", "advertising"},
 		{"ads.google.com", "advertising"},
 		{"adserver.yahoo.com", "advertising"},
-		{"my-tracker-analytics.com", "advertising"},
+		{"my-tracker-analytics.com", "uncategorized"},
+		{"ad.nl", "uncategorized"},
+		{"ad.gov.vn", "uncategorized"},
+		{"issue-tracker.moodle.org", "uncategorized"},
+		{"data-analytics.edu", "uncategorized"},
 
 		{"porn.com", "adult"},
 		{"something.xxx", "adult"},

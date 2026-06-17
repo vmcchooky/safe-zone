@@ -69,6 +69,27 @@ func (r *Resolver) DoHHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	// CNAME Uncloaking
+	respMsg := new(dns.Msg)
+	if err := respMsg.Unpack(response); err == nil {
+		for _, answer := range respMsg.Answer {
+			if cname, ok := answer.(*dns.CNAME); ok {
+				cnameTarget := strings.TrimSuffix(cname.Target, ".")
+				if cnameTarget != "" {
+					cnamePolicy := r.Risk.Policy(req.Context(), cnameTarget, clientInfo)
+					if cnamePolicy.Policy == "block" {
+						blockedResp, err := r.BlockedDNSMessage(query)
+						if err == nil {
+							blockedWire, _ := blockedResp.Pack()
+							writeDNSMessage(w, blockedWire)
+							return
+						}
+					}
+				}
+			}
+		}
+	}
+
 	writeDNSMessage(w, response)
 }
 
@@ -179,6 +200,23 @@ func (r *Resolver) DoTHandler(w dns.ResponseWriter, req *dns.Msg) {
 	if err := responseMsg.Unpack(responseWire); err != nil {
 		SendServfail(w, req)
 		return
+	}
+
+	// CNAME Uncloaking
+	for _, answer := range responseMsg.Answer {
+		if cname, ok := answer.(*dns.CNAME); ok {
+			cnameTarget := strings.TrimSuffix(cname.Target, ".")
+			if cnameTarget != "" {
+				cnamePolicy := r.Risk.Policy(requestCtx, cnameTarget, clientInfo)
+				if cnamePolicy.Policy == "block" {
+					blockedResp, err := r.BlockedDNSMessage(req)
+					if err == nil {
+						_ = w.WriteMsg(blockedResp)
+						return
+					}
+				}
+			}
+		}
 	}
 
 	_ = w.WriteMsg(responseMsg)

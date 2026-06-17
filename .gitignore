@@ -26,6 +26,11 @@ tmp_test.js
 
 # Scripts and IDEs
 *.py
+*.bak
 .idea/
 .vscode/
 coverage.txt
+
+# Runtime adblock cache/meta
+**/adblock_cache.txt
+**/adblock_meta.json

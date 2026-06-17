@@ -95,12 +95,13 @@ func ClassifyCategory(domain string) string {
 			return "advertising"
 		}
 	}
-	// Check prefixes or contains for advertising
-	if strings.HasPrefix(domain, "ads.") || strings.HasPrefix(domain, "ad.") ||
-		strings.Contains(domain, "analytics.") || strings.Contains(domain, "tracker.") ||
-		strings.Contains(domain, "telemetry.") || strings.Contains(domain, "-analytics") ||
-		strings.Contains(domain, "adserver") {
-		return "advertising"
+	// Safely check specific tracking subdomains (must be exact label match)
+	parts := strings.Split(domain, ".")
+	if len(parts) >= 3 {
+		first := parts[0]
+		if first == "ads" || first == "adserver" || first == "telemetry" {
+			return "advertising"
+		}
 	}
 
 	// 3. Adult Content

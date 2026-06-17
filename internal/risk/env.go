@@ -97,6 +97,7 @@ func NewServiceFromEnvForRole(nodeRole string) *Service {
 		OllamaModel:              config.String("SAFE_ZONE_OLLAMA_MODEL", "gemma2:2b"),
 		OllamaTimeout:            config.DurationMillis("SAFE_ZONE_OLLAMA_TIMEOUT_MS", 5000*time.Millisecond),
 		WhitelistPath:            config.String("SAFE_ZONE_WHITELIST_PATH", "./data/whitelist.txt"),
+		AdblockFileRoot:          config.FeedFileRoot(),
 		AnalysisConfig:           config.LoadAnalysisConfig(config.String("SAFE_ZONE_ANALYSIS_CONFIG_PATH", "")),
 		Store:                    storeDB,
 		BrandCacheTTL:            config.DurationSeconds("SAFE_ZONE_BRAND_CACHE_TTL_SECONDS", 5*time.Minute),
