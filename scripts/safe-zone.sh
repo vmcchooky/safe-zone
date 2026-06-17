@@ -20,6 +20,66 @@ log_error() {
   printf 'ERROR: %s\n' "$*" >&2
 }
 
+set_build_metadata_env() {
+  safe_zone_build_version="${SAFE_ZONE_BUILD_VERSION:-}"
+  if [ -z "$safe_zone_build_version" ]; then
+    if [ -n "${SAFE_ZONE_RELEASE_VERSION:-}" ]; then
+      safe_zone_build_version="${SAFE_ZONE_RELEASE_VERSION}"
+    else
+      safe_zone_build_version="$(git describe --tags --always --dirty 2>/dev/null || true)"
+      if [ -z "$safe_zone_build_version" ]; then
+        safe_zone_build_version="$(git rev-parse --short HEAD 2>/dev/null || true)"
+      fi
+      if [ -z "$safe_zone_build_version" ]; then
+        safe_zone_build_version="dev"
+      fi
+    fi
+  fi
+
+  safe_zone_build_git_commit="${SAFE_ZONE_BUILD_GIT_COMMIT:-}"
+  if [ -z "$safe_zone_build_git_commit" ]; then
+    safe_zone_build_git_commit="$(git rev-parse HEAD 2>/dev/null || true)"
+    if [ -z "$safe_zone_build_git_commit" ]; then
+      safe_zone_build_git_commit="unknown"
+    fi
+  fi
+
+  safe_zone_build_short_commit="$(git rev-parse --short HEAD 2>/dev/null || true)"
+  if [ -z "$safe_zone_build_short_commit" ]; then
+    safe_zone_build_short_commit="$(printf '%.12s' "$safe_zone_build_git_commit")"
+  fi
+
+  safe_zone_build_time="${SAFE_ZONE_BUILD_TIME:-}"
+  if [ -z "$safe_zone_build_time" ]; then
+    safe_zone_build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
+
+  safe_zone_build_source_repo="${SAFE_ZONE_BUILD_SOURCE_REPO:-}"
+  if [ -z "$safe_zone_build_source_repo" ]; then
+    safe_zone_build_source_repo="$(git config --get remote.origin.url 2>/dev/null || true)"
+    if [ -z "$safe_zone_build_source_repo" ]; then
+      safe_zone_build_source_repo="unknown"
+    fi
+  fi
+
+  safe_zone_build_release_tag="${SAFE_ZONE_BUILD_RELEASE_TAG:-}"
+  if [ -z "$safe_zone_build_release_tag" ]; then
+    if [ -n "${SAFE_ZONE_RELEASE_VERSION:-}" ]; then
+      safe_zone_build_release_tag="${safe_zone_build_version}-${safe_zone_build_short_commit}"
+    else
+      safe_zone_build_release_tag="${safe_zone_build_version}"
+    fi
+  fi
+
+  export SAFE_ZONE_BUILD_VERSION="$safe_zone_build_version"
+  export SAFE_ZONE_BUILD_GIT_COMMIT="$safe_zone_build_git_commit"
+  export SAFE_ZONE_BUILD_TIME="$safe_zone_build_time"
+  export SAFE_ZONE_BUILD_SOURCE_REPO="$safe_zone_build_source_repo"
+  export SAFE_ZONE_BUILD_RELEASE_TAG="$safe_zone_build_release_tag"
+
+  log_info "Build metadata: version=${SAFE_ZONE_BUILD_VERSION} commit=$(printf '%.12s' "$SAFE_ZONE_BUILD_GIT_COMMIT") tag=${SAFE_ZONE_BUILD_RELEASE_TAG}"
+}
+
 compose_stack() {
   selected_stack="$1"
   shift
@@ -506,9 +566,11 @@ resolve_feed_sources() {
 cmd="${1:-help}"
 case "$cmd" in
   deploy)
+    set_build_metadata_env
     compose_stack production --profile production-edge up -d --build
     ;;
   deploy-dev)
+    set_build_metadata_env
     compose_stack dev up -d --build
     ;;
   status)

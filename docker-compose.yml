@@ -43,6 +43,11 @@ services:
       context: .
       args:
         SERVICE: core-api
+        VERSION: ${SAFE_ZONE_BUILD_VERSION:-dev}
+        GIT_COMMIT: ${SAFE_ZONE_BUILD_GIT_COMMIT:-unknown}
+        BUILD_TIME: ${SAFE_ZONE_BUILD_TIME:-unknown}
+        IMAGE_TAG: "safe-zone-core-api:${SAFE_ZONE_BUILD_RELEASE_TAG:-unreleased}"
+        SOURCE_REPO: ${SAFE_ZONE_BUILD_SOURCE_REPO:-unknown}
     env_file:
       - .env
     environment:
@@ -99,6 +104,11 @@ services:
       context: .
       args:
         SERVICE: dns-resolver
+        VERSION: ${SAFE_ZONE_BUILD_VERSION:-dev}
+        GIT_COMMIT: ${SAFE_ZONE_BUILD_GIT_COMMIT:-unknown}
+        BUILD_TIME: ${SAFE_ZONE_BUILD_TIME:-unknown}
+        IMAGE_TAG: "safe-zone-dns-resolver:${SAFE_ZONE_BUILD_RELEASE_TAG:-unreleased}"
+        SOURCE_REPO: ${SAFE_ZONE_BUILD_SOURCE_REPO:-unknown}
     env_file:
       - .env
     environment:
@@ -150,6 +160,11 @@ services:
       context: .
       args:
         SERVICE: feed-syncd
+        VERSION: ${SAFE_ZONE_BUILD_VERSION:-dev}
+        GIT_COMMIT: ${SAFE_ZONE_BUILD_GIT_COMMIT:-unknown}
+        BUILD_TIME: ${SAFE_ZONE_BUILD_TIME:-unknown}
+        IMAGE_TAG: "safe-zone-feed-syncd:${SAFE_ZONE_BUILD_RELEASE_TAG:-unreleased}"
+        SOURCE_REPO: ${SAFE_ZONE_BUILD_SOURCE_REPO:-unknown}
     env_file:
       - .env
     environment:
@@ -177,6 +192,11 @@ services:
       context: .
       args:
         SERVICE: feed-sync
+        VERSION: ${SAFE_ZONE_BUILD_VERSION:-dev}
+        GIT_COMMIT: ${SAFE_ZONE_BUILD_GIT_COMMIT:-unknown}
+        BUILD_TIME: ${SAFE_ZONE_BUILD_TIME:-unknown}
+        IMAGE_TAG: "safe-zone-feed-sync:${SAFE_ZONE_BUILD_RELEASE_TAG:-unreleased}"
+        SOURCE_REPO: ${SAFE_ZONE_BUILD_SOURCE_REPO:-unknown}
     env_file:
       - .env
     environment:

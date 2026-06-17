@@ -34,6 +34,66 @@ function Write-ErrorMessage {
   Write-Host "ERROR: $Text" -ForegroundColor Red
 }
 
+function Set-BuildMetadataEnv {
+  $version = $env:SAFE_ZONE_BUILD_VERSION
+  if (-not $version) {
+    if ($env:SAFE_ZONE_RELEASE_VERSION) {
+      $version = $env:SAFE_ZONE_RELEASE_VERSION
+    } else {
+      $version = (& git describe --tags --always --dirty 2>$null).Trim()
+      if (-not $version) {
+        $version = (& git rev-parse --short HEAD 2>$null).Trim()
+      }
+      if (-not $version) {
+        $version = 'dev'
+      }
+    }
+  }
+
+  $gitCommit = $env:SAFE_ZONE_BUILD_GIT_COMMIT
+  if (-not $gitCommit) {
+    $gitCommit = (& git rev-parse HEAD 2>$null).Trim()
+    if (-not $gitCommit) {
+      $gitCommit = 'unknown'
+    }
+  }
+
+  $shortCommit = (& git rev-parse --short HEAD 2>$null).Trim()
+  if (-not $shortCommit) {
+    $shortCommit = $gitCommit.Substring(0, [Math]::Min(12, $gitCommit.Length))
+  }
+
+  $buildTime = $env:SAFE_ZONE_BUILD_TIME
+  if (-not $buildTime) {
+    $buildTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+  }
+
+  $sourceRepo = $env:SAFE_ZONE_BUILD_SOURCE_REPO
+  if (-not $sourceRepo) {
+    $sourceRepo = (& git config --get remote.origin.url 2>$null).Trim()
+    if (-not $sourceRepo) {
+      $sourceRepo = 'unknown'
+    }
+  }
+
+  $releaseTag = $env:SAFE_ZONE_BUILD_RELEASE_TAG
+  if (-not $releaseTag) {
+    if ($env:SAFE_ZONE_RELEASE_VERSION) {
+      $releaseTag = "$version-$shortCommit"
+    } else {
+      $releaseTag = $version
+    }
+  }
+
+  $env:SAFE_ZONE_BUILD_VERSION = $version
+  $env:SAFE_ZONE_BUILD_GIT_COMMIT = $gitCommit
+  $env:SAFE_ZONE_BUILD_TIME = $buildTime
+  $env:SAFE_ZONE_BUILD_SOURCE_REPO = $sourceRepo
+  $env:SAFE_ZONE_BUILD_RELEASE_TAG = $releaseTag
+
+  Write-Host "Build metadata: version=$version commit=$($gitCommit.Substring(0, [Math]::Min(12, $gitCommit.Length))) tag=$releaseTag"
+}
+
 function Get-ComposeBaseArgs {
   param([string]$TargetStack = $Stack)
 
@@ -696,6 +756,7 @@ switch ($Command) {
   }
   'deploy' {
     Write-Section 'Deploying Safe Zone'
+    Set-BuildMetadataEnv
     $composeArgs = @('up', '-d', '--build')
     if ($FeedSync) {
       $composeArgs = @('--profile', 'feed-sync') + $composeArgs
@@ -707,6 +768,7 @@ switch ($Command) {
   }
   'deploy-dev' {
     Write-Section 'Deploying Safe Zone (dev stack)'
+    Set-BuildMetadataEnv
     Invoke-Compose -SubCommandArgs @('up', '-d', '--build') -TargetStack 'dev'
     Wait-ForHealth -Url 'http://localhost:8080/healthz' -Name 'core-api'
     Wait-ForHealth -Url 'http://localhost:8081/healthz' -Name 'dns-resolver'
