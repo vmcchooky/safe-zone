@@ -26,7 +26,8 @@ ARG IMAGE_TAG=unreleased
 ARG SOURCE_REPO=unknown
 
 WORKDIR /app
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S app && adduser -S app -G app && \
+    mkdir -p /app/data && chown -R app:app /app/data
 
 LABEL org.opencontainers.image.title="safe-zone-${SERVICE}" \
   org.opencontainers.image.version="${VERSION}" \
