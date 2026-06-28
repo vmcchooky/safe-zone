@@ -1221,14 +1221,14 @@ func (s *Service) ensureAdblockDataRoot() error {
 	if strings.TrimSpace(s.adblockDataRoot) == "" {
 		return nil
 	}
-	return os.MkdirAll(s.adblockDataRoot, 0o755)
+	return os.MkdirAll(s.adblockDataRoot, 0o750)
 }
 
 func (s *Service) ensureAdblockSourceCacheRoot() error {
 	if err := s.ensureAdblockDataRoot(); err != nil {
 		return err
 	}
-	return os.MkdirAll(s.adblockSourceCacheRoot(), 0o755)
+	return os.MkdirAll(s.adblockSourceCacheRoot(), 0o750)
 }
 
 func replaceFile(tmpPath, finalPath string) error {
@@ -1259,6 +1259,7 @@ func isRemoteAdblockSource(source string) bool {
 
 func loadAdblockMeta(metaPath string) map[string]adblockSourceMeta {
 	meta := make(map[string]adblockSourceMeta)
+	// #nosec G304 -- metaPath is constructed safely internally
 	metaData, err := os.ReadFile(metaPath)
 	if err != nil {
 		return meta
@@ -1376,6 +1377,7 @@ func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *
 }
 
 func syncPath(path string) error {
+	// #nosec G304 -- path is constructed safely internally
 	f, err := os.OpenFile(path, os.O_RDWR, 0)
 	if err != nil {
 		return err
@@ -1427,6 +1429,7 @@ func (s *Service) syncAdblockLists() {
 	if len(sourceList) == 0 {
 		return
 	}
+	// #nosec G115 -- len(sourceList) will never exceed max int32
 	s.adblockSrcCount.Store(int32(len(sourceList)))
 
 	client := &http.Client{Timeout: 60 * time.Second}
@@ -1556,18 +1559,18 @@ func (s *Service) saveAdblockCache(trie *domaintrie.Trie) {
 	}
 	_, err = trie.WriteTo(f)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		logjson.Warn("failed to write adblock cache temp file", map[string]any{"error": err.Error()})
 		return
 	}
 	if err := f.Sync(); err != nil {
-		f.Close()
+		_ = f.Close()
 		_ = os.Remove(tmpPath)
 		logjson.Warn("failed to sync adblock cache temp file", map[string]any{"error": err.Error()})
 		return
 	}
-	f.Close()
+	_ = f.Close()
 	if err := replaceFile(tmpPath, finalPath); err != nil {
 		logjson.Warn("failed to rename adblock cache temp file", map[string]any{"error": err.Error()})
 		_ = os.Remove(tmpPath)
