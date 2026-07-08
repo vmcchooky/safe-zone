@@ -21,91 +21,13 @@ const (
 
 var errGuestAccessRevoked = errors.New("guest access disabled or deleted")
 
-type authIdentity struct {
-	Username   string `json:"username"`
-	Role       string `json:"role"`
-	AuthMethod string `json:"auth_method,omitempty"`
-}
-
-type authIdentityContextKey struct{}
-
 type guestAccessConfig struct {
 	Enabled      bool   `json:"enabled"`
 	PasswordHash string `json:"password_hash,omitempty"`
 }
 
-type authSessionResponse struct {
-	Username        string `json:"username"`
-	Role            string `json:"role"`
-	ReadOnly        bool   `json:"read_only"`
-	CanMutate       bool   `json:"can_mutate"`
-	CanViewSettings bool   `json:"can_view_settings"`
-	GuestMessage    string `json:"guest_message,omitempty"`
-}
-
-type guestAccessStatusResponse struct {
-	Username string `json:"username"`
-	Exists   bool   `json:"exists"`
-	Enabled  bool   `json:"enabled"`
-}
-
-type guestAccessRequest struct {
-	Enabled  *bool  `json:"enabled,omitempty"`
-	Password string `json:"password,omitempty"`
-}
-
 func (cfg guestAccessConfig) Exists() bool {
 	return strings.TrimSpace(cfg.PasswordHash) != ""
-}
-
-func (id authIdentity) isAdmin() bool {
-	return id.Role == auth.RoleAdmin
-}
-
-func authSessionFromIdentity(id authIdentity) authSessionResponse {
-	resp := authSessionResponse{
-		Username:        id.Username,
-		Role:            id.Role,
-		ReadOnly:        !id.isAdmin(),
-		CanMutate:       id.isAdmin(),
-		CanViewSettings: id.isAdmin(),
-	}
-	if !id.isAdmin() {
-		resp.GuestMessage = guestReadOnlyMessage
-	}
-	return resp
-}
-
-func withAuthIdentity(ctx context.Context, identity authIdentity) context.Context {
-	return context.WithValue(ctx, authIdentityContextKey{}, identity)
-}
-
-func authIdentityFromContext(ctx context.Context) (authIdentity, bool) {
-	identity, ok := ctx.Value(authIdentityContextKey{}).(authIdentity)
-	return identity, ok
-}
-
-func authIdentityFromRequest(r *http.Request) (authIdentity, bool) {
-	if r == nil {
-		return authIdentity{}, false
-	}
-	return authIdentityFromContext(r.Context())
-}
-
-func writeGuestReadOnlyError(w http.ResponseWriter) {
-	httputil.WriteError(w, http.StatusForbidden, guestReadOnlyMessage)
-}
-
-func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{ // #nosec G124 -- Secure is dynamically set via isHTTPS(r)
-		Name:     "admin_session",
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   isHTTPS(r),
-		SameSite: http.SameSiteLaxMode,
-	})
 }
 
 func (h *Handler) guestAccessStore() (*store.DB, error) {
