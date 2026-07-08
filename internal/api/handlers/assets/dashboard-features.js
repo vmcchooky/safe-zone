@@ -315,11 +315,11 @@ function renderTelemRow(item) {
     ? '<button class="ghost btn-sm" data-action="open-dossier" data-domain="' + escAttr(item.domain) + '">Open</button>'
     : '<button class="ghost btn-sm" data-action="open-false-positive-review" data-domain="' + escAttr(item.domain) + '">Review</button>';
   return '<div class="telemetry-row">' +
-    '<div style="overflow-wrap:anywhere;font-weight:700">' + esc(item.domain) + '</div>' +
+    '<div class="cell-domain-emph">' + esc(item.domain) + '</div>' +
     '<div><span class="verdict ' + item.verdict + '">' + esc(item.verdict) + '</span></div>' +
     '<div><span class="score-spark" style="--risk-level:' + clampScore(item.score) + '%">' + item.score + '</span></div>' +
-    '<div style="color:var(--muted)">' + esc(item.source || '--') + '</div>' +
-    '<div style="color:var(--muted)">' + fmtTime(item.analyzed_at) + '</div>' +
+    '<div class="cell-muted">' + esc(item.source || '--') + '</div>' +
+    '<div class="cell-muted">' + fmtTime(item.analyzed_at) + '</div>' +
     '<div>' + actionCell + '</div>' +
     '</div>';
 }
@@ -357,7 +357,7 @@ function renderChart(s) {
     if (meaningfulTotal > 0) pulseNode(chartWrap, 'orbit-wake');
   }
   if (!window.CHARTJS_AVAILABLE || typeof Chart === 'undefined') {
-    $('chart-legend').textContent = 'Chart.js unavailable (CDN offline).';
+    $('chart-legend').textContent = 'Charting asset unavailable.';
     return;
   }
   const styles = getComputedStyle(document.documentElement);
@@ -367,9 +367,9 @@ function renderChart(s) {
   const gridColor = styles.getPropertyValue('--line').trim() || 'rgba(255,255,255,0.1)';
   const total   = safe + susp + mal || 1;
   $('chart-legend').innerHTML =
-    '<span style="color:var(--safe)">Safe ' + pct(safe,total) + '</span> / ' +
-    '<span style="color:var(--warn)">Suspicious ' + pct(susp,total) + '</span> / ' +
-    '<span style="color:var(--bad)">Malicious ' + pct(mal,total) + '</span>';
+    '<span class="legend-safe">Safe ' + pct(safe,total) + '</span> / ' +
+    '<span class="legend-warn">Suspicious ' + pct(susp,total) + '</span> / ' +
+    '<span class="legend-bad">Malicious ' + pct(mal,total) + '</span>';
   const canvas = $('verdict-chart');
   if (state.chart) { state.chart.destroy(); state.chart = null; }
   state.chart = new Chart(canvas, {
@@ -473,10 +473,10 @@ function renderOverrideRow(item) {
     ? '<span class="report-completed">Read only</span>'
     : '<button class="ghost btn-sm btn-danger" data-action="delete-override" data-domain="' + escAttr(item.domain) + '">Delete</button>';
   return '<tr>' +
-    '<td style="font-weight:700">' + esc(item.domain) + '</td>' +
+    '<td class="cell-strong">' + esc(item.domain) + '</td>' +
     '<td><span class="' + badgeClass + '">' + esc(item.action) + '</span></td>' +
-    '<td style="color:var(--muted)">' + esc(item.reason || '--') + '</td>' +
-    '<td style="color:var(--muted)">' + fmtTime(item.updated_at) + '</td>' +
+    '<td class="cell-muted">' + esc(item.reason || '--') + '</td>' +
+    '<td class="cell-muted">' + fmtTime(item.updated_at) + '</td>' +
     '<td>' + actionCell + '</td>' +
     '</tr>';
 }
@@ -514,17 +514,17 @@ function renderBrands() {
 }
 
 function renderBrandRow(item) {
-  const alts = (item.alt_domains || []).map(alt => `<span class="badge-allow" style="font-size:10px; padding: 2px 6px; margin: 2px; display: inline-block; border-radius: 4px;">${esc(alt)}</span>`).join('');
+  const alts = (item.alt_domains || []).map(alt => `<span class="badge-allow tag-inline-badge">${esc(alt)}</span>`).join('');
   const actionCell = state.session.readOnly
     ? '<span class="report-completed">Read only</span>'
-    : '<button class="ghost btn-sm" data-action="edit-brand" data-brand-id="' + item.id + '" style="margin-right:8px;">Edit</button>' +
+    : '<button class="ghost btn-sm brand-edit-btn" data-action="edit-brand" data-brand-id="' + item.id + '">Edit</button>' +
       '<button class="ghost btn-sm btn-danger" data-action="delete-brand" data-brand-id="' + item.id + '">Delete</button>';
   return '<tr>' +
-    '<td style="color:var(--muted)">' + esc(item.id) + '</td>' +
-    '<td style="font-weight:700">' + esc(item.name) + '</td>' +
-    '<td><a href="http://' + esc(item.official_domain) + '" target="_blank" style="color:var(--accent); text-decoration:none;">' + esc(item.official_domain) + '</a></td>' +
-    '<td>' + (alts || '<span style="color:var(--muted)">--</span>') + '</td>' +
-    '<td style="color:var(--muted)">' + fmtTime(item.updated_at || item.created_at) + '</td>' +
+    '<td class="cell-muted">' + esc(item.id) + '</td>' +
+    '<td class="cell-strong">' + esc(item.name) + '</td>' +
+    '<td><a href="http://' + esc(item.official_domain) + '" target="_blank" class="brand-domain-link">' + esc(item.official_domain) + '</a></td>' +
+    '<td>' + (alts || '<span class="cell-muted">--</span>') + '</td>' +
+    '<td class="cell-muted">' + fmtTime(item.updated_at || item.created_at) + '</td>' +
     '<td>' + actionCell + '</td>' +
     '</tr>';
 }
@@ -718,7 +718,7 @@ async function loadMetrics() {
       const max = val.max_duration_ms || 0;
       const latencyPct = max ? Math.min(100, Math.max(4, Math.round(avg / max * 100))) : 0;
       return '<tr>' +
-        '<td style="font-weight:700">' + esc(key) + '</td>' +
+        '<td class="cell-strong">' + esc(key) + '</td>' +
         '<td>' + (val.count || 0).toLocaleString() + '</td>' +
         '<td><span class="latency-readout">' + avg + 'ms</span><span class="latency-bars" style="--latency-level:' + latencyPct + '%"><i></i></span></td>' +
         '<td>' + max + 'ms</td>' +
@@ -756,16 +756,16 @@ async function loadAgentStatus() {
           const stateClass = t.state === 'running' ? 'badge-allow' : (t.state === 'failed' ? 'badge-block' : '');
           const stateLabel = t.state === 'running' ? 'Running' : (t.state === 'failed' ? 'Failed' : 'Idle');
           const statusPulse = t.state === 'running' ? ' agent-status-pulse' : '';
-          const lastErr = t.last_error ? `<span style="color:var(--bad); font-size: 12px;">${esc(t.last_error)}</span>` : '--';
+          const lastErr = t.last_error ? `<span class="latency-error-text">${esc(t.last_error)}</span>` : '--';
           
           return '<tr>' +
-            '<td style="font-weight:700">' + esc(t.name) + '</td>' +
+            '<td class="cell-strong">' + esc(t.name) + '</td>' +
             '<td><span class="' + stateClass + statusPulse + '">' + stateLabel + '</span></td>' +
             '<td>' + esc(t.interval) + '</td>' +
             '<td>' + fmtTime(t.last_run) + '</td>' +
             '<td>' + fmtTime(t.next_run) + '</td>' +
             '<td>' + t.run_count + ' / ' + t.error_count + '</td>' +
-            '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + esc(t.last_error) + '">' + lastErr + '</td>' +
+            '<td class="cell-truncate-200" title="' + esc(t.last_error) + '">' + lastErr + '</td>' +
             '<td><button class="ghost btn-sm" data-action="trigger-agent-task" data-task-name="' + escAttr(t.name) + '">Trigger</button></td>' +
             '</tr>';
         });
@@ -866,13 +866,13 @@ function renderGroupCard(g) {
   return `<div class="group-card">
     <div class="grp-header">
       <strong class="grp-name">${esc(g.name)}</strong>
-      <span style="font-size:11px;color:var(--muted)">ID: ${g.id}</span>
+      <span class="group-meta-note">ID: ${g.id}</span>
     </div>
     <p class="grp-desc">${esc(g.description || 'No description')}</p>
     <div class="grp-badges">
-      ${badges || '<span class="grp-badge" style="background:rgba(255,255,255,.05);color:var(--muted)">no blocked categories</span>'}
+      ${badges || '<span class="grp-badge grp-badge-muted">no blocked categories</span>'}
     </div>
-    <div class="grp-features" style="margin-top: 8px;">
+    <div class="grp-features grp-features-gap">
       ${strictPhish} &middot; ${strictMal}
     </div>
     <div class="grp-actions">
@@ -905,9 +905,9 @@ function renderMappingRow(item) {
   const typeLabel = typeLabels[item.mapping_type] || item.mapping_type;
   return '<tr>' +
     '<td>' + esc(typeLabel) + '</td>' +
-    '<td style="font-weight:700">' + esc(item.value) + '</td>' +
-    '<td><span class="chip" style="background:rgba(29,111,138,.08);color:var(--accent);font-weight:700">' + esc(item.group_name || ('Group ID ' + item.group_id)) + '</span></td>' +
-    '<td style="color:var(--muted)">' + fmtTime(item.created_at) + '</td>' +
+    '<td class="cell-strong">' + esc(item.value) + '</td>' +
+    '<td><span class="chip chip-accent">' + esc(item.group_name || ('Group ID ' + item.group_id)) + '</span></td>' +
+    '<td class="cell-muted">' + fmtTime(item.created_at) + '</td>' +
     '<td><button class="ghost btn-sm btn-danger" data-action="delete-mapping" data-mapping-id="' + item.id + '">Delete</button></td>' +
     '</tr>';
 }
@@ -976,10 +976,10 @@ async function loadGroupOverrides() {
 function renderGroupOverrideRow(item, group_id) {
   const badgeClass = item.action === 'block' ? 'badge-block' : 'badge-allow';
   return '<tr>' +
-    '<td style="font-weight:700">' + esc(item.domain) + '</td>' +
+    '<td class="cell-strong">' + esc(item.domain) + '</td>' +
     '<td><span class="' + badgeClass + '">' + esc(item.action) + '</span></td>' +
-    '<td style="color:var(--muted)">' + esc(item.reason || '--') + '</td>' +
-    '<td style="color:var(--muted)">' + fmtTime(item.updated_at) + '</td>' +
+    '<td class="cell-muted">' + esc(item.reason || '--') + '</td>' +
+    '<td class="cell-muted">' + fmtTime(item.updated_at) + '</td>' +
     '<td><button class="ghost btn-sm btn-danger" data-action="delete-group-override" data-group-id="' + group_id + '" data-domain="' + escAttr(item.domain) + '">Delete</button></td>' +
     '</tr>';
 }
@@ -1232,7 +1232,7 @@ async function testAI() {
     resEl.style.display = 'block';
     resEl.style.borderColor = 'var(--line)';
     resEl.style.color = 'var(--muted)';
-    resEl.innerHTML = '<span style="color:var(--accent)">Executing dynamic AI engine test with mock prompt...</span>';
+    resEl.innerHTML = '<span class="status-inline-note">Executing dynamic AI engine test with mock prompt...</span>';
   }
   
   try {
@@ -1272,7 +1272,7 @@ async function sendTestAlert() {
     resEl.style.display = 'block';
     resEl.style.borderColor = 'var(--line)';
     resEl.style.color = 'var(--muted)';
-    resEl.innerHTML = '<span style="color:var(--accent)">Dispatching test notification payload to webhook...</span>';
+    resEl.innerHTML = '<span class="status-inline-note">Dispatching test notification payload to webhook...</span>';
   }
   
   try {

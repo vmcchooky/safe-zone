@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="/assets/quorix.min.css?v=__SAFE_ZONE_ASSET_REV__">
   <link rel="stylesheet" href="/assets/safe-zone.css?v=__SAFE_ZONE_ASSET_REV__">
 </head>
-<body class="sentinel-access-page" oncontextmenu="return false;">
+<body class="sentinel-access-page">
   <main class="access-portal" id="loginCard">
     <section class="access-brand-pane">
       <div class="access-brand-mark stellar-pulse">SZ</div>
@@ -21,12 +21,12 @@
       <form id="adminLoginForm" class="access-form">
         <div class="form-group">
           <label for="username">Identity</label>
-          <input type="text" id="username" value="guest" required autocomplete="off" placeholder="Enter username">
+          <input type="text" id="username" required autocomplete="off" placeholder="Enter username">
         </div>
 
         <div class="form-group">
           <label for="password">Access token</label>
-          <input type="password" id="password" value="guestpass12" required placeholder="Enter token" autofocus>
+          <input type="password" id="password" required placeholder="Enter token" autofocus>
         </div>
 
         <button type="submit" id="submitBtn" class="access-submit">
@@ -41,78 +41,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <script>
-    const form = document.getElementById('adminLoginForm');
-    const btn = document.getElementById('submitBtn');
-    const btnText = document.getElementById('btnText');
-    const btnIcon = document.getElementById('btnIcon');
-    const inlineError = document.getElementById('inlineError');
-    const toast = document.getElementById('toast');
-    let toastTimer;
-
-    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
-    const motionOK = () => !motionQuery.matches;
-
-    function pulseNode(el, className) {
-      if (!el || !motionOK()) return;
-      el.classList.remove(className);
-      void el.offsetWidth;
-      el.classList.add(className);
-    }
-
-    function showToast(msg) {
-      inlineError.textContent = msg;
-      inlineError.classList.add('show');
-      if (motionOK()) inlineError.classList.add('comet-in');
-      
-      // Also show toast as a fallback
-      toast.textContent = msg;
-      toast.className = 'toast err show';
-      clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => { 
-        toast.classList.remove('show'); 
-        if (motionOK()) toast.classList.add('is-closing');
-        setTimeout(() => toast.classList.remove('is-closing'), 190);
-      }, 3000);
-    }
-
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      btn.disabled = true;
-      inlineError.classList.remove('show', 'comet-in');
-      
-      btnText.textContent = 'Verifying...';
-      if (motionOK()) pulseNode(btnText, 'star-glint');
-      btnIcon.textContent = '';
-
-      const username = document.getElementById('username').value.trim();
-      const password = document.getElementById('password').value;
-
-      try {
-        const res = await fetch('/v1/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-
-        if (!res.ok) {
-          const err = await res.json();
-          throw new Error(err.error || 'Authentication failed');
-        }
-
-        btnText.textContent = 'Access granted';
-        btnIcon.textContent = 'OK';
-        if (motionOK()) pulseNode(btnText, 'star-glint');
-        setTimeout(() => {
-          window.location.reload();
-        }, 500);
-      } catch (err) {
-        showToast(err.message);
-        btn.disabled = false;
-        btnText.textContent = 'Establish connection';
-        btnIcon.textContent = '->';
-      }
-    });
-  </script>
+  <script src="/assets/login.js?v=__SAFE_ZONE_ASSET_REV__"></script>
 </body>
 </html>

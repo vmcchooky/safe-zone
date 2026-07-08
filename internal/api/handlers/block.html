@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quarantine Gate | Safe Zone</title>
-  <link rel="stylesheet" href="/assets/quorix.min.css">
-  <link rel="stylesheet" href="/assets/safe-zone.css">
-  <script src="/assets/quorix.min.js" defer></script>
+  <link rel="stylesheet" href="/assets/quorix.min.css?v=__SAFE_ZONE_ASSET_REV__">
+  <link rel="stylesheet" href="/assets/safe-zone.css?v=__SAFE_ZONE_ASSET_REV__">
+  <script src="/assets/quorix.min.js?v=__SAFE_ZONE_ASSET_REV__" defer></script>
 </head>
 <body class="block-page quarantine-page">
   <main class="shell block-shell quarantine-shell">
@@ -120,57 +120,6 @@
       </aside>
     </section>
   </main>
-  <script>
-    const blockForm = document.getElementById('block-report-form');
-    const blockStatus = document.getElementById('block-report-status');
-    const blockToast = document.getElementById('block-report-toast');
-    let blockToastTimer;
-
-    function showBlockToast(message) {
-      if (!blockToast) return;
-      const toastText = blockToast.querySelector('span');
-      if (toastText && message) {
-        toastText.textContent = message;
-      }
-      blockToast.classList.remove('show');
-      void blockToast.offsetWidth;
-      blockToast.classList.add('show');
-      window.clearTimeout(blockToastTimer);
-      blockToastTimer = window.setTimeout(() => {
-        blockToast.classList.remove('show');
-      }, 3400);
-    }
-
-    if (blockForm && blockStatus && window.fetch) {
-      blockForm.addEventListener('submit', async event => {
-        event.preventDefault();
-        const submit = blockForm.querySelector('button[type="submit"]');
-        const originalLabel = submit ? submit.textContent : '';
-        if (submit) {
-          submit.disabled = true;
-          submit.textContent = 'Submitting report...';
-        }
-        try {
-          const response = await fetch(blockForm.action, {
-            method: blockForm.method,
-            body: new FormData(blockForm),
-          });
-          if (!response.ok) {
-            throw new Error('Request failed');
-          }
-          blockStatus.classList.add('show');
-          showBlockToast('Your review request was sent successfully.');
-          blockForm.reset();
-        } catch (err) {
-          blockForm.submit();
-        } finally {
-          if (submit) {
-            submit.disabled = false;
-            submit.textContent = originalLabel;
-          }
-        }
-      });
-    }
-  </script>
+  <script src="/assets/block.js?v=__SAFE_ZONE_ASSET_REV__"></script>
 </body>
 </html>

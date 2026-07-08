@@ -2,7 +2,8 @@ function readSessionBootstrap() {
   const el = document.getElementById('session-bootstrap');
   if (!el) return null;
   try {
-    return JSON.parse(el.textContent || '{}');
+    const raw = (el.content && el.content.textContent) || el.textContent || '{}';
+    return JSON.parse(raw);
   } catch {
     return null;
   }

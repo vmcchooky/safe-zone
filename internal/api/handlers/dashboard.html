@@ -10,7 +10,7 @@
   <script src="/assets/quorix.min.js?v=__SAFE_ZONE_ASSET_REV__" defer></script>
 </head>
 <body class="dashboard-page">
-<script id="session-bootstrap" type="application/json">__SAFE_ZONE_SESSION_BOOTSTRAP__</script>
+<template id="session-bootstrap">__SAFE_ZONE_SESSION_BOOTSTRAP__</template>
 <canvas id="appCanvasBackground" aria-hidden="true"></canvas>
 <svg class="svg-sprite" aria-hidden="true" focusable="false">
   <symbol id="icon-analysis" viewBox="0 0 24 24">
@@ -96,7 +96,7 @@
       <span class="nav-item-label">Logout</span>
       <div class="nav-tooltip" role="tooltip">Logout</div>
     </button>
-    <div id="system-version" style="font-size: 10px; color: var(--muted); padding: 10px; text-align: center; display: block; opacity: 0.6; font-family: var(--font-mono);">v0.1.0-prod</div>
+    <div id="system-version">v0.1.0-prod</div>
   </aside>
   <button class="mobile-nav-trigger" id="mobile-nav-trigger" type="button" aria-label="Open navigation" aria-controls="dashboard-nav" aria-expanded="false" title="Open navigation">
     <svg><use href="#icon-collapse"></use></svg>
@@ -370,7 +370,7 @@
       </div>
 
       <!-- Phishing Protection / Brand Spoofing CRUD -->
-      <div class="panel rule-composer" style="margin-top: var(--gap);">
+      <div class="panel rule-composer panel-stack-gap">
         <div class="panel-head">
           <div>
             <span class="eyebrow">Brand Composer</span>
@@ -386,7 +386,7 @@
         </form>
       </div>
 
-      <div class="panel" style="margin-top: var(--gap);">
+      <div class="panel panel-stack-gap">
         <div class="panel-head"><h2>Phishing Protection / Brand Spoofing Rules</h2><span id="brand-count">0 brands</span></div>
         <div class="table-wrap">
           <table class="override-table">
@@ -458,16 +458,16 @@
       </div>
 
       <!-- Whitelist & Storage Health Card Grid -->
-      <div class="panel-grid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px;">
+      <div class="panel-grid system-panel-grid">
         <!-- Card 1: Tranco Whitelist Health -->
-        <div class="panel" style="margin-top: 0;">
+        <div class="panel panel-reset-top">
           <div class="panel-head">
             <div>
               <span class="eyebrow">Whitelist Engine</span>
               <h2>Tranco Whitelist Health</h2>
             </div>
           </div>
-          <div class="facts-grid" style="margin-top: 15px;">
+          <div class="facts-grid facts-grid-top-gap">
             <div><span>Loaded Domains</span><strong id="wl-loaded">0</strong></div>
             <div><span>Bloom Filter Size</span><strong id="wl-size">-- KB</strong></div>
             <div><span>Hash Functions (K)</span><strong id="wl-hashes">0</strong></div>
@@ -477,24 +477,24 @@
         </div>
 
         <!-- Card 2: Storage Disk Health & Control -->
-        <div class="panel" style="margin-top: 0;">
+        <div class="panel panel-reset-top">
           <div class="panel-head">
             <div>
               <span class="eyebrow">Database Storage</span>
               <h2>SQLite Storage Disk</h2>
             </div>
           </div>
-          <div class="facts-grid" style="margin-top: 15px; margin-bottom: 20px;">
+          <div class="facts-grid facts-grid-top-bottom-gap">
             <div><span>SQLite File Size</span><strong id="db-file-size">-- MB</strong></div>
             <div><span>VPS Free Disk Space</span><strong id="db-disk-free">-- GB</strong></div>
           </div>
-          <div style="display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--border); padding-top: 15px;">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span style="font-size: 13px; font-weight: bold; color: var(--fg);">Telemetry Log Retention</span>
-              <strong id="retention-days-val" style="font-family: var(--font-mono); color: var(--warn);">-- Days</strong>
+          <div class="retention-control">
+            <div class="retention-control-head">
+              <span class="retention-control-label">Telemetry Log Retention</span>
+              <strong id="retention-days-val" class="retention-control-value">-- Days</strong>
             </div>
-            <input type="range" id="retention-days-slider" min="1" max="90" value="30" style="width: 100%; accent-color: var(--warn); cursor: pointer;">
-            <span style="font-size: 11px; opacity: 0.7;">Telemetry logs older than this threshold will be pruned automatically to conserve disk space.</span>
+            <input type="range" id="retention-days-slider" min="1" max="90" value="30" class="retention-slider">
+            <span class="retention-help">Telemetry logs older than this threshold will be pruned automatically to conserve disk space.</span>
           </div>
         </div>
       </div>
@@ -608,26 +608,26 @@
             <h2>AI Engine Settings</h2>
           </div>
         </div>
-        <div class="panel-body" style="padding: 20px; display: grid; gap: 16px;">
-          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+        <div class="panel-body settings-panel-body">
+          <p class="settings-copy">
             Configure the generative AI engine parameters used for autonomous forensic investigation and threat verification.
           </p>
-          <div class="settings-form-group" style="display: grid; gap: 8px;">
-            <label for="setting-gemini-api-key" style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="settings-form-group">
+            <label for="setting-gemini-api-key" class="settings-split-label">
               <span>Gemini API Key</span>
-              <button class="ghost btn-sm" data-action="toggle-password-visibility" data-password-target="setting-gemini-api-key" type="button" style="min-height: 24px; padding: 0 8px; font-size: 11px;">
+              <button class="ghost btn-sm settings-mini-action" data-action="toggle-password-visibility" data-password-target="setting-gemini-api-key" type="button">
                 Show / Hide
               </button>
             </label>
-            <div style="position: relative; display: flex; gap: 10px;">
-              <input type="password" id="setting-gemini-api-key" autocomplete="off" placeholder="Enter Gemini API Key (masked if set)" style="font-family: var(--font-mono); letter-spacing: 0.1em;">
+            <div class="settings-input-row">
+              <input type="password" id="setting-gemini-api-key" autocomplete="off" placeholder="Enter Gemini API Key (masked if set)" class="settings-secret-input">
             </div>
           </div>
-          <div style="display: flex; gap: 12px; margin-top: 8px;">
-            <button data-action="save-settings" class="btn-allow" style="min-height: 40px; padding: 0 20px;">Save Configuration</button>
-            <button data-action="test-ai" class="ghost" style="min-height: 40px; padding: 0 20px;">Test Engine Connection</button>
+          <div class="settings-actions">
+            <button data-action="save-settings" class="btn-allow settings-primary-action">Save Configuration</button>
+            <button data-action="test-ai" class="ghost settings-primary-action">Test Engine Connection</button>
           </div>
-          <div id="test-ai-result" style="display: none; padding: 12px; border-radius: var(--radius); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.4; background: rgba(255,255,255,0.01);">
+          <div id="test-ai-result" class="settings-result-box">
             <!-- Connection test output goes here -->
           </div>
         </div>
@@ -641,14 +641,14 @@
             <h2>Analysis Scoring</h2>
           </div>
         </div>
-        <div class="panel-body" style="padding: 20px; display: grid; gap: 16px;">
-          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+        <div class="panel-body settings-panel-body">
+          <p class="settings-copy">
             Tune lexical-analysis thresholds. Invalid or unsafe values are rejected by the API, and Reset restores production defaults.
           </p>
-          <textarea id="setting-analysis-config" spellcheck="false" style="min-height: 360px; width: 100%; resize: vertical; font-family: var(--font-mono); font-size: 12px; line-height: 1.5;"></textarea>
-          <div style="display: flex; gap: 12px; margin-top: 8px;">
-            <button data-action="save-analysis-config" class="btn-allow" style="min-height: 40px; padding: 0 20px;">Save Scoring Configuration</button>
-            <button data-action="reset-analysis-config" class="ghost" style="min-height: 40px; padding: 0 20px;">Reset to Defaults</button>
+          <textarea id="setting-analysis-config" spellcheck="false" class="settings-config-editor"></textarea>
+          <div class="settings-actions">
+            <button data-action="save-analysis-config" class="btn-allow settings-primary-action">Save Scoring Configuration</button>
+            <button data-action="reset-analysis-config" class="ghost settings-primary-action">Reset to Defaults</button>
           </div>
         </div>
       </div>
@@ -661,26 +661,26 @@
             <h2>Alert Notifications</h2>
           </div>
         </div>
-        <div class="panel-body" style="padding: 20px; display: grid; gap: 16px;">
-          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+        <div class="panel-body settings-panel-body">
+          <p class="settings-copy">
             Provide a Discord or Slack Webhook URL to deliver immediate notifications when suspicious or malicious threats are discovered.
           </p>
-          <div class="settings-form-group" style="display: grid; gap: 8px;">
-            <label for="setting-agent-webhook" style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="settings-form-group">
+            <label for="setting-agent-webhook" class="settings-split-label">
               <span>Webhook URL</span>
-              <button class="ghost btn-sm" data-action="toggle-password-visibility" data-password-target="setting-agent-webhook" type="button" style="min-height: 24px; padding: 0 8px; font-size: 11px;">
+              <button class="ghost btn-sm settings-mini-action" data-action="toggle-password-visibility" data-password-target="setting-agent-webhook" type="button">
                 Show / Hide
               </button>
             </label>
-            <div style="position: relative; display: flex; gap: 10px;">
-              <input type="password" id="setting-agent-webhook" autocomplete="off" placeholder="Enter Discord / Slack / Generic Webhook URL" style="font-family: var(--font-mono); letter-spacing: 0.1em;">
+            <div class="settings-input-row">
+              <input type="password" id="setting-agent-webhook" autocomplete="off" placeholder="Enter Discord / Slack / Generic Webhook URL" class="settings-secret-input">
             </div>
           </div>
-          <div style="display: flex; gap: 12px; margin-top: 8px;">
-            <button data-action="save-settings" class="btn-allow" style="min-height: 40px; padding: 0 20px;">Save Configuration</button>
-            <button data-action="send-test-alert" class="ghost" style="min-height: 40px; padding: 0 20px;">Send Test Notification</button>
+          <div class="settings-actions">
+            <button data-action="save-settings" class="btn-allow settings-primary-action">Save Configuration</button>
+            <button data-action="send-test-alert" class="ghost settings-primary-action">Send Test Notification</button>
           </div>
-          <div id="test-alert-result" style="display: none; padding: 12px; border-radius: var(--radius); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.4; background: rgba(255,255,255,0.01);">
+          <div id="test-alert-result" class="settings-result-box">
             <!-- Alert test output goes here -->
           </div>
         </div>
@@ -694,27 +694,27 @@
           </div>
           <span class="chip" id="guest-access-status">Loading</span>
         </div>
-        <div class="panel-body" style="padding: 20px; display: grid; gap: 16px;">
-          <p style="color: var(--muted); font-size: 0.9rem; margin-bottom: 8px;">
+        <div class="panel-body settings-panel-body">
+          <p class="settings-copy">
             Create, enable, disable, rotate, or delete the public read-only guest account.
           </p>
-          <div class="settings-form-group" style="display: grid; gap: 8px;">
-            <label for="guest-password-input" style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="settings-form-group">
+            <label for="guest-password-input" class="settings-split-label">
               <span>Guest Password</span>
-              <button class="ghost btn-sm" data-action="toggle-password-visibility" data-password-target="guest-password-input" type="button" style="min-height: 24px; padding: 0 8px; font-size: 11px;">
+              <button class="ghost btn-sm settings-mini-action" data-action="toggle-password-visibility" data-password-target="guest-password-input" type="button">
                 Show / Hide
               </button>
             </label>
-            <input type="password" id="guest-password-input" autocomplete="off" value="guestpass12" placeholder="Enter guest password" style="font-family: var(--font-mono); letter-spacing: 0.08em;">
+            <input type="password" id="guest-password-input" autocomplete="off" placeholder="Enter guest password" class="settings-secret-input settings-secret-input-guest">
           </div>
           <div class="recent-meta" id="guest-access-detail">
             <span>username: guest</span>
             <span>status: loading</span>
           </div>
-          <div style="display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px;">
-            <button data-action="create-or-enable-guest-access" class="btn-allow" style="min-height: 40px; padding: 0 20px;">Create / Enable Guest</button>
-            <button data-action="disable-guest-access" class="ghost" style="min-height: 40px; padding: 0 20px;">Disable Guest</button>
-            <button data-action="delete-guest-access" class="ghost btn-danger" style="min-height: 40px; padding: 0 20px;">Delete Guest</button>
+          <div class="settings-actions settings-actions-wrap">
+            <button data-action="create-or-enable-guest-access" class="btn-allow settings-primary-action">Create / Enable Guest</button>
+            <button data-action="disable-guest-access" class="ghost settings-primary-action">Disable Guest</button>
+            <button data-action="delete-guest-access" class="ghost btn-danger settings-primary-action">Delete Guest</button>
           </div>
         </div>
       </div>
@@ -839,8 +839,7 @@
 
 <div class="toast" id="toast"></div>
 
-<!-- Chart.js from CDN - graceful degradation if unavailable -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/assets/chart.umd.min.js?v=__SAFE_ZONE_ASSET_REV__"></script>
 
 <script src="/assets/dashboard-core.js?v=__SAFE_ZONE_ASSET_REV__"></script>
 <script src="/assets/dashboard-features.js?v=__SAFE_ZONE_ASSET_REV__"></script>

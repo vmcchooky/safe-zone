@@ -20,7 +20,7 @@ import (
 //go:embed block.html
 var blockHTML string
 
-var blockTemplate = template.Must(template.New("block").Parse(blockHTML))
+var blockTemplate = template.Must(template.New("block").Parse(renderHTMLAssets(blockHTML)))
 
 type blockPageData struct {
 	Domain          string

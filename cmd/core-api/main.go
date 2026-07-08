@@ -235,7 +235,8 @@ func main() {
 	}
 
 	recoveryHandler := serve.Recovery(handler, metrics)
-	requestIDHandler := serve.WithRequestID(httputil.LogRequests("core-api", metrics)(recoveryHandler))
+	securityHeadersHandler := serve.SecurityHeaders(recoveryHandler)
+	requestIDHandler := serve.WithRequestID(httputil.LogRequests("core-api", metrics)(securityHeadersHandler))
 
 	srv := &http.Server{
 		Addr:              addr,
