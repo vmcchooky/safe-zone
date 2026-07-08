@@ -36,7 +36,6 @@ import { useNavigate } from 'react-router-dom';
 
 import { apiFetch, messageFromError } from '../../lib/api';
 import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
-import './TelemetryPage.css';
 
 const PAGE_SIZE = 20;
 const PERIOD_OPTIONS = [
