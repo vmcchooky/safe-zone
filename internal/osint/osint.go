@@ -3,6 +3,7 @@ package osint
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -83,6 +84,16 @@ type DomainRoleClassifier interface {
 	ClassifyDomainRole(ctx context.Context, domain string, contexts []string) (string, error)
 }
 
+type hostResolver interface {
+	LookupIP(ctx context.Context, network, host string) ([]net.IP, error)
+}
+
+type validatedSource struct {
+	host string
+	port string
+	ips  []net.IP
+}
+
 type Options struct {
 	Enabled             bool
 	Mode                string
@@ -96,6 +107,7 @@ type Options struct {
 	MaxBytes            int64
 	AllowPrivateSources bool
 	RoleClassifier      DomainRoleClassifier
+	Resolver            hostResolver
 }
 
 type Service struct {
@@ -111,6 +123,7 @@ type Service struct {
 	maxBytes            int64
 	allowPrivateSources bool
 	roleClassifier      DomainRoleClassifier
+	resolver            hostResolver
 	mu                  sync.Mutex
 	memory              map[string]Report
 }
@@ -136,6 +149,10 @@ func NewService(options Options) *Service {
 	if client == nil {
 		client = &http.Client{Timeout: timeout}
 	}
+	resolver := options.Resolver
+	if resolver == nil {
+		resolver = net.DefaultResolver
+	}
 	trusted := normalizeList(options.TrustedDomains)
 	if len(trusted) == 0 {
 		trusted = DefaultTrustedDomains()
@@ -154,6 +171,7 @@ func NewService(options Options) *Service {
 		maxBytes:            maxBytes,
 		allowPrivateSources: options.AllowPrivateSources,
 		roleClassifier:      options.RoleClassifier,
+		resolver:            resolver,
 		memory:              make(map[string]Report),
 	}
 }
@@ -326,9 +344,6 @@ func (s *Service) fetchSource(ctx context.Context, domain, source string) (Evide
 	if err != nil || parsed.Hostname() == "" {
 		return Evidence{}, fmt.Errorf("invalid source url")
 	}
-	if err := s.validateSource(ctx, parsed); err != nil {
-		return Evidence{}, err
-	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
 	if err != nil {
@@ -336,11 +351,12 @@ func (s *Service) fetchSource(ctx context.Context, domain, source string) (Evide
 	}
 	req.Header.Set("User-Agent", "SafeRoad-OSINT/1.0")
 	client := *s.httpClient
+	client.Transport = s.validatedSourceTransport(client.Transport)
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 3 {
 			return errors.New("too many redirects")
 		}
-		return s.validateSource(req.Context(), req.URL)
+		return nil
 	}
 
 	resp, err := client.Do(req)
@@ -491,27 +507,110 @@ func heuristicDomainRole(domain string, contexts []string) string {
 	}
 }
 
-func (s *Service) validateSource(ctx context.Context, parsed *url.URL) error {
+func (s *Service) validatedSourceTransport(base http.RoundTripper) http.RoundTripper {
+	return &validatedSourceTransport{
+		service: s,
+		base:    base,
+	}
+}
+
+type validatedSourceTransport struct {
+	service *Service
+	base    http.RoundTripper
+}
+
+func (t *validatedSourceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	validated, err := t.service.validateSource(req.Context(), req.URL)
+	if err != nil {
+		return nil, err
+	}
+	originalHost := req.URL.Host
+	var lastErr error
+	for _, ip := range validated.ips {
+		pinnedReq := req.Clone(req.Context())
+		pinnedURL := *req.URL
+		pinnedURL.Host = net.JoinHostPort(ip.String(), validated.port)
+		pinnedReq.URL = &pinnedURL
+		pinnedReq.Host = originalHost
+
+		transport := cloneValidatedTransport(t.base, validated.host, req.URL.Scheme)
+		resp, err := transport.RoundTrip(pinnedReq)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = fmt.Errorf("resolve source host: no usable addresses")
+	}
+	return nil, lastErr
+}
+
+func cloneValidatedTransport(base http.RoundTripper, serverName, scheme string) *http.Transport {
+	var transport *http.Transport
+	if existing, ok := base.(*http.Transport); ok && existing != nil {
+		transport = existing.Clone()
+	} else {
+		transport = http.DefaultTransport.(*http.Transport).Clone()
+	}
+	transport.DisableKeepAlives = true
+	transport.DialTLS = nil
+	transport.DialTLSContext = nil
+	if scheme == "https" {
+		tlsConfig := transport.TLSClientConfig
+		if tlsConfig != nil {
+			tlsConfig = tlsConfig.Clone()
+		} else {
+			tlsConfig = &tls.Config{}
+		}
+		tlsConfig.ServerName = serverName
+		transport.TLSClientConfig = tlsConfig
+	}
+	return transport
+}
+
+func (s *Service) validateSource(ctx context.Context, parsed *url.URL) (validatedSource, error) {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("unsupported source scheme")
+		return validatedSource{}, fmt.Errorf("unsupported source scheme")
 	}
 	host := strings.ToLower(parsed.Hostname())
 	if !s.isTrustedHost(host) {
-		return fmt.Errorf("untrusted source host %q", host)
+		return validatedSource{}, fmt.Errorf("untrusted source host %q", host)
 	}
-	if s.allowPrivateSources {
-		return nil
-	}
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
-	if err != nil {
-		return fmt.Errorf("resolve source host: %w", err)
-	}
-	for _, ip := range ips {
-		if isBlockedIP(ip) {
-			return fmt.Errorf("blocked private source address")
+	port := parsed.Port()
+	if port == "" {
+		switch parsed.Scheme {
+		case "https":
+			port = "443"
+		default:
+			port = "80"
 		}
 	}
-	return nil
+
+	if ip := net.ParseIP(host); ip != nil {
+		if !s.allowPrivateSources && isBlockedIP(ip) {
+			return validatedSource{}, fmt.Errorf("blocked private source address")
+		}
+		return validatedSource{host: host, port: port, ips: []net.IP{ip}}, nil
+	}
+
+	ips, err := s.resolver.LookupIP(ctx, "ip", host)
+	if err != nil {
+		return validatedSource{}, fmt.Errorf("resolve source host: %w", err)
+	}
+	if len(ips) == 0 {
+		return validatedSource{}, fmt.Errorf("resolve source host: no addresses")
+	}
+	for _, ip := range ips {
+		if !s.allowPrivateSources && isBlockedIP(ip) {
+			return validatedSource{}, fmt.Errorf("blocked private source address")
+		}
+	}
+	return validatedSource{
+		host: host,
+		port: port,
+		ips:  append([]net.IP(nil), ips...),
+	}, nil
 }
 
 func (s *Service) sourceTrust(host string) (string, float64) {

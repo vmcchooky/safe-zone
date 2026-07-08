@@ -332,6 +332,59 @@ func TestSendSMTPRejectsPlaintextSubmission(t *testing.T) {
 	<-done
 }
 
+func TestSendTelegramEscapesHTMLSensitiveFields(t *testing.T) {
+	var received map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode telegram payload: %v", err)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	task := NewAlertTask(nil, AlertConfig{
+		TelegramEnabled: true,
+		TelegramToken:   "dummy_token",
+		TelegramChatID:  "dummy_chat_id",
+	})
+	task.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == "api.telegram.org" {
+			req.URL.Scheme = "http"
+			req.URL.Host = rxtHost(server.URL)
+		}
+		return http.DefaultTransport.RoundTrip(req)
+	})
+
+	err := task.sendTelegram(context.Background(), []SpoofResult{{
+		Domain:         `<b>evil</b>.example.com`,
+		Category:       `phish & grab`,
+		BrandName:      `<img src=x onerror=alert(1)>`,
+		OfficialDomain: `trusted.example.com" onclick="alert(1)`,
+		Reason:         `reason with <script>alert(1)</script>`,
+	}})
+	if err != nil {
+		t.Fatalf("sendTelegram returned error: %v", err)
+	}
+
+	text, _ := received["text"].(string)
+	if !strings.Contains(text, "<code>&lt;b&gt;evil&lt;/b&gt;.example.com</code>") {
+		t.Fatalf("expected escaped domain in telegram payload, got %q", text)
+	}
+	if strings.Contains(text, `<code><b>evil</b>.example.com</code>`) {
+		t.Fatalf("expected raw HTML domain to be escaped, got %q", text)
+	}
+	if !strings.Contains(text, "&lt;img src=x onerror=alert(1)&gt;") {
+		t.Fatalf("expected escaped brand name, got %q", text)
+	}
+	if !strings.Contains(text, `https://trusted.example.com&#34; onclick=&#34;alert(1)`) {
+		t.Fatalf("expected escaped official domain in href, got %q", text)
+	}
+	if !strings.Contains(text, "reason with &lt;script&gt;alert(1)&lt;/script&gt;") {
+		t.Fatalf("expected escaped reason, got %q", text)
+	}
+}
+
 func TestNewAlertTaskDefaultsSMTPUsernameToFrom(t *testing.T) {
 	task := NewAlertTask(nil, AlertConfig{
 		EmailFrom: "sender@example.test",

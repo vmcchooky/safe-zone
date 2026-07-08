@@ -40,7 +40,25 @@ func TestClientIP(t *testing.T) {
 			name:       "xff from trusted proxy (docker network)",
 			remoteAddr: "172.17.0.2:54321",
 			xff:        "8.8.8.8, 1.2.3.4",
-			expected:   "8.8.8.8",
+			expected:   "1.2.3.4",
+		},
+		{
+			name:       "spoofed xff from trusted proxy uses rightmost client hop",
+			remoteAddr: "127.0.0.1:12345",
+			xff:        "1.2.3.4, 198.51.100.23",
+			expected:   "198.51.100.23",
+		},
+		{
+			name:       "multiple trusted proxies return first untrusted hop from right",
+			remoteAddr: "127.0.0.1:12345",
+			xff:        "198.51.100.23, 10.0.0.9",
+			expected:   "198.51.100.23",
+		},
+		{
+			name:       "all trusted xff hops fall back to leftmost valid ip",
+			remoteAddr: "127.0.0.1:12345",
+			xff:        "192.168.1.10, 10.0.0.9",
+			expected:   "192.168.1.10",
 		},
 		{
 			name:       "xri from trusted proxy",
@@ -54,6 +72,13 @@ func TestClientIP(t *testing.T) {
 			xff:        "1.1.1.1",
 			xri:        "2.2.2.2",
 			expected:   "1.1.1.1",
+		},
+		{
+			name:       "invalid xff falls back to xri",
+			remoteAddr: "127.0.0.1:12345",
+			xff:        "not-an-ip",
+			xri:        "2.2.2.2",
+			expected:   "2.2.2.2",
 		},
 	}
 

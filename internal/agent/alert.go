@@ -308,11 +308,11 @@ func (t *AlertTask) sendTelegram(ctx context.Context, criticalEvents []SpoofResu
 	msg.WriteString("🚨 <b>Phát hiện Website giả mạo Ngân hàng / Cơ quan Nhà nước!</b>\n\n")
 
 	for _, e := range criticalEvents {
-		fmt.Fprintf(&msg, "📌 <b>Tên miền vi phạm:</b> <code>%s</code>\n", e.Domain)
-		fmt.Fprintf(&msg, "🏷️ <b>Phân loại:</b> %s\n", e.Category)
-		fmt.Fprintf(&msg, "🏢 <b>Thương hiệu bị mạo danh:</b> <b>%s</b>\n", e.BrandName)
-		fmt.Fprintf(&msg, "🌐 <b>Tên miền chính thức:</b> <a href=\"https://%s\">%s</a>\n", e.OfficialDomain, e.OfficialDomain)
-		fmt.Fprintf(&msg, "📝 <b>Lý do:</b> <i>%s</i>\n\n", e.Reason)
+		fmt.Fprintf(&msg, "📌 <b>Tên miền vi phạm:</b> <code>%s</code>\n", html.EscapeString(e.Domain))
+		fmt.Fprintf(&msg, "🏷️ <b>Phân loại:</b> %s\n", html.EscapeString(e.Category))
+		fmt.Fprintf(&msg, "🏢 <b>Thương hiệu bị mạo danh:</b> <b>%s</b>\n", html.EscapeString(e.BrandName))
+		fmt.Fprintf(&msg, "🌐 <b>Tên miền chính thức:</b> <a href=\"https://%s\">%s</a>\n", html.EscapeString(e.OfficialDomain), html.EscapeString(e.OfficialDomain))
+		fmt.Fprintf(&msg, "📝 <b>Lý do:</b> <i>%s</i>\n\n", html.EscapeString(e.Reason))
 	}
 	msg.WriteString("---------------------------------------------\n")
 	msg.WriteString("🔒 <i>Safe Zone - Bảo vệ người dân Việt Nam trước lừa đảo công nghệ cao.</i>")

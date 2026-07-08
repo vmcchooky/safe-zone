@@ -2,14 +2,29 @@ package osint
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"safe-zone/internal/analysis"
 )
+
+type stubResolver struct {
+	records map[string][]net.IP
+	err     error
+}
+
+func (r *stubResolver) LookupIP(_ context.Context, _ string, host string) ([]net.IP, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	ips := r.records[host]
+	return append([]net.IP(nil), ips...), nil
+}
 
 func TestLookupOfficialWarningEvidence(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +97,72 @@ func TestUntrustedSourceRejected(t *testing.T) {
 	_, err := service.fetchSource(context.Background(), "dichvucong-vn.com", "https://untrusted.example/warning")
 	if err == nil {
 		t.Fatal("expected untrusted source to be rejected")
+	}
+}
+
+func TestValidateSourceRejectsPrivateResolvedIP(t *testing.T) {
+	service := NewService(Options{
+		Enabled:        true,
+		TrustedDomains: []string{"trusted.example"},
+		Resolver: &stubResolver{
+			records: map[string][]net.IP{
+				"trusted.example": {net.ParseIP("127.0.0.1")},
+			},
+		},
+	})
+
+	parsed, err := url.Parse("https://trusted.example/warning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.validateSource(context.Background(), parsed)
+	if err == nil || !strings.Contains(err.Error(), "blocked private source address") {
+		t.Fatalf("expected blocked private source address, got %v", err)
+	}
+}
+
+func TestFetchSourcePinsValidatedIP(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<html><title>Cảnh báo giả mạo</title><body>evil.example là website giả mạo, lừa đảo.</body></html>`))
+	}))
+	defer server.Close()
+
+	var dialedAddr string
+	baseTransport := http.DefaultTransport.(*http.Transport).Clone()
+	baseTransport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		dialedAddr = addr
+		var dialer net.Dialer
+		return dialer.DialContext(ctx, network, server.Listener.Addr().String())
+	}
+
+	service := NewService(Options{
+		Enabled:        true,
+		Timeout:        time.Second,
+		HTTPClient:     &http.Client{Timeout: time.Second, Transport: baseTransport},
+		TrustedDomains: []string{"trusted.example"},
+		Resolver: &stubResolver{
+			records: map[string][]net.IP{
+				"trusted.example": {net.ParseIP("93.184.216.34")},
+			},
+		},
+	})
+
+	evidence, err := service.fetchSource(context.Background(), "evil.example", "http://trusted.example/warning")
+	if err != nil {
+		t.Fatalf("fetch source: %v", err)
+	}
+	if evidence.SourceURL == "" {
+		t.Fatalf("expected evidence to be returned, got %#v", evidence)
+	}
+	if dialedAddr == "" {
+		t.Fatal("expected dialed address to be captured")
+	}
+	host, port, err := net.SplitHostPort(dialedAddr)
+	if err != nil {
+		t.Fatalf("split dialed address: %v", err)
+	}
+	if host != "93.184.216.34" || port != "80" {
+		t.Fatalf("expected pinned dial to 93.184.216.34:80, got %s", dialedAddr)
 	}
 }
 
