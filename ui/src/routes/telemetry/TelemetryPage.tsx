@@ -341,8 +341,26 @@ export function TelemetryPage() {
           <strong>{riskRatio}% risk</strong>
         </div>
         <div className="telemetry-mix-bar" aria-hidden="true">
-          <span className="mix-safe" style={{ width: `${Math.max(0, 100 - riskRatio)}%` }} />
-          <span className="mix-risk" style={{ width: `${riskRatio}%` }} />
+          <svg className="telemetry-mix-svg" viewBox="0 0 100 14" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="telemetryMixSafe" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="rgba(20, 184, 166, 0.95)" />
+                <stop offset="100%" stopColor="rgba(34, 211, 238, 0.72)" />
+              </linearGradient>
+              <linearGradient id="telemetryMixRisk" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="rgba(251, 191, 36, 0.95)" />
+                <stop offset="100%" stopColor="rgba(248, 113, 113, 0.95)" />
+              </linearGradient>
+            </defs>
+            <rect x="0" y="0" width="100" height="14" rx="7" ry="7" fill="url(#telemetryMixSafe)" />
+            <rect
+              x={Math.max(0, 100 - riskRatio)}
+              y="0"
+              width={riskRatio}
+              height="14"
+              fill="url(#telemetryMixRisk)"
+            />
+          </svg>
         </div>
       </div>
 

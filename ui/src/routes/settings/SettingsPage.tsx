@@ -317,7 +317,7 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <div style={{ height: '70vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div className="settings-loading">
         <Loader2 size={32} className="animate-spin" color="rgba(255, 255, 255, 0.2)" />
       </div>
     );
@@ -679,13 +679,12 @@ export function SettingsPage() {
                     ))}
                   </AnimatePresence>
                   {scoring.keywords.length === 0 && (
-                    <span style={{ fontSize: '13px', color: '#94a3b8', alignSelf: 'center' }}>No keywords configured.</span>
+                    <span className="keyword-empty-state">No keywords configured.</span>
                   )}
                 </div>
-                <div className="keyword-input-row" style={{ marginTop: '8px' }}>
+                <div className="keyword-input-row">
                   <input 
-                    className="settings-input"
-                    style={{ flex: 1 }}
+                    className="settings-input keyword-input-field"
                     placeholder="Add new keyword..."
                     value={newKeyword}
                     onChange={(e) => setNewKeyword(e.target.value)}
@@ -699,7 +698,12 @@ export function SettingsPage() {
             </div>
 
             <div className="settings-action-row">
-              <button type="button" className="settings-btn danger" style={{ marginRight: 'auto' }} onClick={handleResetScoring} disabled={saving}>
+              <button
+                type="button"
+                className="settings-btn danger settings-btn-push-start"
+                onClick={handleResetScoring}
+                disabled={saving}
+              >
                 <RotateCcw size={16} />
                 Reset Defaults
               </button>
@@ -737,7 +741,7 @@ export function SettingsPage() {
                       onChange={(e) => setGuest(prev => ({ ...prev, enabled: e.target.checked }))}
                     />
                     <div className="switch-slider" />
-                    <span className="settings-label" style={{ fontSize: '14px' }}>Enable Guest Account Access</span>
+                    <span className="settings-label settings-label-compact">Enable Guest Account Access</span>
                   </label>
                   <div className="settings-tooltip-wrapper">
                     <Info size={14} className="settings-tooltip-trigger" />

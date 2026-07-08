@@ -250,6 +250,25 @@
   max-width: 760px;
 }
 
+.analysis-domain-card {
+  padding: 18px 20px;
+}
+
+.analysis-domain-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.analysis-domain-icon {
+  flex: 0 0 auto;
+}
+
+.analysis-domain-copy {
+  margin-top: 0;
+}
+
 .analysis-placeholder p {
   color: var(--ink-soft);
   max-width: 64ch;

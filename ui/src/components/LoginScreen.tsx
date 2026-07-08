@@ -73,7 +73,7 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
         {formError ? <div className="auth-error">{formError}</div> : null}
 
         <div className="auth-meta">
-          <span>API target: proxied through Vite</span>
+          <span>API target: same-origin `/v1` endpoints</span>
           <span>Session mode: cookie-based</span>
         </div>
       </div>

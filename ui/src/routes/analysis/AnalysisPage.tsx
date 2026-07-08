@@ -16,13 +16,13 @@ export function AnalysisPage() {
       </p>
 
       {domain ? (
-        <div className="surface-card" style={{ padding: '18px 20px' }}>
+        <div className="surface-card analysis-domain-card">
           <div className="eyebrow">Selected domain</div>
-          <h2 style={{ margin: '8px 0 4px' }}>
-            <Search size={18} style={{ marginRight: 8, verticalAlign: 'text-bottom' }} />
+          <h2 className="analysis-domain-title">
+            <Search size={18} className="analysis-domain-icon" />
             {domain}
           </h2>
-          <p className="page-copy" style={{ marginTop: 0 }}>
+          <p className="page-copy analysis-domain-copy">
             Use the existing dashboard while the React analysis route is being rebuilt around the
             same `/v1/analyze` and OSINT evidence APIs.
           </p>

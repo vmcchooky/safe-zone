@@ -1,0 +1,123 @@
+[tools]
+go = "1.26.4"
+node = "24"
+
+[tasks.default]
+description = "Run the default repository verification suite"
+depends = ["check"]
+run = "echo Safe Zone default checks passed."
+
+[tasks.check]
+description = "Run the standard local verification suite"
+depends = ["go:test", "go:build"]
+run = "echo Safe Zone checks passed."
+
+[tasks.ci]
+description = "Run the CI verification suite"
+depends = ["check", "go:security"]
+run = "echo Safe Zone CI checks passed."
+
+[tasks."ui:install"]
+description = "Install UI workspace dependencies"
+run = "sh ./scripts/ui.sh install"
+run_windows = "pwsh -NoProfile -File scripts/ui.ps1 install"
+
+[tasks."ui:dev"]
+description = "Start the React workspace dev server"
+run = "sh ./scripts/ui.sh dev"
+run_windows = "pwsh -NoProfile -File scripts/ui.ps1 dev"
+
+[tasks."ui:build"]
+description = "Build the React workspace into ui/dist"
+run = "sh ./scripts/ui.sh build"
+run_windows = "pwsh -NoProfile -File scripts/ui.ps1 build"
+
+[tasks."ui:bundle"]
+description = "Typecheck, build, and sync the React workspace into the embedded backend bundle"
+run = "sh ./scripts/ui.sh bundle"
+run_windows = "pwsh -NoProfile -File scripts/ui.ps1 bundle"
+sources = [
+  "ui/index.html",
+  "ui/package.json",
+  "ui/package-lock.json",
+  "ui/src/**/*",
+  "ui/tsconfig*.json",
+  "ui/vite.config.ts",
+  "scripts/ui.ps1",
+  "scripts/ui.sh",
+]
+outputs = [
+  "internal/api/app/dist/index.html",
+]
+
+[tasks."ui:preview"]
+description = "Preview the production UI build locally"
+run = "sh ./scripts/ui.sh preview"
+run_windows = "pwsh -NoProfile -File scripts/ui.ps1 preview"
+
+[tasks."ui:typecheck"]
+description = "Run the UI TypeScript checks"
+run = "sh ./scripts/ui.sh typecheck"
+run_windows = "pwsh -NoProfile -File scripts/ui.ps1 typecheck"
+
+[tasks."ui:check"]
+description = "Run the UI verification suite without syncing the embedded bundle"
+run = "sh ./scripts/ui.sh check"
+run_windows = "pwsh -NoProfile -File scripts/ui.ps1 check"
+
+[tasks."go:test"]
+description = "Run the Go test suite with the embedded UI bundle refreshed first"
+depends = ["ui:bundle"]
+run = "go test ./..."
+
+[tasks."go:build"]
+description = "Build all Go packages with the embedded UI bundle refreshed first"
+depends = ["ui:bundle"]
+run = "go build ./..."
+
+[tasks."go:security"]
+description = "Run the Go security scans used in CI"
+run = [
+  "go run github.com/securego/gosec/v2/cmd/gosec@latest ./...",
+  "go run golang.org/x/vuln/cmd/govulncheck@latest ./...",
+]
+
+[tasks."ops:deploy"]
+description = "Deploy the production compose stack through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh deploy"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 deploy"
+
+[tasks."ops:deploy-dev"]
+description = "Deploy the developer compose stack through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh deploy-dev"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 deploy-dev"
+
+[tasks."ops:status"]
+description = "Show compose status and health checks through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh status"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 status"
+
+[tasks."ops:logs"]
+description = "Follow compose logs through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh logs"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 logs"
+
+[tasks."ops:backup"]
+description = "Create a Safe Zone backup through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh backup"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 backup"
+
+[tasks."ops:restore"]
+description = "Restore a Safe Zone backup through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh restore"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 restore"
+
+[tasks."ops:prune"]
+description = "Prune retained backups and log files through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh prune"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 prune"
+
+[tasks."ops:feed-sync"]
+description = "Run the feed sync helper through the standardized ops entrypoint"
+run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/safe-zone.sh feed-sync"
+run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/safe-zone.ps1 feed-sync"

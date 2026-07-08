@@ -5,12 +5,13 @@ import (
 	"net/http"
 
 	"safe-zone/internal/agent"
+	apiapp "safe-zone/internal/api/app"
 	"safe-zone/internal/api/handlers"
 	"safe-zone/internal/serve"
 )
 
 // NewRouter constructs a new ServeMux with all the routes registered.
-func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *http.ServeMux {
+func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, appFS fs.FS) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// System & Health
@@ -73,6 +74,10 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 	// Static Assets & Dashboard
 	if assetsFS != nil {
 		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
+	}
+	if appFS != nil {
+		mux.HandleFunc(apiapp.MountPath, apiapp.RedirectRoot)
+		mux.Handle(apiapp.MountPath+"/", apiapp.NewHandler(appFS))
 	}
 	mux.HandleFunc("/dashboard", h.DashboardHandler)
 	mux.HandleFunc("/dashboard/", h.DashboardHandler)

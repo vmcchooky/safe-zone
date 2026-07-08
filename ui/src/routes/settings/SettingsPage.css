@@ -8,6 +8,13 @@
   margin: 0 auto;
 }
 
+.settings-loading {
+  min-height: 70vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .settings-tab-bar {
   display: flex;
   gap: 8px;
@@ -91,6 +98,10 @@
   font-size: 13px;
   font-weight: 500;
   color: #cbd5e1;
+}
+
+.settings-label-compact {
+  font-size: 14px;
 }
 
 .settings-input-wrapper {
@@ -255,6 +266,17 @@
 .keyword-input-row {
   display: flex;
   gap: 8px;
+  margin-top: 8px;
+}
+
+.keyword-input-field {
+  flex: 1 1 auto;
+}
+
+.keyword-empty-state {
+  align-self: center;
+  color: #94a3b8;
+  font-size: 13px;
 }
 
 /* Toggle Switch styles */
@@ -336,6 +358,10 @@
   color: #f87171;
 }
 
+.settings-btn-push-start {
+  margin-right: auto;
+}
+
 /* Tooltip and Help Icons */
 .settings-label-row {
   display: flex;
@@ -402,4 +428,3 @@
   transform: translateX(-50%) translateY(0);
   pointer-events: auto;
 }
-

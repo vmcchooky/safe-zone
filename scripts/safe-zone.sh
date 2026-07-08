@@ -5,6 +5,7 @@ compose="${SAFE_ZONE_COMPOSE:-docker compose}"
 project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 backup_dir="${SAFE_ZONE_BACKUP_DIR:-${project_dir}/backups}"
 stack="${SAFE_ZONE_STACK:-production}"
+tmp_dir="${project_dir}/tmp"
 
 cd "$project_dir"
 
@@ -18,6 +19,25 @@ log_warn() {
 
 log_error() {
   printf 'ERROR: %s\n' "$*" >&2
+}
+
+run_mise_task() {
+  task_name="$1"
+  if [ "${SAFE_ZONE_SKIP_MISE:-}" = "1" ]; then
+    return 1
+  fi
+  if ! command -v mise >/dev/null 2>&1; then
+    log_warn "mise not found on PATH; running ${cmd} directly"
+    return 1
+  fi
+
+  export SAFE_ZONE_SCRIPT_STACK="$stack"
+  export SAFE_ZONE_SCRIPT_BACKUP_PATH="${backup_path_override:-}"
+  export SAFE_ZONE_SCRIPT_KEEP="${keep_count}"
+  export SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS="${log_retention_days}"
+  export SAFE_ZONE_SCRIPT_FEED_SYNC="${feed_sync_enabled}"
+  mise run "$task_name"
+  exit $?
 }
 
 set_build_metadata_env() {
@@ -380,6 +400,41 @@ sync_offsite() {
   fi
 }
 
+prune_backups() {
+  keep="$1"
+  if [ ! -d "$backup_dir" ]; then
+    log_info "No backups directory found at ${backup_dir}"
+    return 0
+  fi
+
+  current_count="$(find "$backup_dir" -mindepth 1 -maxdepth 1 -type d | wc -l | awk '{print $1}')"
+  if [ "$current_count" -le "$keep" ]; then
+    log_info "Backup retention already satisfied (${current_count} <= ${keep})"
+    return 0
+  fi
+
+  find "$backup_dir" -mindepth 1 -maxdepth 1 -type d | sort -r | tail -n +"$((keep + 1))" | while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    rm -rf "$entry"
+    log_info "Removed backup $(basename -- "$entry")"
+  done
+}
+
+prune_logs() {
+  retention_days="$1"
+  if [ ! -d "$tmp_dir" ]; then
+    log_info "No tmp directory found at ${tmp_dir}"
+    return 0
+  fi
+
+  if ! find "$tmp_dir" -maxdepth 1 -type f -name '*.log' -mtime +"$retention_days" -print -delete | while IFS= read -r entry; do
+    [ -n "$entry" ] || continue
+    log_info "Removed log $(basename -- "$entry")"
+  done; then
+    log_warn "Log pruning encountered an error"
+  fi
+}
+
 latest_backup_dir() {
   if [ ! -d "$backup_dir" ]; then
     return 1
@@ -564,10 +619,44 @@ resolve_feed_sources() {
 }
 
 cmd="${1:-help}"
+backup_path_override="${2:-${SAFE_ZONE_SCRIPT_BACKUP_PATH:-}}"
+keep_count="${SAFE_ZONE_SCRIPT_KEEP:-7}"
+log_retention_days="${SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS:-7}"
+feed_sync_enabled="${SAFE_ZONE_SCRIPT_FEED_SYNC:-0}"
+case "$cmd" in
+  deploy)
+    run_mise_task ops:deploy || true
+    ;;
+  deploy-dev)
+    run_mise_task ops:deploy-dev || true
+    ;;
+  status)
+    run_mise_task ops:status || true
+    ;;
+  logs)
+    run_mise_task ops:logs || true
+    ;;
+  backup)
+    run_mise_task ops:backup || true
+    ;;
+  restore)
+    run_mise_task ops:restore || true
+    ;;
+  prune)
+    run_mise_task ops:prune || true
+    ;;
+  feed-sync)
+    run_mise_task ops:feed-sync || true
+    ;;
+esac
 case "$cmd" in
   deploy)
     set_build_metadata_env
-    compose_stack production --profile production-edge up -d --build
+    if is_true "$feed_sync_enabled"; then
+      compose_stack production --profile production-edge --profile feed-sync up -d --build
+    else
+      compose_stack production --profile production-edge up -d --build
+    fi
     ;;
   deploy-dev)
     set_build_metadata_env
@@ -588,7 +677,11 @@ case "$cmd" in
     new_backup
     ;;
   restore)
-    restore_backup "${2:-}"
+    restore_backup "$backup_path_override"
+    ;;
+  prune)
+    prune_backups "$keep_count"
+    prune_logs "$log_retention_days"
     ;;
   feed-sync)
     sources="$(resolve_feed_sources || true)"
@@ -617,6 +710,7 @@ Commands:
   logs         Follow compose logs for SAFE_ZONE_STACK (default: production).
   backup       Save Redis, SQLite, env, and Caddy snapshots under backups/<timestamp>/.
   restore      Restore the latest backup directory, or a provided backup directory.
+  prune        Keep the newest backup directories and delete stale tmp/*.log files.
   feed-sync    Sync configured free threat feeds once.
   duckdns      Update DuckDNS record.
 
@@ -630,6 +724,7 @@ Environment:
   SAFE_ZONE_BACKUP_KEEP_PLAINTEXT=1   Keep plaintext snapshot files after encrypted bundle creation.
   SAFE_ZONE_RCLONE_REMOTE=gdrive:     Optional rclone remote for offsite backup upload.
   SAFE_ZONE_RCLONE_DEST=safe-zone-backups
+  SAFE_ZONE_SCRIPT_FEED_SYNC=1        Include the feed-sync profile during deploy.
 USAGE
     ;;
 esac
