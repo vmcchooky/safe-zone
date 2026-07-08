@@ -15,6 +15,18 @@ const SettingsPage = lazy(() =>
 const TelemetryPage = lazy(() =>
   import('./routes/telemetry/TelemetryPage').then((module) => ({ default: module.TelemetryPage })),
 );
+const EndpointsPage = lazy(() =>
+  import('./routes/EndpointsPage').then((module) => ({ default: module.EndpointsPage })),
+);
+const OverridesPage = lazy(() =>
+  import('./routes/OverridesPage').then((module) => ({ default: module.OverridesPage })),
+);
+const UserReportsPage = lazy(() =>
+  import('./routes/UserReportsPage').then((module) => ({ default: module.UserReportsPage })),
+);
+const SystemPage = lazy(() =>
+  import('./routes/SystemPage').then((module) => ({ default: module.SystemPage })),
+);
 
 function LoadingScreen() {
   return (
@@ -51,16 +63,20 @@ function ProtectedRoutes() {
     <AppShell session={session!}>
       <Suspense fallback={<RouteLoading />}>
         <Routes>
-          <Route path="/" element={<Navigate to="/telemetry" replace />} />
-          <Route path="/telemetry" element={<TelemetryPage />} />
+          <Route path="/" element={<Navigate to="/analysis" replace />} />
           <Route path="/analysis" element={<AnalysisPage />} />
+          <Route path="/telemetry" element={<TelemetryPage />} />
+          <Route path="/endpoints" element={<EndpointsPage />} />
+          <Route path="/overrides" element={<OverridesPage />} />
+          <Route path="/reports" element={<UserReportsPage />} />
+          <Route path="/system" element={<SystemPage />} />
           <Route
             path="/settings"
             element={
-              session?.can_view_settings ? <SettingsPage /> : <Navigate to="/telemetry" replace />
+              session?.can_view_settings ? <SettingsPage /> : <Navigate to="/analysis" replace />
             }
           />
-          <Route path="*" element={<Navigate to="/telemetry" replace />} />
+          <Route path="*" element={<Navigate to="/analysis" replace />} />
         </Routes>
       </Suspense>
     </AppShell>
