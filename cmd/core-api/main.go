@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"safe-zone/internal/agent"
+	apiassets "safe-zone/internal/api/assets"
 	"safe-zone/internal/api/handlers"
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/api/server"
@@ -227,7 +228,7 @@ func main() {
 	}
 
 	h := handlers.New(riskService, metrics, cfg)
-	mux := server.NewRouter(h, agentEngine, handlers.AssetsFS)
+	mux := server.NewRouter(h, agentEngine, apiassets.FS)
 
 	var handler http.Handler = mux
 	if tiered != nil {

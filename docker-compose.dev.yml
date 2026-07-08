@@ -7,3 +7,22 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
       - "127.0.0.1:${SAFE_ZONE_DNS_DOT_DEV_PUBLISHED_PORT:-1853}:${SAFE_ZONE_DNS_DOT_CONTAINER_PORT:-8533}"
+
+  ui-dev:
+    image: node:24-alpine
+    working_dir: /workspace/ui
+    environment:
+      SAFE_ZONE_UI_API_ORIGIN: http://core-api:8080
+      CHOKIDAR_USEPOLLING: "true"
+    command: >
+      sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - .:/workspace
+      - ui-node-modules:/workspace/ui/node_modules
+    ports:
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - core-api
+
+volumes:
+  ui-node-modules:

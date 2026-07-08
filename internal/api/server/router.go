@@ -72,7 +72,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 
 	// Static Assets & Dashboard
 	if assetsFS != nil {
-		mux.Handle("/assets/", http.FileServer(http.FS(assetsFS)))
+		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
 	}
 	mux.HandleFunc("/dashboard", h.DashboardHandler)
 	mux.HandleFunc("/dashboard/", h.DashboardHandler)
