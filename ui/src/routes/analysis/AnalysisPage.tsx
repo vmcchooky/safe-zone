@@ -226,15 +226,20 @@ export function AnalysisPage() {
 
                   <div className="mt-auto pt-4 border-t border-slate-100 flex justify-end gap-3">
                      <button 
+                       style={{ backgroundColor: 'var(--safe)', color: 'white' }}
+                       className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
+                       Allow
+                     </button>
+                     <button 
+                       style={{ backgroundColor: 'var(--bad)', color: 'white' }}
+                       className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
+                       Block
+                     </button>
+                     <button 
                        onClick={() => setShowRawData(true)}
                        className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
                        View Raw Data
                      </button>
-                     {result.verdict === 'MALICIOUS' && (
-                       <button className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2 rounded-xl font-medium shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
-                         Add Block Override
-                       </button>
-                     )}
                   </div>
                 </motion.div>
               )}
@@ -297,7 +302,7 @@ export function AnalysisPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="relative w-full max-w-4xl max-h-[85vh] rounded-[32px] shadow-[0_40px_80px_rgba(0,0,0,0.1)] border border-white/50 overflow-hidden flex flex-col transform-gpu"
+              className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_40px_80px_rgba(0,0,0,0.1)] border border-white/50 overflow-hidden flex flex-col transform-gpu"
               style={{ willChange: "opacity, transform" }}
             >
               {/* Glass background & Orbs */}
@@ -323,7 +328,7 @@ export function AnalysisPage() {
               
               {/* Table Body */}
               <div className="flex-1 overflow-y-auto p-8">
-                <div className="bg-white/20 rounded-3xl border border-white/40 shadow-[inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
+                <div className="bg-white/20 rounded-xl border border-white/40 shadow-[inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead className="bg-white/30 text-slate-800 font-bold border-b border-white/40">
                       <tr>
