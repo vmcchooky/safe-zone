@@ -6,9 +6,9 @@
 - **Charts**: Use modern, robust charting libraries (like Recharts, ApexCharts, etc.) that support SVG/DOM animations easily, instead of being constrained by Canvas-only libraries if advanced animations are required.
 
 ## 2. Aesthetics & Design System (Premium SOC Vibe)
-- **Theme**: Dark, Professional SOC (Security Operations Center).
-- **Color Palette**: Deep Slate / Navy backgrounds. Use clear accent colors for states (Red for Threats, Yellow for Suspicious, Green for Safe, Blue for Info).
-- **Modern Polish**: Use modern web design trends like glassmorphism (backdrop-blur), subtle glowing borders, and clean typography. The UI should look high-tech but remain clean and professional.
+- **Theme**: Light, Modern Artistic SOC (Security Operations Center) - inspired by Windows 11 / Zorin OS.
+- **Color Palette**: Bright and clean backgrounds (White, Light Gray, Very Light Pink). Use clear accent colors for states (Red for Threats, Yellow for Suspicious, Green for Safe, Blue for Info).
+- **Modern Polish**: Use modern web design trends like glassmorphism (backdrop-blur with light frosted glass), clean typography. The UI should look artistic, high-tech, clean and professional.
 
 ## 3. Animations & Interactions
 - **Micro-interactions**: Ensure interactive elements (buttons, rows, dropdowns) have snappy hover states and transitions.

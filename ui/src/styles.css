@@ -3,21 +3,21 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
   font-family: "Aptos", "Segoe UI Variable Display", "Segoe UI", sans-serif;
-  --bg: #071018;
-  --bg-panel: rgba(12, 18, 30, 0.86);
-  --bg-panel-soft: rgba(20, 28, 44, 0.62);
-  --line: rgba(255, 255, 255, 0.08);
-  --ink: #f7fbff;
-  --ink-soft: #acc0d4;
-  --ink-faint: #6f8398;
+  --bg: #ffffff;
+  --bg-panel: rgba(255, 255, 255, 0.75);
+  --bg-panel-soft: rgba(255, 255, 255, 0.45);
+  --line: rgba(0, 0, 0, 0.08);
+  --ink: #0f172a;
+  --ink-soft: #475569;
+  --ink-faint: #94a3b8;
   --accent-1: #f97316;
-  --accent-2: #22d3ee;
-  --safe: #14b8a6;
-  --warn: #fbbf24;
-  --bad: #f87171;
-  --shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+  --accent-2: #0ea5e9;
+  --safe: #0d9488;
+  --warn: #d97706;
+  --bad: #e11d48;
+  --shadow: 0 10px 40px rgba(0, 0, 0, 0.06);
 }
 
 * {
@@ -32,10 +32,8 @@ body,
 
 body {
   margin: 0;
-  background:
-    radial-gradient(circle at 20% -10%, rgba(14, 165, 233, 0.12), transparent 32%),
-    radial-gradient(circle at 85% 0%, rgba(249, 115, 22, 0.11), transparent 26%),
-    linear-gradient(180deg, #060a11, var(--bg));
+  background: url('/background.svg') center/cover no-repeat fixed;
+  background-color: #f3f4f6; /* Fallback */
   color: var(--ink);
 }
 
@@ -66,7 +64,7 @@ textarea {
 input,
 select,
 textarea {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.6);
   color: var(--ink);
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -77,9 +75,9 @@ textarea {
 input:focus,
 select:focus,
 textarea:focus {
-  border-color: rgba(34, 211, 238, 0.34);
-  box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.11);
-  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(14, 165, 233, 0.4);
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.12);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .surface-card {
@@ -109,8 +107,8 @@ textarea:focus {
 
 .button-secondary {
   color: var(--ink);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(255, 255, 255, 0.6);
 }
 
 .button-danger {
