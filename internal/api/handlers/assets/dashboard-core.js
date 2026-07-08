@@ -112,12 +112,30 @@ function setHTMLWithMotion(el, value, pulseTarget) {
   if (changed && pulseTarget) pulseNode(pulseTarget, 'stellar-pulse');
 }
 
+const cometDelayClasses = [
+  'comet-delay-0',
+  'comet-delay-1',
+  'comet-delay-2',
+  'comet-delay-3',
+  'comet-delay-4',
+  'comet-delay-5',
+  'comet-delay-6',
+  'comet-delay-7',
+];
+
+function setCometDelayClass(el, delayIndex) {
+  if (!el) return;
+  cometDelayClasses.forEach(name => el.classList.remove(name));
+  const normalizedIndex = Math.max(0, Math.min(delayIndex, cometDelayClasses.length - 1));
+  el.classList.add(cometDelayClasses[normalizedIndex]);
+}
+
 function markInsertedRows(root, selector) {
   if (!root || !motionOK()) return;
   requestAnimationFrame(() => {
     root.querySelectorAll(selector).forEach((row, index) => {
       row.classList.add('comet-in');
-      row.style.setProperty('--comet-delay', Math.min(index * 28, 180) + 'ms');
+      setCometDelayClass(row, Math.min(index, cometDelayClasses.length - 1));
     });
   });
 }
@@ -206,7 +224,6 @@ function applySessionState() {
   const canViewSettings = !!state.session.canViewSettings;
   if (settingsTabButton) {
     settingsTabButton.hidden = !canViewSettings;
-    settingsTabButton.style.display = canViewSettings ? '' : 'none';
   }
 
   const guestAccessPanel = $('guest-access-panel');

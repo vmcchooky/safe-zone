@@ -18,7 +18,7 @@ func TestSecurityHeaders(t *testing.T) {
 
 	handler.ServeHTTP(rec, req)
 
-	if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'" {
+	if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self'; style-src 'self'" {
 		t.Fatalf("unexpected CSP header: %q", got)
 	}
 	if got := rec.Header().Get("Referrer-Policy"); got != "no-referrer" {

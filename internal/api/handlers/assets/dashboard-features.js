@@ -81,6 +81,7 @@ function renderResult(item) {
   const verdict = esc(item.verdict || 'UNKNOWN');
   const risk = riskClass(item.verdict);
   const score = clampScore(item.score);
+  const scoreClass = 'pct-' + score;
   const confidence = Math.round((Number(item.confidence) || 0) * 100);
   const reasons = (item.reasons && item.reasons.length)
     ? '<div class="signals-list">' + item.reasons.map(r => '<div class="signal-row"><span></span><strong>' + esc(r) + '</strong></div>').join('') + '</div>'
@@ -95,13 +96,13 @@ function renderResult(item) {
           '<h3>' + esc(item.domain) + '</h3>' +
           '<p>Policy default: <span class="' + policyClass + '">' + policyLabel + '</span></p>' +
         '</div>' +
-        '<div class="score-orbit" style="--score:' + score + '">' +
+        '<div class="score-orbit ' + scoreClass + '">' +
           '<strong>' + score + '</strong>' +
           '<span>/100</span>' +
         '</div>' +
       '</div>' +
       '<div class="risk-meter" aria-label="Risk score">' +
-        '<div class="risk-meter-track"><span style="width:' + score + '%"></span></div>' +
+        '<div class="risk-meter-track"><span class="pct-width ' + scoreClass + '"></span></div>' +
         '<div class="risk-meter-labels"><span>Low</span><span>Review</span><span>Block</span></div>' +
       '</div>' +
       '<div class="facts-grid">' +
@@ -121,7 +122,7 @@ function renderResult(item) {
     requestAnimationFrame(() => {
       resultEl.querySelectorAll('.dossier-section, .review-panel, .facts-grid').forEach((el, i) => {
         el.classList.add('comet-in');
-        el.style.setProperty('--comet-delay', Math.min(i * 40, 200) + 'ms');
+        setCometDelayClass(el, Math.min(i, 5));
       });
     });
   }
@@ -172,6 +173,7 @@ function renderEvidence(items) {
 function renderRecentItem(item) {
   const verdict = esc(item.verdict || 'UNKNOWN');
   const confidence = Math.round((Number(item.confidence) || 0) * 100);
+  const scoreClass = 'pct-' + clampScore(item.score);
   return '<article class="recent-item event-item ' + riskClass(item.verdict) + '">' +
     '<div class="recent-top">' +
       '<div class="recent-domain">' + esc(item.domain) + '</div>' +
@@ -182,7 +184,7 @@ function renderRecentItem(item) {
       '<span>' + confidence + '% confidence</span>' +
       '<span>' + fmtTime(item.analyzed_at) + '</span>' +
     '</div>' +
-    '<div class="risk-intensity" style="--risk-level:' + clampScore(item.score) + '%"><span></span></div>' +
+    '<div class="risk-intensity"><span class="pct-width ' + scoreClass + '"></span></div>' +
     '<button class="ghost btn-sm" type="button" data-action="open-dossier" data-domain="' + escAttr(item.domain) + '">Open dossier</button>' +
     '</article>';
 }
@@ -275,7 +277,7 @@ function renderCacheHitMeter(s) {
   const pctVal = total > 0 ? Math.min(100, Math.round(hits / total * 100)) : 0;
   el.innerHTML =
     '<div class="cache-meter-label"><span>Cache efficiency</span><span class="cache-meter-pct">' + pctVal + '%</span></div>' +
-    '<div class="cache-meter-track"><div class="cache-meter-fill" style="width:' + pctVal + '%"></div></div>';
+    '<div class="cache-meter-track"><div class="cache-meter-fill pct-width pct-' + pctVal + '"></div></div>';
 }
 
 async function loadTelemetryItems() {
@@ -314,10 +316,11 @@ function renderTelemRow(item) {
   const actionCell = item.verdict === 'SAFE'
     ? '<button class="ghost btn-sm" data-action="open-dossier" data-domain="' + escAttr(item.domain) + '">Open</button>'
     : '<button class="ghost btn-sm" data-action="open-false-positive-review" data-domain="' + escAttr(item.domain) + '">Review</button>';
+  const scoreClass = 'pct-' + clampScore(item.score);
   return '<div class="telemetry-row">' +
     '<div class="cell-domain-emph">' + esc(item.domain) + '</div>' +
     '<div><span class="verdict ' + item.verdict + '">' + esc(item.verdict) + '</span></div>' +
-    '<div><span class="score-spark" style="--risk-level:' + clampScore(item.score) + '%">' + item.score + '</span></div>' +
+    '<div><span class="score-spark ' + scoreClass + '">' + item.score + '</span></div>' +
     '<div class="cell-muted">' + esc(item.source || '--') + '</div>' +
     '<div class="cell-muted">' + fmtTime(item.analyzed_at) + '</div>' +
     '<div>' + actionCell + '</div>' +
@@ -403,10 +406,18 @@ function renderRiskMix(safe, susp, mal) {
   const suspPct = total ? Math.round(susp / total * 100) : 0;
   const malPct = total ? Math.max(0, 100 - safePct - suspPct) : 0;
   el.innerHTML =
-    '<span class="mix-safe" style="width:' + safePct + '%"></span>' +
-    '<span class="mix-suspicious" style="width:' + suspPct + '%"></span>' +
-    '<span class="mix-malicious" style="width:' + malPct + '%"></span>';
+    '<span class="mix-safe pct-width pct-' + safePct + '"></span>' +
+    '<span class="mix-suspicious pct-width pct-' + suspPct + '"></span>' +
+    '<span class="mix-malicious pct-width pct-' + malPct + '"></span>';
   setTextWithMotion($('risk-mix-label'), total ? (suspPct + malPct) + '% risk' : '0%');
+}
+
+const statusToneClasses = ['status-tone-safe', 'status-tone-warn', 'status-tone-bad', 'status-tone-muted'];
+
+function setStatusTone(el, tone) {
+  if (!el) return;
+  statusToneClasses.forEach(name => el.classList.remove(name));
+  el.classList.add('status-tone-' + tone);
 }
 
 // ── Overrides tab ─────────────────────────────────────────────────────────────
@@ -674,19 +685,19 @@ async function checkHealth() {
     setHTMLWithMotion(apiStatus, '<strong>core-api</strong> ' + (ok ? 'healthy' : 'limited'), apiStatus);
     pulseNode(apiStatus, 'stellar-pulse');
     setTextWithMotion($('sys-api-status'), ok ? 'Online' : 'Limited');
-    $('sys-api-status').style.color = ok ? 'var(--safe)' : 'var(--warn)';
+    setStatusTone($('sys-api-status'), ok ? 'safe' : 'warn');
     setTextWithMotion($('sys-api-detail'), 'mode: ' + (status.mode || 'api'));
     // Redis
     const redis = status.redis || {};
     const redisOk = redis.status === 'ok';
     setTextWithMotion($('sys-redis-status'), redis.configured ? (redisOk ? 'Connected' : 'Unavailable') : 'Disabled');
-    $('sys-redis-status').style.color = redis.configured ? (redisOk ? 'var(--safe)' : 'var(--warn)') : 'var(--muted)';
+    setStatusTone($('sys-redis-status'), redis.configured ? (redisOk ? 'safe' : 'warn') : 'muted');
     setTextWithMotion($('sys-redis-detail'), redis.configured ? (redis.error || 'operational') : 'no Redis configured');
     setHTMLWithMotion(cacheEngineState, redis.configured && redisOk ? '<strong>cache engine</strong> ok' : '<strong>cache engine</strong> offline', cacheEngineState);
     pulseNode(cacheEngineState, 'stellar-pulse');
     // Enrichment assumed enabled by default
     setTextWithMotion($('sys-enrich-status'), 'Enabled');
-    $('sys-enrich-status').style.color = 'var(--safe)';
+    setStatusTone($('sys-enrich-status'), 'safe');
     // Rate Limiting
     const rl = status.rate_limiting || {};
     if (rl.enabled) {
@@ -701,7 +712,7 @@ async function checkHealth() {
     setHTMLWithMotion(apiStatus, '<strong>core-api</strong> offline', apiStatus);
     pulseNode(apiStatus, 'stellar-pulse');
     setTextWithMotion($('sys-api-status'), 'Offline');
-    $('sys-api-status').style.color = 'var(--bad)';
+    setStatusTone($('sys-api-status'), 'bad');
   }
 }
 
@@ -720,7 +731,7 @@ async function loadMetrics() {
       return '<tr>' +
         '<td class="cell-strong">' + esc(key) + '</td>' +
         '<td>' + (val.count || 0).toLocaleString() + '</td>' +
-        '<td><span class="latency-readout">' + avg + 'ms</span><span class="latency-bars" style="--latency-level:' + latencyPct + '%"><i></i></span></td>' +
+        '<td><span class="latency-readout">' + avg + 'ms</span><span class="latency-bars"><i class="pct-width pct-' + latencyPct + '"></i></span></td>' +
         '<td>' + max + 'ms</td>' +
         '<td>' + (val.last_status || '--') + '</td>' +
         '</tr>';
@@ -742,11 +753,11 @@ async function loadAgentStatus() {
     const overall = $('agent-overall-status');
     if (!s.enabled) {
       setTextWithMotion(overall, 'Disabled');
-      overall.style.color = 'var(--muted)';
+      setStatusTone(overall, 'muted');
       $('agent-panel-body').innerHTML = '<div class="empty">Agent Engine is disabled (SAFE_ZONE_AGENT_ENABLED=false).</div>';
     } else {
       setTextWithMotion(overall, 'Active');
-      overall.style.color = 'var(--safe)';
+      setStatusTone(overall, 'safe');
       
       const tasks = s.tasks || [];
       if (!tasks.length) {
@@ -1222,6 +1233,16 @@ async function saveSettings() {
   }
 }
 
+const settingsResultStateClasses = ['state-neutral', 'state-error', 'state-success'];
+
+function setSettingsResultState(el, stateName, html) {
+  if (!el) return;
+  el.classList.add('is-visible');
+  settingsResultStateClasses.forEach(name => el.classList.remove(name));
+  el.classList.add(stateName);
+  el.innerHTML = html;
+}
+
 async function testAI() {
   if (!state.session.canViewSettings) {
     showToast(sessionGuestMessage(), 'err');
@@ -1229,10 +1250,7 @@ async function testAI() {
   }
   const resEl = document.getElementById('test-ai-result');
   if (resEl) {
-    resEl.style.display = 'block';
-    resEl.style.borderColor = 'var(--line)';
-    resEl.style.color = 'var(--muted)';
-    resEl.innerHTML = '<span class="status-inline-note">Executing dynamic AI engine test with mock prompt...</span>';
+    setSettingsResultState(resEl, 'state-neutral', '<span class="status-inline-note">Executing dynamic AI engine test with mock prompt...</span>');
   }
   
   try {
@@ -1242,22 +1260,16 @@ async function testAI() {
     if (!r.ok || data.status === 'error') {
       const errMsg = data.error || (data.status === 'error' ? data.error : 'Connection failed');
       if (resEl) {
-        resEl.style.borderColor = 'var(--bad)';
-        resEl.style.color = 'var(--bad)';
-        resEl.innerHTML = `<strong>❌ AI Connection Test Failed</strong><br>${esc(errMsg)}`;
+        setSettingsResultState(resEl, 'state-error', `<strong>❌ AI Connection Test Failed</strong><br>${esc(errMsg)}`);
       }
     } else {
       if (resEl) {
-        resEl.style.borderColor = 'var(--safe)';
-        resEl.style.color = 'var(--safe)';
-        resEl.innerHTML = `<strong>✅ AI Connection Test Successful</strong><br>Verdict: ${esc(data.verdict)}<br>Reasoning: ${esc(data.reason)}`;
+        setSettingsResultState(resEl, 'state-success', `<strong>✅ AI Connection Test Successful</strong><br>Verdict: ${esc(data.verdict)}<br>Reasoning: ${esc(data.reason)}`);
       }
     }
   } catch (err) {
     if (resEl) {
-      resEl.style.borderColor = 'var(--bad)';
-      resEl.style.color = 'var(--bad)';
-      resEl.innerHTML = `<strong>❌ Request Error</strong><br>${esc(err.message)}`;
+      setSettingsResultState(resEl, 'state-error', `<strong>❌ Request Error</strong><br>${esc(err.message)}`);
     }
   }
 }
@@ -1269,10 +1281,7 @@ async function sendTestAlert() {
   }
   const resEl = document.getElementById('test-alert-result');
   if (resEl) {
-    resEl.style.display = 'block';
-    resEl.style.borderColor = 'var(--line)';
-    resEl.style.color = 'var(--muted)';
-    resEl.innerHTML = '<span class="status-inline-note">Dispatching test notification payload to webhook...</span>';
+    setSettingsResultState(resEl, 'state-neutral', '<span class="status-inline-note">Dispatching test notification payload to webhook...</span>');
   }
   
   try {
@@ -1282,22 +1291,16 @@ async function sendTestAlert() {
     if (!r.ok || data.status === 'error') {
       const errMsg = data.error || (data.status === 'error' ? data.error : 'Notification dispatch failed');
       if (resEl) {
-        resEl.style.borderColor = 'var(--bad)';
-        resEl.style.color = 'var(--bad)';
-        resEl.innerHTML = `<strong>❌ Webhook Dispatch Failed</strong><br>${esc(errMsg)}`;
+        setSettingsResultState(resEl, 'state-error', `<strong>❌ Webhook Dispatch Failed</strong><br>${esc(errMsg)}`);
       }
     } else {
       if (resEl) {
-        resEl.style.borderColor = 'var(--safe)';
-        resEl.style.color = 'var(--safe)';
-        resEl.innerHTML = '<strong>✅ Webhook Dispatch Successful</strong><br>Test alert successfully sent to configured channel.';
+        setSettingsResultState(resEl, 'state-success', '<strong>✅ Webhook Dispatch Successful</strong><br>Test alert successfully sent to configured channel.');
       }
     }
   } catch (err) {
     if (resEl) {
-      resEl.style.borderColor = 'var(--bad)';
-      resEl.style.color = 'var(--bad)';
-      resEl.innerHTML = `<strong>❌ Request Error</strong><br>${esc(err.message)}`;
+      setSettingsResultState(resEl, 'state-error', `<strong>❌ Request Error</strong><br>${esc(err.message)}`);
     }
   }
 }
@@ -1669,12 +1672,13 @@ async function dismissReport(id) {
 function toggleReportsQueue() {
   const content = $('reports-queue-content');
   const icon = $('reports-toggle-icon');
-  if (content.style.display === 'none') {
-    content.style.display = 'block';
-    icon.style.transform = 'rotate(0deg)';
+  if (!content || !icon) return;
+  if (content.hidden) {
+    content.hidden = false;
+    icon.classList.remove('is-collapsed');
   } else {
-    content.style.display = 'none';
-    icon.style.transform = 'rotate(-90deg)';
+    content.hidden = true;
+    icon.classList.add('is-collapsed');
   }
 }
 
