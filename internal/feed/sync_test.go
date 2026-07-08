@@ -15,6 +15,7 @@ import (
 	"github.com/alicebob/miniredis/v2"
 
 	"safe-zone/internal/cache"
+	"safe-zone/internal/netguard"
 )
 
 func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
@@ -63,6 +64,22 @@ func TestOpenSourceLimitsDecompressedHTTPFeed(t *testing.T) {
 	_, err = Parse(reader)
 	if err == nil || !strings.Contains(err.Error(), "maximum size") {
 		t.Fatalf("expected max-size error, got %v", err)
+	}
+}
+
+func TestOpenSourceRejectsPrivateHTTPFeedWithGuardedClient(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("bad.test\n"))
+	}))
+	defer server.Close()
+
+	client := netguard.NewHTTPClient(nil, time.Second, false)
+	_, closeReader, err := OpenSourceWithin(context.Background(), server.URL, client, t.TempDir(), DefaultMaxFeedBytes)
+	if closeReader != nil {
+		defer closeReader()
+	}
+	if err == nil || !strings.Contains(err.Error(), "blocked private or local address") {
+		t.Fatalf("expected guarded client to reject private feed URL, got %v", err)
 	}
 }
 

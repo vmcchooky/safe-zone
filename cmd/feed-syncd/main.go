@@ -15,6 +15,7 @@ import (
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 )
 
 func main() {
@@ -43,6 +44,7 @@ func main() {
 
 	runSync := func() {
 		runCtx := correlation.WithRunID(ctx, correlation.NewID("feed-syncd"))
+		client := netguard.NewHTTPClient(nil, *timeout, false)
 		report, err := feed.Sync(runCtx, feed.SyncOptions{
 			Source:                     *source,
 			FileRoot:                   config.FeedFileRoot(),
@@ -53,6 +55,7 @@ func main() {
 			Key:                        *key,
 			Replace:                    *replace,
 			Timeout:                    *timeout,
+			Client:                     client,
 			ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
 			ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
 			CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),

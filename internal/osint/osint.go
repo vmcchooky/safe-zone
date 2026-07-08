@@ -21,6 +21,7 @@ import (
 	"safe-zone/internal/cache"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 )
 
 const (
@@ -133,9 +134,7 @@ func NewService(options Options) *Service {
 		maxBytes = defaultMaxBytes
 	}
 	client := options.HTTPClient
-	if client == nil {
-		client = &http.Client{Timeout: timeout}
-	}
+	client = netguard.NewHTTPClient(client, timeout, options.AllowPrivateSources)
 	trusted := normalizeList(options.TrustedDomains)
 	if len(trusted) == 0 {
 		trusted = DefaultTrustedDomains()
@@ -492,8 +491,8 @@ func heuristicDomainRole(domain string, contexts []string) string {
 }
 
 func (s *Service) validateSource(ctx context.Context, parsed *url.URL) error {
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("unsupported source scheme")
+	if err := netguard.ValidateParsedURL(parsed, s.allowPrivateSources); err != nil {
+		return err
 	}
 	host := strings.ToLower(parsed.Hostname())
 	if !s.isTrustedHost(host) {
@@ -502,14 +501,8 @@ func (s *Service) validateSource(ctx context.Context, parsed *url.URL) error {
 	if s.allowPrivateSources {
 		return nil
 	}
-	ips, err := net.DefaultResolver.LookupIP(ctx, "ip", host)
-	if err != nil {
+	if _, err := netguard.ResolveAllowedIPs(ctx, host, false); err != nil {
 		return fmt.Errorf("resolve source host: %w", err)
-	}
-	for _, ip := range ips {
-		if isBlockedIP(ip) {
-			return fmt.Errorf("blocked private source address")
-		}
 	}
 	return nil
 }
@@ -631,11 +624,6 @@ func isGovVN(domain string) bool {
 
 func isOfficialHost(host string) bool {
 	return isGovVN(host) || strings.Contains(host, "bocongan") || strings.Contains(host, "congan")
-}
-
-func isBlockedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
 }
 
 func containsReason(reasons []string, needle string) bool {

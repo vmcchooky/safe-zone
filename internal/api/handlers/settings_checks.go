@@ -12,6 +12,7 @@ import (
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/config"
+	"safe-zone/internal/netguard"
 )
 
 type testAlertEvent struct {
@@ -142,7 +143,7 @@ func (h *Handler) TestAlertHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	resp, err := netguard.NewHTTPClient(nil, 10*time.Second, false).Do(req)
 	if err != nil {
 		httputil.WriteJSON(w, http.StatusOK, map[string]any{
 			"status": "error",

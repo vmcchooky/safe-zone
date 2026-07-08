@@ -85,6 +85,24 @@ func TestUntrustedSourceRejected(t *testing.T) {
 	}
 }
 
+func TestPrivateSourceRejectedWhenNotAllowed(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer server.Close()
+
+	service := NewService(Options{
+		Enabled:        true,
+		Sources:        []string{server.URL},
+		TrustedDomains: []string{strings.TrimPrefix(server.URL, "http://")},
+	})
+
+	_, err := service.fetchSource(context.Background(), "dichvucong-vn.com", server.URL)
+	if err == nil || !strings.Contains(err.Error(), "blocked private or local address") {
+		t.Fatalf("expected private source rejection, got %v", err)
+	}
+}
+
 func TestOfficialGovDomainDoesNotNeedKeywordLookup(t *testing.T) {
 	result := analysis.Analyze("dichvucong.gov.vn")
 	if ShouldLookup("dichvucong.gov.vn", result) {

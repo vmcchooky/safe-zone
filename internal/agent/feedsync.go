@@ -10,6 +10,7 @@ import (
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 	"safe-zone/internal/store"
 )
 
@@ -70,6 +71,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 		sourcesFailed int
 		totalWritten  int64
 	)
+	client := netguard.NewHTTPClient(nil, t.config.Timeout, false)
 
 	for _, source := range t.config.Sources {
 		source = strings.TrimSpace(source)
@@ -94,6 +96,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 			DryRun:                     false,
 			Replace:                    false, // additive mode — don't delete existing entries
 			Timeout:                    t.config.Timeout,
+			Client:                     client,
 			ParserDriftInvalidRatio:    t.config.ParserDriftInvalidRatio,
 			ParserDriftMinInvalid:      t.config.ParserDriftMinInvalid,
 			CacheInvalidationMinWrites: t.config.CacheInvalidationMinWrites,

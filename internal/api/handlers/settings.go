@@ -10,6 +10,7 @@ import (
 
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/config"
+	"safe-zone/internal/netguard"
 )
 
 type settingsResponse struct {
@@ -106,7 +107,12 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 		if req.AgentWebhookURL != "" {
 			if !strings.Contains(req.AgentWebhookURL, "*") {
-				if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", strings.TrimSpace(req.AgentWebhookURL)); err != nil {
+				webhookURL := strings.TrimSpace(req.AgentWebhookURL)
+				if _, err := netguard.ValidateURL(webhookURL, false); err != nil {
+					httputil.WriteError(w, http.StatusBadRequest, "invalid agent_webhook_url: "+err.Error())
+					return
+				}
+				if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", webhookURL); err != nil {
 					httputil.WriteError(w, http.StatusInternalServerError, "failed to save agent_webhook_url: "+err.Error())
 					return
 				}

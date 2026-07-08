@@ -147,3 +147,24 @@ func TestSettingsHandlerPersistsMaskedSecretsAndRetention(t *testing.T) {
 		t.Fatalf("expected retention days 14, got %d", payload.TelemetryRetentionDays)
 	}
 }
+
+func TestSettingsHandlerRejectsPrivateWebhookURL(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	saveReq, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings", strings.NewReader(`{"agent_webhook_url":"http://127.0.0.1:8080/hook"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	saveReq.Header.Set("Content-Type", "application/json")
+	ts.addAdminBearer(saveReq)
+
+	saveResp, err := ts.Client.Do(saveReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer saveResp.Body.Close()
+	if saveResp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(saveResp.Body)
+		t.Fatalf("expected save 400, got %d: %s", saveResp.StatusCode, body)
+	}
+}

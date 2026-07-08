@@ -18,6 +18,7 @@ import (
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 	"safe-zone/internal/store"
 )
 
@@ -97,7 +98,7 @@ func NewAlertTask(db *store.DB, cfg AlertConfig) *AlertTask {
 	return &AlertTask{
 		store:     db,
 		config:    cfg,
-		http:      &http.Client{Timeout: cfg.Timeout},
+		http:      netguard.NewHTTPClient(nil, cfg.Timeout, false),
 		lastAlert: time.Now(),
 	}
 }
@@ -308,11 +309,17 @@ func (t *AlertTask) sendTelegram(ctx context.Context, criticalEvents []SpoofResu
 	msg.WriteString("🚨 <b>Phát hiện Website giả mạo Ngân hàng / Cơ quan Nhà nước!</b>\n\n")
 
 	for _, e := range criticalEvents {
-		fmt.Fprintf(&msg, "📌 <b>Tên miền vi phạm:</b> <code>%s</code>\n", e.Domain)
-		fmt.Fprintf(&msg, "🏷️ <b>Phân loại:</b> %s\n", e.Category)
-		fmt.Fprintf(&msg, "🏢 <b>Thương hiệu bị mạo danh:</b> <b>%s</b>\n", e.BrandName)
-		fmt.Fprintf(&msg, "🌐 <b>Tên miền chính thức:</b> <a href=\"https://%s\">%s</a>\n", e.OfficialDomain, e.OfficialDomain)
-		fmt.Fprintf(&msg, "📝 <b>Lý do:</b> <i>%s</i>\n\n", e.Reason)
+		domain := html.EscapeString(e.Domain)
+		category := html.EscapeString(e.Category)
+		brand := html.EscapeString(e.BrandName)
+		officialDomain := html.EscapeString(e.OfficialDomain)
+		reason := html.EscapeString(e.Reason)
+
+		fmt.Fprintf(&msg, "📌 <b>Tên miền vi phạm:</b> <code>%s</code>\n", domain)
+		fmt.Fprintf(&msg, "🏷️ <b>Phân loại:</b> %s\n", category)
+		fmt.Fprintf(&msg, "🏢 <b>Thương hiệu bị mạo danh:</b> <b>%s</b>\n", brand)
+		fmt.Fprintf(&msg, "🌐 <b>Tên miền chính thức:</b> <a href=\"https://%s\">%s</a>\n", officialDomain, officialDomain)
+		fmt.Fprintf(&msg, "📝 <b>Lý do:</b> <i>%s</i>\n\n", reason)
 	}
 	msg.WriteString("---------------------------------------------\n")
 	msg.WriteString("🔒 <i>Safe Zone - Bảo vệ người dân Việt Nam trước lừa đảo công nghệ cao.</i>")
