@@ -302,82 +302,77 @@ export function AnalysisPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="relative w-full max-w-4xl h-[80vh] rounded-3xl border border-white/20 bg-transparent p-6 flex flex-col transform-gpu shadow-[0_50px_100px_rgba(0,0,0,0.15)]"
+              className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_40px_80px_rgba(0,0,0,0.1)] border border-white/50 overflow-hidden flex flex-col transform-gpu"
               style={{ willChange: "opacity, transform" }}
             >
-              {/* Orbs under the transparent outer wrapper */}
-              <div className="absolute top-0 right-0 w-96 h-96 bg-sky-400/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none -z-20" />
-              <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-400/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none -z-20" />
+              {/* Glass background & Orbs */}
+              <div className="absolute inset-0 bg-white/30 backdrop-blur-3xl saturate-[2] -z-10" />
+              <div className="absolute top-0 right-0 w-96 h-96 bg-sky-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none -z-10" />
+              <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-400/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none -z-10" />
 
-              {/* Inner Frame: Glassmorphism */}
-              <div className="flex-1 flex flex-col rounded-2xl border border-white/40 bg-white/10 backdrop-blur-xl saturate-[1.5] p-6 overflow-hidden">
-                
-                {/* Content Inside: Opaque container */}
-                <div className="flex-1 flex flex-col rounded-xl bg-white border border-slate-200/80 shadow-md overflow-hidden min-h-0">
-                  
-                  {/* Header */}
-                  <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                    <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2.5">
-                      <div className="p-2 bg-slate-100 rounded-lg border border-slate-200 shadow-sm">
-                         <Activity size={18} className="text-sky-600" />
-                      </div>
-                      Raw Telemetry Data
-                    </h3>
-                    <button 
-                      onClick={() => setShowRawData(false)}
-                      className="p-2 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors active:scale-95"
-                    >
-                      <X size={18} strokeWidth={2.5} />
-                    </button>
+              {/* Header */}
+              <div className="px-8 py-6 border-b border-white/30 flex justify-between items-center bg-white/20">
+                <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
+                  <div className="p-2 bg-white/40 rounded-xl border border-white/50 shadow-sm">
+                     <Activity size={20} className="text-sky-600" />
                   </div>
-                  
-                  {/* Table Body */}
-                  <div className="flex-1 overflow-y-auto p-6 min-h-0">
-                    <table className="w-full text-sm text-left border-collapse">
-                      <thead className="bg-slate-50 text-slate-500 font-semibold border-b border-slate-100">
-                        <tr>
-                          <th className="px-6 py-4 w-1/3 text-xs uppercase tracking-wider">PROPERTY</th>
-                          <th className="px-6 py-4 w-2/3 text-xs uppercase tracking-wider">VALUE</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 text-slate-700">
-                        <tr className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-3.5 font-medium text-slate-500 group-hover:text-slate-800 transition-colors">Target Domain</td>
-                          <td className="px-6 py-3.5 font-mono text-sm">{result.domain}</td>
-                        </tr>
-                        <tr className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-3.5 font-medium text-slate-500 group-hover:text-slate-800 transition-colors">Resolution IP</td>
-                          <td className="px-6 py-3.5 font-mono text-sm text-sky-600 font-semibold">104.21.45.112</td>
-                        </tr>
-                        <tr className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-3.5 font-medium text-slate-500 group-hover:text-slate-800 transition-colors">ASN</td>
-                          <td className="px-6 py-3.5 font-mono text-sm">AS13335 (Cloudflare, Inc.)</td>
-                        </tr>
-                        <tr className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-3.5 font-medium text-slate-500 group-hover:text-slate-800 transition-colors">TLS Certificate</td>
-                          <td className="px-6 py-3.5 font-medium">Valid (Let's Encrypt Authority X3)</td>
-                        </tr>
-                        <tr className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-3.5 font-medium text-slate-500 group-hover:text-slate-800 transition-colors">Registration Date</td>
-                          <td className="px-6 py-3.5 font-medium">2023-10-12 <span className="text-slate-400 font-normal">(24 days ago)</span></td>
-                        </tr>
-                        <tr className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-3.5 font-medium text-slate-500 group-hover:text-slate-800 transition-colors">Nameservers</td>
-                          <td className="px-6 py-3.5 font-mono text-sm">ns1.cloudflare.com<br/>ns2.cloudflare.com</td>
-                        </tr>
-                        <tr className="hover:bg-slate-50/50 transition-colors group">
-                          <td className="px-6 py-3.5 font-medium text-slate-500 group-hover:text-slate-800 transition-colors">Verdict</td>
-                          <td className="px-6 py-3.5">
-                            <span className={`px-2.5 py-0.5 rounded-lg text-xs font-bold uppercase tracking-wider ${
-                              result.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-teal-100 text-teal-800 border border-teal-200'
-                            }`}>
-                              {result.verdict}
-                            </span>
-                          </td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
+                  Raw Telemetry Data
+                </h3>
+                <button 
+                  onClick={() => setShowRawData(false)}
+                  className="p-2.5 rounded-full bg-white/20 hover:bg-white/40 border border-white/30 text-slate-600 transition-all active:scale-95 shadow-sm"
+                >
+                  <X size={18} strokeWidth={2.5} />
+                </button>
+              </div>
+              
+              {/* Table Body */}
+              <div className="flex-1 overflow-y-auto p-8">
+                <div className="bg-white/20 rounded-xl border border-white/40 shadow-[inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
+                  <table className="w-full text-sm text-left border-collapse">
+                    <thead className="bg-white/30 text-slate-800 font-bold border-b border-white/40">
+                      <tr>
+                        <th className="px-6 py-5 w-1/3">PROPERTY</th>
+                        <th className="px-6 py-5 w-2/3">VALUE</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/20 text-slate-800">
+                      <tr className="hover:bg-white/30 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Target Domain</td>
+                        <td className="px-6 py-4 font-mono text-sm">{result.domain}</td>
+                      </tr>
+                      <tr className="hover:bg-white/30 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Resolution IP</td>
+                        <td className="px-6 py-4 font-mono text-sm text-sky-700 font-bold">104.21.45.112</td>
+                      </tr>
+                      <tr className="hover:bg-white/30 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">ASN</td>
+                        <td className="px-6 py-4 font-mono text-sm">AS13335 (Cloudflare, Inc.)</td>
+                      </tr>
+                      <tr className="hover:bg-white/30 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Certificate</td>
+                        <td className="px-6 py-4 font-medium">Valid (Let's Encrypt Authority X3)</td>
+                      </tr>
+                      <tr className="hover:bg-white/30 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Registration Date</td>
+                        <td className="px-6 py-4 font-medium">2023-10-12 <span className="text-slate-500 font-normal">(24 days ago)</span></td>
+                      </tr>
+                      <tr className="hover:bg-white/30 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Nameservers</td>
+                        <td className="px-6 py-4 font-mono text-sm">ns1.cloudflare.com<br/>ns2.cloudflare.com</td>
+                      </tr>
+                      <tr className="hover:bg-white/30 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Verdict</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
+                            result.verdict === 'MALICIOUS' ? 'bg-rose-500/20 text-rose-700 border border-rose-500/30' : 'bg-teal-500/20 text-teal-800 border border-teal-500/30'
+                          }`}>
+                            {result.verdict}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </motion.div>
