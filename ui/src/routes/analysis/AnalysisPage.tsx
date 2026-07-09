@@ -199,7 +199,7 @@ export function AnalysisPage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-white/60 border border-slate-200 rounded-2xl p-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4">
                       <div className="text-sm font-semibold text-slate-500 mb-3 flex items-center gap-2">
                         <Fingerprint size={16} /> Signals Detected
                       </div>
@@ -213,7 +213,7 @@ export function AnalysisPage() {
                       </ul>
                     </div>
                     
-                    <div className="bg-white/60 border border-slate-200 rounded-2xl p-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4">
                       <div className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-2">
                         <AlertTriangle size={16} /> Evidence
                       </div>
