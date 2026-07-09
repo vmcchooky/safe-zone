@@ -1,5 +1,5 @@
 import { Info } from 'lucide-react';
-import { ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 export function InfoTooltip({ content, size = 18 }: { content: ReactNode, size?: number }) {
   return (
