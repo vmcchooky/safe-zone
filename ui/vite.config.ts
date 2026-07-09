@@ -21,6 +21,9 @@ function buildProxy(target: string) {
         target,
         changeOrigin: true,
         secure: false,
+        headers: {
+          Origin: target,
+        },
       },
     ]),
   );
