@@ -294,7 +294,7 @@ export function AnalysisPage() {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
               onClick={() => setShowRawData(false)}
-              className="absolute inset-0 bg-slate-900/20 backdrop-blur-[5px]"
+              className="absolute inset-0 bg-slate-900/25 backdrop-blur-[12px]"
               style={{ willChange: "opacity" }}
             />
             <motion.div
@@ -302,25 +302,25 @@ export function AnalysisPage() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 15 }}
               transition={{ duration: 0.3, ease: "easeOut" }}
-              className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_40px_80px_rgba(0,0,0,0.1)] border border-white/50 overflow-hidden flex flex-col transform-gpu"
+              className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_50px_100px_rgba(0,0,0,0.12)] border border-white/60 overflow-hidden flex flex-col transform-gpu"
               style={{ willChange: "opacity, transform" }}
             >
               {/* Glass background & Orbs */}
-              <div className="absolute inset-0 bg-white/30 backdrop-blur-3xl saturate-[2] -z-10" />
-              <div className="absolute top-0 right-0 w-96 h-96 bg-sky-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none -z-10" />
-              <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-400/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none -z-10" />
+              <div className="absolute inset-0 bg-white/80 backdrop-blur-3xl saturate-[1.6] -z-10" />
+              <div className="absolute top-0 right-0 w-96 h-96 bg-sky-400/25 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none -z-10" />
+              <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-400/25 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none -z-10" />
 
               {/* Header */}
-              <div className="px-8 py-6 border-b border-white/30 flex justify-between items-center bg-white/20">
+              <div className="px-8 py-6 border-b border-black/5 flex justify-between items-center bg-white/30">
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-                  <div className="p-2 bg-white/40 rounded-xl border border-white/50 shadow-sm">
+                  <div className="p-2 bg-white/50 rounded-xl border border-white/80 shadow-sm">
                      <Activity size={20} className="text-sky-600" />
                   </div>
                   Raw Telemetry Data
                 </h3>
                 <button 
                   onClick={() => setShowRawData(false)}
-                  className="p-2.5 rounded-full bg-white/20 hover:bg-white/40 border border-white/30 text-slate-600 transition-all active:scale-95 shadow-sm"
+                  className="p-2.5 rounded-full bg-white/40 hover:bg-white/60 border border-white/80 text-slate-600 transition-all active:scale-95 shadow-sm"
                 >
                   <X size={18} strokeWidth={2.5} />
                 </button>
@@ -328,40 +328,40 @@ export function AnalysisPage() {
               
               {/* Table Body */}
               <div className="flex-1 overflow-y-auto p-8">
-                <div className="bg-white/20 rounded-xl border border-white/40 shadow-[inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
+                <div className="bg-white/30 rounded-xl border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02),inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
                   <table className="w-full text-sm text-left border-collapse">
-                    <thead className="bg-white/30 text-slate-800 font-bold border-b border-white/40">
+                    <thead className="bg-white/45 text-slate-800 font-bold border-b border-black/5">
                       <tr>
                         <th className="px-6 py-5 w-1/3">PROPERTY</th>
                         <th className="px-6 py-5 w-2/3">VALUE</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/20 text-slate-800">
-                      <tr className="hover:bg-white/30 transition-colors group">
+                    <tbody className="divide-y divide-black/5 text-slate-800">
+                      <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Target Domain</td>
                         <td className="px-6 py-4 font-mono text-sm">{result.domain}</td>
                       </tr>
-                      <tr className="hover:bg-white/30 transition-colors group">
+                      <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Resolution IP</td>
                         <td className="px-6 py-4 font-mono text-sm text-sky-700 font-bold">104.21.45.112</td>
                       </tr>
-                      <tr className="hover:bg-white/30 transition-colors group">
+                      <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">ASN</td>
                         <td className="px-6 py-4 font-mono text-sm">AS13335 (Cloudflare, Inc.)</td>
                       </tr>
-                      <tr className="hover:bg-white/30 transition-colors group">
+                      <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Certificate</td>
                         <td className="px-6 py-4 font-medium">Valid (Let's Encrypt Authority X3)</td>
                       </tr>
-                      <tr className="hover:bg-white/30 transition-colors group">
+                      <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Registration Date</td>
                         <td className="px-6 py-4 font-medium">2023-10-12 <span className="text-slate-500 font-normal">(24 days ago)</span></td>
                       </tr>
-                      <tr className="hover:bg-white/30 transition-colors group">
+                      <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Nameservers</td>
                         <td className="px-6 py-4 font-mono text-sm">ns1.cloudflare.com<br/>ns2.cloudflare.com</td>
                       </tr>
-                      <tr className="hover:bg-white/30 transition-colors group">
+                      <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Verdict</td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
