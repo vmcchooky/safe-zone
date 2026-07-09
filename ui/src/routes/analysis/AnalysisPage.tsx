@@ -28,11 +28,53 @@ export interface AnalysisResult {
   evidence?: Evidence[];
 }
 
+export interface RawDNS {
+  resolved: boolean;
+  nameservers?: string[];
+  error?: string;
+}
+
+export interface RawTLS {
+  has_tls: boolean;
+  valid: boolean;
+  self_signed: boolean;
+  expired: boolean;
+  issuer: string;
+  subject: string;
+  san_match: boolean;
+  cert_age_days: number;
+  is_wildcard: boolean;
+  not_before: string;
+  not_after: string;
+  score: number;
+  reasons: string[];
+}
+
+export interface RawWHOIS {
+  found: boolean;
+  registered_date?: string;
+  domain_age_days: number;
+  registrar?: string;
+  privacy_guard: boolean;
+  score: number;
+  reasons: string[];
+}
+
+export interface RawInspection {
+  domain: string;
+  dns: RawDNS;
+  tls: RawTLS;
+  whois: RawWHOIS;
+  inspect_at: string;
+}
+
 export function AnalysisPage() {
   const [domain, setDomain] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showRawData, setShowRawData] = useState(false);
+  const [rawData, setRawData] = useState<RawInspection | null>(null);
+  const [rawLoading, setRawLoading] = useState(false);
   const [recentAnalyses, setRecentAnalyses] = useState<AnalysisResult[]>([]);
   const [error, setError] = useState('');
 
@@ -329,7 +371,22 @@ export function AnalysisPage() {
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.3 }}
-                         onClick={() => setShowRawData(true)}
+                         onClick={async () => {
+                           if (!result) return;
+                           setShowRawData(true);
+                           setRawData(null);
+                           setRawLoading(true);
+                           try {
+                             const res = await fetch(`/v1/analyze/raw?domain=${encodeURIComponent(result.domain)}`);
+                             if (res.ok) {
+                               setRawData(await res.json());
+                             }
+                           } catch (err) {
+                             console.error('Raw data fetch failed:', err);
+                           } finally {
+                             setRawLoading(false);
+                           }
+                         }}
                          className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          View Raw Data
                        </motion.button>
@@ -430,6 +487,12 @@ export function AnalysisPage() {
               
               {/* Table Body */}
               <div className="flex-1 overflow-y-auto p-8">
+                {rawLoading ? (
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+                    <Loader2 className="animate-spin mb-4" size={32} />
+                    <p className="text-sm font-medium">Inspecting DNS, TLS & WHOIS...</p>
+                  </div>
+                ) : rawData ? (
                 <div className="bg-white/30 rounded-xl border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02),inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
                   <table className="w-full text-sm text-left border-collapse">
                     <thead className="bg-white/45 text-slate-800 font-bold border-b border-black/5">
@@ -441,33 +504,90 @@ export function AnalysisPage() {
                     <tbody className="divide-y divide-black/5 text-slate-800">
                       <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Target Domain</td>
-                        <td className="px-6 py-4 font-mono text-sm">{result.domain}</td>
+                        <td className="px-6 py-4 font-mono text-sm">{rawData.domain}</td>
                       </tr>
                       <tr className="hover:bg-white/50 transition-colors group">
-                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Resolution IP</td>
-                        <td className="px-6 py-4 font-mono text-sm text-sky-700 font-bold">104.21.45.112</td>
-                      </tr>
-                      <tr className="hover:bg-white/50 transition-colors group">
-                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">ASN</td>
-                        <td className="px-6 py-4 font-mono text-sm">AS13335 (Cloudflare, Inc.)</td>
-                      </tr>
-                      <tr className="hover:bg-white/50 transition-colors group">
-                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Certificate</td>
-                        <td className="px-6 py-4 font-medium">Valid (Let's Encrypt Authority X3)</td>
-                      </tr>
-                      <tr className="hover:bg-white/50 transition-colors group">
-                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Registration Date</td>
-                        <td className="px-6 py-4 font-medium">2023-10-12 <span className="text-slate-500 font-normal">(24 days ago)</span></td>
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">DNS Status</td>
+                        <td className="px-6 py-4">
+                          <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
+                            rawData.dns.resolved ? 'bg-teal-100 text-teal-700' : 'bg-rose-100 text-rose-700'
+                          }`}>
+                            {rawData.dns.resolved ? 'Resolved' : 'Failed'}
+                          </span>
+                          {rawData.dns.error && <span className="ml-2 text-xs text-rose-500">{rawData.dns.error}</span>}
+                        </td>
                       </tr>
                       <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Nameservers</td>
-                        <td className="px-6 py-4 font-mono text-sm">ns1.cloudflare.com<br/>ns2.cloudflare.com</td>
+                        <td className="px-6 py-4 font-mono text-sm">
+                          {rawData.dns.nameservers?.length ? rawData.dns.nameservers.join(', ') : <span className="text-slate-400">N/A</span>}
+                        </td>
                       </tr>
+                      <tr className="hover:bg-white/50 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Certificate</td>
+                        <td className="px-6 py-4">
+                          {rawData.tls.has_tls ? (
+                            <div className="space-y-1">
+                              <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
+                                rawData.tls.valid ? 'bg-teal-100 text-teal-700' :
+                                rawData.tls.expired ? 'bg-rose-100 text-rose-700' :
+                                rawData.tls.self_signed ? 'bg-amber-100 text-amber-700' :
+                                'bg-rose-100 text-rose-700'
+                              }`}>
+                                {rawData.tls.valid ? 'Valid' : rawData.tls.expired ? 'Expired' : rawData.tls.self_signed ? 'Self-Signed' : 'Invalid'}
+                              </span>
+                              <span className="ml-2 text-sm text-slate-600">{rawData.tls.issuer}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 text-sm">No TLS detected</span>
+                          )}
+                        </td>
+                      </tr>
+                      {rawData.tls.has_tls && (
+                        <>
+                          <tr className="hover:bg-white/50 transition-colors group">
+                            <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Subject</td>
+                            <td className="px-6 py-4 font-mono text-sm">
+                              {rawData.tls.subject}
+                              {rawData.tls.is_wildcard && <span className="ml-2 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold">WILDCARD</span>}
+                              {!rawData.tls.san_match && <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded text-[10px] font-bold">SAN MISMATCH</span>}
+                            </td>
+                          </tr>
+                          <tr className="hover:bg-white/50 transition-colors group">
+                            <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Certificate Validity</td>
+                            <td className="px-6 py-4 text-sm">
+                              {new Date(rawData.tls.not_before).toLocaleDateString()} — {new Date(rawData.tls.not_after).toLocaleDateString()}
+                              <span className="ml-2 text-slate-500">({rawData.tls.cert_age_days} days old)</span>
+                            </td>
+                          </tr>
+                        </>
+                      )}
+                      <tr className="hover:bg-white/50 transition-colors group">
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">WHOIS Registrar</td>
+                        <td className="px-6 py-4 font-medium">
+                          {rawData.whois.found ? (
+                            <>{rawData.whois.registrar || 'Unknown'}{rawData.whois.privacy_guard && <span className="ml-2 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-bold">PRIVACY GUARD</span>}</>
+                          ) : (
+                            <span className="text-slate-400">WHOIS data not available</span>
+                          )}
+                        </td>
+                      </tr>
+                      {rawData.whois.found && rawData.whois.registered_date && (
+                        <tr className="hover:bg-white/50 transition-colors group">
+                          <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Registration Date</td>
+                          <td className="px-6 py-4 font-medium">
+                            {new Date(rawData.whois.registered_date).toLocaleDateString()}
+                            <span className="text-slate-500 font-normal ml-2">({rawData.whois.domain_age_days} days ago)</span>
+                          </td>
+                        </tr>
+                      )}
                       <tr className="hover:bg-white/50 transition-colors group">
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Verdict</td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
-                            result.verdict === 'MALICIOUS' ? 'bg-rose-500/20 text-rose-700 border border-rose-500/30' : 'bg-teal-500/20 text-teal-800 border border-teal-500/30'
+                            result.verdict === 'MALICIOUS' ? 'bg-rose-500/20 text-rose-700 border border-rose-500/30' :
+                            result.verdict === 'SUSPICIOUS' ? 'bg-amber-500/20 text-amber-700 border border-amber-500/30' :
+                            'bg-teal-500/20 text-teal-800 border border-teal-500/30'
                           }`}>
                             {result.verdict}
                           </span>
@@ -476,6 +596,12 @@ export function AnalysisPage() {
                     </tbody>
                   </table>
                 </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+                    <AlertTriangle size={32} className="mb-4 text-slate-400" />
+                    <p className="text-sm font-medium">Failed to load raw inspection data.</p>
+                  </div>
+                )}
               </div>
             </motion.div>
           </div>

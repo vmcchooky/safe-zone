@@ -33,6 +33,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 
 	// Analysis & OSINT
 	mux.HandleFunc("/v1/analyze", h.AnalyzeHandler)
+	mux.HandleFunc("/v1/analyze/raw", h.RawDataHandler)
 	mux.HandleFunc("/v1/osint/evidence", h.RequireAuthFunc(h.OsintEvidenceHandler))
 	mux.HandleFunc("/v1/analysis/recent", h.RecentAnalysisHandler)
 

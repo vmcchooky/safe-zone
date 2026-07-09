@@ -70,3 +70,17 @@ func (h *Handler) RecentAnalysisHandler(w http.ResponseWriter, r *http.Request) 
 		"items": h.Risk.Recent(r.Context()),
 	})
 }
+
+func (h *Handler) RawDataHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	domain := r.URL.Query().Get("domain")
+	if domain == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "domain query parameter is required")
+		return
+	}
+	result := h.Risk.InspectRawData(r.Context(), domain)
+	httputil.WriteJSON(w, http.StatusOK, result)
+}
