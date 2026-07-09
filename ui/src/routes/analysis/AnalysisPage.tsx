@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Activity, ShieldCheck, ShieldBan, 
   Search, Globe, ChevronRight, Zap, Target, AlertTriangle, Fingerprint, Loader2, X
@@ -6,42 +6,72 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { InfoTooltip } from '../../components/InfoTooltip';
 
-// Mock Data
-const MOCK_HISTORY = [
-  { domain: 'secure-wallet-login.test', verdict: 'MALICIOUS', time: '2 mins ago', score: 98 },
-  { domain: 'github.com', verdict: 'SAFE', time: '15 mins ago', score: 0 },
-  { domain: 'update-service-api.net', verdict: 'SUSPICIOUS', time: '1 hour ago', score: 65 },
-  { domain: 'example.com', verdict: 'SAFE', time: '3 hours ago', score: 0 },
-];
+export interface Evidence {
+  domain: string;
+  source_url: string;
+  source_title?: string;
+  source_type: string;
+  confidence: number;
+  matched_terms?: string[];
+  retrieved_at: string;
+}
+
+export interface AnalysisResult {
+  domain: string;
+  verdict: 'SAFE' | 'SUSPICIOUS' | 'MALICIOUS' | 'INVALID';
+  confidence: number;
+  score: number;
+  reasons: string[];
+  category?: string;
+  cache_hit: boolean;
+  analyzed_at: string;
+  evidence?: Evidence[];
+}
 
 export function AnalysisPage() {
   const [domain, setDomain] = useState('');
   const [isScanning, setIsScanning] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showRawData, setShowRawData] = useState(false);
+  const [recentAnalyses, setRecentAnalyses] = useState<AnalysisResult[]>([]);
+  const [error, setError] = useState('');
 
-  const handleAnalyze = (e: React.FormEvent) => {
+  const fetchRecentAnalyses = async () => {
+    try {
+      const res = await fetch('/v1/analysis/recent');
+      if (!res.ok) throw new Error('Failed to fetch history');
+      const data = await res.json();
+      setRecentAnalyses(data.items || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  useEffect(() => {
+    fetchRecentAnalyses();
+  }, []);
+
+  const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!domain.trim()) return;
 
     setIsScanning(true);
     setResult(null);
+    setError('');
 
-    // Mock API Call
-    setTimeout(() => {
+    try {
+      const res = await fetch(`/v1/analyze?domain=${encodeURIComponent(domain)}&include_evidence=1`);
+      if (!res.ok) {
+         throw new Error(`Analysis failed: ${res.statusText}`);
+      }
+      const data = await res.json();
+      setResult(data);
+      fetchRecentAnalyses();
+    } catch (err: any) {
+      setError(err.message || 'An error occurred');
+    } finally {
       setIsScanning(false);
-      // Generate mock result based on domain name
-      const isMalicious = domain.includes('wallet') || domain.includes('login') || domain.includes('test');
-      
-      setResult({
-        domain,
-        verdict: isMalicious ? 'MALICIOUS' : 'SAFE',
-        score: isMalicious ? 92 : 0,
-        confidence: isMalicious ? 'High (98%)' : 'Very High (100%)',
-        signals: isMalicious ? ['Newly registered', 'Suspicious keywords', 'No SSL'] : ['Known reputable', 'Alexa Top 1M', 'Valid SSL'],
-        evidence: isMalicious ? 'Matched phishing signature DB-X92' : 'No threat signatures detected',
-      });
-    }, 2000);
+    }
   };
 
   const setQuickDomain = (d: string) => {
@@ -127,6 +157,20 @@ export function AnalysisPage() {
             </button>
           ))}
         </div>
+
+        <AnimatePresence>
+          {error && (
+            <motion.div 
+              initial={{ opacity: 0, y: -10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, y: -10 }}
+              className="mt-6 relative z-10 text-rose-700 text-sm font-medium bg-rose-50 p-4 rounded-xl border border-rose-200 flex items-center gap-3 shadow-sm"
+            >
+              <AlertTriangle size={18} className="text-rose-600 shrink-0" />
+              {error}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
 
       {/* Grid: Risk Dossier + Event Stream */}
@@ -215,23 +259,52 @@ export function AnalysisPage() {
                         <Fingerprint size={16} /> Signals Detected
                       </div>
                       <ul className="space-y-2">
-                        {result.signals.map((sig: string, i: number) => (
-                          <li key={i} className="flex items-center gap-2 text-slate-700 font-medium text-sm">
-                            <ChevronRight size={14} className="text-sky-500" />
-                            {sig}
-                          </li>
-                        ))}
+                        {result.reasons && result.reasons.length > 0 ? (
+                          result.reasons.map((sig, i) => (
+                            <li key={i} className="flex items-start gap-2 text-slate-700 font-medium text-sm">
+                              <ChevronRight size={14} className="text-sky-500 shrink-0 mt-0.5" />
+                              <span>{sig}</span>
+                            </li>
+                          ))
+                        ) : (
+                          <li className="text-slate-500 text-sm">No specific signals detected.</li>
+                        )}
                       </ul>
                     </div>
                     
-                    <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col">
                       <div className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-2">
-                        <AlertTriangle size={16} /> Evidence
+                        <AlertTriangle size={16} /> OSINT Evidence
                       </div>
-                      <p className="text-slate-700 text-sm">{result.evidence}</p>
+                      {result.evidence && result.evidence.length > 0 ? (
+                        <div className="space-y-3 flex-1 overflow-y-auto max-h-48 pr-2">
+                          {result.evidence.map((ev, i) => (
+                            <div key={i} className="text-xs text-slate-600 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                              <div className="font-semibold text-slate-800 break-words flex items-center gap-1.5">
+                                <Globe size={12} className="text-slate-400" />
+                                {ev.source_title || ev.source_type}
+                              </div>
+                              <a href={ev.source_url} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline break-all mt-1 inline-block">{ev.source_url}</a>
+                              {ev.matched_terms && ev.matched_terms.length > 0 && (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  {ev.matched_terms.map(t => <span key={t} className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-md text-[10px] uppercase font-bold">{t}</span>)}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="flex-1 text-slate-500 text-sm flex items-center">
+                          No external OSINT evidence found.
+                        </div>
+                      )}
                       
-                      <div className="mt-4 text-sm font-semibold text-slate-500 mb-1">Confidence</div>
-                      <div className="text-slate-900 font-medium">{result.confidence}</div>
+                      <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
+                        <div className="text-sm font-semibold text-slate-500">System Confidence</div>
+                        <div className="text-slate-900 font-bold bg-slate-100 px-2 py-0.5 rounded-md text-sm">
+                          {Math.round(result.confidence * 100)}%
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -275,26 +348,30 @@ export function AnalysisPage() {
               <h2 className="text-xl font-bold text-slate-900">Recent activity</h2>
             </div>
             <span className="text-xs font-medium px-2 py-1 bg-slate-100 text-slate-600 rounded-md border border-slate-200">
-              {MOCK_HISTORY.length}
+              {recentAnalyses.length}
             </span>
           </div>
 
           <div className="flex-1 overflow-y-auto px-2 py-1 space-y-3">
-            {MOCK_HISTORY.map((item, i) => (
+            {recentAnalyses.map((item, i) => (
               <div 
                 key={i} 
                 className={`bg-white/70 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2 cursor-pointer shadow-sm group hover:border-sky-200 transition-all duration-300 ${
                   i % 2 === 0 ? 'event-card-tilt-left hover:shadow-md' : 'event-card-tilt-right hover:shadow-md'
                 }`}
+                onClick={() => setQuickDomain(item.domain)}
               >
                 <div className="flex justify-between items-start">
                   <span className="font-semibold text-slate-900 truncate pr-2 text-sm group-hover:text-sky-600 transition-colors">{item.domain}</span>
-                  <span className="text-xs text-slate-400 whitespace-nowrap">{item.time}</span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">
+                    {new Date(item.analyzed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
                     item.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700' : 
                     item.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700' : 
+                    item.verdict === 'INVALID' ? 'bg-slate-100 text-slate-600' :
                     'bg-teal-100 text-teal-700'
                   }`}>
                     {item.verdict}
