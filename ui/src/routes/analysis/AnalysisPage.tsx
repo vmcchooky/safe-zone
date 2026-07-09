@@ -71,7 +71,7 @@ export interface RawInspection {
 interface ToastMessage {
   id: string;
   message: string;
-  type: 'success' | 'error' | 'info';
+  type: 'success' | 'error' | 'info' | 'allow' | 'block';
 }
 
 export function AnalysisPage() {
@@ -85,7 +85,7 @@ export function AnalysisPage() {
   const [error, setError] = useState('');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+  const addToast = (message: string, type: 'success' | 'error' | 'info' | 'allow' | 'block' = 'info') => {
     const id = Math.random().toString(36).substr(2, 9);
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
@@ -403,7 +403,7 @@ export function AnalysisPage() {
                                body: JSON.stringify({ domain: result.domain, action: 'allow', reason: 'Manual override from dashboard' })
                              });
                              if (res.ok) {
-                               addToast(`Successfully allowed ${result.domain}`, 'success');
+                               addToast(`Successfully allowed ${result.domain}`, 'allow');
                              } else {
                                const err = await res.json().catch(() => ({}));
                                addToast(`Failed: ${err.error || res.statusText}`, 'error');
@@ -427,7 +427,7 @@ export function AnalysisPage() {
                                body: JSON.stringify({ domain: result.domain, action: 'block', reason: 'Manual override from dashboard' })
                              });
                              if (res.ok) {
-                               addToast(`Successfully blocked ${result.domain}`, 'success');
+                               addToast(`Successfully blocked ${result.domain}`, 'block');
                              } else {
                                const err = await res.json().catch(() => ({}));
                                addToast(`Failed: ${err.error || res.statusText}`, 'error');
@@ -689,18 +689,21 @@ export function AnalysisPage() {
               exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
               layout
               className={`pointer-events-auto px-5 py-3 rounded-xl shadow-lg border backdrop-blur-md flex items-center gap-3 w-max max-w-sm ${
+                t.type === 'allow' ? 'bg-[#F4C2C2]/90 border-[#F4C2C2] text-white' :
+                t.type === 'block' ? 'bg-[#64748b]/90 border-[#64748b] text-white' :
                 t.type === 'success' ? 'bg-teal-500/10 border-teal-500/20 text-teal-800' :
                 t.type === 'error' ? 'bg-rose-500/10 border-rose-500/20 text-rose-800' :
                 'bg-slate-800/10 border-slate-800/20 text-slate-800'
               }`}
             >
-              {t.type === 'success' ? <CheckCircle2 size={18} className="text-teal-600 shrink-0" /> :
+              {t.type === 'allow' || t.type === 'success' ? <CheckCircle2 size={18} className={t.type === 'allow' ? "text-white shrink-0" : "text-teal-600 shrink-0"} /> :
+               t.type === 'block' ? <ShieldBan size={18} className="text-white shrink-0" /> :
                t.type === 'error' ? <AlertTriangle size={18} className="text-rose-600 shrink-0" /> :
                <Info size={18} className="text-slate-600 shrink-0" />}
               <span className="font-semibold text-sm">{t.message}</span>
               <button 
                 onClick={() => setToasts(prev => prev.filter(toast => toast.id !== t.id))}
-                className="ml-2 text-slate-400 hover:text-slate-700 transition-colors"
+                className={`ml-2 transition-colors ${t.type === 'allow' || t.type === 'block' ? 'text-white/70 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}
               >
                 <X size={14} strokeWidth={3} />
               </button>
