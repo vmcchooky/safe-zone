@@ -52,18 +52,14 @@ export function AnalysisPage() {
     <>
     <div className="flex flex-col gap-6 max-w-7xl mx-auto p-4 lg:p-8 animate-in fade-in duration-500 pb-32">
       {/* Page Header */}
-      <header className="mb-2">
-        <div className="flex items-center gap-3.5 mb-1.5">
-          <div className="bg-sky-500/10 p-2.5 rounded-2xl border border-sky-500/20 text-sky-600">
-            <Activity size={28} />
-          </div>
-          <div>
-            <div className="text-xs font-semibold tracking-wider uppercase text-slate-500 mb-0.5">Analysis Deck</div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-slate-900 leading-none">Domain Inspection</h1>
-              <InfoTooltip content="Fast lexical and evidence-backed triage for suspicious destinations." />
-            </div>
-          </div>
+      <header className="mb-4">
+        <div className="text-xs font-bold tracking-wider uppercase text-sky-600 mb-1.5 pl-8">
+          Analysis Deck
+        </div>
+        <div className="flex items-center gap-2.5">
+          <Activity size={24} className="text-sky-500" />
+          <h1 className="text-2xl font-bold text-slate-900 leading-none">Domain Inspection</h1>
+          <InfoTooltip content="Fast lexical and evidence-backed triage for suspicious destinations." />
         </div>
       </header>
 
