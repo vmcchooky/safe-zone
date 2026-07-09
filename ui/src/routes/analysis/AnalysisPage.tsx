@@ -226,12 +226,12 @@ export function AnalysisPage() {
 
                   <div className="mt-auto pt-4 border-t border-slate-100 flex justify-end gap-3">
                      <button 
-                       style={{ backgroundColor: 'var(--safe)', color: 'white' }}
+                       style={{ backgroundColor: '#ec4899', color: 'white' }}
                        className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
                        Allow
                      </button>
                      <button 
-                       style={{ backgroundColor: 'var(--bad)', color: 'white' }}
+                       style={{ backgroundColor: '#64748b', color: 'white' }}
                        className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
                        Block
                      </button>
