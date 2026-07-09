@@ -178,7 +178,30 @@ export function AnalysisPage() {
           </button>
           <button 
             type="button"
-            className="bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1"
+            onClick={async () => {
+              if (!domain.trim() || isScanning) return;
+              setIsScanning(true);
+              setError('');
+              setResult(null);
+              try {
+                const res = await fetch(`/v1/analyze?domain=${encodeURIComponent(domain)}&include_evidence=1&force_osint=1`);
+                if (!res.ok) throw new Error('Analysis failed');
+                const data = await res.json();
+                setResult(data);
+                if (data.domain) {
+                  setRecentAnalyses(prev => {
+                    const filtered = prev.filter(p => p.domain !== data.domain);
+                    return [data, ...filtered].slice(0, 10);
+                  });
+                }
+              } catch (err: any) {
+                setError(err.message || 'An error occurred during analysis');
+              } finally {
+                setIsScanning(false);
+              }
+            }}
+            disabled={isScanning || !domain.trim()}
+            className="bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 disabled:opacity-50 disabled:pointer-events-none"
           >
             OSINT
           </button>
