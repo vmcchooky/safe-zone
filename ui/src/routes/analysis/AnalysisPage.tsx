@@ -571,12 +571,36 @@ export function AnalysisPage() {
                         <th className="px-6 py-5 w-2/3">VALUE</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-black/5 text-slate-800">
-                      <tr className="hover:bg-white/50 transition-colors group">
+                    <motion.tbody 
+                      initial="hidden"
+                      animate="show"
+                      variants={{
+                        hidden: {},
+                        show: {
+                          transition: {
+                            staggerChildren: 0.06
+                          }
+                        }
+                      }}
+                      className="divide-y divide-black/5 text-slate-800"
+                    >
+                      <motion.tr 
+                        variants={{
+                          hidden: { opacity: 0, x: -10 },
+                          show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                        }}
+                        className="hover:bg-white/50 transition-colors group"
+                      >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Target Domain</td>
                         <td className="px-6 py-4 font-mono text-sm">{rawData.domain}</td>
-                      </tr>
-                      <tr className="hover:bg-white/50 transition-colors group">
+                      </motion.tr>
+                      <motion.tr 
+                        variants={{
+                          hidden: { opacity: 0, x: -10 },
+                          show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                        }}
+                        className="hover:bg-white/50 transition-colors group"
+                      >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">DNS Status</td>
                         <td className="px-6 py-4">
                           <span className={`px-2.5 py-1 rounded-lg text-xs font-bold uppercase tracking-wider ${
@@ -586,14 +610,26 @@ export function AnalysisPage() {
                           </span>
                           {rawData.dns.error && <span className="ml-2 text-xs text-rose-500">{rawData.dns.error}</span>}
                         </td>
-                      </tr>
-                      <tr className="hover:bg-white/50 transition-colors group">
+                      </motion.tr>
+                      <motion.tr 
+                        variants={{
+                          hidden: { opacity: 0, x: -10 },
+                          show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                        }}
+                        className="hover:bg-white/50 transition-colors group"
+                      >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Nameservers</td>
                         <td className="px-6 py-4 font-mono text-sm">
                           {rawData.dns.nameservers?.length ? rawData.dns.nameservers.join(', ') : <span className="text-slate-400">N/A</span>}
                         </td>
-                      </tr>
-                      <tr className="hover:bg-white/50 transition-colors group">
+                      </motion.tr>
+                      <motion.tr 
+                        variants={{
+                          hidden: { opacity: 0, x: -10 },
+                          show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                        }}
+                        className="hover:bg-white/50 transition-colors group"
+                      >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Certificate</td>
                         <td className="px-6 py-4">
                           {rawData.tls.has_tls ? (
@@ -612,27 +648,45 @@ export function AnalysisPage() {
                             <span className="text-slate-400 text-sm">No TLS detected</span>
                           )}
                         </td>
-                      </tr>
+                      </motion.tr>
                       {rawData.tls.has_tls && (
                         <>
-                          <tr className="hover:bg-white/50 transition-colors group">
+                          <motion.tr 
+                            variants={{
+                              hidden: { opacity: 0, x: -10 },
+                              show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                            }}
+                            className="hover:bg-white/50 transition-colors group"
+                          >
                             <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Subject</td>
                             <td className="px-6 py-4 font-mono text-sm">
                               {rawData.tls.subject}
                               {rawData.tls.is_wildcard && <span className="ml-2 px-1.5 py-0.5 bg-sky-100 text-sky-700 rounded text-[10px] font-bold">WILDCARD</span>}
                               {!rawData.tls.san_match && <span className="ml-2 px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded text-[10px] font-bold">SAN MISMATCH</span>}
                             </td>
-                          </tr>
-                          <tr className="hover:bg-white/50 transition-colors group">
+                          </motion.tr>
+                          <motion.tr 
+                            variants={{
+                              hidden: { opacity: 0, x: -10 },
+                              show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                            }}
+                            className="hover:bg-white/50 transition-colors group"
+                          >
                             <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Certificate Validity</td>
                             <td className="px-6 py-4 text-sm">
                               {new Date(rawData.tls.not_before).toLocaleDateString()} — {new Date(rawData.tls.not_after).toLocaleDateString()}
                               <span className="ml-2 text-slate-500">({rawData.tls.cert_age_days} days old)</span>
                             </td>
-                          </tr>
+                          </motion.tr>
                         </>
                       )}
-                      <tr className="hover:bg-white/50 transition-colors group">
+                      <motion.tr 
+                        variants={{
+                          hidden: { opacity: 0, x: -10 },
+                          show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                        }}
+                        className="hover:bg-white/50 transition-colors group"
+                      >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">WHOIS Registrar</td>
                         <td className="px-6 py-4 font-medium">
                           {rawData.whois.found ? (
@@ -641,17 +695,29 @@ export function AnalysisPage() {
                             <span className="text-slate-400">WHOIS data not available</span>
                           )}
                         </td>
-                      </tr>
+                      </motion.tr>
                       {rawData.whois.found && rawData.whois.registered_date && (
-                        <tr className="hover:bg-white/50 transition-colors group">
+                        <motion.tr 
+                          variants={{
+                            hidden: { opacity: 0, x: -10 },
+                            show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                          }}
+                          className="hover:bg-white/50 transition-colors group"
+                        >
                           <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Registration Date</td>
                           <td className="px-6 py-4 font-medium">
                             {new Date(rawData.whois.registered_date).toLocaleDateString()}
                             <span className="text-slate-500 font-normal ml-2">({rawData.whois.domain_age_days} days ago)</span>
                           </td>
-                        </tr>
+                        </motion.tr>
                       )}
-                      <tr className="hover:bg-white/50 transition-colors group">
+                      <motion.tr 
+                        variants={{
+                          hidden: { opacity: 0, x: -10 },
+                          show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
+                        }}
+                        className="hover:bg-white/50 transition-colors group"
+                      >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Verdict</td>
                         <td className="px-6 py-4">
                           <span className={`px-3 py-1 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
@@ -662,8 +728,8 @@ export function AnalysisPage() {
                             {result.verdict}
                           </span>
                         </td>
-                      </tr>
-                    </tbody>
+                      </motion.tr>
+                    </motion.tbody>
                   </table>
                 </div>
                 ) : (
