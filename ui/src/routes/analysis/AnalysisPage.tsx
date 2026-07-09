@@ -352,7 +352,7 @@ export function AnalysisPage() {
             </span>
           </div>
 
-          <div className="overflow-y-auto px-2 py-1 space-y-3 max-h-[320px] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent pr-1">
+          <div className="overflow-y-auto px-2 py-1 space-y-3 max-h-[320px] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {recentAnalyses.map((item, i) => (
               <div 
                 key={i} 
