@@ -118,166 +118,162 @@ export function AnalysisPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Risk Dossier */}
-        <section className="lg:col-span-2 bg-transparent border border-white/60 rounded-3xl p-3 shadow-none relative min-h-[400px] flex flex-col">
-          <div className="flex-1 bg-white/10 backdrop-blur-md border border-white/30 rounded-2xl p-6 flex flex-col relative z-10">
-            <div className="flex justify-between items-start mb-6">
-              <div className="flex items-center gap-2">
-                <div className="text-xs font-semibold tracking-wider uppercase text-slate-500">Risk dossier</div>
-                <InfoTooltip content="Detailed analysis and evidence-backed triage for the destination." />
-              </div>
+        <section className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative min-h-[400px] flex flex-col">
+          
+          <div className="flex justify-between items-start mb-6 z-10">
+            <div className="flex items-center gap-2">
+              <div className="text-xs font-semibold tracking-wider uppercase text-slate-500">Risk dossier</div>
+              <InfoTooltip content="Detailed analysis and evidence-backed triage for the destination." />
             </div>
+          </div>
 
-            <div className="flex-1 flex flex-col relative">
-              {/* Empty State */}
-              <AnimatePresence mode="wait">
-                {!isScanning && !result && (
-                  <motion.div 
-                    key="empty"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500"
-                  >
-                    <Target size={48} strokeWidth={1} className="mb-4 text-slate-400 opacity-50" />
-                    <h3 className="text-lg font-semibold text-slate-700 mb-2">Awaiting inspection target</h3>
-                    <p className="max-w-sm">Enter a domain above to generate verdict, score, confidence, signals, and evidence.</p>
-                  </motion.div>
-                )}
+          <div className="flex-1 flex flex-col relative z-10">
+            {/* Empty State */}
+            <AnimatePresence mode="wait">
+              {!isScanning && !result && (
+                <motion.div 
+                  key="empty"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500"
+                >
+                  <Target size={48} strokeWidth={1} className="mb-4 text-slate-400 opacity-50" />
+                  <h3 className="text-lg font-semibold text-slate-700 mb-2">Awaiting inspection target</h3>
+                  <p className="max-w-sm">Enter a domain above to generate verdict, score, confidence, signals, and evidence.</p>
+                </motion.div>
+              )}
 
-                {/* Scanning State */}
-                {isScanning && (
+              {/* Scanning State */}
+              {isScanning && (
+                <motion.div 
+                  key="scanning"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="flex-1 flex flex-col items-center justify-center relative"
+                >
+                  {/* Laser effect */}
                   <motion.div 
-                    key="scanning"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="flex-1 flex flex-col items-center justify-center relative"
-                  >
-                    {/* Laser effect */}
-                    <motion.div 
-                      className="absolute w-full h-[2px] bg-sky-400 shadow-[0_0_20px_4px_rgba(56,189,248,0.5)] z-20"
-                      animate={{ top: ['0%', '100%', '0%'] }}
-                      transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
-                    />
-                    <div className="w-full max-w-md space-y-4 opacity-50">
-                      <div className="h-8 bg-slate-200 rounded-lg w-3/4 animate-pulse" />
-                      <div className="h-24 bg-slate-200 rounded-xl w-full animate-pulse" />
-                      <div className="h-12 bg-slate-200 rounded-lg w-1/2 animate-pulse" />
-                    </div>
-                  </motion.div>
-                )}
+                    className="absolute w-full h-[2px] bg-sky-400 shadow-[0_0_20px_4px_rgba(56,189,248,0.5)] z-20"
+                    animate={{ top: ['0%', '100%', '0%'] }}
+                    transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+                  />
+                  <div className="w-full max-w-md space-y-4 opacity-50">
+                    <div className="h-8 bg-slate-200 rounded-lg w-3/4 animate-pulse" />
+                    <div className="h-24 bg-slate-200 rounded-xl w-full animate-pulse" />
+                    <div className="h-12 bg-slate-200 rounded-lg w-1/2 animate-pulse" />
+                  </div>
+                </motion.div>
+              )}
 
-                {/* Result State */}
-                {!isScanning && result && (
-                  <motion.div 
-                    key="result"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-col gap-6"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <h3 className="text-2xl font-bold text-slate-900 mb-2 flex items-center gap-2">
-                          <Globe className="text-slate-400" /> {result.domain}
-                        </h3>
-                        <div className="flex gap-3">
-                          <span className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 ${
-                            result.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-teal-100 text-teal-700 border border-teal-200'
-                          }`}>
-                            {result.verdict === 'MALICIOUS' ? <ShieldBan size={16} /> : <ShieldCheck size={16} />}
-                            {result.verdict}
-                          </span>
-                          <span className="px-3 py-1 rounded-full text-sm font-medium bg-slate-100 text-slate-600 border border-slate-200">
-                            Score: {result.score}/100
-                          </span>
-                        </div>
+              {/* Result State */}
+              {!isScanning && result && (
+                <motion.div 
+                  key="result"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="flex flex-col gap-6"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <h3 className="text-2xl font-bold text-slate-900 mb-2 flex items-center gap-2">
+                        <Globe className="text-slate-400" /> {result.domain}
+                      </h3>
+                      <div className="flex gap-3">
+                        <span className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 ${
+                          result.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' : 'bg-teal-100 text-teal-700 border border-teal-200'
+                        }`}>
+                          {result.verdict === 'MALICIOUS' ? <ShieldBan size={16} /> : <ShieldCheck size={16} />}
+                          {result.verdict}
+                        </span>
+                        <span className="px-3 py-1 rounded-full text-sm font-medium bg-slate-100 text-slate-600 border border-slate-200">
+                          Score: {result.score}/100
+                        </span>
                       </div>
                     </div>
+                  </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                        <div className="text-sm font-semibold text-slate-500 mb-3 flex items-center gap-2">
-                          <Fingerprint size={16} /> Signals Detected
-                        </div>
-                        <ul className="space-y-2">
-                          {result.signals.map((sig: string, i: number) => (
-                            <li key={i} className="flex items-center gap-2 text-slate-700 font-medium text-sm">
-                              <ChevronRight size={14} className="text-sky-500" />
-                              {sig}
-                            </li>
-                          ))}
-                        </ul>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                      <div className="text-sm font-semibold text-slate-500 mb-3 flex items-center gap-2">
+                        <Fingerprint size={16} /> Signals Detected
                       </div>
+                      <ul className="space-y-2">
+                        {result.signals.map((sig: string, i: number) => (
+                          <li key={i} className="flex items-center gap-2 text-slate-700 font-medium text-sm">
+                            <ChevronRight size={14} className="text-sky-500" />
+                            {sig}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                    
+                    <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                      <div className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-2">
+                        <AlertTriangle size={16} /> Evidence
+                      </div>
+                      <p className="text-slate-700 text-sm">{result.evidence}</p>
                       
-                      <div className="bg-white border border-slate-200 rounded-2xl p-4">
-                        <div className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-2">
-                          <AlertTriangle size={16} /> Evidence
-                        </div>
-                        <p className="text-slate-700 text-sm">{result.evidence}</p>
-                        <div className="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center text-sm">
-                          <span className="text-slate-500 font-semibold">Confidence</span>
-                          <span className="text-slate-700 font-bold">{result.confidence}</span>
-                        </div>
-                      </div>
+                      <div className="mt-4 text-sm font-semibold text-slate-500 mb-1">Confidence</div>
+                      <div className="text-slate-900 font-medium">{result.confidence}</div>
                     </div>
+                  </div>
 
-                    <div className="mt-auto pt-4 border-t border-slate-100 flex justify-end gap-3">
-                       <button 
-                         style={{ backgroundColor: '#F4C2C2', color: 'white' }}
-                         className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
-                         Allow
-                       </button>
-                       <button 
-                         style={{ backgroundColor: '#64748b', color: 'white' }}
-                         className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
-                         Block
-                       </button>
-                       <button 
-                         onClick={() => setShowRawData(true)}
-                         className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
-                         View Raw Data
-                       </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                  <div className="mt-auto pt-4 border-t border-slate-100 flex justify-end gap-3">
+                     <button 
+                       style={{ backgroundColor: '#F4C2C2', color: 'white' }}
+                       className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
+                       Allow
+                     </button>
+                     <button 
+                       style={{ backgroundColor: '#64748b', color: 'white' }}
+                       className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
+                       Block
+                     </button>
+                     <button 
+                       onClick={() => setShowRawData(true)}
+                       className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
+                       View Raw Data
+                     </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </section>
 
         {/* Event Stream */}
-        <aside className="bg-transparent border border-white/60 rounded-3xl p-3 shadow-none flex flex-col min-h-[400px]">
-          <div className="flex-1 bg-white/10 backdrop-blur-md border border-white/30 rounded-2xl p-6 flex flex-col relative z-10 overflow-hidden">
-            <div className="flex justify-between items-start mb-6">
-              <div>
-                <div className="text-xs font-semibold tracking-wider uppercase text-slate-500 mb-1">Event Stream</div>
-                <h2 className="text-xl font-bold text-slate-900">Recent activity</h2>
-              </div>
-              <span className="text-xs font-medium px-2 py-1 bg-slate-100 text-slate-600 rounded-md border border-slate-200">
-                {MOCK_HISTORY.length}
-              </span>
+        <aside className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col min-h-[400px]">
+          <div className="flex justify-between items-start mb-6">
+            <div>
+              <div className="text-xs font-semibold tracking-wider uppercase text-slate-500 mb-1">Event Stream</div>
+              <h2 className="text-xl font-bold text-slate-900">Recent activity</h2>
             </div>
+            <span className="text-xs font-medium px-2 py-1 bg-slate-100 text-slate-600 rounded-md border border-slate-200">
+              {MOCK_HISTORY.length}
+            </span>
+          </div>
 
-            <div className="flex-1 overflow-y-auto pr-2 space-y-3">
-              {MOCK_HISTORY.map((item, i) => (
-                <div key={i} className="bg-white/70 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2 hover:border-sky-200 transition-colors cursor-pointer shadow-sm group">
-                  <div className="flex justify-between items-start">
-                    <span className="font-semibold text-slate-900 truncate pr-2 text-sm group-hover:text-sky-600 transition-colors">{item.domain}</span>
-                    <span className="text-xs text-slate-400 whitespace-nowrap">{item.time}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                      item.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700' : 
-                      item.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700' : 
-                      'bg-teal-100 text-teal-700'
-                    }`}>
-                      {item.verdict}
-                    </span>
-                    <span className="text-xs font-medium text-slate-500">Score: {item.score}</span>
-                  </div>
+          <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+            {MOCK_HISTORY.map((item, i) => (
+              <div key={i} className="bg-white/70 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2 hover:border-sky-200 transition-colors cursor-pointer shadow-sm group">
+                <div className="flex justify-between items-start">
+                  <span className="font-semibold text-slate-900 truncate pr-2 text-sm group-hover:text-sky-600 transition-colors">{item.domain}</span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap">{item.time}</span>
                 </div>
-              ))}
-            </div>
+                <div className="flex items-center justify-between">
+                  <span className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                    item.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700' : 
+                    item.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700' : 
+                    'bg-teal-100 text-teal-700'
+                  }`}>
+                    {item.verdict}
+                  </span>
+                  <span className="text-xs font-medium text-slate-500">Score: {item.score}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </aside>
 
