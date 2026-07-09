@@ -1,8 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300..900;1,300..900&display=swap');
 @import "tailwindcss";
 
 :root {
   color-scheme: light;
-  font-family: "Aptos", "Segoe UI Variable Display", "Segoe UI", sans-serif;
+  font-family: "Nunito", "Segoe UI Variable Display", "Segoe UI", sans-serif;
   --bg: #ffffff;
   --bg-panel: rgba(255, 255, 255, 0.75);
   --bg-panel-soft: rgba(255, 255, 255, 0.45);
