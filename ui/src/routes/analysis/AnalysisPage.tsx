@@ -41,7 +41,7 @@ export function AnalysisPage() {
       const res = await fetch('/v1/analysis/recent');
       if (!res.ok) throw new Error('Failed to fetch history');
       const data = await res.json();
-      setRecentAnalyses(data.items || []);
+      setRecentAnalyses((data.items || []).slice(0, 10));
     } catch (err) {
       console.error(err);
     }
@@ -352,7 +352,7 @@ export function AnalysisPage() {
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-2 py-1 space-y-3">
+          <div className="overflow-y-auto px-2 py-1 space-y-3 max-h-[320px] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent pr-1">
             {recentAnalyses.map((item, i) => (
               <div 
                 key={i} 
