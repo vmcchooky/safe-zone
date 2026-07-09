@@ -234,21 +234,33 @@ export function AnalysisPage() {
                   </div>
 
                   <div className="mt-auto pt-4 border-t border-slate-100 flex justify-end gap-3">
-                     <button 
-                       style={{ backgroundColor: '#F4C2C2', color: 'white' }}
-                       className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
-                       Allow
-                     </button>
-                     <button 
-                       style={{ backgroundColor: '#64748b', color: 'white' }}
-                       className="px-6 py-2 rounded-xl font-bold shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
-                       Block
-                     </button>
-                     <button 
-                       onClick={() => setShowRawData(true)}
-                       className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:scale-90 active:translate-y-1 transition-all duration-300 ease-out active:duration-150">
-                       View Raw Data
-                     </button>
+                       <motion.button 
+                         initial={{ opacity: 0, x: -30, scale: 0.8 }}
+                         animate={{ opacity: 1, x: 0, scale: 1 }}
+                         transition={{ type: "spring", stiffness: 260, damping: 15, delay: 0.1 }}
+                         whileTap={{ scale: 0.9, y: 4 }}
+                         style={{ backgroundColor: '#F4C2C2', color: 'white' }}
+                         className="px-6 py-2 rounded-xl font-bold shadow-sm">
+                         Allow
+                       </motion.button>
+                       <motion.button 
+                         initial={{ opacity: 0, x: -30, scale: 0.8 }}
+                         animate={{ opacity: 1, x: 0, scale: 1 }}
+                         transition={{ type: "spring", stiffness: 260, damping: 15, delay: 0.2 }}
+                         whileTap={{ scale: 0.9, y: 4 }}
+                         style={{ backgroundColor: '#64748b', color: 'white' }}
+                         className="px-6 py-2 rounded-xl font-bold shadow-sm">
+                         Block
+                       </motion.button>
+                       <motion.button 
+                         initial={{ opacity: 0, x: -30, scale: 0.8 }}
+                         animate={{ opacity: 1, x: 0, scale: 1 }}
+                         transition={{ type: "spring", stiffness: 260, damping: 15, delay: 0.3 }}
+                         whileTap={{ scale: 0.9, y: 4 }}
+                         onClick={() => setShowRawData(true)}
+                         className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm transition-colors duration-200">
+                         View Raw Data
+                       </motion.button>
                   </div>
                 </motion.div>
               )}
