@@ -238,27 +238,24 @@ export function AnalysisPage() {
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.1 }}
-                         whileTap={{ scale: 0.9, y: 4 }}
                          style={{ backgroundColor: '#F4C2C2', color: 'white' }}
-                         className="px-6 py-2 rounded-xl font-bold shadow-sm">
+                         className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          Allow
                        </motion.button>
                        <motion.button 
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.2 }}
-                         whileTap={{ scale: 0.9, y: 4 }}
                          style={{ backgroundColor: '#64748b', color: 'white' }}
-                         className="px-6 py-2 rounded-xl font-bold shadow-sm">
+                         className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          Block
                        </motion.button>
                        <motion.button 
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.3 }}
-                         whileTap={{ scale: 0.9, y: 4 }}
                          onClick={() => setShowRawData(true)}
-                         className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm transition-colors duration-200">
+                         className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          View Raw Data
                        </motion.button>
                   </div>
