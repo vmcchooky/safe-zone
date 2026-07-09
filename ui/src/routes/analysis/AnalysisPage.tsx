@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { 
   Activity, ShieldCheck, ShieldBan, 
-  Search, Globe, ChevronRight, Zap, Target, AlertTriangle, Fingerprint, Loader2, X
+  Search, Globe, ChevronRight, Zap, Target, AlertTriangle, Fingerprint, Loader2, X, CheckCircle2, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { InfoTooltip } from '../../components/InfoTooltip';
@@ -68,6 +68,12 @@ export interface RawInspection {
   inspect_at: string;
 }
 
+interface ToastMessage {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
+}
+
 export function AnalysisPage() {
   const [domain, setDomain] = useState('');
   const [isScanning, setIsScanning] = useState(false);
@@ -77,6 +83,15 @@ export function AnalysisPage() {
   const [rawLoading, setRawLoading] = useState(false);
   const [recentAnalyses, setRecentAnalyses] = useState<AnalysisResult[]>([]);
   const [error, setError] = useState('');
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 5000);
+  };
 
   const fetchRecentAnalyses = async () => {
     try {
@@ -388,12 +403,12 @@ export function AnalysisPage() {
                                body: JSON.stringify({ domain: result.domain, action: 'allow', reason: 'Manual override from dashboard' })
                              });
                              if (res.ok) {
-                               alert(`Successfully allowed ${result.domain}`);
+                               addToast(`Successfully allowed ${result.domain}`, 'success');
                              } else {
                                const err = await res.json().catch(() => ({}));
-                               alert(`Failed: ${err.error || res.statusText}`);
+                               addToast(`Failed: ${err.error || res.statusText}`, 'error');
                              }
-                           } catch (err: any) { alert(`Error: ${err.message}`); }
+                           } catch (err: any) { addToast(`Error: ${err.message}`, 'error'); }
                          }}
                          className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          Allow
@@ -412,12 +427,12 @@ export function AnalysisPage() {
                                body: JSON.stringify({ domain: result.domain, action: 'block', reason: 'Manual override from dashboard' })
                              });
                              if (res.ok) {
-                               alert(`Successfully blocked ${result.domain}`);
+                               addToast(`Successfully blocked ${result.domain}`, 'success');
                              } else {
                                const err = await res.json().catch(() => ({}));
-                               alert(`Failed: ${err.error || res.statusText}`);
+                               addToast(`Failed: ${err.error || res.statusText}`, 'error');
                              }
-                           } catch (err: any) { alert(`Error: ${err.message}`); }
+                           } catch (err: any) { addToast(`Error: ${err.message}`, 'error'); }
                          }}
                          className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          Block
@@ -662,6 +677,37 @@ export function AnalysisPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* Toast Notifications */}
+      <div className="fixed bottom-6 left-6 z-[200] flex flex-col-reverse gap-3 pointer-events-none">
+        <AnimatePresence>
+          {toasts.map(t => (
+            <motion.div
+              key={t.id}
+              initial={{ opacity: 0, x: -50, scale: 0.8 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
+              layout
+              className={`pointer-events-auto px-5 py-3 rounded-xl shadow-lg border backdrop-blur-md flex items-center gap-3 w-max max-w-sm ${
+                t.type === 'success' ? 'bg-teal-500/10 border-teal-500/20 text-teal-800' :
+                t.type === 'error' ? 'bg-rose-500/10 border-rose-500/20 text-rose-800' :
+                'bg-slate-800/10 border-slate-800/20 text-slate-800'
+              }`}
+            >
+              {t.type === 'success' ? <CheckCircle2 size={18} className="text-teal-600 shrink-0" /> :
+               t.type === 'error' ? <AlertTriangle size={18} className="text-rose-600 shrink-0" /> :
+               <Info size={18} className="text-slate-600 shrink-0" />}
+              <span className="font-semibold text-sm">{t.message}</span>
+              <button 
+                onClick={() => setToasts(prev => prev.filter(toast => toast.id !== t.id))}
+                className="ml-2 text-slate-400 hover:text-slate-700 transition-colors"
+              >
+                <X size={14} strokeWidth={3} />
+              </button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
     </>
   );
 }
