@@ -268,7 +268,7 @@ export function AnalysisPage() {
             </span>
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-2 space-y-3">
+          <div className="flex-1 overflow-y-auto px-2 py-1 space-y-3">
             {MOCK_HISTORY.map((item, i) => (
               <div 
                 key={i} 
