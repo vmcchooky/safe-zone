@@ -376,3 +376,8 @@
 .event-card-tilt-right:hover {
   transform: translateY(-3px) rotate(0.6deg) scale(1.005) !important;
 }
+.event-card-tilt-left:active,
+.event-card-tilt-right:active {
+  transform: translateY(2px) scale(0.95) rotate(0deg) !important;
+  transition: transform 150ms ease-out !important;
+}

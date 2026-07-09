@@ -114,12 +114,14 @@ export function AnalysisPage() {
 
         <div className="mt-6 flex flex-wrap gap-2 items-center text-sm relative">
           <span className="text-slate-500 font-medium mr-2">Quick actions:</span>
-          {['example.com', 'login-update.test', 'secure-wallet.test'].map(d => (
+          {['example.com', 'login-update.test', 'secure-wallet.test'].map((d, i) => (
             <button 
               key={d}
               type="button"
               onClick={() => setQuickDomain(d)}
-              className="bg-white/50 hover:bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-0.5"
+              className={`bg-white/50 hover:bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg transition-all duration-300 ease-out shadow-sm hover:border-sky-200 ${
+                i % 2 === 0 ? 'event-card-tilt-left hover:shadow-md' : 'event-card-tilt-right hover:shadow-md'
+              }`}
             >
               {d}
             </button>
