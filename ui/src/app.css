@@ -368,3 +368,11 @@
     justify-content: flex-start;
   }
 }
+
+/* Custom premium micro-interactions */
+.event-card-tilt-left:hover {
+  transform: translateY(-3px) rotate(-0.6deg) scale(1.005) !important;
+}
+.event-card-tilt-right:hover {
+  transform: translateY(-3px) rotate(0.6deg) scale(1.005) !important;
+}

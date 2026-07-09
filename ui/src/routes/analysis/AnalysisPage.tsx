@@ -66,7 +66,20 @@ export function AnalysisPage() {
       {/* Inspection Dock */}
       <section className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden">
         {/* Subtle decorative glow */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-sky-400/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
+        <motion.div 
+          className="absolute top-0 right-0 w-64 h-64 bg-sky-400/10 rounded-full blur-3xl pointer-events-none"
+          animate={{
+            x: [0, 30, -15, 0],
+            y: [0, -25, 20, 0],
+            scale: [1, 1.15, 0.9, 1]
+          }}
+          transition={{
+            duration: 15,
+            repeat: Infinity,
+            ease: "easeInOut"
+          }}
+          style={{ originX: 0.5, originY: 0.5, willChange: "transform, opacity" }}
+        />
         
 
 
@@ -78,7 +91,7 @@ export function AnalysisPage() {
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="secure-login-wallet-example.com"
-              className="w-full bg-white/70 border border-slate-200 rounded-2xl !py-4 !pr-4 !pl-16 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 transition-all shadow-sm"
+              className="w-full bg-white/70 border border-slate-200 rounded-2xl !py-4 !pr-4 !pl-16 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm"
               spellCheck="false"
               autoComplete="off"
             />
@@ -93,7 +106,7 @@ export function AnalysisPage() {
           </button>
           <button 
             type="button"
-            className="bg-white/60 hover:bg-white/90 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1"
+            className="bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1"
           >
             OSINT
           </button>
@@ -257,7 +270,12 @@ export function AnalysisPage() {
 
           <div className="flex-1 overflow-y-auto pr-2 space-y-3">
             {MOCK_HISTORY.map((item, i) => (
-              <div key={i} className="bg-white/70 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2 hover:border-sky-200 transition-colors cursor-pointer shadow-sm group">
+              <div 
+                key={i} 
+                className={`bg-white/70 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2 cursor-pointer shadow-sm group hover:border-sky-200 transition-all duration-300 ${
+                  i % 2 === 0 ? 'event-card-tilt-left hover:shadow-md' : 'event-card-tilt-right hover:shadow-md'
+                }`}
+              >
                 <div className="flex justify-between items-start">
                   <span className="font-semibold text-slate-900 truncate pr-2 text-sm group-hover:text-sky-600 transition-colors">{item.domain}</span>
                   <span className="text-xs text-slate-400 whitespace-nowrap">{item.time}</span>
