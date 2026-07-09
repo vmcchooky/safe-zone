@@ -527,10 +527,10 @@ export function AnalysisPage() {
               style={{ willChange: "opacity" }}
             />
             <motion.div
-              initial={{ opacity: 0, y: 15 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 15 }}
-              transition={{ duration: 0.3, ease: "easeOut" }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              transition={{ type: "spring", stiffness: 350, damping: 25 }}
               className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_50px_100px_rgba(0,0,0,0.12)] border border-white/60 overflow-hidden flex flex-col transform-gpu"
               style={{ willChange: "opacity, transform" }}
             >
