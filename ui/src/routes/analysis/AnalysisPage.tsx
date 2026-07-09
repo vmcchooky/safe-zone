@@ -379,6 +379,22 @@ export function AnalysisPage() {
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.1 }}
                          style={{ backgroundColor: '#F4C2C2', color: 'white' }}
+                         onClick={async () => {
+                           if (!result) return;
+                           try {
+                             const res = await fetch('/v1/overrides', {
+                               method: 'POST',
+                               headers: { 'Content-Type': 'application/json' },
+                               body: JSON.stringify({ domain: result.domain, action: 'allow', reason: 'Manual override from dashboard' })
+                             });
+                             if (res.ok) {
+                               alert(`Successfully allowed ${result.domain}`);
+                             } else {
+                               const err = await res.json().catch(() => ({}));
+                               alert(`Failed: ${err.error || res.statusText}`);
+                             }
+                           } catch (err: any) { alert(`Error: ${err.message}`); }
+                         }}
                          className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          Allow
                        </motion.button>
@@ -387,6 +403,22 @@ export function AnalysisPage() {
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.2 }}
                          style={{ backgroundColor: '#64748b', color: 'white' }}
+                         onClick={async () => {
+                           if (!result) return;
+                           try {
+                             const res = await fetch('/v1/overrides', {
+                               method: 'POST',
+                               headers: { 'Content-Type': 'application/json' },
+                               body: JSON.stringify({ domain: result.domain, action: 'block', reason: 'Manual override from dashboard' })
+                             });
+                             if (res.ok) {
+                               alert(`Successfully blocked ${result.domain}`);
+                             } else {
+                               const err = await res.json().catch(() => ({}));
+                               alert(`Failed: ${err.error || res.statusText}`);
+                             }
+                           } catch (err: any) { alert(`Error: ${err.message}`); }
+                         }}
                          className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          Block
                        </motion.button>
