@@ -211,7 +211,7 @@ export function TelemetryPage() {
         {/* Main Telemetry Dock */}
         <div className="bg-white/20 backdrop-blur-md border-2 border-white/90 rounded-[2.5rem] p-4 sm:p-6 lg:p-8 shadow-[0_0_20px_rgba(255,255,255,0.5)] relative overflow-hidden space-y-8">
           {/* Filters */}
-          <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
+          <div className="flex flex-wrap gap-6 items-end">
           <div className="flex flex-col gap-2 w-48">
             <label htmlFor="telemetry-period" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Period</label>
             <select
@@ -314,7 +314,7 @@ export function TelemetryPage() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 24 }}
-              className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.04)] transition-shadow"
+              className="p-6 transition-shadow"
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className={`p-2.5 rounded-xl ${colors[card.tone]}`}>
@@ -352,7 +352,7 @@ export function TelemetryPage() {
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
+          <article className="relative overflow-hidden flex flex-col h-[400px]">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-800 mb-1">Verdict distribution</h2>
               <p className="text-slate-500 font-medium">Actual category mix from the backend telemetry store.</p>
@@ -387,7 +387,7 @@ export function TelemetryPage() {
             </div>
           </article>
 
-          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
+          <article className="flex flex-col h-[400px]">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-800 mb-1">Category volume</h2>
               <p className="text-slate-500 font-medium">Quick comparison of safe, suspicious, and malicious decisions.</p>
@@ -422,7 +422,7 @@ export function TelemetryPage() {
         </div>
 
         {/* Table */}
-        <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)]">
+        <article className="p-4 sm:p-8">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h2 className="text-xl font-bold text-slate-800 mb-1">Recent activity</h2>
