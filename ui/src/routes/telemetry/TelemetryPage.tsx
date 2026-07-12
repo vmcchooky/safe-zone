@@ -197,10 +197,9 @@ export function TelemetryPage() {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div>
             <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-2">Live telemetry workspace</div>
-            <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight mb-3">Network telemetry, grounded in the real API</h1>
+            <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight mb-3">Network Telemetry</h1>
             <p className="text-slate-500 max-w-2xl text-lg">
-              This React route pulls directly from `/v1/telemetry/stats` and `/v1/telemetry/recent`
-              while preserving the same auth session as the production dashboard.
+              Live feed of API decisions and threat metrics.
             </p>
           </div>
           <button 
