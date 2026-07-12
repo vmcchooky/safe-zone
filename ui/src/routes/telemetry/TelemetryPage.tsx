@@ -213,7 +213,7 @@ export function TelemetryPage() {
         </div>
 
         {/* Filters */}
-        <div className="bg-white/40 backdrop-blur-xl border border-white/60 rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
+        <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
           <div className="flex flex-col gap-2 w-48">
             <label htmlFor="telemetry-period" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Period</label>
             <select
@@ -316,7 +316,7 @@ export function TelemetryPage() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 24 }}
-              className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.04)] transition-shadow"
+              className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.04)] transition-shadow"
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className={`p-2.5 rounded-xl ${colors[card.tone]}`}>
@@ -333,7 +333,7 @@ export function TelemetryPage() {
         </div>
 
         {/* Threat Pressure Bar */}
-        <div className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] relative overflow-hidden">
+        <div className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
           <div className="flex justify-between items-end mb-6 relative z-10">
             <div>
@@ -354,7 +354,7 @@ export function TelemetryPage() {
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <article className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
+          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-800 mb-1">Verdict distribution</h2>
               <p className="text-slate-500 font-medium">Actual category mix from the backend telemetry store.</p>
@@ -389,7 +389,7 @@ export function TelemetryPage() {
             </div>
           </article>
 
-          <article className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
+          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-800 mb-1">Category volume</h2>
               <p className="text-slate-500 font-medium">Quick comparison of safe, suspicious, and malicious decisions.</p>
@@ -424,7 +424,7 @@ export function TelemetryPage() {
         </div>
 
         {/* Table */}
-        <article className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)]">
+        <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)]">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h2 className="text-xl font-bold text-slate-800 mb-1">Recent activity</h2>
