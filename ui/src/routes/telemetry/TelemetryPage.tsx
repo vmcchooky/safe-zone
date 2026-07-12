@@ -212,7 +212,9 @@ export function TelemetryPage() {
           </button>
         </div>
         {/* Main Telemetry Dock */}
-        <div className="bg-white/20 backdrop-blur-md border-2 border-white/90 rounded-[2.5rem] p-4 sm:p-6 lg:p-8 shadow-[0_0_20px_rgba(255,255,255,0.5)] relative overflow-hidden space-y-8">
+        <div className="relative rounded-[2.5rem] p-4 sm:p-6 lg:p-8 shadow-[0_0_20px_rgba(255,255,255,0.5)] space-y-8 z-0">
+          {/* Glass background with clipping to fix Chromium artifact */}
+          <div className="absolute inset-0 bg-white/20 backdrop-blur-md border-2 border-white/90 rounded-[2.5rem] -z-10 [clip-path:inset(0_round_2.5rem)]" />
           {/* Filters */}
           <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
           <div className="flex flex-col gap-2 w-48">
