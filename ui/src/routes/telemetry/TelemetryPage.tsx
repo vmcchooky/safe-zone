@@ -1,8 +1,8 @@
 import {
   startTransition,
+  useCallback,
   useDeferredValue,
   useEffect,
-  useEffectEvent,
   useMemo,
   useState,
 } from 'react';
@@ -95,7 +95,7 @@ export function TelemetryPage() {
 
   const deferredDomain = useDeferredValue(domain.trim());
 
-  const loadTelemetry = useEffectEvent(async (showSpinner: boolean) => {
+  const loadTelemetry = useCallback(async (showSpinner: boolean) => {
     if (showSpinner) {
       startTransition(() => {
         setRefreshing(true);
@@ -139,11 +139,11 @@ export function TelemetryPage() {
         setRefreshing(false);
       });
     }
-  });
+  }, [period, page, deferredDomain, verdict, source]);
 
   useEffect(() => {
     void loadTelemetry(true);
-  }, [deferredDomain, loadTelemetry, page, period, source, verdict]);
+  }, [loadTelemetry]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
