@@ -186,11 +186,11 @@ export function TelemetryPage() {
   const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
 
   return (
-    <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8">
-      {/* Background Orbs (temporarily disabled for debugging) */}
-      {/* <div className="absolute inset-0 bg-slate-50/50 -z-10" />
+    <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8 overflow-x-hidden">
+      {/* Background Orbs */}
+      <div className="absolute inset-0 bg-slate-50/50 -z-10" />
       <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-sky-400/20 rounded-full blur-[120px] -translate-y-1/2 translate-x-1/3 pointer-events-none -z-10" />
-      <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-pink-400/20 rounded-full blur-[100px] translate-y-1/3 -translate-x-1/4 pointer-events-none -z-10" /> */}
+      <div className="absolute bottom-0 left-0 w-[600px] h-[600px] bg-pink-400/20 rounded-full blur-[100px] translate-y-1/3 -translate-x-1/4 pointer-events-none -z-10" />
 
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
@@ -212,9 +212,7 @@ export function TelemetryPage() {
           </button>
         </div>
         {/* Main Telemetry Dock */}
-        <div className="relative rounded-[2.5rem] p-4 sm:p-6 lg:p-8 shadow-[0_0_20px_rgba(255,255,255,0.5)] space-y-8 z-0">
-          {/* Glass background with clipping to fix Chromium artifact */}
-          <div className="absolute inset-0 bg-white/20 backdrop-blur-md border-2 border-white/90 rounded-[2.5rem] -z-10 [clip-path:inset(0_round_2.5rem)]" />
+        <div className="bg-white/20 backdrop-blur-md border-2 border-white/90 rounded-[2.5rem] p-4 sm:p-6 lg:p-8 shadow-[0_0_20px_rgba(255,255,255,0.5)] relative overflow-hidden space-y-8">
           {/* Filters */}
           <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
           <div className="flex flex-col gap-2 w-48">
