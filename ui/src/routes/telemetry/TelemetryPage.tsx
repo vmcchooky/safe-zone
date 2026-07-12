@@ -203,11 +203,11 @@ export function TelemetryPage() {
             </p>
           </div>
           <button 
-            className="flex items-center gap-2 bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-3 rounded-2xl font-semibold transition-all duration-300 ease-out shadow-sm whitespace-nowrap"
+            className="flex items-center gap-2 bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 whitespace-nowrap"
             type="button" 
             onClick={() => void loadTelemetry(true)}
           >
-            {refreshing ? <LoaderCircle size={18} className="animate-spin text-sky-500" /> : <RefreshCcw size={18} className="text-sky-500" />}
+            {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : <RefreshCcw size={20} className="text-sky-500" />}
             Refresh now
           </button>
         </div>
@@ -223,7 +223,7 @@ export function TelemetryPage() {
                 setPage(1);
                 setPeriod(event.target.value);
               }}
-              className="w-full bg-white/50 border border-white/80 rounded-xl px-4 py-3 text-slate-700 font-medium shadow-sm focus:bg-white focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all appearance-none cursor-pointer"
+              className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
             >
               {PERIOD_OPTIONS.map((option) => (
                 <option key={option.value} value={option.value}>{option.label}</option>
@@ -234,7 +234,7 @@ export function TelemetryPage() {
           <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
             <label htmlFor="telemetry-domain" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Domain search</label>
             <div className="relative">
-              <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={22} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 id="telemetry-domain"
                 value={domain}
@@ -243,7 +243,7 @@ export function TelemetryPage() {
                   setDomain(event.target.value);
                 }}
                 placeholder="Filter by domain fragment"
-                className="w-full bg-white/50 border border-white/80 rounded-xl pl-11 pr-4 py-3 text-slate-700 font-medium shadow-sm focus:bg-white focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all placeholder:text-slate-400"
+                className="w-full bg-white/70 border border-slate-200 rounded-2xl !py-4 !pr-4 !pl-16 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm"
               />
             </div>
           </div>
@@ -257,7 +257,7 @@ export function TelemetryPage() {
                 setPage(1);
                 setVerdict(event.target.value);
               }}
-              className="w-full bg-white/50 border border-white/80 rounded-xl px-4 py-3 text-slate-700 font-medium shadow-sm focus:bg-white focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all appearance-none cursor-pointer"
+              className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
             >
               {VERDICT_OPTIONS.map((option) => (
                 <option key={option.label} value={option.value}>{option.label}</option>
@@ -274,7 +274,7 @@ export function TelemetryPage() {
                 setPage(1);
                 setSource(event.target.value);
               }}
-              className="w-full bg-white/50 border border-white/80 rounded-xl px-4 py-3 text-slate-700 font-medium shadow-sm focus:bg-white focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 outline-none transition-all appearance-none cursor-pointer"
+              className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
             >
               {SOURCE_OPTIONS.map((option) => (
                 <option key={option.label} value={option.value}>{option.label}</option>
@@ -523,7 +523,7 @@ export function TelemetryPage() {
                       <td className="py-4 pr-4 text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
                       <td className="py-4 pr-4 text-right">
                         <button
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-white/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm group/btn"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-white/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm group/btn active:scale-95"
                           type="button"
                           onClick={() => navigate(`/analysis?domain=${encodeURIComponent(entry.domain)}`)}
                         >
@@ -544,7 +544,7 @@ export function TelemetryPage() {
             </span>
             <div className="flex gap-3 mr-4">
               <button
-                className="px-5 py-2.5 bg-white/60 hover:bg-white/90 border border-slate-200 text-slate-700 rounded-xl font-bold transition-all disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
+                className="px-6 py-3 bg-white/60 hover:bg-white/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
                 type="button"
                 disabled={page === 1 || refreshing}
                 onClick={() => setPage((value) => Math.max(1, value - 1))}
@@ -552,7 +552,7 @@ export function TelemetryPage() {
                 Previous
               </button>
               <button
-                className="px-5 py-2.5 bg-white/60 hover:bg-white/90 border border-slate-200 text-slate-700 rounded-xl font-bold transition-all disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
+                className="px-6 py-3 bg-white/60 hover:bg-white/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
                 type="button"
                 disabled={entries.length < PAGE_SIZE || refreshing}
                 onClick={() => setPage((value) => value + 1)}
