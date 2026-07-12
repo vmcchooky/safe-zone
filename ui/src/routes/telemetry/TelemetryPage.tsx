@@ -211,9 +211,10 @@ export function TelemetryPage() {
             Refresh now
           </button>
         </div>
-
-        {/* Filters */}
-        <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
+        {/* Main Telemetry Dock */}
+        <div className="bg-transparent border border-white rounded-[2.5rem] p-4 sm:p-6 lg:p-8 shadow-sm relative overflow-hidden space-y-8">
+          {/* Filters */}
+          <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
           <div className="flex flex-col gap-2 w-48">
             <label htmlFor="telemetry-period" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Period</label>
             <select
@@ -560,8 +561,8 @@ export function TelemetryPage() {
                 Next
               </button>
             </div>
-          </div>
         </article>
+        </div>
       </div>
     </section>
   );
