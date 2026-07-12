@@ -561,6 +561,7 @@ export function TelemetryPage() {
                 Next
               </button>
             </div>
+          </div>
         </article>
         </div>
       </div>
