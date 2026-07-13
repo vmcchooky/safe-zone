@@ -342,34 +342,6 @@ export function TelemetryPage() {
               }}
             />
           </div>
-          <div className="flex justify-between items-center mt-3 text-xs font-bold uppercase tracking-wider relative z-10">
-            <span className="flex items-center gap-1.5 text-teal-700">
-              <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
-              <ShieldCheck size={15} /> Safe ({safeRatio}%)
-            </span>
-            <div className="flex gap-4">
-              <span className="flex items-center gap-1.5 text-amber-600">
-                <span 
-                  className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" 
-                  style={{
-                    backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 3px)',
-                    backgroundSize: '4px 4px'
-                  }}
-                />
-                <TriangleAlert size={15} /> Suspicious ({suspiciousRatio}%)
-              </span>
-              <span className="flex items-center gap-1.5 text-rose-600">
-                <span 
-                  className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" 
-                  style={{
-                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.6) 20%, transparent 20%)',
-                    backgroundSize: '3px 3px'
-                  }}
-                />
-                <ShieldAlert size={15} /> Malicious ({maliciousRatio}%)
-              </span>
-            </div>
-          </div>
         </div>
 
         {/* Charts Grid */}
@@ -419,36 +391,6 @@ export function TelemetryPage() {
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            
-            <div className="flex justify-center gap-5 mt-4 relative z-10 flex-wrap border-t border-black/5 pt-4">
-              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
-                <ShieldCheck size={15} className="text-teal-600" />
-                Safe ({stats ? formatCompact(stats.safe) : 0})
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span 
-                  className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" 
-                  style={{
-                    backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 3px)',
-                    backgroundSize: '4px 4px'
-                  }}
-                />
-                <TriangleAlert size={15} className="text-amber-500" />
-                Suspicious ({stats ? formatCompact(stats.suspicious) : 0})
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span 
-                  className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" 
-                  style={{
-                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.6) 20%, transparent 20%)',
-                    backgroundSize: '3px 3px'
-                  }}
-                />
-                <ShieldAlert size={15} className="text-rose-600" />
-                Malicious ({stats ? formatCompact(stats.malicious) : 0})
-              </span>
-            </div>
           </article>
 
           <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
@@ -494,36 +436,6 @@ export function TelemetryPage() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-            </div>
-            
-            <div className="flex justify-center gap-5 mt-4 relative z-10 flex-wrap border-t border-black/5 pt-4">
-              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="w-2.5 h-2.5 rounded-full bg-teal-500/80 inline-block" />
-                <ShieldCheck size={15} className="text-teal-600" />
-                Safe ({stats ? formatCompact(stats.safe) : 0})
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span 
-                  className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" 
-                  style={{
-                    backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 3px)',
-                    backgroundSize: '4px 4px'
-                  }}
-                />
-                <TriangleAlert size={15} className="text-amber-500" />
-                Suspicious ({stats ? formatCompact(stats.suspicious) : 0})
-              </span>
-              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span 
-                  className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" 
-                  style={{
-                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.6) 20%, transparent 20%)',
-                    backgroundSize: '3px 3px'
-                  }}
-                />
-                <ShieldAlert size={15} className="text-rose-600" />
-                Malicious ({stats ? formatCompact(stats.malicious) : 0})
-              </span>
             </div>
           </article>
         </div>
