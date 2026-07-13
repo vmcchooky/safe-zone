@@ -42,7 +42,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
 import { apiFetch, messageFromError } from '../../lib/api';
@@ -103,6 +103,13 @@ export function TelemetryPage() {
   const [verdict, setVerdict] = useState('');
   const [source, setSource] = useState('');
   const [page, setPage] = useState(1);
+  const [chartHover, setChartHover] = useState({
+    active: false,
+    x: 0,
+    y: 0,
+    label: '',
+    payload: [] as any[]
+  });
 
   const deferredDomain = useDeferredValue(domain.trim());
 
@@ -390,9 +397,24 @@ export function TelemetryPage() {
                 <p className="text-slate-500 font-medium">Volume of suspicious and malicious activities over time (simulated).</p>
               </div>
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 relative">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart 
+                  data={trendData} 
+                  margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                  onMouseMove={(e: any) => {
+                    if (e && e.activePayload) {
+                      setChartHover({
+                        active: true,
+                        x: e.activeCoordinate?.x || 0,
+                        y: e.activeCoordinate?.y || 0,
+                        label: String(e.activeLabel || ''),
+                        payload: e.activePayload
+                      });
+                    }
+                  }}
+                  onMouseLeave={() => setChartHover(prev => ({ ...prev, active: false }))}
+                >
                   <defs>
                     <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
                       <rect width="8" height="8" fill="rgba(20, 184, 166, 0.15)" />
@@ -416,17 +438,51 @@ export function TelemetryPage() {
                     dx={-10}
                   />
                   <Tooltip 
-                    animationDuration={150}
-                    cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4' }}
-                    contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.95)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
-                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
-                    labelStyle={{ color: '#64748b', marginBottom: '4px', fontWeight: 500 }}
+                    cursor={false}
+                    content={<></>}
                   />
                   <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} />
                   <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} />
                   <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} />
                 </AreaChart>
               </ResponsiveContainer>
+
+              <AnimatePresence>
+                {chartHover.active && (
+                  <>
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1, x: chartHover.x }}
+                      exit={{ opacity: 0 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 25 }}
+                      className="absolute top-[10px] bottom-[30px] w-px border-l-2 border-dashed border-slate-400 z-10 pointer-events-none"
+                      style={{ left: 0 }}
+                    />
+                    
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, x: chartHover.x, y: chartHover.y, transition: { type: "spring", stiffness: 400, damping: 25 } }}
+                      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
+                      className="absolute z-20 pointer-events-none bg-white/95 backdrop-blur-md border border-white/80 shadow-[0_4px_20px_rgba(0,0,0,0.08)] rounded-2xl p-4 min-w-[150px]"
+                      style={{ top: 0, left: 0, transform: 'translate(-50%, -100%)', marginTop: '-12px' }}
+                    >
+                      <div className="text-slate-500 font-semibold mb-3 text-xs uppercase tracking-wider">{chartHover.label}</div>
+                      <div className="flex flex-col gap-2.5">
+                        {/* reverse payload so Malicious is at the top matching the stacked layout */}
+                        {[...chartHover.payload].reverse().map((entry: any, index: number) => (
+                          <div key={index} className="flex items-center justify-between text-sm font-bold text-slate-800">
+                            <div className="flex items-center gap-2">
+                              <span className="w-3 h-3 rounded-full" style={{ backgroundColor: entry.stroke || entry.color }} />
+                              <span>{entry.name}</span>
+                            </div>
+                            <span>{entry.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
             </div>
           </article>
 
