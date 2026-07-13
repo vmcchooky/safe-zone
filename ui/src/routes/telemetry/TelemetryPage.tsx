@@ -800,7 +800,7 @@ export function TelemetryPage() {
                   <th className="w-[12%] pb-4 font-bold uppercase tracking-wider">Source</th>
                   <th className="w-[15%] pb-4 font-bold uppercase tracking-wider">Score</th>
                   <th className="w-[18%] pb-4 font-bold uppercase tracking-wider">Analyzed at</th>
-                  <th className="w-[10%] pb-4 font-bold uppercase tracking-wider text-right pr-4">Action</th>
+                  <th className="w-[10%] pb-4 font-bold uppercase tracking-wider text-center">Action</th>
                 </tr>
               </thead>
               <motion.tbody
@@ -824,7 +824,7 @@ export function TelemetryPage() {
                       <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-20"></div></td>
                       <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-16"></div></td>
                       <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-32"></div></td>
-                      <td className="py-4 pr-4"><div className="h-8 bg-slate-200/60 rounded-lg w-20 ml-auto"></div></td>
+                      <td className="py-4"><div className="h-8 bg-slate-200/60 rounded-lg w-20 mx-auto"></div></td>
                     </tr>
                   ))
                 ) : entries.length === 0 ? (
@@ -881,7 +881,7 @@ export function TelemetryPage() {
                         </div>
                       </td>
                       <td className="py-4 pr-4 align-middle text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
-                      <td className="py-4 pr-4 align-middle text-right">
+                      <td className="py-4 align-middle text-center">
                         <button
                           className="inline-flex items-center justify-center px-5 py-2 bg-slate-50/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-95"
                           type="button"
