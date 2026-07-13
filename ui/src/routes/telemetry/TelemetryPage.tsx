@@ -305,7 +305,7 @@ export function TelemetryPage() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <h2 className="text-xl font-bold text-slate-800">Threat pressure</h2>
-                <InfoTooltip text="Share of suspicious and malicious verdicts in the selected period." />
+                <InfoTooltip content="Share of suspicious and malicious verdicts in the selected period." />
               </div>
             </div>
             <strong className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-rose-500">{riskRatio}% risk</strong>
