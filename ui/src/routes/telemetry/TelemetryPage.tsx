@@ -854,9 +854,9 @@ export function TelemetryPage() {
                       </td>
                       <td className="py-4 pr-4">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
-                          entry.verdict === 'MALICIOUS' ? 'bg-rose-500/20 text-rose-700 border border-rose-500/30' :
-                          entry.verdict === 'SUSPICIOUS' ? 'bg-amber-500/20 text-amber-700 border border-amber-500/30' :
-                          'bg-teal-500/20 text-teal-800 border border-teal-500/30'
+                          entry.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+                          entry.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                          'bg-teal-100 text-teal-800 border border-teal-200'
                         }`}>
                           {entry.verdict === 'SAFE' ? <ShieldCheck size={14} /> : null}
                           {entry.verdict === 'SUSPICIOUS' ? <TriangleAlert size={14} /> : null}
