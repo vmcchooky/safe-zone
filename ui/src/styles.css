@@ -31,7 +31,7 @@ body,
 
 body {
   margin: 0;
-  background: url('/background.svg') center/cover no-repeat fixed;
+  background: url('/background-minimal.svg') center/cover no-repeat fixed;
   background-color: #f3f4f6; /* Fallback */
   color: var(--ink);
 }
