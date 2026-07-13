@@ -210,76 +210,25 @@ export function TelemetryPage() {
             Refresh now
           </button>
         </div>
-          {/* Filters */}
-          <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm flex flex-wrap gap-6 items-end">
-          <div className="flex flex-col gap-2 w-48">
-            <label htmlFor="telemetry-period" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Period</label>
-            <select
-              id="telemetry-period"
-              value={period}
-              onChange={(event) => {
-                setPage(1);
-                setPeriod(event.target.value);
-              }}
-              className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
-            >
-              {PERIOD_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
-            <label htmlFor="telemetry-domain" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Domain search</label>
-            <div className="relative">
-              <Search size={22} className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                id="telemetry-domain"
-                value={domain}
+          {/* Global Period Filter */}
+          <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm inline-flex">
+            <div className="flex flex-col gap-2 w-48">
+              <label htmlFor="telemetry-period" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Period</label>
+              <select
+                id="telemetry-period"
+                value={period}
                 onChange={(event) => {
                   setPage(1);
-                  setDomain(event.target.value);
+                  setPeriod(event.target.value);
                 }}
-                placeholder="Filter by domain fragment"
-                className="w-full bg-white/70 border border-slate-200 rounded-2xl !py-4 !pr-4 !pl-16 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm"
-              />
+                className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
+              >
+                {PERIOD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
             </div>
           </div>
-
-          <div className="flex flex-col gap-2 w-48">
-            <label htmlFor="telemetry-verdict" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Verdict</label>
-            <select
-              id="telemetry-verdict"
-              value={verdict}
-              onChange={(event) => {
-                setPage(1);
-                setVerdict(event.target.value);
-              }}
-              className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
-            >
-              {VERDICT_OPTIONS.map((option) => (
-                <option key={option.label} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex flex-col gap-2 w-48">
-            <label htmlFor="telemetry-source" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Source</label>
-            <select
-              id="telemetry-source"
-              value={source}
-              onChange={(event) => {
-                setPage(1);
-                setSource(event.target.value);
-              }}
-              className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
-            >
-              {SOURCE_OPTIONS.map((option) => (
-                <option key={option.label} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-          </div>
-        </div>
 
         {error ? (
           <motion.div 
@@ -429,6 +378,60 @@ export function TelemetryPage() {
               <p className="text-slate-500 font-medium">Filtered data from `/v1/telemetry/recent` with server-side paging.</p>
             </div>
             {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : null}
+          </div>
+
+          {/* Table Filters */}
+          <div className="flex flex-wrap gap-4 items-end mb-8 bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+            <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
+              <label htmlFor="telemetry-domain" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Domain search</label>
+              <div className="relative">
+                <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  id="telemetry-domain"
+                  value={domain}
+                  onChange={(event) => {
+                    setPage(1);
+                    setDomain(event.target.value);
+                  }}
+                  placeholder="Filter by domain fragment"
+                  className="w-full bg-white/70 border border-slate-200 rounded-xl !py-3 !pr-4 !pl-12 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 w-48">
+              <label htmlFor="telemetry-verdict" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Verdict</label>
+              <select
+                id="telemetry-verdict"
+                value={verdict}
+                onChange={(event) => {
+                  setPage(1);
+                  setVerdict(event.target.value);
+                }}
+                className="w-full bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm appearance-none cursor-pointer"
+              >
+                {VERDICT_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col gap-2 w-48">
+              <label htmlFor="telemetry-source" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Source</label>
+              <select
+                id="telemetry-source"
+                value={source}
+                onChange={(event) => {
+                  setPage(1);
+                  setSource(event.target.value);
+                }}
+                className="w-full bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm appearance-none cursor-pointer"
+              >
+                {SOURCE_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
