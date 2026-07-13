@@ -450,7 +450,7 @@ export function TelemetryPage() {
         </div>
 
         {/* Threat Pressure Bar */}
-        <div className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] relative">
+        <div className="bg-transparent border border-black/5 rounded-3xl p-8 shadow-sm relative">
           <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
             <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
           </div>
