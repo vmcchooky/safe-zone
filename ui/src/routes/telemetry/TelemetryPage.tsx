@@ -201,7 +201,7 @@ export function TelemetryPage() {
     const points = [];
     const now = new Date();
     const is24h = period === '24h';
-    const count = is24h ? 24 : period === '7d' ? 7 : 30;
+    const count = is24h ? 24 : period === '7d' ? 42 : 60;
     
     // Base average per point (simulated)
     let baseMal = stats.malicious / count;
@@ -210,16 +210,26 @@ export function TelemetryPage() {
     
     for (let i = count - 1; i >= 0; i--) {
       const d = new Date(now);
-      if (is24h) d.setHours(d.getHours() - i);
-      else d.setDate(d.getDate() - i);
+      if (is24h) {
+        d.setHours(d.getHours() - i);
+      } else if (period === '7d') {
+        d.setHours(d.getHours() - i * 4);
+      } else {
+        d.setHours(d.getHours() - i * 12);
+      }
       
       const noise = 0.5 + Math.random();
       const m = Math.round(baseMal * noise);
       const s = Math.round(baseSusp * noise);
       const sf = Math.round(baseSafe * noise);
       
+      let timeLabel = '';
+      if (is24h) timeLabel = d.toLocaleTimeString([], { hour: '2-digit' });
+      else if (period === '7d') timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+      else timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      
       points.push({
-        time: is24h ? d.toLocaleTimeString([], { hour: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }),
+        time: timeLabel,
         malicious: m,
         suspicious: s,
         safe: sf,
@@ -416,9 +426,9 @@ export function TelemetryPage() {
                     dx={-10}
                   />
                   <Tooltip 
-                    cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.2s ease' } }}
+                    cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
                     isAnimationActive={true}
-                    animationDuration={250}
+                    animationDuration={150}
                     animationEasing="ease-out"
                     content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {
