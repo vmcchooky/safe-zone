@@ -416,6 +416,8 @@ export function TelemetryPage() {
                     dx={-10}
                   />
                   <Tooltip 
+                    animationDuration={150}
+                    cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4' }}
                     contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.95)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
                     itemStyle={{ color: '#1e293b', fontWeight: 600 }}
                     labelStyle={{ color: '#64748b', marginBottom: '4px', fontWeight: 500 }}
