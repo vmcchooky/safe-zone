@@ -506,8 +506,8 @@ export function TelemetryPage() {
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    innerRadius="60%"
-                    outerRadius="85%"
+                    innerRadius="65%"
+                    outerRadius="95%"
                     paddingAngle={4}
                     cornerRadius={6}
                     stroke="none"
