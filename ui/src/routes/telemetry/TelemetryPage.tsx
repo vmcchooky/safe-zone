@@ -795,12 +795,12 @@ export function TelemetryPage() {
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
                 <tr className="border-b border-black/5 text-slate-500 text-sm">
-                  <th className="pb-4 font-bold uppercase tracking-wider pl-4">Domain</th>
-                  <th className="pb-4 font-bold uppercase tracking-wider">Verdict</th>
-                  <th className="pb-4 font-bold uppercase tracking-wider">Source</th>
-                  <th className="pb-4 font-bold uppercase tracking-wider">Score</th>
-                  <th className="pb-4 font-bold uppercase tracking-wider">Analyzed at</th>
-                  <th className="pb-4 font-bold uppercase tracking-wider text-right pr-4">Action</th>
+                  <th className="w-[30%] pb-4 font-bold uppercase tracking-wider pl-4">Domain</th>
+                  <th className="w-[15%] pb-4 font-bold uppercase tracking-wider">Verdict</th>
+                  <th className="w-[12%] pb-4 font-bold uppercase tracking-wider">Source</th>
+                  <th className="w-[15%] pb-4 font-bold uppercase tracking-wider">Score</th>
+                  <th className="w-[18%] pb-4 font-bold uppercase tracking-wider">Analyzed at</th>
+                  <th className="w-[10%] pb-4 font-bold uppercase tracking-wider text-right pr-4">Action</th>
                 </tr>
               </thead>
               <motion.tbody
@@ -818,7 +818,7 @@ export function TelemetryPage() {
               >
                 {loading ? (
                   Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="animate-pulse border-b border-black/5 last:border-0">
+                    <tr key={i} className="animate-pulse border-b border-black/5 last:border-0 align-middle">
                       <td className="py-4 pl-4"><div className="h-5 bg-slate-200/60 rounded-md w-48"></div></td>
                       <td className="py-4"><div className="h-6 bg-slate-200/60 rounded-full w-24"></div></td>
                       <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-20"></div></td>
@@ -829,7 +829,7 @@ export function TelemetryPage() {
                   ))
                 ) : entries.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-16 text-center">
+                    <td colSpan={6} className="py-16 text-center align-middle">
                       <div className="flex flex-col items-center justify-center text-slate-500 gap-4">
                         <AlertTriangle size={28} className="text-amber-500" />
                         <span className="font-medium">No telemetry records match the current filters.</span>
@@ -844,15 +844,15 @@ export function TelemetryPage() {
                         hidden: { opacity: 0, x: -10 },
                         show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
                       }}
-                      className="hover:bg-slate-50/50 transition-colors group"
+                      className="hover:bg-slate-50/50 transition-colors group align-middle"
                     >
-                      <td className="py-4 pl-4">
+                      <td className="py-4 pl-4 align-middle">
                         <div className="flex flex-col">
                           <strong className="font-mono text-[15px] group-hover:text-sky-600 transition-colors">{entry.domain}</strong>
                           <span className="text-xs text-slate-500 font-medium">{entry.confidence ? `${Math.round(entry.confidence * 100)}% confidence` : 'No confidence score'}</span>
                         </div>
                       </td>
-                      <td className="py-4 pr-4">
+                      <td className="py-4 pr-4 align-middle">
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
                           entry.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
                           entry.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
@@ -864,12 +864,12 @@ export function TelemetryPage() {
                           {entry.verdict}
                         </span>
                       </td>
-                      <td className="py-4 pr-4 font-medium text-slate-600">
+                      <td className="py-4 pr-4 align-middle font-medium text-slate-600">
                         <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-bold uppercase">
                           {entry.source || (entry.cache_hit ? 'cache' : '--')}
                         </span>
                       </td>
-                      <td className="py-4 pr-4">
+                      <td className="py-4 pr-4 align-middle">
                         <div className="flex items-center gap-3">
                           <div className="w-16 h-2.5 rounded-full bg-slate-200 overflow-hidden shadow-inner">
                             <div 
@@ -880,15 +880,14 @@ export function TelemetryPage() {
                           <span className="text-sm font-bold text-slate-600 w-6">{entry.score}</span>
                         </div>
                       </td>
-                      <td className="py-4 pr-4 text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
-                      <td className="py-4 pr-4 text-right">
+                      <td className="py-4 pr-4 align-middle text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
+                      <td className="py-4 pr-4 align-middle text-right">
                         <button
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm group/btn active:scale-95"
+                          className="inline-flex items-center justify-center px-5 py-2 bg-slate-50/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-95"
                           type="button"
                           onClick={() => navigate(`/analysis?domain=${encodeURIComponent(entry.domain)}`)}
                         >
                           Review
-                          <ArrowRight size={14} className="group-hover/btn:translate-x-0.5 transition-transform" />
                         </button>
                       </td>
                     </motion.tr>
