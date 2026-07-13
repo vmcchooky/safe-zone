@@ -783,7 +783,7 @@ export function TelemetryPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-clip">
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
                 <tr className="border-b border-black/5 text-slate-500 text-sm">
@@ -906,7 +906,11 @@ export function TelemetryPage() {
                 className="px-6 py-3 bg-slate-50/60 hover:bg-slate-50/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
                 type="button"
                 disabled={page === 1 || refreshing}
-                onClick={() => setPage((value) => Math.max(1, value - 1))}
+                onClick={() => {
+                  setEntries([]);
+                  setRefreshing(true);
+                  setPage((value) => Math.max(1, value - 1));
+                }}
               >
                 Previous
               </button>
@@ -914,7 +918,11 @@ export function TelemetryPage() {
                 className="px-6 py-3 bg-slate-50/60 hover:bg-slate-50/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
                 type="button"
                 disabled={entries.length < PAGE_SIZE || refreshing}
-                onClick={() => setPage((value) => value + 1)}
+                onClick={() => {
+                  setEntries([]);
+                  setRefreshing(true);
+                  setPage((value) => value + 1);
+                }}
               >
                 Next
               </button>
