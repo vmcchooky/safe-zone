@@ -520,19 +520,12 @@ export function TelemetryPage() {
                       const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
                       const isHovered = index === activeIndex;
                       return (
-                        <motion.g
-                          initial={false}
-                          animate={{
-                            scale: isHovered ? 1.05 : 1,
-                          }}
+                        <g
                           style={{
+                            transform: isHovered ? 'scale(1.04)' : 'scale(1)',
                             transformOrigin: `${cx}px ${cy}px`,
-                          }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 350,
-                            damping: 14,
-                            mass: 0.6
+                            transition: 'transform 450ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 300ms ease',
+                            filter: isHovered ? 'drop-shadow(0px 8px 20px rgba(0,0,0,0.12))' : 'none',
                           }}
                         >
                           <Sector
@@ -545,12 +538,11 @@ export function TelemetryPage() {
                             fill={fill}
                             style={{ 
                               outline: 'none', 
-                              filter: isHovered ? 'drop-shadow(0px 8px 20px rgba(0,0,0,0.18))' : 'none',
                               cursor: 'pointer'
                             }}
                             cornerRadius={6}
                           />
-                        </motion.g>
+                        </g>
                       );
                     }}
                     onMouseEnter={(_, index) => setActiveIndex(index)}
