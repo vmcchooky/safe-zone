@@ -1,55 +1,64 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="100%" height="100%">
   <defs>
-    <!-- Master white-to-slate background -->
+    <!-- Base Background: Sophisticated cool slate gradient -->
     <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#ffffff" />
-      <stop offset="50%" stop-color="#f8fafc" />
-      <stop offset="100%" stop-color="#f1f5f9" />
+      <stop offset="40%" stop-color="#f1f5f9" />
+      <stop offset="100%" stop-color="#e2e8f0" />
     </linearGradient>
 
-    <!-- Gradient 1: Soft White to Light Gray -->
-    <linearGradient id="wave1" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9"/>
-      <stop offset="50%" stop-color="#f8fafc" stop-opacity="0.6"/>
-      <stop offset="100%" stop-color="#e2e8f0" stop-opacity="0.7"/>
+    <!-- Dark Charcoal Ribbon Gradient (Darker for contrast) -->
+    <linearGradient id="charcoal-wave" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" stop-opacity="0.16"/>
+      <stop offset="50%" stop-color="#1e293b" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#475569" stop-opacity="0.18"/>
     </linearGradient>
 
-    <!-- Gradient 2: Charcoal to Transparent Gray -->
-    <linearGradient id="wave2" x1="100%" y1="100%" x2="0%" y2="0%">
-      <stop offset="0%" stop-color="#0f172a" stop-opacity="0.08"/>
-      <stop offset="50%" stop-color="#334155" stop-opacity="0.04"/>
-      <stop offset="100%" stop-color="#cbd5e1" stop-opacity="0.12"/>
+    <!-- Medium Slate Ribbon Gradient -->
+    <linearGradient id="slate-wave" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#334155" stop-opacity="0.12"/>
+      <stop offset="50%" stop-color="#64748b" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#94a3b8" stop-opacity="0.14"/>
     </linearGradient>
 
-    <!-- Gradient 3: Soft Gray to White -->
-    <linearGradient id="wave3" x1="0%" y1="100%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#e2e8f0" stop-opacity="0.7"/>
-      <stop offset="70%" stop-color="#ffffff" stop-opacity="0.95"/>
-      <stop offset="100%" stop-color="#f1f5f9" stop-opacity="0.4"/>
+    <!-- Crisp White Silk Ribbon Gradient -->
+    <linearGradient id="white-wave" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="50%" stop-color="#f8fafc" stop-opacity="0.75"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.9"/>
     </linearGradient>
 
-    <!-- Ambient Shadow Filter for organic depth -->
-    <filter id="soft-shadow" x="-10%" y="-10%" width="120%" height="120%">
-      <feDropShadow dx="0" dy="15" stdDeviation="25" flood-color="#0f172a" flood-opacity="0.03" />
+    <!-- Dark Ambient Glow -->
+    <radialGradient id="dark-glow" cx="90%" cy="10%" r="60%">
+      <stop offset="0%" stop-color="#334155" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- High-end Drop Shadow for overlap depth -->
+    <filter id="premium-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="20" stdDeviation="30" flood-color="#0f172a" flood-opacity="0.06" />
     </filter>
   </defs>
 
-  <!-- Base canvas -->
+  <!-- Canvas Background -->
   <rect width="1440" height="900" fill="url(#bg)" />
+  <rect width="1440" height="900" fill="url(#dark-glow)" />
 
-  <!-- Flowing abstract colored bands -->
-  <!-- Band 1: Huge sweeping wave at the top-middle -->
-  <path d="M-100 220 C 300 420, 700 120, 1100 370 C 1300 470, 1500 320, 1600 370 L 1600 0 L -100 0 Z" fill="url(#wave1)" filter="url(#soft-shadow)" />
+  <!-- Fluid Ribbon 1: Heavier Dark Charcoal Wave (Sweeps from top-left, dips deep in middle, exits right) -->
+  <path d="M-100 150 C 350 450, 750 50, 1150 400 C 1350 520, 1500 350, 1600 400 L 1600 0 L -100 0 Z" fill="url(#charcoal-wave)" filter="url(#premium-shadow)" />
 
-  <!-- Band 2: Interweaving dark gray/charcoal wave from bottom-left to top-right -->
-  <path d="M-100 520 C 250 320, 650 620, 1000 320 C 1250 120, 1450 220, 1600 170 L 1600 900 L -100 900 Z" fill="url(#wave2)" />
+  <!-- Fluid Ribbon 2: Medium Slate Ribbon (Flows below the charcoal one, interweaving) -->
+  <path d="M-100 480 C 200 280, 600 580, 950 280 C 1200 80, 1400 180, 1600 130 L 1600 900 L -100 900 Z" fill="url(#slate-wave)" />
 
-  <!-- Band 3: Elegant white/light-gray overlapping fluid ribbon -->
-  <path d="M-100 720 C 350 520, 500 820, 950 570 C 1200 440, 1400 620, 1600 520 L 1600 900 L -100 900 Z" fill="url(#wave3)" filter="url(#soft-shadow)" />
+  <!-- Fluid Ribbon 3: Pure White Crisp Silk Wave (Dominant overlay at the bottom) -->
+  <path d="M-100 680 C 350 480, 480 780, 900 530 C 1150 380, 1350 580, 1600 480 L 1600 900 L -100 900 Z" fill="url(#white-wave)" filter="url(#premium-shadow)" />
 
-  <!-- Band 4: A subtle thin, highlighted abstract edge ribbon -->
-  <path d="M-100 700 C 350 500, 500 800, 950 550 C 1200 420, 1400 600, 1600 500" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-opacity="0.6" />
-  
-  <!-- Subtle minimalist black line accentuating the flow -->
-  <path d="M-100 535 C 250 335, 650 635, 1000 335 C 1250 135, 1450 235, 1600 185" fill="none" stroke="#0f172a" stroke-width="1.2" stroke-opacity="0.05" />
+  <!-- Accent Highlight Line: Glossy white edge on the white ribbon -->
+  <path d="M-100 660 C 350 460, 480 760, 900 510 C 1150 360, 1350 560, 1600 460" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.75" />
+
+  <!-- Accent Shadow Line: Thin dark charcoal stroke tracing the flow for high technical precision -->
+  <path d="M-100 495 C 200 295, 600 595, 950 295 C 1200 95, 1400 195, 1600 145" fill="none" stroke="#0f172a" stroke-width="1.5" stroke-opacity="0.12" />
+
+  <!-- Additional very thin dark slate accent line for sophisticated layering -->
+  <path d="M-100 165 C 350 465, 750 65, 1150 415" fill="none" stroke="#1e293b" stroke-width="1" stroke-opacity="0.15" />
 </svg>
