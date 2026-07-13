@@ -249,7 +249,7 @@ export function TelemetryPage() {
       { name: 'Safe', value: stats.safe, fill: 'url(#pattern-safe-pie)' },
       { name: 'Suspicious', value: stats.suspicious, fill: 'url(#pattern-suspicious-pie)' },
       { name: 'Malicious', value: stats.malicious, fill: 'url(#pattern-malicious-pie)' },
-    ];
+    ].sort((a, b) => b.value - a.value);
   }, [stats]);
 
   const scoreBands = useMemo(() => {
@@ -589,6 +589,8 @@ export function TelemetryPage() {
                     paddingAngle={4}
                     cornerRadius={6}
                     stroke="none"
+                    startAngle={90}
+                    endAngle={-270}
                     // @ts-ignore
                     shape={(props: any) => {
                       const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
