@@ -320,6 +320,14 @@ export function TelemetryPage() {
               className="absolute right-0 top-0 bottom-0 bg-gradient-to-l from-amber-400 to-rose-500 rounded-l-full"
             />
           </div>
+          <div className="flex justify-between items-center mt-3 text-xs font-bold uppercase tracking-wider relative z-10">
+            <span className="flex items-center gap-1.5 text-teal-700">
+              <ShieldCheck size={15} /> Safe ({100 - riskRatio}%)
+            </span>
+            <span className="flex items-center gap-1.5 text-rose-600">
+              <ShieldAlert size={15} /> Risk ({riskRatio}%)
+            </span>
+          </div>
         </div>
 
         {/* Charts Grid */}
@@ -353,9 +361,26 @@ export function TelemetryPage() {
                     contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
                     itemStyle={{ color: '#1e293b' }}
                   />
-                  <Legend iconType="circle" wrapperStyle={{ paddingTop: '20px' }} />
                 </PieChart>
               </ResponsiveContainer>
+            </div>
+            
+            <div className="flex justify-center gap-5 mt-4 relative z-10 flex-wrap border-t border-black/5 pt-4">
+              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
+                <ShieldCheck size={15} className="text-teal-600" />
+                Safe ({stats ? formatCompact(stats.safe) : 0})
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                <TriangleAlert size={15} className="text-amber-500" />
+                Suspicious ({stats ? formatCompact(stats.suspicious) : 0})
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
+                <ShieldAlert size={15} className="text-rose-600" />
+                Malicious ({stats ? formatCompact(stats.malicious) : 0})
+              </span>
             </div>
           </article>
 
@@ -389,6 +414,24 @@ export function TelemetryPage() {
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+            
+            <div className="flex justify-center gap-5 mt-4 relative z-10 flex-wrap border-t border-black/5 pt-4">
+              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-teal-500/80 inline-block" />
+                <ShieldCheck size={15} className="text-teal-600" />
+                Safe ({stats ? formatCompact(stats.safe) : 0})
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
+                <TriangleAlert size={15} className="text-amber-500" />
+                Suspicious ({stats ? formatCompact(stats.suspicious) : 0})
+              </span>
+              <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
+                <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
+                <ShieldAlert size={15} className="text-rose-600" />
+                Malicious ({stats ? formatCompact(stats.malicious) : 0})
+              </span>
             </div>
           </article>
         </div>
