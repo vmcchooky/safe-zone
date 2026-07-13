@@ -42,7 +42,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
 import { apiFetch, messageFromError } from '../../lib/api';
@@ -97,6 +97,7 @@ export function TelemetryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hoveredSlice, setHoveredSlice] = useState<{name: string, value: number, fill: string} | null>(null);
 
   const [period, setPeriod] = useState('24h');
   const [domain, setDomain] = useState('');
@@ -246,6 +247,20 @@ export function TelemetryPage() {
   const suspiciousRatio = stats?.total ? Math.round((stats.suspicious / stats.total) * 100) : 0;
   const maliciousRatio = stats?.total ? Math.max(0, 100 - safeRatio - suspiciousRatio) : 0;
   const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
+
+  let centerPercentage: number | string = safeRatio;
+  let centerLabel = 'Safe';
+  let centerColor = 'text-teal-600';
+
+  if (hoveredSlice) {
+    let rawPercent = stats?.total ? ((hoveredSlice.value / stats.total) * 100).toFixed(1) : '0';
+    if (rawPercent.endsWith('.0')) rawPercent = rawPercent.slice(0, -2);
+    centerPercentage = rawPercent;
+    centerLabel = hoveredSlice.name;
+    if (hoveredSlice.name === 'Safe') centerColor = 'text-teal-600';
+    if (hoveredSlice.name === 'Suspicious') centerColor = 'text-amber-600';
+    if (hoveredSlice.name === 'Malicious') centerColor = 'text-rose-600';
+  }
 
   return (
     <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8">
@@ -498,24 +513,29 @@ export function TelemetryPage() {
                     paddingAngle={4}
                     cornerRadius={6}
                     stroke="none"
+                    onMouseEnter={(_, index) => setHoveredSlice(distribution[index])}
+                    onMouseLeave={() => setHoveredSlice(null)}
                   >
                     {distribution.map((slice) => (
-                      <Cell key={slice.name} fill={slice.fill} />
+                      <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    formatter={(value: number) => {
-                      const percentage = stats?.total ? ((value / stats.total) * 100).toFixed(1) : 0;
-                      return `${percentage}%`;
-                    }}
-                    contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
-                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
-                  />
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
-                <span className="text-4xl font-extrabold text-slate-800">{safeRatio}%</span>
-                <span className="text-sm font-bold text-teal-600 uppercase tracking-wide">Safe</span>
+                <AnimatePresence mode="wait">
+                  <motion.div 
+                    key={centerLabel}
+                    initial={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                    exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+                    transition={{ duration: 0.2 }}
+                    className="flex flex-col items-center justify-center"
+                  >
+                    <span className="text-4xl font-extrabold text-slate-800">{centerPercentage}%</span>
+                    <span className={`text-sm font-bold uppercase tracking-wide ${centerColor}`}>{centerLabel}</span>
+                  </motion.div>
+                </AnimatePresence>
               </div>
             </div>
           </article>
