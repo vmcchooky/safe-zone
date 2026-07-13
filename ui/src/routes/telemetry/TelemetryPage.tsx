@@ -129,7 +129,6 @@ const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, 
       style={{ 
         outline: 'none', 
         cursor: 'pointer',
-        filter: isHovered ? 'drop-shadow(0px 8px 24px rgba(0,0,0,0.16))' : 'none',
       }}
       opacity={animatedOpacity}
       cornerRadius={cornerRadius}
