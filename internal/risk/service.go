@@ -2429,11 +2429,11 @@ func (s *Service) TelemetryRecentFiltered(filter store.TelemetryFilter, limit, o
 }
 
 // TelemetryStats returns aggregate telemetry statistics.
-func (s *Service) TelemetryStats(since time.Time) (store.Stats, error) {
+func (s *Service) TelemetryStats(period string) (store.Stats, error) {
 	if s.store == nil {
 		return store.Stats{}, nil
 	}
-	return s.store.QueryStats(context.Background(), since)
+	return s.store.QueryStats(context.Background(), period)
 }
 
 // --- Accessors for Agent Engine ---

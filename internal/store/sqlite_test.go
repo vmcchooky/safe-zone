@@ -460,7 +460,7 @@ func TestQueryStats(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	stats, err := db.QueryStats(context.Background(), now.Add(-1*time.Hour))
+	stats, err := db.QueryStats(context.Background(), "24h")
 	if err != nil {
 		t.Fatalf("query stats failed: %v", err)
 	}
@@ -573,7 +573,7 @@ func TestDisabledQueryRecent(t *testing.T) {
 
 func TestDisabledQueryStats(t *testing.T) {
 	var db *DB
-	stats, err := db.QueryStats(context.Background(), time.Now())
+	stats, err := db.QueryStats(context.Background(), "24h")
 	if err != nil {
 		t.Fatal(err)
 	}

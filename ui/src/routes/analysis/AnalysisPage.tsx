@@ -137,8 +137,8 @@ export function AnalysisPage() {
 
   return (
     <>
-    <div className="flex flex-col gap-6 max-w-7xl mx-auto p-4 lg:p-8 animate-in fade-in duration-500 pb-32">
-      {/* Page Header */}
+      <div className="flex flex-col gap-6 max-w-7xl mx-auto p-4 lg:p-8 animate-in fade-in duration-500 pb-32">
+        {/* Page Header */}
       <header className="mb-4">
         <div className="text-xs font-bold tracking-wider uppercase text-sky-600 mb-1.5 pl-8">
           Analysis Deck
@@ -257,7 +257,7 @@ export function AnalysisPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Risk Dossier */}
-        <section className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative min-h-[400px] flex flex-col">
+        <section className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[500px] flex flex-col">
           
           <div className="flex justify-between items-start mb-6 z-10">
             <div className="flex items-center gap-2">
@@ -468,7 +468,7 @@ export function AnalysisPage() {
         </section>
 
         {/* Event Stream */}
-        <aside className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col min-h-[400px]">
+        <aside className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[500px]">
           <div className="flex justify-between items-start mb-6">
             <div>
               <div className="text-xs font-semibold tracking-wider uppercase text-slate-500 mb-1">Event Stream</div>
@@ -479,7 +479,7 @@ export function AnalysisPage() {
             </span>
           </div>
 
-          <div className="overflow-y-auto px-2 py-1 space-y-3 max-h-[320px] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex-1 min-h-0 overflow-y-auto px-2 py-1 space-y-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {recentAnalyses.map((item, i) => (
               <div 
                 key={i} 

@@ -14,6 +14,7 @@ export interface TelemetryStats {
   malicious: number;
   cache_hits: number;
   period: string;
+  trend?: any[];
 }
 
 export interface TelemetryEntry {

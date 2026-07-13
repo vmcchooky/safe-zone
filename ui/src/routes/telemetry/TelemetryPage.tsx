@@ -263,49 +263,28 @@ export function TelemetryPage() {
   }, [stats]);
 
   const trendData = useMemo(() => {
-    if (!stats) {
+    if (!stats || !stats.trend) {
       return [];
     }
     
-    const points = [];
-    const now = new Date();
     const is24h = period === '24h';
-    const count = is24h ? 24 : period === '7d' ? 42 : 60;
     
-    // Base average per point (simulated)
-    let baseMal = stats.malicious / count;
-    let baseSusp = stats.suspicious / count;
-    let baseSafe = stats.safe / count;
-    
-    for (let i = count - 1; i >= 0; i--) {
-      const d = new Date(now);
-      if (is24h) {
-        d.setHours(d.getHours() - i);
-      } else if (period === '7d') {
-        d.setHours(d.getHours() - i * 4);
-      } else {
-        d.setHours(d.getHours() - i * 12);
-      }
-      
-      const noise = 0.5 + Math.random();
-      const m = Math.round(baseMal * noise);
-      const s = Math.round(baseSusp * noise);
-      const sf = Math.round(baseSafe * noise);
+    return stats.trend.map((point: any) => {
+      const d = new Date(point.timestamp);
       
       let timeLabel = '';
       if (is24h) timeLabel = d.toLocaleTimeString([], { hour: '2-digit' });
       else if (period === '7d') timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit' });
       else timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
       
-      points.push({
+      return {
         time: timeLabel,
-        malicious: m,
-        suspicious: s,
-        safe: sf,
-        threats: m + s
-      });
-    }
-    return points;
+        malicious: point.malicious || 0,
+        suspicious: point.suspicious || 0,
+        safe: point.safe || 0,
+        threats: point.threats || 0
+      };
+    });
   }, [stats, period]);
 
   const riskRatio = stats?.total
@@ -882,7 +861,7 @@ export function TelemetryPage() {
                         <td className="py-4 pr-4 align-middle text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
                         <td className="py-4 align-middle text-center">
                           <button
-                            className="inline-flex items-center justify-center px-5 py-2 bg-slate-50/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-95"
+                            className="inline-flex items-center justify-center px-5 py-2 bg-white hover:bg-sky-50 text-sky-600 border border-slate-200 hover:border-sky-200 rounded-xl font-bold text-sm transition-all duration-200 ease-out shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_-4px_rgba(14,165,233,0.2)] hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.96]"
                             type="button"
                             onClick={() => navigate(`/analysis?domain=${encodeURIComponent(entry.domain)}`)}
                           >
@@ -903,7 +882,7 @@ export function TelemetryPage() {
             </span>
             <div className="flex gap-3 mr-4">
               <button
-                className="px-6 py-3 bg-slate-50/60 hover:bg-slate-50/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.96] disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
                 disabled={page === 1 || refreshing}
                 onClick={() => {
@@ -915,7 +894,7 @@ export function TelemetryPage() {
                 Previous
               </button>
               <button
-                className="px-6 py-3 bg-slate-50/60 hover:bg-slate-50/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.96] disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
                 disabled={entries.length < PAGE_SIZE || refreshing}
                 onClick={() => {

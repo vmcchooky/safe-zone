@@ -62,17 +62,16 @@ func (h *Handler) TelemetryStatsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	period := r.URL.Query().Get("period")
-	since := time.Now().Add(-24 * time.Hour)
 	switch period {
-	case "7d":
-		since = time.Now().Add(-7 * 24 * time.Hour)
-	case "30d":
-		since = time.Now().Add(-30 * 24 * time.Hour)
+	case "7d", "30d":
+		// valid periods
 	case "24h", "":
+		fallthrough
+	default:
 		period = "24h"
 	}
 
-	stats, err := h.Risk.TelemetryStats(since)
+	stats, err := h.Risk.TelemetryStats(period)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 		return

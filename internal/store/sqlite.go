@@ -87,14 +87,24 @@ type Override struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-// Stats contains aggregate telemetry statistics.
-type Stats struct {
-	Total      int64  `json:"total"`
+// TrendPoint represents a single data point in a time-series trend.
+type TrendPoint struct {
+	Timestamp  string `json:"timestamp"`
 	Safe       int64  `json:"safe"`
 	Suspicious int64  `json:"suspicious"`
 	Malicious  int64  `json:"malicious"`
-	CacheHits  int64  `json:"cache_hits"`
-	Period     string `json:"period"`
+	Threats    int64  `json:"threats"`
+}
+
+// Stats contains aggregate telemetry statistics.
+type Stats struct {
+	Total      int64        `json:"total"`
+	Safe       int64        `json:"safe"`
+	Suspicious int64        `json:"suspicious"`
+	Malicious  int64        `json:"malicious"`
+	CacheHits  int64        `json:"cache_hits"`
+	Period     string       `json:"period"`
+	Trend      []TrendPoint `json:"trend"`
 }
 
 // AgentEvent represents a single entry in the agent_audit_log table.
@@ -587,11 +597,35 @@ func telemetryWhereClause(filter TelemetryFilter) (string, []any) {
 	return "WHERE " + strings.Join(clauses, " AND "), args
 }
 
-// QueryStats returns aggregate telemetry statistics since the given time.
-func (d *DB) QueryStats(ctx context.Context, since time.Time) (Stats, error) {
+// QueryStats returns aggregate telemetry statistics and trend data for the given period.
+func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 	if !d.Enabled() {
 		return Stats{}, nil
 	}
+	
+	now := time.Now()
+	var since time.Time
+	var bucketCount int
+	var bucketDuration time.Duration
+
+	switch period {
+	case "7d":
+		since = now.Add(-7 * 24 * time.Hour)
+		bucketCount = 42
+		bucketDuration = 4 * time.Hour
+	case "30d":
+		since = now.Add(-30 * 24 * time.Hour)
+		bucketCount = 60
+		bucketDuration = 12 * time.Hour
+	case "24h":
+		fallthrough
+	default:
+		period = "24h"
+		since = now.Add(-24 * time.Hour)
+		bucketCount = 24
+		bucketDuration = 1 * time.Hour
+	}
+	
 	sinceStr := since.UTC().Format(time.RFC3339)
 	row := d.db.QueryRowContext(ctx, `
 		SELECT
@@ -606,6 +640,71 @@ func (d *DB) QueryStats(ctx context.Context, since time.Time) (Stats, error) {
 	if err := row.Scan(&s.Total, &s.Safe, &s.Suspicious, &s.Malicious, &s.CacheHits); err != nil {
 		return Stats{}, fmt.Errorf("query stats: %w", err)
 	}
+	s.Period = period
+
+	// Query hourly data for the trend chart
+	trendRows, err := d.db.QueryContext(ctx, `
+		SELECT
+			substr(analyzed_at, 1, 13) AS hr,
+			COALESCE(SUM(CASE WHEN verdict = 'SAFE' THEN 1 ELSE 0 END), 0) AS safe,
+			COALESCE(SUM(CASE WHEN verdict = 'SUSPICIOUS' THEN 1 ELSE 0 END), 0) AS suspicious,
+			COALESCE(SUM(CASE WHEN verdict = 'MALICIOUS' THEN 1 ELSE 0 END), 0) AS malicious
+		FROM analysis_log 
+		WHERE analyzed_at >= ?
+		GROUP BY hr
+		ORDER BY hr ASC`, sinceStr)
+	
+	if err != nil {
+		return Stats{}, fmt.Errorf("query trend: %w", err)
+	}
+	defer trendRows.Close()
+
+	// Map to hold hourly counts
+	hourlyMap := make(map[string]TrendPoint)
+	for trendRows.Next() {
+		var hr string
+		var safe, suspicious, malicious int64
+		if err := trendRows.Scan(&hr, &safe, &suspicious, &malicious); err == nil {
+			hourlyMap[hr] = TrendPoint{
+				Safe:       safe,
+				Suspicious: suspicious,
+				Malicious:  malicious,
+				Threats:    suspicious + malicious,
+			}
+		}
+	}
+
+	// Generate expected time buckets backwards from now to align nicely
+	var trend []TrendPoint
+	
+	// Start from the most recent full bucket boundary to align things cleanly
+	currentBucketTime := now.Truncate(1 * time.Hour)
+	// Fill buckets going back in time
+	for i := 0; i < bucketCount; i++ {
+		bucketStart := currentBucketTime.Add(-time.Duration(i) * bucketDuration)
+		
+		tp := TrendPoint{
+			Timestamp: bucketStart.Format(time.RFC3339),
+		}
+		
+		// Sum up the hours that fall into this bucket
+		// E.g., for a 4-hour bucket, check the 4 hours starting at bucketStart
+		hoursInBucket := int(bucketDuration / time.Hour)
+		for h := 0; h < hoursInBucket; h++ {
+			hrTime := bucketStart.Add(time.Duration(h) * time.Hour)
+			hrStr := hrTime.UTC().Format("2006-01-02T15")
+			if pt, ok := hourlyMap[hrStr]; ok {
+				tp.Safe += pt.Safe
+				tp.Suspicious += pt.Suspicious
+				tp.Malicious += pt.Malicious
+				tp.Threats += pt.Threats
+			}
+		}
+		
+		trend = append([]TrendPoint{tp}, trend...) // Prepend so it's chronological
+	}
+	s.Trend = trend
+
 	return s, nil
 }
 
