@@ -98,7 +98,7 @@ const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, 
   useEffect(() => {
     const springConfig = isHovered 
       ? { type: "spring" as const, stiffness: 140, damping: 18, mass: 0.8 }
-      : { type: "spring" as const, stiffness: 60, damping: 20, mass: 1.2 };
+      : { type: "spring" as const, stiffness: 35, damping: 16, mass: 1.5 }; // Heavier mass, lower stiffness for slower drift
 
     const controlsRadius = animate(animatedOuterRadius, isHovered ? outerRadius + 12 : outerRadius, {
       ...springConfig,
@@ -106,7 +106,7 @@ const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, 
     });
     
     const controlsOpacity = animate(animatedOpacity, opacity, {
-      duration: isHovered ? 0.25 : 0.45,
+      duration: isHovered ? 0.25 : 0.65, // Slower opacity recovery
       onUpdate: (latest) => setAnimatedOpacity(latest)
     });
 
