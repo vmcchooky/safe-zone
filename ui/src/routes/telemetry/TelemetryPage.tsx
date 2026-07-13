@@ -188,7 +188,7 @@ export function TelemetryPage() {
   const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
 
   return (
-    <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8 overflow-x-hidden">
+    <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8">
 
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
