@@ -504,7 +504,10 @@ export function TelemetryPage() {
                     ))}
                   </Pie>
                   <Tooltip 
-                    formatter={(value: number) => formatCompact(Number(value))}
+                    formatter={(value: number) => {
+                      const percentage = stats?.total ? ((value / stats.total) * 100).toFixed(1) : 0;
+                      return `${percentage}%`;
+                    }}
                     contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
                     itemStyle={{ color: '#1e293b', fontWeight: 600 }}
                   />
