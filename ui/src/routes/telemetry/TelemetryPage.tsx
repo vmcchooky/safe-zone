@@ -694,8 +694,9 @@ export function TelemetryPage() {
           </article>
         </div>
 
-        {/* Table */}
-        <article className="bg-slate-50/60 backdrop-blur-xl border border-slate-50 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)]">
+        {/* Table - Outer transparent frame */}
+        <div className="border border-white/70 rounded-[2rem] p-1.5 shadow-sm">
+        <article className="bg-slate-50/70 backdrop-blur-xl border border-slate-200/60 rounded-3xl p-8 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)]">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h2 className="text-xl font-bold text-slate-800 mb-1">Recent activity</h2>
@@ -921,6 +922,7 @@ export function TelemetryPage() {
             </div>
           </div>
         </article>
+        </div>
       </div>
     </section>
   );
