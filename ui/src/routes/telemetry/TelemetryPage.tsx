@@ -41,6 +41,7 @@ import {
   Tooltip,
   XAxis,
   YAxis,
+  Sector,
 } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -90,6 +91,25 @@ function formatCompact(value: number) {
   }).format(value);
 }
 
+const renderActiveShape = (props: any) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+  return (
+    <g>
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius}
+        outerRadius={outerRadius + 8}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        style={{ outline: 'none', filter: 'drop-shadow(0px 8px 16px rgba(0,0,0,0.15))' }}
+        cornerRadius={6}
+      />
+    </g>
+  );
+};
+
 export function TelemetryPage() {
   const navigate = useNavigate();
   const [stats, setStats] = useState<TelemetryStats | null>(null);
@@ -97,7 +117,7 @@ export function TelemetryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [hoveredSlice, setHoveredSlice] = useState<{name: string, value: number, fill: string} | null>(null);
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
 
   const [period, setPeriod] = useState('24h');
   const [domain, setDomain] = useState('');
@@ -247,6 +267,8 @@ export function TelemetryPage() {
   const suspiciousRatio = stats?.total ? Math.round((stats.suspicious / stats.total) * 100) : 0;
   const maliciousRatio = stats?.total ? Math.max(0, 100 - safeRatio - suspiciousRatio) : 0;
   const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
+
+  const hoveredSlice = activeIndex !== null ? distribution[activeIndex] : null;
 
   let centerPercentage: number | string = safeRatio;
   let centerLabel = 'Safe';
@@ -511,8 +533,12 @@ export function TelemetryPage() {
                     paddingAngle={4}
                     cornerRadius={6}
                     stroke="none"
-                    onMouseEnter={(_, index) => setHoveredSlice(distribution[index])}
-                    onMouseLeave={() => setHoveredSlice(null)}
+                    // @ts-ignore
+                    activeIndex={activeIndex ?? undefined}
+                    // @ts-ignore
+                    activeShape={renderActiveShape}
+                    onMouseEnter={(_, index) => setActiveIndex(index)}
+                    onMouseLeave={() => setActiveIndex(null)}
                   >
                     {distribution.map((slice) => (
                       <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
