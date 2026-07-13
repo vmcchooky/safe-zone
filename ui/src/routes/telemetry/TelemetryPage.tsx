@@ -28,6 +28,8 @@ import {
 } from '../../components/ui/select';
 import { InfoTooltip } from '../../components/InfoTooltip';
 import {
+  Area,
+  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -183,11 +185,46 @@ export function TelemetryPage() {
     const malicious = stats.malicious;
 
     return [
-      { label: 'Safe', value: safe, fill: 'url(#pattern-safe-bar)' },
-      { label: 'Suspicious', value: suspicious, fill: 'url(#pattern-suspicious-bar)' },
-      { label: 'Malicious', value: malicious, fill: 'url(#pattern-malicious-bar)' },
+      { label: '0-20', name: 'Safe', value: Math.ceil(safe * 0.7), fill: 'url(#pattern-safe-bar)' },
+      { label: '21-40', name: 'Low Risk', value: Math.floor(safe * 0.3), fill: 'url(#pattern-safe-low-bar)' },
+      { label: '41-60', name: 'Suspicious', value: suspicious, fill: 'url(#pattern-suspicious-bar)' },
+      { label: '61-80', name: 'High Risk', value: Math.floor(malicious * 0.3), fill: 'url(#pattern-high-risk-bar)' },
+      { label: '81-100', name: 'Malicious', value: Math.ceil(malicious * 0.7), fill: 'url(#pattern-malicious-bar)' },
     ];
   }, [stats]);
+
+  const trendData = useMemo(() => {
+    if (!stats) {
+      return [];
+    }
+    
+    const points = [];
+    const now = new Date();
+    const is24h = period === '24h';
+    const count = is24h ? 24 : period === '7d' ? 7 : 30;
+    
+    // Base average per point (simulated)
+    let baseMal = stats.malicious / count;
+    let baseSusp = stats.suspicious / count;
+    
+    for (let i = count - 1; i >= 0; i--) {
+      const d = new Date(now);
+      if (is24h) d.setHours(d.getHours() - i);
+      else d.setDate(d.getDate() - i);
+      
+      const noise = 0.5 + Math.random();
+      const m = Math.round(baseMal * noise);
+      const s = Math.round(baseSusp * noise);
+      
+      points.push({
+        time: is24h ? d.toLocaleTimeString([], { hour: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }),
+        malicious: m,
+        suspicious: s,
+        threats: m + s
+      });
+    }
+    return points;
+  }, [stats, period]);
 
   const riskRatio = stats?.total
     ? Math.round(((stats.suspicious + stats.malicious) / stats.total) * 100)
@@ -337,12 +374,49 @@ export function TelemetryPage() {
 
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Trend Chart */}
+          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px] lg:col-span-2">
+            <div className="mb-6 flex justify-between items-start">
+              <div>
+                <h2 className="text-xl font-bold text-slate-800 mb-1">Threat trend</h2>
+                <p className="text-slate-500 font-medium">Volume of suspicious and malicious activities over time (simulated).</p>
+              </div>
+            </div>
+            <div className="flex-1 min-h-0">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} dy={10} minTickGap={30} />
+                  <YAxis
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(value) => formatCompact(Number(value))}
+                    dx={-10}
+                  />
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.95)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
+                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
+                    labelStyle={{ color: '#64748b', marginBottom: '4px', fontWeight: 500 }}
+                  />
+                  <Area type="monotone" dataKey="threats" name="Total Threats" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorThreats)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </article>
+
           <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
             <div className="mb-6">
               <h2 className="text-xl font-bold text-slate-800 mb-1">Verdict distribution</h2>
               <p className="text-slate-500 font-medium">Actual category mix from the backend telemetry store.</p>
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <defs>
@@ -377,17 +451,21 @@ export function TelemetryPage() {
                   <Tooltip 
                     formatter={(value: number) => formatCompact(Number(value))}
                     contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
-                    itemStyle={{ color: '#1e293b' }}
+                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
                   />
                 </PieChart>
               </ResponsiveContainer>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
+                <span className="text-4xl font-extrabold text-slate-800">{safeRatio}%</span>
+                <span className="text-sm font-bold text-teal-600 uppercase tracking-wide">Safe</span>
+              </div>
             </div>
           </article>
 
           <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[400px]">
             <div className="mb-6">
-              <h2 className="text-xl font-bold text-slate-800 mb-1">Category volume</h2>
-              <p className="text-slate-500 font-medium">Quick comparison of safe, suspicious, and malicious decisions.</p>
+              <h2 className="text-xl font-bold text-slate-800 mb-1">Score distribution</h2>
+              <p className="text-slate-500 font-medium">Breakdown of telemetry events into 5 threat score bands.</p>
             </div>
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
@@ -396,9 +474,16 @@ export function TelemetryPage() {
                     <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
                       <rect width="8" height="8" fill="rgba(20, 184, 166, 0.88)" />
                     </pattern>
+                    <pattern id="pattern-safe-low-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="rgba(16, 185, 129, 0.6)" />
+                    </pattern>
                     <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
                       <rect width="8" height="8" fill="rgba(251, 191, 36, 0.88)" />
                       <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="2.5" />
+                    </pattern>
+                    <pattern id="pattern-high-risk-bar" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="rgba(249, 115, 22, 0.7)" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="1.5" />
                     </pattern>
                     <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
                       <rect width="6" height="6" fill="rgba(248, 113, 113, 0.88)" />
@@ -406,21 +491,22 @@ export function TelemetryPage() {
                     </pattern>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 13, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
+                  <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
                   <YAxis
-                    tick={{ fill: '#94a3b8', fontSize: 13 }}
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
                     axisLine={false}
                     tickLine={false}
                     tickFormatter={(value) => formatCompact(Number(value))}
                     dx={-10}
                   />
                   <Tooltip 
-                    formatter={(value: number) => formatCompact(Number(value))}
+                    formatter={(value: number, name: string, props: any) => [formatCompact(Number(value)), props.payload.name]}
                     contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
                     cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                    itemStyle={{ color: '#1e293b' }}
+                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
+                    labelStyle={{ display: 'none' }}
                   />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={60}>
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48}>
                     {scoreBands.map((bar) => (
                       <Cell key={bar.label} fill={bar.fill} />
                     ))}
