@@ -2,8 +2,12 @@ import { useState } from 'react';
 import { Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-export function InfoTooltip({ content, size = 18 }: { content: ReactNode, size?: number }) {
+export function InfoTooltip({ content, size = 18, position = 'top' }: { content: ReactNode, size?: number, position?: 'top' | 'bottom' }) {
   const [isHovered, setIsHovered] = useState(false);
+
+  const positionClasses = position === 'bottom'
+    ? 'top-full mt-2.5 origin-top'
+    : 'bottom-full mb-2.5 origin-bottom';
 
   return (
     <div 
@@ -20,7 +24,7 @@ export function InfoTooltip({ content, size = 18 }: { content: ReactNode, size?:
       
       {/* Tooltip content */}
       <div 
-        className={`absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 w-max max-w-[280px] pointer-events-none transition-all duration-200 ease-out z-50 origin-bottom ${
+        className={`absolute left-1/2 -translate-x-1/2 w-max max-w-[280px] pointer-events-none transition-all duration-200 ease-out z-50 ${positionClasses} ${
           isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
       >
@@ -28,7 +32,11 @@ export function InfoTooltip({ content, size = 18 }: { content: ReactNode, size?:
           {content}
         </div>
         {/* Arrow */}
-        <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-[6px] border-transparent border-t-sky-200" />
+        {position === 'bottom' ? (
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 -mb-0.5 border-[6px] border-transparent border-b-sky-200" />
+        ) : (
+          <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-0.5 border-[6px] border-transparent border-t-sky-200" />
+        )}
       </div>
     </div>
   );
