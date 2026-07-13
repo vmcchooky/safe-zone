@@ -402,7 +402,7 @@ export function TelemetryPage() {
             </div>
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
                       <rect width="8" height="8" fill="rgba(20, 184, 166, 0.15)" />
@@ -423,8 +423,9 @@ export function TelemetryPage() {
                     axisLine={false}
                     tickLine={false}
                     tickFormatter={(value) => formatCompact(Number(value))}
-                    dx={-10}
-                    width={45}
+                    dx={-5}
+                    width={40}
+                    allowDecimals={false}
                     domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.1))]}
                   />
                   <Tooltip 
