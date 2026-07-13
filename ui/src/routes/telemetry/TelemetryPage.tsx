@@ -201,19 +201,8 @@ export function TelemetryPage() {
               <InfoTooltip content="Live feed of API decisions and threat metrics." />
             </div>
           </header>
-          <button 
-            className="flex items-center gap-2 bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 whitespace-nowrap"
-            type="button" 
-            onClick={() => void loadTelemetry(true)}
-          >
-            {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : <RefreshCcw size={20} className="text-sky-500" />}
-            Refresh now
-          </button>
-        </div>
-          {/* Global Period Filter */}
-          <div className="bg-white/40 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-sm inline-flex">
-            <div className="flex flex-col gap-2 w-48">
-              <label htmlFor="telemetry-period" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Period</label>
+          <div className="flex items-center gap-3">
+            <div className="relative group">
               <select
                 id="telemetry-period"
                 value={period}
@@ -221,14 +210,26 @@ export function TelemetryPage() {
                   setPage(1);
                   setPeriod(event.target.value);
                 }}
-                className="w-full bg-white/70 border border-slate-200 rounded-2xl px-4 py-4 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm appearance-none cursor-pointer"
+                className="bg-white/60 hover:bg-white/90 border border-slate-200 rounded-2xl pl-5 pr-10 py-4 text-slate-700 font-semibold focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:shadow-sm transition-all duration-300 shadow-sm appearance-none cursor-pointer group-hover:-translate-y-0.5 group-hover:scale-[1.02]"
               >
                 {PERIOD_OPTIONS.map((option) => (
                   <option key={option.value} value={option.value}>{option.label}</option>
                 ))}
               </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500 group-hover:-translate-y-0.5 group-hover:scale-[1.02] transition-transform duration-300">
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
+              </div>
             </div>
+            <button 
+              className="flex items-center gap-2 bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 whitespace-nowrap"
+              type="button" 
+              onClick={() => void loadTelemetry(true)}
+            >
+              {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : <RefreshCcw size={20} className="text-sky-500" />}
+              Refresh now
+            </button>
           </div>
+        </div>
 
         {error ? (
           <motion.div 
