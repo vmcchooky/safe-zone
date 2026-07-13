@@ -620,20 +620,22 @@ export function TelemetryPage() {
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
-                <AnimatePresence mode="wait">
-                  <motion.div 
-                    key={centerLabel}
-                    initial={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                    exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-                    transition={{ duration: 0.2 }}
-                    className="flex flex-col items-center justify-center"
-                  >
-                    <span className="text-4xl font-extrabold text-slate-800">{centerPercentage}%</span>
-                    <span className={`text-sm font-bold uppercase tracking-wide ${centerColor}`}>{centerLabel}</span>
-                  </motion.div>
-                </AnimatePresence>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none mt-2">
+                <div className="w-36 h-36 rounded-full bg-white/50 backdrop-blur-md border border-white/40 shadow-[inset_0_2px_8px_rgba(255,255,255,0.6),0_8px_20px_rgba(0,0,0,0.03)] flex items-center justify-center flex-col">
+                  <AnimatePresence mode="wait">
+                    <motion.div 
+                      key={centerLabel}
+                      initial={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+                      animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
+                      exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
+                      transition={{ duration: 0.2 }}
+                      className="flex flex-col items-center justify-center"
+                    >
+                      <span className="text-4xl font-extrabold text-slate-800">{centerPercentage}%</span>
+                      <span className={`text-sm font-bold uppercase tracking-wide ${centerColor}`}>{centerLabel}</span>
+                    </motion.div>
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
           </article>
