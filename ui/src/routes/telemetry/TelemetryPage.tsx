@@ -16,9 +16,15 @@ import {
   ShieldAlert,
   ShieldCheck,
   TriangleAlert,
-  Zap,
   RadioTower,
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
 import { InfoTooltip } from '../../components/InfoTooltip';
 import {
   Bar,
@@ -203,22 +209,22 @@ export function TelemetryPage() {
           </header>
           <div className="flex items-center gap-3">
             <div className="relative group">
-              <select
-                id="telemetry-period"
-                value={period}
-                onChange={(event) => {
+              <Select 
+                value={period} 
+                onValueChange={(val) => {
                   setPage(1);
-                  setPeriod(event.target.value);
+                  setPeriod(val);
                 }}
-                className="bg-white/60 hover:bg-white/90 border border-slate-200 rounded-2xl pl-5 pr-10 py-4 text-slate-700 font-semibold focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:shadow-sm transition-all duration-300 shadow-sm appearance-none cursor-pointer group-hover:-translate-y-0.5 group-hover:scale-[1.02]"
               >
-                {PERIOD_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-500 group-hover:-translate-y-0.5 group-hover:scale-[1.02] transition-transform duration-300">
-                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7"></path></svg>
-              </div>
+                <SelectTrigger className="bg-white/60 hover:bg-white/90 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:shadow-sm transition-all duration-300 shadow-sm group-hover:-translate-y-0.5 group-hover:scale-[1.02] w-36">
+                  <SelectValue placeholder="Period" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
+                  {PERIOD_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <button 
               className="flex items-center gap-2 bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 whitespace-nowrap"
@@ -402,36 +408,42 @@ export function TelemetryPage() {
 
             <div className="flex flex-col gap-2 w-48">
               <label htmlFor="telemetry-verdict" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Verdict</label>
-              <select
-                id="telemetry-verdict"
-                value={verdict}
-                onChange={(event) => {
+              <Select 
+                value={verdict} 
+                onValueChange={(val) => {
                   setPage(1);
-                  setVerdict(event.target.value);
+                  setVerdict(val);
                 }}
-                className="w-full bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm appearance-none cursor-pointer"
               >
-                {VERDICT_OPTIONS.map((option) => (
-                  <option key={option.label} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+                <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm">
+                  <SelectValue placeholder="Verdict" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
+                  {VERDICT_OPTIONS.map((option) => (
+                    <SelectItem key={option.label} value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="flex flex-col gap-2 w-48">
               <label htmlFor="telemetry-source" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Source</label>
-              <select
-                id="telemetry-source"
-                value={source}
-                onChange={(event) => {
+              <Select 
+                value={source} 
+                onValueChange={(val) => {
                   setPage(1);
-                  setSource(event.target.value);
+                  setSource(val);
                 }}
-                className="w-full bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm appearance-none cursor-pointer"
               >
-                {SOURCE_OPTIONS.map((option) => (
-                  <option key={option.label} value={option.value}>{option.label}</option>
-                ))}
-              </select>
+                <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm">
+                  <SelectValue placeholder="Source" />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
+                  {SOURCE_OPTIONS.map((option) => (
+                    <SelectItem key={option.label} value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
