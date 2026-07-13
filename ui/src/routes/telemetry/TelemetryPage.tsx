@@ -557,7 +557,7 @@ export function TelemetryPage() {
             </div>
           </article>
 
-          <article className="flex flex-col h-[360px] lg:col-span-1 p-8">
+          <article className="flex flex-col h-[360px] lg:col-span-1 p-4">
             <div className="mb-6 flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Verdict distribution</h2>
               <InfoTooltip content="Shows the overall distribution of safety verdicts (Safe, Suspicious, Malicious) for all processed telemetry events in this time window." />
@@ -584,8 +584,8 @@ export function TelemetryPage() {
                     nameKey="name"
                     cx="50%"
                     cy="50%"
-                    innerRadius="60%"
-                    outerRadius="80%"
+                    innerRadius="62%"
+                    outerRadius="85%"
                     paddingAngle={4}
                     cornerRadius={6}
                     stroke="none"
