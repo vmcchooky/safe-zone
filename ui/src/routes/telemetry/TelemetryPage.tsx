@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useRef,
 } from 'react';
 import {
   AlertTriangle,
@@ -91,19 +92,14 @@ function formatCompact(value: number) {
   }).format(value);
 }
 
-const SpringSector = (props: any) => {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index, activeIndex, cornerRadius } = props;
-  const isHovered = index === activeIndex;
-  const isAnyHovered = activeIndex !== null && activeIndex !== undefined;
-  const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
-
+const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
   const [animatedOuterRadius, setAnimatedOuterRadius] = useState(outerRadius);
   const [animatedOpacity, setAnimatedOpacity] = useState(opacity);
 
   useEffect(() => {
     const springConfig = isHovered 
       ? { type: "spring" as const, stiffness: 140, damping: 18, mass: 0.8 }
-      : { type: "spring" as const, stiffness: 35, damping: 16, mass: 1.5 };
+      : { type: "spring" as const, stiffness: 20, damping: 18, mass: 2.2 }; // Extremely slow, lazy return to baseline
 
     const controlsRadius = animate(animatedOuterRadius, isHovered ? outerRadius + 12 : outerRadius, {
       ...springConfig,
@@ -111,7 +107,7 @@ const SpringSector = (props: any) => {
     });
     
     const controlsOpacity = animate(animatedOpacity, opacity, {
-      duration: isHovered ? 0.25 : 0.65,
+      duration: isHovered ? 0.25 : 0.85, // Highly extended fade back time for maximum smoothness
       onUpdate: (latest) => setAnimatedOpacity(latest)
     });
 
@@ -149,6 +145,36 @@ export function TelemetryPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const hoverTimeoutRef = useRef<any>(null);
+
+  const handleMouseEnter = useCallback((index: number) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+
+    if (activeIndex !== null) {
+      // If already hovering another slice, switch immediately to keep it responsive
+      setActiveIndex(index);
+    } else {
+      // Hovering in from outside, debounce for 120ms to ignore fast cursor swipes
+      hoverTimeoutRef.current = setTimeout(() => {
+        setActiveIndex(index);
+      }, 120);
+    }
+  }, [activeIndex]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+
+    // Grace period of 80ms before shrinking to prevent jitter when slipping off the slice boundary
+    hoverTimeoutRef.current = setTimeout(() => {
+      setActiveIndex(null);
+    }, 80);
+  }, []);
 
   const [period, setPeriod] = useState('24h');
   const [domain, setDomain] = useState('');
@@ -565,10 +591,28 @@ export function TelemetryPage() {
                     cornerRadius={6}
                     stroke="none"
                     // @ts-ignore
-                    activeIndex={activeIndex ?? undefined}
-                    shape={SpringSector}
-                    onMouseEnter={(_, index) => setActiveIndex(index)}
-                    onMouseLeave={() => setActiveIndex(null)}
+                    shape={(props: any) => {
+                      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
+                      const isHovered = index === activeIndex;
+                      const isAnyHovered = activeIndex !== null;
+                      const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
+                      return (
+                        <SpringSector
+                          cx={cx}
+                          cy={cy}
+                          innerRadius={innerRadius}
+                          outerRadius={outerRadius}
+                          startAngle={startAngle}
+                          endAngle={endAngle}
+                          fill={fill}
+                          isHovered={isHovered}
+                          opacity={opacity}
+                          cornerRadius={6}
+                        />
+                      );
+                    }}
+                    onMouseEnter={(_, index) => handleMouseEnter(index)}
+                    onMouseLeave={handleMouseLeave}
                   >
                     {distribution.map((slice) => (
                       <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
