@@ -341,7 +341,7 @@ export function TelemetryPage() {
   }
 
   return (
-    <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8">
+    <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8 overflow-x-hidden">
 
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
