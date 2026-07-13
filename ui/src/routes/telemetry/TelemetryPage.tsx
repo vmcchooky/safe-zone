@@ -260,7 +260,12 @@ export function TelemetryPage() {
                   setPeriod(val);
                 }}
               >
-                <motion.div whileTap={{ scale: 0.92 }} transition={{ type: "spring", stiffness: 400, damping: 12 }} className="w-36">
+                <motion.div 
+                  whileHover={{ scale: 1.02, y: -1 }}
+                  whileTap={{ scale: 0.95, y: 0 }} 
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }} 
+                  className="w-36"
+                >
                   <SelectTrigger className="bg-white/60 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none transition-shadow duration-300 shadow-sm w-full">
                     <SelectValue placeholder="Period" />
                   </SelectTrigger>
@@ -567,7 +572,11 @@ export function TelemetryPage() {
                   setVerdict(val);
                 }}
               >
-                <motion.div whileTap={{ scale: 0.96 }} transition={{ type: "spring", stiffness: 400, damping: 12 }}>
+                <motion.div 
+                  whileHover={{ scale: 1.02, y: -1 }}
+                  whileTap={{ scale: 0.95, y: 0 }} 
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                >
                   <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
                     <SelectValue placeholder="Verdict" />
                   </SelectTrigger>
@@ -596,7 +605,11 @@ export function TelemetryPage() {
                   setSource(val);
                 }}
               >
-                <motion.div whileTap={{ scale: 0.96 }} transition={{ type: "spring", stiffness: 400, damping: 12 }}>
+                <motion.div 
+                  whileHover={{ scale: 1.02, y: -1 }}
+                  whileTap={{ scale: 0.95, y: 0 }} 
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                >
                   <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
                     <SelectValue placeholder="Source" />
                   </SelectTrigger>
