@@ -698,9 +698,9 @@ export function TelemetryPage() {
         <div className="border border-white/70 rounded-[2rem] p-1.5 shadow-sm">
         <article className="bg-slate-50/70 backdrop-blur-xl rounded-3xl p-8">
           <div className="flex justify-between items-center mb-8">
-            <div>
-              <h2 className="text-xl font-bold text-slate-800 mb-1">Recent activity</h2>
-              <p className="text-slate-500 font-medium">Filtered data from `/v1/telemetry/recent` with server-side paging.</p>
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-800">Recent activity</h2>
+              <InfoTooltip content="Real-time log of security triage results and network telemetry events with dynamic filtering." />
             </div>
             {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : null}
           </div>
