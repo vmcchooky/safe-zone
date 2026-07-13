@@ -46,6 +46,8 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
+const MotionSector = motion(Sector) as any;
+
 import { apiFetch, messageFromError } from '../../lib/api';
 import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
 
@@ -519,26 +521,33 @@ export function TelemetryPage() {
                     shape={(props: any) => {
                       const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
                       const isHovered = index === activeIndex;
+                      const isAnyHovered = activeIndex !== null;
+                      const targetOuterRadius = isHovered ? outerRadius + 12 : outerRadius;
+                      const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
                       return (
-                        <g
-                          style={{
-                            transform: isHovered ? 'scale(1.04)' : 'scale(1)',
-                            transformOrigin: `${cx}px ${cy}px`,
-                            transition: 'transform 450ms cubic-bezier(0.34, 1.56, 0.64, 1), filter 300ms ease',
-                            filter: isHovered ? 'drop-shadow(0px 8px 20px rgba(0,0,0,0.12))' : 'none',
-                          }}
-                        >
-                          <Sector
+                        <g>
+                          <MotionSector
                             cx={cx}
                             cy={cy}
                             innerRadius={innerRadius}
-                            outerRadius={outerRadius}
+                            // @ts-ignore
+                            animate={{
+                              outerRadius: targetOuterRadius,
+                              opacity: opacity,
+                            }}
+                            transition={{
+                              type: "spring",
+                              stiffness: 140,
+                              damping: 18,
+                              mass: 0.8
+                            }}
                             startAngle={startAngle}
                             endAngle={endAngle}
                             fill={fill}
                             style={{ 
                               outline: 'none', 
-                              cursor: 'pointer'
+                              cursor: 'pointer',
+                              filter: isHovered ? 'drop-shadow(0px 8px 24px rgba(0,0,0,0.16))' : 'none',
                             }}
                             cornerRadius={6}
                           />
