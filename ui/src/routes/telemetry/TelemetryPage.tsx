@@ -649,22 +649,22 @@ export function TelemetryPage() {
                 <BarChart data={scoreBands} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
                   <defs>
                     <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="rgba(20, 184, 166, 0.88)" />
+                      <rect width="8" height="8" fill="#14b8a6" />
                     </pattern>
                     <pattern id="pattern-safe-low-bar" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="rgba(16, 185, 129, 0.6)" />
+                      <rect width="8" height="8" fill="#10b981" />
                     </pattern>
                     <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="rgba(251, 191, 36, 0.88)" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="2.5" />
+                      <rect width="8" height="8" fill="#f59e0b" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
                     </pattern>
                     <pattern id="pattern-high-risk-bar" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="rgba(249, 115, 22, 0.7)" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="1.5" />
+                      <rect width="8" height="8" fill="#f97316" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
                     </pattern>
                     <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
-                      <rect width="6" height="6" fill="rgba(248, 113, 113, 0.88)" />
-                      <circle cx="3" cy="3" r="1.2" fill="rgba(255, 255, 255, 0.5)" />
+                      <rect width="6" height="6" fill="#f43f5e" />
+                      <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
                     </pattern>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
