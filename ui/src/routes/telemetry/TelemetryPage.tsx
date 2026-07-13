@@ -17,7 +17,9 @@ import {
   ShieldCheck,
   TriangleAlert,
   Zap,
+  RadioTower,
 } from 'lucide-react';
+import { InfoTooltip } from '../../components/InfoTooltip';
 import {
   Bar,
   BarChart,
@@ -190,14 +192,15 @@ export function TelemetryPage() {
 
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
-            <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-2">Live telemetry workspace</div>
-            <h1 className="text-4xl font-extrabold text-slate-800 tracking-tight mb-3">Network Telemetry</h1>
-            <p className="text-slate-500 max-w-2xl text-lg">
-              Live feed of API decisions and threat metrics.
-            </p>
-          </div>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4">
+          <header>
+            <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-8">Live telemetry workspace</div>
+            <div className="flex items-center gap-2.5">
+              <RadioTower size={24} className="text-sky-500" />
+              <h1 className="text-2xl font-bold text-slate-900 leading-none">Network Telemetry</h1>
+              <InfoTooltip content="Live feed of API decisions and threat metrics." />
+            </div>
+          </header>
           <button 
             className="flex items-center gap-2 bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 whitespace-nowrap"
             type="button" 
