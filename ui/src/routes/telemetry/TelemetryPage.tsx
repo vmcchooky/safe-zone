@@ -424,6 +424,8 @@ export function TelemetryPage() {
                     tickLine={false}
                     tickFormatter={(value) => formatCompact(Number(value))}
                     dx={-10}
+                    width={45}
+                    domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.1))]}
                   />
                   <Tooltip 
                     cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
