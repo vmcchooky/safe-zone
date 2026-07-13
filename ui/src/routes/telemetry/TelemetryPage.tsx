@@ -496,15 +496,15 @@ export function TelemetryPage() {
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="rgba(20, 184, 166, 0.15)" />
+                      <rect width="8" height="8" fill="#14b8a6" />
                     </pattern>
                     <pattern id="pattern-suspicious-area" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="rgba(245, 158, 11, 0.15)" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(245, 158, 11, 0.5)" strokeWidth="1.5" />
+                      <rect width="8" height="8" fill="#f59e0b" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
                     </pattern>
                     <pattern id="pattern-malicious-area" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="rgba(244, 63, 94, 0.15)" />
-                      <circle cx="4" cy="4" r="1.5" fill="rgba(244, 63, 94, 0.5)" />
+                      <rect width="8" height="8" fill="#f43f5e" />
+                      <circle cx="4" cy="4" r="1.5" fill="#f8fafc" />
                     </pattern>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
@@ -571,11 +571,11 @@ export function TelemetryPage() {
                     </pattern>
                     <pattern id="pattern-suspicious-pie" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
                       <rect width="8" height="8" fill="#f59e0b" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="2.5" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
                     </pattern>
                     <pattern id="pattern-malicious-pie" width="6" height="6" patternUnits="userSpaceOnUse">
                       <rect width="6" height="6" fill="#f43f5e" />
-                      <circle cx="3" cy="3" r="1.2" fill="rgba(255, 255, 255, 0.5)" />
+                      <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
                     </pattern>
                   </defs>
                   <Pie
