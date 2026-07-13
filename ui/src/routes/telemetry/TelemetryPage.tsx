@@ -98,21 +98,16 @@ const SmoothSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, 
       cx={cx}
       cy={cy}
       innerRadius={innerRadius}
-      outerRadius={outerRadius}
+      outerRadius={isHovered ? outerRadius + 8 : outerRadius}
       startAngle={startAngle}
       endAngle={endAngle}
       fill={fill}
       style={{ 
         outline: 'none', 
         cursor: 'pointer',
-        // Enter: spring-like with subtle overshoot (cubic-bezier > 1 on y)
-        // Exit: smooth ease-out back to rest
-        transition: isHovered
-          ? 'transform 0.38s cubic-bezier(0.34, 1.4, 0.64, 1), opacity 0.18s ease'
-          : 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.22s ease',
-        transform: isHovered ? 'scale(1.07)' : 'scale(1)',
-        transformOrigin: `${cx}px ${cy}px`,
-        transformBox: 'fill-box',
+        // Instead of scaling (which distorts the SVG arc), we let Recharts compute the new path ('d')
+        // and tell the browser to smoothly interpolate the 'd' string.
+        transition: 'd 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.25s ease',
       }}
       opacity={opacity}
       cornerRadius={cornerRadius}
