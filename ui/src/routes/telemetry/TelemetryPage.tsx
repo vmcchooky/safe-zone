@@ -42,7 +42,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
 import { apiFetch, messageFromError } from '../../lib/api';
@@ -61,24 +61,6 @@ const VERDICT_OPTIONS = [
   { label: 'Suspicious', value: 'SUSPICIOUS' },
   { label: 'Malicious', value: 'MALICIOUS' },
 ] as const;
-
-const CustomCursor = ({ points, height, stroke }: any) => {
-  if (!points || !points.length) return null;
-  const { x } = points[0];
-  
-  return (
-    <motion.line
-      initial={{ x1: x, x2: x }}
-      animate={{ x1: x, x2: x }}
-      transition={{ duration: 0.15, ease: "easeOut" }}
-      y1={0}
-      y2={height}
-      stroke={stroke || "rgba(148, 163, 184, 0.4)"}
-      strokeWidth={2}
-      strokeDasharray="4 4"
-    />
-  );
-};
 
 const SOURCE_OPTIONS = [
   { label: 'All sources', value: '' },
@@ -444,35 +426,30 @@ export function TelemetryPage() {
                     dx={-10}
                   />
                   <Tooltip 
-                    cursor={<CustomCursor stroke="rgba(148, 163, 184, 0.4)" />}
+                    cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
                     isAnimationActive={true}
                     animationDuration={150}
                     animationEasing="ease-out"
                     content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {
                         return (
-                          <div className="bg-white/95 backdrop-blur-md border border-white/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]">
+                          <motion.div
+                            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                            className="bg-white/95 backdrop-blur-md border border-white/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
+                          >
                             <p className="text-slate-500 font-medium text-sm mb-3">{label}</p>
-                            <div className="space-y-2 relative">
-                              <AnimatePresence mode="wait">
-                                <motion.div
-                                  key={label}
-                                  initial={{ opacity: 0, y: 4 }}
-                                  animate={{ opacity: 1, y: 0 }}
-                                  exit={{ opacity: 0, y: -4 }}
-                                  transition={{ duration: 0.1 }}
-                                >
-                                  {payload.map((entry: any, index: number) => (
-                                    <div key={index} className="flex items-center gap-3 text-sm mb-2 last:mb-0">
-                                      <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
-                                      <span className="text-slate-600 font-medium">{entry.name}:</span>
-                                      <span className="text-slate-900 font-bold ml-auto">{entry.value}</span>
-                                    </div>
-                                  ))}
-                                </motion.div>
-                              </AnimatePresence>
+                            <div className="space-y-2">
+                              {payload.map((entry: any, index: number) => (
+                                <div key={index} className="flex items-center gap-3 text-sm">
+                                  <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
+                                  <span className="text-slate-600 font-medium">{entry.name}:</span>
+                                  <span className="text-slate-900 font-bold ml-auto">{entry.value}</span>
+                                </div>
+                              ))}
                             </div>
-                          </div>
+                          </motion.div>
                         );
                       }
                       return null;
