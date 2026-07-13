@@ -406,9 +406,9 @@ export function TelemetryPage() {
         </div>
 
         {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Trend Chart */}
-          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-2">
+          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-3">
             <div className="mb-6 flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Threat trend</h2>
               <InfoTooltip content="Displays the volume of telemetry events classified as suspicious or malicious over the selected period. Useful for identifying abnormal traffic spikes." />
@@ -479,7 +479,7 @@ export function TelemetryPage() {
             </div>
           </article>
 
-          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px]">
+          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-1">
             <div className="mb-6 flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Verdict distribution</h2>
               <InfoTooltip content="Shows the overall distribution of safety verdicts (Safe, Suspicious, Malicious) for all processed telemetry events in this time window." />
@@ -538,7 +538,7 @@ export function TelemetryPage() {
             </div>
           </article>
 
-          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px]">
+          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-2">
             <div className="mb-6 flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Score distribution</h2>
               <InfoTooltip content="Groups all telemetry events into 5 specific threat score ranges (from 0 to 100), providing a detailed view of the risk landscape." />
