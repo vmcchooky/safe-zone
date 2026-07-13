@@ -299,13 +299,15 @@ export function TelemetryPage() {
         </div>
 
         {/* Threat Pressure Bar */}
-        <div className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none" />
+        <div className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] relative">
+          <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+          </div>
           <div className="flex justify-between items-end mb-6 relative z-10">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <h2 className="text-xl font-bold text-slate-800">Threat pressure</h2>
-                <InfoTooltip content="Share of suspicious and malicious verdicts in the selected period." position="bottom" />
+                <InfoTooltip content="Share of suspicious and malicious verdicts in the selected period." />
               </div>
             </div>
             <strong className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-rose-500">{riskRatio}% risk</strong>
