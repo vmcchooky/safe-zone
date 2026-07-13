@@ -92,45 +92,25 @@ function formatCompact(value: number) {
   }).format(value);
 }
 
-const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
-  const [animatedOuterRadius, setAnimatedOuterRadius] = useState(outerRadius);
-  const [animatedOpacity, setAnimatedOpacity] = useState(opacity);
-
-  useEffect(() => {
-    const springConfig = isHovered 
-      ? { type: "spring" as const, stiffness: 140, damping: 18, mass: 0.8 }
-      : { type: "spring" as const, stiffness: 20, damping: 18, mass: 2.2 }; // Extremely slow, lazy return to baseline
-
-    const controlsRadius = animate(animatedOuterRadius, isHovered ? outerRadius + 12 : outerRadius, {
-      ...springConfig,
-      onUpdate: (latest) => setAnimatedOuterRadius(latest)
-    });
-    
-    const controlsOpacity = animate(animatedOpacity, opacity, {
-      duration: isHovered ? 0.25 : 0.85, // Highly extended fade back time for maximum smoothness
-      onUpdate: (latest) => setAnimatedOpacity(latest)
-    });
-
-    return () => {
-      controlsRadius.stop();
-      controlsOpacity.stop();
-    };
-  }, [isHovered, outerRadius, opacity]);
-
+const SmoothSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
   return (
     <Sector
       cx={cx}
       cy={cy}
       innerRadius={innerRadius}
-      outerRadius={animatedOuterRadius}
+      outerRadius={isHovered ? outerRadius + 10 : outerRadius}
       startAngle={startAngle}
       endAngle={endAngle}
       fill={fill}
       style={{ 
         outline: 'none', 
         cursor: 'pointer',
+        transition: 'opacity 0.18s ease, r 0.18s ease',
+        transform: isHovered ? `scale(1.04)` : 'scale(1)',
+        transformOrigin: `${cx}px ${cy}px`,
+        transformBox: 'fill-box',
       }}
-      opacity={animatedOpacity}
+      opacity={opacity}
       cornerRadius={cornerRadius}
     />
   );
@@ -151,28 +131,17 @@ export function TelemetryPage() {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
-
-    if (activeIndex !== null) {
-      // If already hovering another slice, switch immediately to keep it responsive
-      setActiveIndex(index);
-    } else {
-      // Hovering in from outside, debounce for 120ms to ignore fast cursor swipes
-      hoverTimeoutRef.current = setTimeout(() => {
-        setActiveIndex(index);
-      }, 120);
-    }
-  }, [activeIndex]);
+    setActiveIndex(index);
+  }, []);
 
   const handleMouseLeave = useCallback(() => {
     if (hoverTimeoutRef.current) {
       clearTimeout(hoverTimeoutRef.current);
       hoverTimeoutRef.current = null;
     }
-
-    // Grace period of 80ms before shrinking to prevent jitter when slipping off the slice boundary
     hoverTimeoutRef.current = setTimeout(() => {
       setActiveIndex(null);
-    }, 80);
+    }, 40);
   }, []);
 
   const [period, setPeriod] = useState('24h');
@@ -590,7 +559,7 @@ export function TelemetryPage() {
                       const isAnyHovered = activeIndex !== null;
                       const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
                       return (
-                        <SpringSector
+                        <SmoothSector
                           cx={cx}
                           cy={cy}
                           innerRadius={innerRadius}
