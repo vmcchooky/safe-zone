@@ -167,9 +167,9 @@ export function TelemetryPage() {
       return [];
     }
     return [
-      { name: 'Safe', value: stats.safe, fill: 'var(--safe)' },
-      { name: 'Suspicious', value: stats.suspicious, fill: 'var(--warn)' },
-      { name: 'Malicious', value: stats.malicious, fill: 'var(--bad)' },
+      { name: 'Safe', value: stats.safe, fill: 'url(#pattern-safe-pie)' },
+      { name: 'Suspicious', value: stats.suspicious, fill: 'url(#pattern-suspicious-pie)' },
+      { name: 'Malicious', value: stats.malicious, fill: 'url(#pattern-malicious-pie)' },
     ];
   }, [stats]);
 
@@ -183,15 +183,18 @@ export function TelemetryPage() {
     const malicious = stats.malicious;
 
     return [
-      { label: 'Safe', value: safe, fill: 'rgba(20, 184, 166, 0.88)' },
-      { label: 'Suspicious', value: suspicious, fill: 'rgba(251, 191, 36, 0.88)' },
-      { label: 'Malicious', value: malicious, fill: 'rgba(248, 113, 113, 0.88)' },
+      { label: 'Safe', value: safe, fill: 'url(#pattern-safe-bar)' },
+      { label: 'Suspicious', value: suspicious, fill: 'url(#pattern-suspicious-bar)' },
+      { label: 'Malicious', value: malicious, fill: 'url(#pattern-malicious-bar)' },
     ];
   }, [stats]);
 
   const riskRatio = stats?.total
     ? Math.round(((stats.suspicious + stats.malicious) / stats.total) * 100)
     : 0;
+  const safeRatio = stats?.total ? Math.round((stats.safe / stats.total) * 100) : 100;
+  const suspiciousRatio = stats?.total ? Math.round((stats.suspicious / stats.total) * 100) : 0;
+  const maliciousRatio = stats?.total ? Math.max(0, 100 - safeRatio - suspiciousRatio) : 0;
   const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
 
   return (
@@ -312,21 +315,60 @@ export function TelemetryPage() {
             </div>
             <strong className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-rose-500">{riskRatio}% risk</strong>
           </div>
-          <div className="w-full h-4 rounded-full bg-teal-100 relative z-10 overflow-hidden shadow-inner">
+          <div className="w-full h-5 rounded-full bg-slate-100 relative z-10 overflow-hidden shadow-inner flex">
             <motion.div 
               initial={{ width: 0 }}
-              animate={{ width: `${riskRatio}%` }}
+              animate={{ width: `${safeRatio}%` }}
               transition={{ duration: 1, ease: "easeOut" }}
-              className="absolute right-0 top-0 bottom-0 bg-gradient-to-l from-amber-400 to-rose-500 rounded-l-full"
+              className="h-full bg-teal-500"
+            />
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${suspiciousRatio}%` }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="h-full bg-amber-500"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 2px, transparent 2px, transparent 6px)'
+              }}
+            />
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${maliciousRatio}%` }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="h-full bg-rose-500"
+              style={{
+                backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.4) 15%, transparent 15%)',
+                backgroundSize: '6px 6px'
+              }}
             />
           </div>
           <div className="flex justify-between items-center mt-3 text-xs font-bold uppercase tracking-wider relative z-10">
             <span className="flex items-center gap-1.5 text-teal-700">
-              <ShieldCheck size={15} /> Safe ({100 - riskRatio}%)
+              <span className="w-2.5 h-2.5 rounded-full bg-teal-500 inline-block" />
+              <ShieldCheck size={15} /> Safe ({safeRatio}%)
             </span>
-            <span className="flex items-center gap-1.5 text-rose-600">
-              <ShieldAlert size={15} /> Risk ({riskRatio}%)
-            </span>
+            <div className="flex gap-4">
+              <span className="flex items-center gap-1.5 text-amber-600">
+                <span 
+                  className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" 
+                  style={{
+                    backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 3px)',
+                    backgroundSize: '4px 4px'
+                  }}
+                />
+                <TriangleAlert size={15} /> Suspicious ({suspiciousRatio}%)
+              </span>
+              <span className="flex items-center gap-1.5 text-rose-600">
+                <span 
+                  className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" 
+                  style={{
+                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.6) 20%, transparent 20%)',
+                    backgroundSize: '3px 3px'
+                  }}
+                />
+                <ShieldAlert size={15} /> Malicious ({maliciousRatio}%)
+              </span>
+            </div>
           </div>
         </div>
 
@@ -340,6 +382,19 @@ export function TelemetryPage() {
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
+                  <defs>
+                    <pattern id="pattern-safe-pie" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#14b8a6" />
+                    </pattern>
+                    <pattern id="pattern-suspicious-pie" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#f59e0b" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="2.5" />
+                    </pattern>
+                    <pattern id="pattern-malicious-pie" width="6" height="6" patternUnits="userSpaceOnUse">
+                      <rect width="6" height="6" fill="#f43f5e" />
+                      <circle cx="3" cy="3" r="1.2" fill="rgba(255, 255, 255, 0.5)" />
+                    </pattern>
+                  </defs>
                   <Pie
                     data={distribution}
                     dataKey="value"
@@ -372,12 +427,24 @@ export function TelemetryPage() {
                 Safe ({stats ? formatCompact(stats.safe) : 0})
               </span>
               <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" />
+                <span 
+                  className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" 
+                  style={{
+                    backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 3px)',
+                    backgroundSize: '4px 4px'
+                  }}
+                />
                 <TriangleAlert size={15} className="text-amber-500" />
                 Suspicious ({stats ? formatCompact(stats.suspicious) : 0})
               </span>
               <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" />
+                <span 
+                  className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" 
+                  style={{
+                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.6) 20%, transparent 20%)',
+                    backgroundSize: '3px 3px'
+                  }}
+                />
                 <ShieldAlert size={15} className="text-rose-600" />
                 Malicious ({stats ? formatCompact(stats.malicious) : 0})
               </span>
@@ -392,6 +459,19 @@ export function TelemetryPage() {
             <div className="flex-1 min-h-0">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={scoreBands} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+                  <defs>
+                    <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="rgba(20, 184, 166, 0.88)" />
+                    </pattern>
+                    <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="rgba(251, 191, 36, 0.88)" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="rgba(255, 255, 255, 0.4)" strokeWidth="2.5" />
+                    </pattern>
+                    <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
+                      <rect width="6" height="6" fill="rgba(248, 113, 113, 0.88)" />
+                      <circle cx="3" cy="3" r="1.2" fill="rgba(255, 255, 255, 0.5)" />
+                    </pattern>
+                  </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
                   <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 13, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
                   <YAxis
@@ -423,12 +503,24 @@ export function TelemetryPage() {
                 Safe ({stats ? formatCompact(stats.safe) : 0})
               </span>
               <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80 inline-block" />
+                <span 
+                  className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block" 
+                  style={{
+                    backgroundImage: 'repeating-linear-gradient(45deg, rgba(255,255,255,0.3) 0px, rgba(255,255,255,0.3) 1px, transparent 1px, transparent 3px)',
+                    backgroundSize: '4px 4px'
+                  }}
+                />
                 <TriangleAlert size={15} className="text-amber-500" />
                 Suspicious ({stats ? formatCompact(stats.suspicious) : 0})
               </span>
               <span className="flex items-center gap-1.5 text-slate-700 font-semibold text-[11px] uppercase tracking-wider">
-                <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80 inline-block" />
+                <span 
+                  className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block" 
+                  style={{
+                    backgroundImage: 'radial-gradient(rgba(255,255,255,0.6) 20%, transparent 20%)',
+                    backgroundSize: '3px 3px'
+                  }}
+                />
                 <ShieldAlert size={15} className="text-rose-600" />
                 Malicious ({stats ? formatCompact(stats.malicious) : 0})
               </span>
