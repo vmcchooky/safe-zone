@@ -209,7 +209,7 @@ export function TelemetryPage() {
             </div>
           </header>
           <div className="flex items-center gap-3">
-            <div className="relative group">
+            <div className="relative">
               <Select 
                 value={period} 
                 onValueChange={(val) => {
@@ -217,7 +217,7 @@ export function TelemetryPage() {
                   setPeriod(val);
                 }}
               >
-                <SelectTrigger className="bg-white/60 hover:bg-white/90 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none hover:shadow-sm transition-all duration-300 shadow-sm group-hover:-translate-y-0.5 group-hover:scale-[1.02] w-36">
+                <SelectTrigger className="bg-white/60 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none transition-all duration-300 ease-out shadow-sm active:scale-95 active:translate-y-0.5 w-36">
                   <SelectValue placeholder="Period" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
@@ -228,7 +228,7 @@ export function TelemetryPage() {
               </Select>
             </div>
             <button 
-              className="flex items-center gap-2 bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 whitespace-nowrap"
+              className="flex items-center gap-2 bg-white/60 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:scale-95 active:translate-y-0.5 shadow-sm whitespace-nowrap"
               type="button" 
               onClick={() => void loadTelemetry(true)}
             >
@@ -416,7 +416,7 @@ export function TelemetryPage() {
                   setVerdict(val);
                 }}
               >
-                <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none hover:border-slate-300 transition-all shadow-sm">
+                <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-all duration-300 ease-out shadow-sm active:scale-[0.98] active:translate-y-px">
                   <SelectValue placeholder="Verdict" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
@@ -436,7 +436,7 @@ export function TelemetryPage() {
                   setSource(val);
                 }}
               >
-                <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none hover:border-slate-300 transition-all shadow-sm">
+                <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-all duration-300 ease-out shadow-sm active:scale-[0.98] active:translate-y-px">
                   <SelectValue placeholder="Source" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
@@ -474,14 +474,16 @@ export function TelemetryPage() {
                 className="divide-y divide-black/5 text-slate-800"
               >
                 {loading ? (
-                  <tr>
-                    <td colSpan={6} className="py-16 text-center">
-                      <div className="flex flex-col items-center justify-center text-slate-500 gap-4">
-                        <LoaderCircle size={28} className="animate-spin text-sky-500" />
-                        <span className="font-medium">Loading telemetry feed…</span>
-                      </div>
-                    </td>
-                  </tr>
+                  Array.from({ length: 5 }).map((_, i) => (
+                    <tr key={i} className="animate-pulse border-b border-black/5 last:border-0">
+                      <td className="py-4 pl-4"><div className="h-5 bg-slate-200/60 rounded-md w-48"></div></td>
+                      <td className="py-4"><div className="h-6 bg-slate-200/60 rounded-full w-24"></div></td>
+                      <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-20"></div></td>
+                      <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-16"></div></td>
+                      <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-32"></div></td>
+                      <td className="py-4 pr-4"><div className="h-8 bg-slate-200/60 rounded-lg w-20 ml-auto"></div></td>
+                    </tr>
+                  ))
                 ) : entries.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-16 text-center">
