@@ -358,18 +358,27 @@ export function TelemetryPage() {
           <div className="w-full h-5 rounded-full bg-slate-100 relative z-10 overflow-hidden shadow-inner flex">
             <motion.div 
               initial={{ width: 0 }}
-              animate={{ width: `${100 - riskRatio}%` }}
+              animate={{ width: `${safeRatio}%` }}
               transition={{ duration: 1, ease: "easeOut" }}
               className="h-full bg-teal-500"
             />
             <motion.div 
               initial={{ width: 0 }}
-              animate={{ width: `${riskRatio}%` }}
+              animate={{ width: `${suspiciousRatio}%` }}
+              transition={{ duration: 1, ease: "easeOut" }}
+              className="h-full bg-amber-500"
+              style={{
+                backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(255,255,255,0.4) 4px, rgba(255,255,255,0.4) 6px)'
+              }}
+            />
+            <motion.div 
+              initial={{ width: 0 }}
+              animate={{ width: `${maliciousRatio}%` }}
               transition={{ duration: 1, ease: "easeOut" }}
               className="h-full bg-rose-500"
               style={{
-                backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.4) 15%, transparent 15%)',
-                backgroundSize: '6px 6px'
+                backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.7) 25%, transparent 26%)',
+                backgroundSize: '8px 8px'
               }}
             />
           </div>
