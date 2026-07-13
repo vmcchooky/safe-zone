@@ -50,7 +50,7 @@ import { useNavigate } from 'react-router-dom';
 import { apiFetch, messageFromError } from '../../lib/api';
 import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 12;
 const PERIOD_OPTIONS = [
   { label: '24 hours', value: '24h' },
   { label: '7 days', value: '7d' },
