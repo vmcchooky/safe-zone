@@ -217,9 +217,11 @@ export function TelemetryPage() {
                   setPeriod(val);
                 }}
               >
-                <SelectTrigger className="bg-white/60 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none transition-all duration-300 ease-out shadow-sm active:scale-95 active:translate-y-0.5 w-36">
-                  <SelectValue placeholder="Period" />
-                </SelectTrigger>
+                <motion.div whileTap={{ scale: 0.95 }} className="w-36">
+                  <SelectTrigger className="bg-white/60 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none transition-shadow duration-300 shadow-sm w-full">
+                    <SelectValue placeholder="Period" />
+                  </SelectTrigger>
+                </motion.div>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
                   {PERIOD_OPTIONS.map((option) => (
                     <SelectItem key={option.value} value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
@@ -227,14 +229,15 @@ export function TelemetryPage() {
                 </SelectContent>
               </Select>
             </div>
-            <button 
-              className="flex items-center gap-2 bg-white/60 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:scale-95 active:translate-y-0.5 shadow-sm whitespace-nowrap"
+            <motion.button 
+              whileTap={{ scale: 0.95 }}
+              className="flex items-center gap-2 bg-white/60 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-shadow duration-300 shadow-sm whitespace-nowrap"
               type="button" 
               onClick={() => void loadTelemetry(true)}
             >
               {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : <RefreshCcw size={20} className="text-sky-500" />}
               Refresh now
-            </button>
+            </motion.button>
           </div>
         </div>
 
@@ -416,9 +419,11 @@ export function TelemetryPage() {
                   setVerdict(val);
                 }}
               >
-                <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-all duration-300 ease-out shadow-sm active:scale-[0.98] active:translate-y-px">
-                  <SelectValue placeholder="Verdict" />
-                </SelectTrigger>
+                <motion.div whileTap={{ scale: 0.98 }}>
+                  <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
+                    <SelectValue placeholder="Verdict" />
+                  </SelectTrigger>
+                </motion.div>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
                   {VERDICT_OPTIONS.map((option) => (
                     <SelectItem key={option.label} value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
@@ -436,9 +441,11 @@ export function TelemetryPage() {
                   setSource(val);
                 }}
               >
-                <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-all duration-300 ease-out shadow-sm active:scale-[0.98] active:translate-y-px">
-                  <SelectValue placeholder="Source" />
-                </SelectTrigger>
+                <motion.div whileTap={{ scale: 0.98 }}>
+                  <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
+                    <SelectValue placeholder="Source" />
+                  </SelectTrigger>
+                </motion.div>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
                   {SOURCE_OPTIONS.map((option) => (
                     <SelectItem key={option.label} value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
