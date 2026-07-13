@@ -185,32 +185,24 @@ export function TelemetryPage() {
 
   const loadTelemetry = useCallback(async (showSpinner: boolean) => {
     if (showSpinner) {
-      startTransition(() => {
-        setRefreshing(true);
-      });
+      setRefreshing(true); // immediate — no transition delay
     }
 
+    const params = new URLSearchParams({
+      period,
+      limit: String(PAGE_SIZE),
+      offset: String((page - 1) * PAGE_SIZE),
+    });
+    if (deferredDomain) params.set('domain', deferredDomain);
+    if (verdict)        params.set('verdict', verdict);
+    if (source)         params.set('source', source);
+
     try {
-      const statsResponse = await apiFetch<TelemetryStats>(`/v1/telemetry/stats?period=${period}`);
-
-      const params = new URLSearchParams({
-        period,
-        limit: String(PAGE_SIZE),
-        offset: String((page - 1) * PAGE_SIZE),
-      });
-      if (deferredDomain) {
-        params.set('domain', deferredDomain);
-      }
-      if (verdict) {
-        params.set('verdict', verdict);
-      }
-      if (source) {
-        params.set('source', source);
-      }
-
-      const recentResponse = await apiFetch<{ items: TelemetryEntry[] }>(
-        `/v1/telemetry/recent?${params.toString()}`,
-      );
+      // Fire both requests in parallel
+      const [statsResponse, recentResponse] = await Promise.all([
+        apiFetch<TelemetryStats>(`/v1/telemetry/stats?period=${period}`),
+        apiFetch<{ items: TelemetryEntry[] }>(`/v1/telemetry/recent?${params.toString()}`),
+      ]);
 
       startTransition(() => {
         setStats(statsResponse);
