@@ -98,15 +98,19 @@ const SmoothSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, 
       cx={cx}
       cy={cy}
       innerRadius={innerRadius}
-      outerRadius={isHovered ? outerRadius + 10 : outerRadius}
+      outerRadius={outerRadius}
       startAngle={startAngle}
       endAngle={endAngle}
       fill={fill}
       style={{ 
         outline: 'none', 
         cursor: 'pointer',
-        transition: 'opacity 0.18s ease, r 0.18s ease',
-        transform: isHovered ? `scale(1.04)` : 'scale(1)',
+        // Enter: spring-like with subtle overshoot (cubic-bezier > 1 on y)
+        // Exit: smooth ease-out back to rest
+        transition: isHovered
+          ? 'transform 0.38s cubic-bezier(0.34, 1.4, 0.64, 1), opacity 0.18s ease'
+          : 'transform 0.32s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.22s ease',
+        transform: isHovered ? 'scale(1.07)' : 'scale(1)',
         transformOrigin: `${cx}px ${cy}px`,
         transformBox: 'fill-box',
       }}
