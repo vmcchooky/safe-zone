@@ -91,14 +91,19 @@ function formatCompact(value: number) {
   }).format(value);
 }
 
-const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
+const SpringSector = (props: any) => {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index, activeIndex, cornerRadius } = props;
+  const isHovered = index === activeIndex;
+  const isAnyHovered = activeIndex !== null && activeIndex !== undefined;
+  const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
+
   const [animatedOuterRadius, setAnimatedOuterRadius] = useState(outerRadius);
   const [animatedOpacity, setAnimatedOpacity] = useState(opacity);
 
   useEffect(() => {
     const springConfig = isHovered 
       ? { type: "spring" as const, stiffness: 140, damping: 18, mass: 0.8 }
-      : { type: "spring" as const, stiffness: 35, damping: 16, mass: 1.5 }; // Heavier mass, lower stiffness for slower drift
+      : { type: "spring" as const, stiffness: 35, damping: 16, mass: 1.5 };
 
     const controlsRadius = animate(animatedOuterRadius, isHovered ? outerRadius + 12 : outerRadius, {
       ...springConfig,
@@ -106,7 +111,7 @@ const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, 
     });
     
     const controlsOpacity = animate(animatedOpacity, opacity, {
-      duration: isHovered ? 0.25 : 0.65, // Slower opacity recovery
+      duration: isHovered ? 0.25 : 0.65,
       onUpdate: (latest) => setAnimatedOpacity(latest)
     });
 
@@ -560,26 +565,8 @@ export function TelemetryPage() {
                     cornerRadius={6}
                     stroke="none"
                     // @ts-ignore
-                    shape={(props: any) => {
-                      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
-                      const isHovered = index === activeIndex;
-                      const isAnyHovered = activeIndex !== null;
-                      const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
-                      return (
-                        <SpringSector
-                          cx={cx}
-                          cy={cy}
-                          innerRadius={innerRadius}
-                          outerRadius={outerRadius}
-                          startAngle={startAngle}
-                          endAngle={endAngle}
-                          fill={fill}
-                          isHovered={isHovered}
-                          opacity={opacity}
-                          cornerRadius={6}
-                        />
-                      );
-                    }}
+                    activeIndex={activeIndex ?? undefined}
+                    shape={SpringSector}
                     onMouseEnter={(_, index) => setActiveIndex(index)}
                     onMouseLeave={() => setActiveIndex(null)}
                   >
