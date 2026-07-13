@@ -803,97 +803,105 @@ export function TelemetryPage() {
                   <th className="w-[10%] pb-4 font-bold uppercase tracking-wider text-center">Action</th>
                 </tr>
               </thead>
-              <motion.tbody
-                initial="hidden"
-                animate="show"
-                variants={{
-                  hidden: {},
-                  show: {
-                    transition: {
-                      staggerChildren: 0.04
-                    }
-                  }
-                }}
-                className="divide-y divide-black/5 text-slate-800"
-              >
-                {loading ? (
-                  Array.from({ length: 5 }).map((_, i) => (
-                    <tr key={i} className="animate-pulse border-b border-black/5 last:border-0 align-middle">
-                      <td className="py-4 pl-4"><div className="h-5 bg-slate-200/60 rounded-md w-48"></div></td>
-                      <td className="py-4"><div className="h-6 bg-slate-200/60 rounded-full w-24"></div></td>
-                      <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-20"></div></td>
-                      <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-16"></div></td>
-                      <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-32"></div></td>
-                      <td className="py-4"><div className="h-8 bg-slate-200/60 rounded-lg w-20 mx-auto"></div></td>
-                    </tr>
-                  ))
-                ) : entries.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-16 text-center align-middle">
-                      <div className="flex flex-col items-center justify-center text-slate-500 gap-4">
-                        <AlertTriangle size={28} className="text-amber-500" />
-                        <span className="font-medium">No telemetry records match the current filters.</span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  entries.map((entry) => (
-                    <motion.tr 
-                      key={`${entry.id}-${entry.domain}`}
-                      variants={{
-                        hidden: { opacity: 0, x: -10 },
-                        show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
-                      }}
-                      className="hover:bg-slate-50/50 transition-colors group align-middle"
+              <tbody className="divide-y divide-black/5 text-slate-800">
+                <AnimatePresence mode="wait">
+                  {loading ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <motion.tr 
+                        key={`skeleton-${i}`}
+                        initial={{ opacity: 0, x: -16, y: -8 }}
+                        animate={{ opacity: 1, x: 0, y: 0 }}
+                        exit={{ opacity: 0, x: 16, y: 8 }}
+                        transition={{ delay: i * 0.015, duration: 0.08 }}
+                        className="animate-pulse border-b border-black/5 last:border-0 align-middle"
+                      >
+                        <td className="py-4 pl-4"><div className="h-5 bg-slate-200/60 rounded-md w-48"></div></td>
+                        <td className="py-4"><div className="h-6 bg-slate-200/60 rounded-full w-24"></div></td>
+                        <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-20"></div></td>
+                        <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-16"></div></td>
+                        <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-32"></div></td>
+                        <td className="py-4"><div className="h-8 bg-slate-200/60 rounded-lg w-20 mx-auto"></div></td>
+                      </motion.tr>
+                    ))
+                  ) : entries.length === 0 ? (
+                    <motion.tr
+                      key="empty"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 6 }}
+                      transition={{ duration: 0.1 }}
                     >
-                      <td className="py-4 pl-4 align-middle">
-                        <div className="flex flex-col">
-                          <strong className="font-mono text-[15px] group-hover:text-sky-600 transition-colors">{entry.domain}</strong>
-                          <span className="text-xs text-slate-500 font-medium">{entry.confidence ? `${Math.round(entry.confidence * 100)}% confidence` : 'No confidence score'}</span>
+                      <td colSpan={6} className="py-16 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center text-slate-500 gap-4">
+                          <AlertTriangle size={28} className="text-amber-500" />
+                          <span className="font-medium">No telemetry records match the current filters.</span>
                         </div>
-                      </td>
-                      <td className="py-4 pr-4 align-middle">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
-                          entry.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
-                          entry.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-                          'bg-teal-100 text-teal-800 border border-teal-200'
-                        }`}>
-                          {entry.verdict === 'SAFE' ? <ShieldCheck size={14} /> : null}
-                          {entry.verdict === 'SUSPICIOUS' ? <TriangleAlert size={14} /> : null}
-                          {entry.verdict === 'MALICIOUS' ? <ShieldAlert size={14} /> : null}
-                          {entry.verdict}
-                        </span>
-                      </td>
-                      <td className="py-4 pr-4 align-middle font-medium text-slate-600">
-                        <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-bold uppercase">
-                          {entry.source || (entry.cache_hit ? 'cache' : '--')}
-                        </span>
-                      </td>
-                      <td className="py-4 pr-4 align-middle">
-                        <div className="flex items-center gap-3">
-                          <div className="w-16 h-2.5 rounded-full bg-slate-200 overflow-hidden shadow-inner">
-                            <div 
-                              className={`h-full rounded-full ${entry.score > 70 ? 'bg-rose-500' : entry.score > 30 ? 'bg-amber-500' : 'bg-teal-500'}`} 
-                              style={{ width: `${entry.score}%` }} 
-                            />
-                          </div>
-                          <span className="text-sm font-bold text-slate-600 w-6">{entry.score}</span>
-                        </div>
-                      </td>
-                      <td className="py-4 pr-4 align-middle text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
-                      <td className="py-4 align-middle text-center">
-                        <button
-                          className="inline-flex items-center justify-center px-5 py-2 bg-slate-50/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-95"
-                          type="button"
-                          onClick={() => navigate(`/analysis?domain=${encodeURIComponent(entry.domain)}`)}
-                        >
-                          Review
-                        </button>
                       </td>
                     </motion.tr>
-                  ))
-                )}
-              </motion.tbody>
+                  ) : (
+                    entries.map((entry, index) => (
+                      <motion.tr 
+                        key={`${entry.id}-${entry.domain}`}
+                        initial={{ opacity: 0, x: -20, y: -10 }}
+                        animate={{ opacity: 1, x: 0, y: 0 }}
+                        exit={{ opacity: 0, x: 20, y: 10 }}
+                        transition={{ 
+                          type: "spring", 
+                          stiffness: 400, 
+                          damping: 32, 
+                          delay: index * 0.018
+                        }}
+                        className="hover:bg-slate-50/50 transition-colors group align-middle"
+                      >
+                        <td className="py-4 pl-4 align-middle">
+                          <div className="flex flex-col">
+                            <strong className="font-mono text-[15px] group-hover:text-sky-600 transition-colors">{entry.domain}</strong>
+                            <span className="text-xs text-slate-500 font-medium">{entry.confidence ? `${Math.round(entry.confidence * 100)}% confidence` : 'No confidence score'}</span>
+                          </div>
+                        </td>
+                        <td className="py-4 pr-4 align-middle">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
+                            entry.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+                            entry.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                            'bg-teal-100 text-teal-800 border border-teal-200'
+                          }`}>
+                            {entry.verdict === 'SAFE' ? <ShieldCheck size={14} /> : null}
+                            {entry.verdict === 'SUSPICIOUS' ? <TriangleAlert size={14} /> : null}
+                            {entry.verdict === 'MALICIOUS' ? <ShieldAlert size={14} /> : null}
+                            {entry.verdict}
+                          </span>
+                        </td>
+                        <td className="py-4 pr-4 align-middle font-medium text-slate-600">
+                          <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-bold uppercase">
+                            {entry.source || (entry.cache_hit ? 'cache' : '--')}
+                          </span>
+                        </td>
+                        <td className="py-4 pr-4 align-middle">
+                          <div className="flex items-center gap-3">
+                            <div className="w-16 h-2.5 rounded-full bg-slate-200 overflow-hidden shadow-inner">
+                              <div 
+                                className={`h-full rounded-full ${entry.score > 70 ? 'bg-rose-500' : entry.score > 30 ? 'bg-amber-500' : 'bg-teal-500'}`} 
+                                style={{ width: `${entry.score}%` }} 
+                              />
+                            </div>
+                            <span className="text-sm font-bold text-slate-600 w-6">{entry.score}</span>
+                          </div>
+                        </td>
+                        <td className="py-4 pr-4 align-middle text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
+                        <td className="py-4 align-middle text-center">
+                          <button
+                            className="inline-flex items-center justify-center px-5 py-2 bg-slate-50/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm active:scale-95"
+                            type="button"
+                            onClick={() => navigate(`/analysis?domain=${encodeURIComponent(entry.domain)}`)}
+                          >
+                            Review
+                          </button>
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </AnimatePresence>
+              </tbody>
             </table>
           </div>
 
