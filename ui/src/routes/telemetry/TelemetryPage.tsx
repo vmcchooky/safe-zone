@@ -206,6 +206,7 @@ export function TelemetryPage() {
     // Base average per point (simulated)
     let baseMal = stats.malicious / count;
     let baseSusp = stats.suspicious / count;
+    let baseSafe = stats.safe / count;
     
     for (let i = count - 1; i >= 0; i--) {
       const d = new Date(now);
@@ -215,11 +216,13 @@ export function TelemetryPage() {
       const noise = 0.5 + Math.random();
       const m = Math.round(baseMal * noise);
       const s = Math.round(baseSusp * noise);
+      const sf = Math.round(baseSafe * noise);
       
       points.push({
         time: is24h ? d.toLocaleTimeString([], { hour: '2-digit' }) : d.toLocaleDateString([], { month: 'short', day: 'numeric' }),
         malicious: m,
         suspicious: s,
+        safe: sf,
         threats: m + s
       });
     }
@@ -386,9 +389,17 @@ export function TelemetryPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="colorThreats" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3}/>
+                    <linearGradient id="colorSafe" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#14b8a6" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#14b8a6" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorSuspicious" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4}/>
                       <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorMalicious" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
@@ -405,7 +416,9 @@ export function TelemetryPage() {
                     itemStyle={{ color: '#1e293b', fontWeight: 600 }}
                     labelStyle={{ color: '#64748b', marginBottom: '4px', fontWeight: 500 }}
                   />
-                  <Area type="monotone" dataKey="threats" name="Total Threats" stroke="#f43f5e" strokeWidth={3} fillOpacity={1} fill="url(#colorThreats)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} />
+                  <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#colorSafe)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} />
+                  <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorSuspicious)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} />
+                  <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#colorMalicious)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
