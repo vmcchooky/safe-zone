@@ -1,15 +1,13 @@
 import {
-  startTransition,
   useCallback,
-  useDeferredValue,
   useEffect,
   useMemo,
   useState,
   useRef,
 } from 'react';
+import useSWR from 'swr';
 import {
   AlertTriangle,
-  ArrowRight,
   Database,
   LoaderCircle,
   RefreshCcw,
@@ -35,7 +33,6 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -44,13 +41,16 @@ import {
   YAxis,
   Sector,
 } from 'recharts';
-import { motion, AnimatePresence, animate } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 
 import { apiFetch, messageFromError } from '../../lib/api';
 import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
 
 const PAGE_SIZE = 12;
+const CHART_MOTION_DURATION = 720;
+const CHART_MOTION_EASING = 'ease-in-out' as const;
+const SPRING_MOTION = { stiffness: 105, damping: 23, mass: 0.72 } as const;
 const PERIOD_OPTIONS = [
   { label: '24 hours', value: '24h' },
   { label: '7 days', value: '7d' },
@@ -92,45 +92,51 @@ function formatCompact(value: number) {
   }).format(value);
 }
 
-const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
-  const [animatedOuterRadius, setAnimatedOuterRadius] = useState(outerRadius);
-  const [animatedOpacity, setAnimatedOpacity] = useState(opacity);
+function useStableChartData<T>(value: T[]) {
+  const state = useRef({ signature: JSON.stringify(value), value });
+  const signature = JSON.stringify(value);
+
+  if (state.current.signature !== signature) {
+    state.current = { signature, value };
+  }
+
+  return state.current.value;
+}
+
+function AnimatedMetric({ value, suffix = '', precision = 0 }: { value: number; suffix?: string; precision?: number }) {
+  const target = useMotionValue(0);
+  const spring = useSpring(target, SPRING_MOTION);
+  const display = useTransform(spring, (current) => {
+    const multiplier = 10 ** precision;
+    const rounded = Math.max(0, Math.round(current * multiplier) / multiplier);
+    return suffix ? `${rounded.toFixed(precision)}${suffix}` : formatCompact(rounded);
+  });
 
   useEffect(() => {
-    const springConfig = isHovered 
-      ? { type: "spring" as const, stiffness: 140, damping: 18, mass: 0.8 }
-      : { type: "spring" as const, stiffness: 20, damping: 18, mass: 2.2 }; // Extremely slow, lazy return to baseline
+    target.set(value);
+  }, [target, value]);
 
-    const controlsRadius = animate(animatedOuterRadius, isHovered ? outerRadius + 12 : outerRadius, {
-      ...springConfig,
-      onUpdate: (latest) => setAnimatedOuterRadius(latest)
-    });
-    
-    const controlsOpacity = animate(animatedOpacity, opacity, {
-      duration: isHovered ? 0.25 : 0.85, // Highly extended fade back time for maximum smoothness
-      onUpdate: (latest) => setAnimatedOpacity(latest)
-    });
+  return <motion.span>{display}</motion.span>;
+}
 
-    return () => {
-      controlsRadius.stop();
-      controlsOpacity.stop();
-    };
-  }, [isHovered, outerRadius, opacity]);
-
+const PieSectorShape = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
   return (
     <Sector
       cx={cx}
       cy={cy}
       innerRadius={innerRadius}
-      outerRadius={animatedOuterRadius}
+      outerRadius={outerRadius}
       startAngle={startAngle}
       endAngle={endAngle}
       fill={fill}
       style={{ 
         outline: 'none', 
         cursor: 'pointer',
+        transform: isHovered ? 'scale(1.025)' : 'scale(1)',
+        transformOrigin: `${cx}px ${cy}px`,
+        transition: 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease-out',
       }}
-      opacity={animatedOpacity}
+      opacity={opacity}
       cornerRadius={cornerRadius}
     />
   );
@@ -138,13 +144,8 @@ const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, 
 
 export function TelemetryPage() {
   const navigate = useNavigate();
-  const [stats, setStats] = useState<TelemetryStats | null>(null);
-  const [entries, setEntries] = useState<TelemetryEntry[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const hoverTimeoutRef = useRef<any>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleMouseEnter = useCallback((index: number) => {
     if (hoverTimeoutRef.current) {
@@ -175,65 +176,51 @@ export function TelemetryPage() {
     }, 80);
   }, []);
 
+  useEffect(() => () => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+  }, []);
+
   const [period, setPeriod] = useState('24h');
   const [domain, setDomain] = useState('');
   const [verdict, setVerdict] = useState('');
   const [source, setSource] = useState('');
   const [page, setPage] = useState(1);
 
-  const deferredDomain = useDeferredValue(domain.trim());
-
-  const loadTelemetry = useCallback(async (showSpinner: boolean) => {
-    if (showSpinner) {
-      setRefreshing(true); // immediate — no transition delay
-    }
-
-    const params = new URLSearchParams({
-      period,
-      limit: String(PAGE_SIZE),
-      offset: String((page - 1) * PAGE_SIZE),
-    });
-    if (deferredDomain) params.set('domain', deferredDomain);
-    if (verdict)        params.set('verdict', verdict);
-    if (source)         params.set('source', source);
-
-    try {
-      // Fire both requests in parallel
-      const [statsResponse, recentResponse] = await Promise.all([
-        apiFetch<TelemetryStats>(`/v1/telemetry/stats?period=${period}`),
-        apiFetch<{ items: TelemetryEntry[] }>(`/v1/telemetry/recent?${params.toString()}`),
-      ]);
-
-      startTransition(() => {
-        setStats(statsResponse);
-        setEntries(recentResponse.items || []);
-        setError(null);
-      });
-    } catch (err) {
-      startTransition(() => {
-        setError(messageFromError(err));
-      });
-    } finally {
-      startTransition(() => {
-        setLoading(false);
-        setRefreshing(false);
-      });
-    }
-  }, [period, page, deferredDomain, verdict, source]);
+  const [debouncedDomain, setDebouncedDomain] = useState('');
 
   useEffect(() => {
-    void loadTelemetry(true);
-  }, [loadTelemetry]);
+    const timeout = setTimeout(() => setDebouncedDomain(domain.trim()), 250);
+    return () => clearTimeout(timeout);
+  }, [domain]);
 
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      void loadTelemetry(false);
-    }, 15000);
+  const params = new URLSearchParams({
+    period,
+    limit: String(PAGE_SIZE),
+    offset: String((page - 1) * PAGE_SIZE),
+  });
+  if (debouncedDomain) params.set('domain', debouncedDomain);
+  if (verdict)        params.set('verdict', verdict);
+  if (source)         params.set('source', source);
 
-    return () => window.clearInterval(timer);
-  }, [loadTelemetry]);
+  const statsUrl = `/v1/telemetry/stats?period=${period}`;
+  const recentUrl = `/v1/telemetry/recent?${params.toString()}`;
 
-  const distribution = useMemo(() => {
+  const swrOptions = { refreshInterval: 5000, keepPreviousData: true, refreshWhenHidden: false, refreshWhenOffline: false };
+  const { data: stats, error: statsErr, isValidating: refreshingStats, mutate: mutateStats } = useSWR<TelemetryStats>(statsUrl, apiFetch, swrOptions);
+  const { data: recentRes, error: recentErr, isValidating: refreshingRecent, mutate: mutateRecent } = useSWR<{ items: TelemetryEntry[] }>(recentUrl, apiFetch, swrOptions);
+
+  const entries = recentRes?.items || [];
+  const refreshing = refreshingStats || refreshingRecent;
+  const loadingRecent = !recentRes && !recentErr;
+  
+  const errorObj = statsErr || recentErr;
+  const error = errorObj ? messageFromError(errorObj) : null;
+
+  const loadTelemetry = useCallback(async () => {
+    await Promise.all([mutateStats(), mutateRecent()]);
+  }, [mutateStats, mutateRecent]);
+
+  const nextDistribution = useMemo(() => {
     if (!stats) {
       return [];
     }
@@ -241,40 +228,46 @@ export function TelemetryPage() {
       { name: 'Safe', value: stats.safe, fill: 'url(#pattern-safe-pie)' },
       { name: 'Suspicious', value: stats.suspicious, fill: 'url(#pattern-suspicious-pie)' },
       { name: 'Malicious', value: stats.malicious, fill: 'url(#pattern-malicious-pie)' },
-    ].sort((a, b) => b.value - a.value);
+    ];
   }, [stats]);
+  const distribution = useStableChartData(nextDistribution);
 
-  const scoreBands = useMemo(() => {
+  const nextScoreBands = useMemo(() => {
     if (!stats) {
       return [];
     }
 
-    const safe = stats.safe;
-    const suspicious = stats.suspicious;
-    const malicious = stats.malicious;
-
-    return [
-      { label: '0-20', name: 'Safe', value: Math.ceil(safe * 0.7), fill: 'url(#pattern-safe-bar)' },
-      { label: '21-40', name: 'Low Risk', value: Math.floor(safe * 0.3), fill: 'url(#pattern-safe-low-bar)' },
-      { label: '41-60', name: 'Suspicious', value: suspicious, fill: 'url(#pattern-suspicious-bar)' },
-      { label: '61-80', name: 'High Risk', value: Math.floor(malicious * 0.3), fill: 'url(#pattern-high-risk-bar)' },
-      { label: '81-100', name: 'Malicious', value: Math.ceil(malicious * 0.7), fill: 'url(#pattern-malicious-bar)' },
+    const names = ['Safe', 'Low Risk', 'Suspicious', 'High Risk', 'Malicious'];
+    const fills = [
+      'url(#pattern-safe-bar)',
+      'url(#pattern-safe-low-bar)',
+      'url(#pattern-suspicious-bar)',
+      'url(#pattern-high-risk-bar)',
+      'url(#pattern-malicious-bar)',
     ];
-  }, [stats]);
 
-  const trendData = useMemo(() => {
+    return (stats.score_bands || []).map((band, index) => ({
+      ...band,
+      name: names[index] || band.label,
+      fill: fills[index] || '#64748b',
+    }));
+  }, [stats]);
+  const scoreBands = useStableChartData(nextScoreBands);
+
+  const nextTrendData = useMemo(() => {
     if (!stats || !stats.trend) {
       return [];
     }
     
-    const is24h = period === '24h';
+    const dataPeriod = stats.period || period;
+    const is24h = dataPeriod === '24h';
     
     return stats.trend.map((point: any) => {
       const d = new Date(point.timestamp);
       
       let timeLabel = '';
       if (is24h) timeLabel = d.toLocaleTimeString([], { hour: '2-digit' });
-      else if (period === '7d') timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+      else if (dataPeriod === '7d') timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit' });
       else timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
       
       return {
@@ -286,13 +279,12 @@ export function TelemetryPage() {
       };
     });
   }, [stats, period]);
+  const trendData = useStableChartData(nextTrendData);
 
   const riskRatio = stats?.total
     ? Math.round(((stats.suspicious + stats.malicious) / stats.total) * 100)
     : 0;
   const safeRatio = stats?.total ? Math.round((stats.safe / stats.total) * 100) : 100;
-  const suspiciousRatio = stats?.total ? Math.round((stats.suspicious / stats.total) * 100) : 0;
-  const maliciousRatio = stats?.total ? Math.max(0, 100 - safeRatio - suspiciousRatio) : 0;
   const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
 
   const hoveredSlice = activeIndex !== null ? distribution[activeIndex] : null;
@@ -310,6 +302,7 @@ export function TelemetryPage() {
     if (hoveredSlice.name === 'Suspicious') centerColor = 'text-amber-600';
     if (hoveredSlice.name === 'Malicious') centerColor = 'text-rose-600';
   }
+  const centerNumericValue = Number(centerPercentage);
 
   return (
     <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8 overflow-x-hidden">
@@ -363,7 +356,7 @@ export function TelemetryPage() {
               transition={{ type: "spring", stiffness: 400, damping: 12 }}
               className="flex items-center gap-2 bg-slate-50/60 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-shadow duration-300 shadow-sm whitespace-nowrap"
               type="button" 
-              onClick={() => void loadTelemetry(true)}
+              onClick={() => void loadTelemetry()}
             >
               {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : <RefreshCcw size={20} className="text-sky-500" />}
               Refresh now
@@ -413,7 +406,7 @@ export function TelemetryPage() {
                 <span className="text-slate-500 font-semibold">{card.label}</span>
               </div>
               <div className="text-3xl font-extrabold text-slate-800">
-                {card.suffix ? `${card.value}${card.suffix}` : formatCompact(card.value)}
+                <AnimatedMetric value={card.value} suffix={card.suffix} />
               </div>
             </motion.div>
             );
@@ -423,7 +416,7 @@ export function TelemetryPage() {
         {/* Threat Pressure Bar */}
         <div className="bg-transparent border border-black/5 rounded-3xl p-8 shadow-sm relative">
           <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2" />
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full -translate-y-1/2 translate-x-1/2 opacity-50" />
           </div>
           <div className="flex justify-between items-end mb-6 relative z-10">
             <div>
@@ -432,21 +425,25 @@ export function TelemetryPage() {
                 <InfoTooltip content="Share of suspicious and malicious verdicts in the selected period." />
               </div>
             </div>
-            <strong className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-rose-500">{riskRatio}% risk</strong>
+            <strong className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-rose-500">
+              <AnimatedMetric value={riskRatio} suffix="% risk" />
+            </strong>
           </div>
           <div className="w-full h-5 rounded-full bg-slate-100 relative z-10 overflow-hidden shadow-inner flex">
             <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: `${100 - riskRatio}%` }}
-              transition={{ duration: 1, ease: "easeOut" }}
+              initial={false}
+              animate={{ flexGrow: 100 - riskRatio }}
+              transition={{ duration: CHART_MOTION_DURATION / 1000, ease: [0.22, 1, 0.36, 1] }}
               className="h-full bg-teal-500"
+              style={{ flexBasis: 0 }}
             />
             <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: `${riskRatio}%` }}
-              transition={{ duration: 1, ease: "easeOut" }}
+              initial={false}
+              animate={{ flexGrow: riskRatio }}
+              transition={{ duration: CHART_MOTION_DURATION / 1000, ease: [0.22, 1, 0.36, 1] }}
               className="h-full bg-rose-500"
               style={{
+                flexBasis: 0,
                 backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.35) 20%, transparent 20%)',
                 backgroundSize: '6px 6px'
               }}
@@ -520,9 +517,9 @@ export function TelemetryPage() {
                       return null;
                     }}
                   />
-                  <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} />
-                  <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} />
-                  <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} />
+                  <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                  <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                  <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -562,6 +559,10 @@ export function TelemetryPage() {
                     stroke="none"
                     startAngle={90}
                     endAngle={-270}
+                    isAnimationActive
+                    animationDuration={CHART_MOTION_DURATION}
+                    animationEasing={CHART_MOTION_EASING}
+                    animationMatchBy="index"
                     // @ts-ignore
                     shape={(props: any) => {
                       const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
@@ -569,7 +570,7 @@ export function TelemetryPage() {
                       const isAnyHovered = activeIndex !== null;
                       const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
                       return (
-                        <SpringSector
+                        <PieSectorShape
                           cx={cx}
                           cy={cy}
                           innerRadius={innerRadius}
@@ -593,19 +594,16 @@ export function TelemetryPage() {
                 </PieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
-                <AnimatePresence mode="wait">
-                  <motion.div 
-                    key={centerLabel}
-                    initial={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-                    animate={{ opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                    exit={{ opacity: 0, scale: 0.9, filter: 'blur(4px)' }}
-                    transition={{ duration: 0.2 }}
-                    className="flex flex-col items-center justify-center"
-                  >
-                    <span className="text-4xl font-extrabold text-slate-800">{centerPercentage}%</span>
-                    <span className={`text-sm font-bold uppercase tracking-wide ${centerColor}`}>{centerLabel}</span>
-                  </motion.div>
-                </AnimatePresence>
+                <motion.div
+                  animate={{ scale: activeIndex === null ? 1 : 1.025 }}
+                  transition={{ type: 'spring', stiffness: 180, damping: 20 }}
+                  className="flex flex-col items-center justify-center"
+                >
+                  <span className="text-4xl font-extrabold text-slate-800">
+                    <AnimatedMetric value={centerNumericValue} suffix="%" precision={1} />
+                  </span>
+                  <span className={`text-sm font-bold uppercase tracking-wide transition-colors duration-300 ${centerColor}`}>{centerLabel}</span>
+                </motion.div>
               </div>
             </div>
           </article>
@@ -654,7 +652,7 @@ export function TelemetryPage() {
                     itemStyle={{ color: '#1e293b', fontWeight: 600 }}
                     labelStyle={{ display: 'none' }}
                   />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48}>
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index">
                     {scoreBands.map((bar) => (
                       <Cell key={bar.label} fill={bar.fill} />
                     ))}
@@ -667,7 +665,7 @@ export function TelemetryPage() {
 
         {/* Table - Outer transparent frame */}
         <div className="border border-white/70 rounded-[2rem] p-1.5 shadow-sm">
-        <article className="bg-slate-50/70 backdrop-blur-xl rounded-3xl p-8">
+        <article className="bg-slate-50/95 rounded-3xl p-8">
           <div className="flex justify-between items-center mb-8">
             <div className="flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Recent activity</h2>
@@ -776,7 +774,7 @@ export function TelemetryPage() {
               </thead>
               <tbody className="divide-y divide-black/5 text-slate-800">
                 <AnimatePresence mode="wait">
-                  {loading ? (
+                  {loadingRecent ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <motion.tr 
                         key={`skeleton-${i}`}
@@ -813,14 +811,12 @@ export function TelemetryPage() {
                     entries.map((entry, index) => (
                       <motion.tr 
                         key={`${entry.id}-${entry.domain}`}
-                        initial={{ opacity: 0, x: -20, y: -10 }}
-                        animate={{ opacity: 1, x: 0, y: 0 }}
-                        exit={{ opacity: 0, x: 20, y: 10 }}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
                         transition={{ 
-                          type: "spring", 
-                          stiffness: 400, 
-                          damping: 32, 
-                          delay: index * 0.018
+                          duration: 0.2,
+                          delay: index * 0.015
                         }}
                         className="hover:bg-slate-50/50 transition-colors group align-middle"
                       >
@@ -886,8 +882,6 @@ export function TelemetryPage() {
                 type="button"
                 disabled={page === 1 || refreshing}
                 onClick={() => {
-                  setEntries([]);
-                  setRefreshing(true);
                   setPage((value) => Math.max(1, value - 1));
                 }}
               >
@@ -898,8 +892,6 @@ export function TelemetryPage() {
                 type="button"
                 disabled={entries.length < PAGE_SIZE || refreshing}
                 onClick={() => {
-                  setEntries([]);
-                  setRefreshing(true);
                   setPage((value) => value + 1);
                 }}
               >

@@ -96,6 +96,12 @@ type TrendPoint struct {
 	Threats    int64  `json:"threats"`
 }
 
+// ScoreBand is an aggregate count for one inclusive threat-score range.
+type ScoreBand struct {
+	Label string `json:"label"`
+	Value int64  `json:"value"`
+}
+
 // Stats contains aggregate telemetry statistics.
 type Stats struct {
 	Total      int64        `json:"total"`
@@ -104,6 +110,7 @@ type Stats struct {
 	Malicious  int64        `json:"malicious"`
 	CacheHits  int64        `json:"cache_hits"`
 	Period     string       `json:"period"`
+	ScoreBands []ScoreBand  `json:"score_bands"`
 	Trend      []TrendPoint `json:"trend"`
 }
 
@@ -602,30 +609,26 @@ func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 	if !d.Enabled() {
 		return Stats{}, nil
 	}
-	
+
 	now := time.Now()
 	var since time.Time
-	var bucketCount int
 	var bucketDuration time.Duration
 
 	switch period {
 	case "7d":
 		since = now.Add(-7 * 24 * time.Hour)
-		bucketCount = 42
 		bucketDuration = 4 * time.Hour
 	case "30d":
 		since = now.Add(-30 * 24 * time.Hour)
-		bucketCount = 60
 		bucketDuration = 12 * time.Hour
 	case "24h":
 		fallthrough
 	default:
 		period = "24h"
 		since = now.Add(-24 * time.Hour)
-		bucketCount = 24
 		bucketDuration = 1 * time.Hour
 	}
-	
+
 	sinceStr := since.UTC().Format(time.RFC3339)
 	row := d.db.QueryRowContext(ctx, `
 		SELECT
@@ -633,14 +636,38 @@ func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 			COALESCE(SUM(CASE WHEN verdict = 'SAFE' THEN 1 ELSE 0 END), 0) AS safe,
 			COALESCE(SUM(CASE WHEN verdict = 'SUSPICIOUS' THEN 1 ELSE 0 END), 0) AS suspicious,
 			COALESCE(SUM(CASE WHEN verdict = 'MALICIOUS' THEN 1 ELSE 0 END), 0) AS malicious,
-			COALESCE(SUM(cache_hit), 0) AS cache_hits
+			COALESCE(SUM(cache_hit), 0) AS cache_hits,
+			COALESCE(SUM(CASE WHEN score BETWEEN 0 AND 20 THEN 1 ELSE 0 END), 0) AS score_0_20,
+			COALESCE(SUM(CASE WHEN score BETWEEN 21 AND 40 THEN 1 ELSE 0 END), 0) AS score_21_40,
+			COALESCE(SUM(CASE WHEN score BETWEEN 41 AND 60 THEN 1 ELSE 0 END), 0) AS score_41_60,
+			COALESCE(SUM(CASE WHEN score BETWEEN 61 AND 80 THEN 1 ELSE 0 END), 0) AS score_61_80,
+			COALESCE(SUM(CASE WHEN score BETWEEN 81 AND 100 THEN 1 ELSE 0 END), 0) AS score_81_100
 		FROM analysis_log WHERE analyzed_at >= ?`, sinceStr)
 
 	var s Stats
-	if err := row.Scan(&s.Total, &s.Safe, &s.Suspicious, &s.Malicious, &s.CacheHits); err != nil {
+	var score0To20, score21To40, score41To60, score61To80, score81To100 int64
+	if err := row.Scan(
+		&s.Total,
+		&s.Safe,
+		&s.Suspicious,
+		&s.Malicious,
+		&s.CacheHits,
+		&score0To20,
+		&score21To40,
+		&score41To60,
+		&score61To80,
+		&score81To100,
+	); err != nil {
 		return Stats{}, fmt.Errorf("query stats: %w", err)
 	}
 	s.Period = period
+	s.ScoreBands = []ScoreBand{
+		{Label: "0-20", Value: score0To20},
+		{Label: "21-40", Value: score21To40},
+		{Label: "41-60", Value: score41To60},
+		{Label: "61-80", Value: score61To80},
+		{Label: "81-100", Value: score81To100},
+	}
 
 	// Query hourly data for the trend chart
 	trendRows, err := d.db.QueryContext(ctx, `
@@ -653,7 +680,7 @@ func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 		WHERE analyzed_at >= ?
 		GROUP BY hr
 		ORDER BY hr ASC`, sinceStr)
-	
+
 	if err != nil {
 		return Stats{}, fmt.Errorf("query trend: %w", err)
 	}
@@ -673,20 +700,22 @@ func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 			}
 		}
 	}
+	if err := trendRows.Err(); err != nil {
+		return Stats{}, fmt.Errorf("read trend: %w", err)
+	}
 
-	// Generate expected time buckets backwards from now to align nicely
+	// Generate every bucket intersecting the requested rolling period. Including
+	// the partial first and current buckets keeps the trend total consistent with
+	// the aggregate total instead of silently dropping the period edges.
 	var trend []TrendPoint
-	
-	// Start from the most recent full bucket boundary to align things cleanly
-	currentBucketTime := now.Truncate(1 * time.Hour)
-	// Fill buckets going back in time
-	for i := 0; i < bucketCount; i++ {
-		bucketStart := currentBucketTime.Add(-time.Duration(i) * bucketDuration)
-		
+	firstBucketTime := since.UTC().Truncate(bucketDuration)
+	currentBucketTime := now.UTC().Truncate(bucketDuration)
+	for bucketStart := firstBucketTime; !bucketStart.After(currentBucketTime); bucketStart = bucketStart.Add(bucketDuration) {
+
 		tp := TrendPoint{
 			Timestamp: bucketStart.Format(time.RFC3339),
 		}
-		
+
 		// Sum up the hours that fall into this bucket
 		// E.g., for a 4-hour bucket, check the 4 hours starting at bucketStart
 		hoursInBucket := int(bucketDuration / time.Hour)
@@ -700,8 +729,8 @@ func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 				tp.Threats += pt.Threats
 			}
 		}
-		
-		trend = append([]TrendPoint{tp}, trend...) // Prepend so it's chronological
+
+		trend = append(trend, tp)
 	}
 	s.Trend = trend
 

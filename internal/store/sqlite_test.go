@@ -479,6 +479,23 @@ func TestQueryStats(t *testing.T) {
 	if stats.CacheHits != 2 {
 		t.Fatalf("expected cache_hits 2, got %d", stats.CacheHits)
 	}
+	wantScoreBands := []ScoreBand{
+		{Label: "0-20", Value: 1},
+		{Label: "21-40", Value: 0},
+		{Label: "41-60", Value: 1},
+		{Label: "61-80", Value: 0},
+		{Label: "81-100", Value: 1},
+	}
+	if !reflect.DeepEqual(stats.ScoreBands, wantScoreBands) {
+		t.Fatalf("unexpected score bands: got %#v, want %#v", stats.ScoreBands, wantScoreBands)
+	}
+	var trendTotal int64
+	for _, point := range stats.Trend {
+		trendTotal += point.Safe + point.Suspicious + point.Malicious
+	}
+	if trendTotal != stats.Total {
+		t.Fatalf("trend total %d does not match aggregate total %d", trendTotal, stats.Total)
+	}
 }
 
 func TestTelemetryCleanup(t *testing.T) {

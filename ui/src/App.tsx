@@ -1,6 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import { Activity } from 'lucide-react';
 
 import { AppShell } from './components/AppShell';
 import { LoginScreen } from './components/LoginScreen';
@@ -44,32 +43,83 @@ export function ScreenLoader() {
 
   return (
     <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-50/80 backdrop-blur-md">
-      {/* @ts-ignore */}
-      <dotlottie-wc 
-        src="https://lottie.host/4d159429-fadb-46ea-8674-69760c81ad64/IRJeMelDRC.lottie" 
-        style={{ width: 450, height: 450 }} 
-        autoplay 
-        loop
-      ></dotlottie-wc>
+      {React.createElement('dotlottie-wc', {
+        src: "https://lottie.host/4d159429-fadb-46ea-8674-69760c81ad64/IRJeMelDRC.lottie",
+        style: { width: 450, height: 450 },
+        autoplay: true,
+        loop: true
+      })}
     </div>
   );
 }
 
-// --- Lazy Loading with Minimum Display Time ---
+// --- Custom Async Loader (Bypasses React Suspense to allow immediate URL updates) ---
 function lazyWithLoader<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
-  return lazy(() => {
-    // Break out of React Router's transition batching so the loader shows instantly on click
-    setTimeout(() => globalLoader.show(), 0);
-    // Enforce 1000ms minimum display so the animation looks smooth and doesn't just flash
-    const minDelay = new Promise(resolve => setTimeout(resolve, 1000));
-    return Promise.all([factory(), minDelay]).then(([moduleExports]) => {
-      globalLoader.hide();
-      return moduleExports;
-    }).catch(err => {
-      globalLoader.hide();
-      throw err;
-    });
-  });
+  let CachedComponent: T | null = null;
+  let pending: Promise<T> | null = null;
+
+  const load = () => {
+    if (CachedComponent) return Promise.resolve(CachedComponent);
+    if (!pending) {
+      pending = factory()
+        .then((moduleExports) => {
+          CachedComponent = moduleExports.default;
+          return moduleExports.default;
+        })
+        .finally(() => {
+          pending = null;
+        });
+    }
+    return pending;
+  };
+
+  return function AsyncWrapper(props: any) {
+    const [Component, setComponent] = useState<T | null>(() => CachedComponent);
+    const [loadError, setLoadError] = useState<unknown>(null);
+
+    useEffect(() => {
+      if (Component) return; // Already loaded from cache
+
+      let cancelled = false;
+      let loaderVisible = false;
+      let loaderFinished = false;
+      const loaderTimer = window.setTimeout(() => {
+        loaderVisible = true;
+        globalLoader.show();
+      }, 160);
+
+      const finishLoader = () => {
+        window.clearTimeout(loaderTimer);
+        if (loaderVisible && !loaderFinished) {
+          loaderFinished = true;
+          globalLoader.hide();
+        }
+      };
+
+      void load()
+        .then((LoadedComponent) => {
+          if (!cancelled) setComponent(() => LoadedComponent);
+        })
+        .catch((error) => {
+          if (!cancelled) setLoadError(error);
+        })
+        .finally(finishLoader);
+
+      return () => {
+        cancelled = true;
+        finishLoader();
+      };
+    }, [Component]);
+
+    if (loadError) throw loadError;
+
+    if (!Component) {
+      // Empty container while loading, global loader handles the visual overlay
+      return <div className="min-h-screen" />;
+    }
+
+    return <Component {...props} />;
+  };
 }
 
 const AnalysisPage = lazyWithLoader(() =>

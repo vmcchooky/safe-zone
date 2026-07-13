@@ -535,10 +535,8 @@ export function AnalysisPage() {
               className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_50px_100px_rgba(0,0,0,0.12)] border border-slate-50/60 overflow-hidden flex flex-col transform-gpu"
               style={{ willChange: "opacity, transform" }}
             >
-              {/* Glass background & Orbs */}
+              {/* Glass background */}
               <div className="absolute inset-0 bg-slate-50/80 backdrop-blur-3xl saturate-[1.6] -z-10" />
-              <div className="absolute top-0 right-0 w-96 h-96 bg-sky-400/25 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none -z-10" />
-              <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-400/25 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none -z-10" />
 
               {/* Header */}
               <div className="px-8 py-6 border-b border-black/5 flex justify-between items-center bg-slate-50/30">

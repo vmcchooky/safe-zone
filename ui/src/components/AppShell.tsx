@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import type { AuthSession } from '../lib/types';
 
+const preloadTelemetry = () => import('../routes/telemetry/TelemetryPage');
+
 export function AppShell({
   children,
   session,
@@ -55,6 +57,13 @@ export function AppShell({
       window.removeEventListener('mousemove', handleMouseMove);
       clearTimeout(hideTimeout);
     };
+  }, []);
+
+  useEffect(() => {
+    const preloadTimer = window.setTimeout(() => {
+      void preloadTelemetry();
+    }, 800);
+    return () => window.clearTimeout(preloadTimer);
   }, []);
 
   return (
@@ -114,7 +123,12 @@ export function AppShell({
                 <Shield size={20} />
                 <span className="dock-label">Analysis</span>
               </NavLink>
-              <NavLink to="/telemetry" className={({ isActive }) => isActive ? 'active' : ''}>
+              <NavLink
+                to="/telemetry"
+                className={({ isActive }) => isActive ? 'active' : ''}
+                onPointerEnter={() => void preloadTelemetry()}
+                onFocus={() => void preloadTelemetry()}
+              >
                 <RadioTower size={20} />
                 <span className="dock-label">Telemetry</span>
               </NavLink>
