@@ -4,7 +4,7 @@
 :root {
   color-scheme: light;
   font-family: "Nunito", "Segoe UI Variable Display", "Segoe UI", sans-serif;
-  --bg: #ffffff;
+  --bg: #f8fafc;
   --bg-panel: rgba(255, 255, 255, 0.75);
   --bg-panel-soft: rgba(255, 255, 255, 0.45);
   --line: rgba(0, 0, 0, 0.08);

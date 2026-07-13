@@ -28,7 +28,7 @@ export function InfoTooltip({ content, size = 18, position = 'top' }: { content:
           isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}
       >
-        <div className="bg-white/90 backdrop-blur-md text-slate-700 text-sm px-4 py-2.5 rounded-xl border border-sky-200 shadow-xl leading-relaxed font-medium text-center">
+        <div className="bg-slate-50/90 backdrop-blur-md text-slate-700 text-sm px-4 py-2.5 rounded-xl border border-sky-200 shadow-xl leading-relaxed font-medium text-center">
           {content}
         </div>
         {/* Arrow */}

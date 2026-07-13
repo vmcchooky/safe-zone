@@ -178,7 +178,7 @@ export function AnalysisPage() {
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="secure-login-wallet-example.com"
-              className="w-full bg-white/70 border border-slate-200 rounded-2xl !py-4 !pr-4 !pl-16 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm"
+              className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl !py-4 !pr-4 !pl-16 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm"
               spellCheck="false"
               autoComplete="off"
             />
@@ -186,7 +186,7 @@ export function AnalysisPage() {
           <button 
             type="submit"
             disabled={isScanning || !domain.trim()}
-            className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white px-8 py-4 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all duration-300 ease-out active:duration-150 shadow-md active:scale-90 active:translate-y-1"
+            className="bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-slate-50 px-8 py-4 rounded-2xl font-semibold flex items-center justify-center gap-2 transition-all duration-300 ease-out active:duration-150 shadow-md active:scale-90 active:translate-y-1"
           >
             {isScanning ? <Loader2 className="animate-spin" size={20} /> : <Zap size={20} />}
             Analyze
@@ -216,7 +216,7 @@ export function AnalysisPage() {
               }
             }}
             disabled={isScanning || !domain.trim()}
-            className="bg-white/60 hover:bg-white/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 disabled:opacity-50 disabled:pointer-events-none"
+            className="bg-slate-50/60 hover:bg-slate-50/90 hover:-translate-y-0.5 hover:scale-[1.02] border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-all duration-300 ease-out active:duration-150 shadow-sm active:scale-90 active:translate-y-1 disabled:opacity-50 disabled:pointer-events-none"
           >
             OSINT
           </button>
@@ -229,7 +229,7 @@ export function AnalysisPage() {
               key={d}
               type="button"
               onClick={() => setQuickDomain(d)}
-              className={`bg-white/50 hover:bg-white border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg transition-all duration-300 ease-out shadow-sm hover:border-sky-200 ${
+              className={`bg-slate-50/50 hover:bg-slate-50 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg transition-all duration-300 ease-out shadow-sm hover:border-sky-200 ${
                 i % 2 === 0 ? 'event-card-tilt-left hover:shadow-md' : 'event-card-tilt-right hover:shadow-md'
               }`}
             >
@@ -334,7 +334,7 @@ export function AnalysisPage() {
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-white border border-slate-200 rounded-2xl p-4">
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4">
                       <div className="text-sm font-semibold text-slate-500 mb-3 flex items-center gap-2">
                         <Fingerprint size={16} /> Signals Detected
                       </div>
@@ -352,7 +352,7 @@ export function AnalysisPage() {
                       </ul>
                     </div>
                     
-                    <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col">
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col">
                       <div className="text-sm font-semibold text-slate-500 mb-2 flex items-center gap-2">
                         <AlertTriangle size={16} /> OSINT Evidence
                       </div>
@@ -393,7 +393,7 @@ export function AnalysisPage() {
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.1 }}
-                         style={{ backgroundColor: '#F4C2C2', color: 'white' }}
+                         style={{ backgroundColor: '#F4C2C2', color: '#f8fafc' }}
                          onClick={async () => {
                            if (!result) return;
                            try {
@@ -417,7 +417,7 @@ export function AnalysisPage() {
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
                          transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.2 }}
-                         style={{ backgroundColor: '#64748b', color: 'white' }}
+                         style={{ backgroundColor: '#64748b', color: '#f8fafc' }}
                          onClick={async () => {
                            if (!result) return;
                            try {
@@ -457,7 +457,7 @@ export function AnalysisPage() {
                              setRawLoading(false);
                            }
                          }}
-                         className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
+                         className="bg-slate-50 hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl font-medium shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150">
                          View Raw Data
                        </motion.button>
                   </div>
@@ -483,7 +483,7 @@ export function AnalysisPage() {
             {recentAnalyses.map((item, i) => (
               <div 
                 key={i} 
-                className={`bg-white/70 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2 cursor-pointer shadow-sm group hover:border-sky-200 transition-all duration-300 ${
+                className={`bg-slate-50/70 border border-slate-100 rounded-2xl p-3 flex flex-col gap-2 cursor-pointer shadow-sm group hover:border-sky-200 transition-all duration-300 ${
                   i % 2 === 0 ? 'event-card-tilt-left hover:shadow-md' : 'event-card-tilt-right hover:shadow-md'
                 }`}
                 onClick={() => setQuickDomain(item.domain)}
@@ -532,25 +532,25 @@ export function AnalysisPage() {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
               transition={{ type: "spring", stiffness: 350, damping: 25 }}
-              className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_50px_100px_rgba(0,0,0,0.12)] border border-white/60 overflow-hidden flex flex-col transform-gpu"
+              className="relative w-full max-w-4xl max-h-[85vh] rounded-2xl shadow-[0_50px_100px_rgba(0,0,0,0.12)] border border-slate-50/60 overflow-hidden flex flex-col transform-gpu"
               style={{ willChange: "opacity, transform" }}
             >
               {/* Glass background & Orbs */}
-              <div className="absolute inset-0 bg-white/80 backdrop-blur-3xl saturate-[1.6] -z-10" />
+              <div className="absolute inset-0 bg-slate-50/80 backdrop-blur-3xl saturate-[1.6] -z-10" />
               <div className="absolute top-0 right-0 w-96 h-96 bg-sky-400/25 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none -z-10" />
               <div className="absolute bottom-0 left-0 w-96 h-96 bg-pink-400/25 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2 pointer-events-none -z-10" />
 
               {/* Header */}
-              <div className="px-8 py-6 border-b border-black/5 flex justify-between items-center bg-white/30">
+              <div className="px-8 py-6 border-b border-black/5 flex justify-between items-center bg-slate-50/30">
                 <h3 className="text-xl font-bold text-slate-800 flex items-center gap-3">
-                  <div className="p-2 bg-white/50 rounded-xl border border-white/80 shadow-sm">
+                  <div className="p-2 bg-slate-50/50 rounded-xl border border-slate-50/80 shadow-sm">
                      <Activity size={20} className="text-sky-600" />
                   </div>
                   Raw Telemetry Data
                 </h3>
                 <button 
                   onClick={() => setShowRawData(false)}
-                  className="p-2.5 rounded-full bg-white/40 hover:bg-white/60 border border-white/80 text-slate-600 transition-all active:scale-95 shadow-sm"
+                  className="p-2.5 rounded-full bg-slate-50/40 hover:bg-slate-50/60 border border-slate-50/80 text-slate-600 transition-all active:scale-95 shadow-sm"
                 >
                   <X size={18} strokeWidth={2.5} />
                 </button>
@@ -564,9 +564,9 @@ export function AnalysisPage() {
                     <p className="text-sm font-medium">Inspecting DNS, TLS & WHOIS...</p>
                   </div>
                 ) : rawData ? (
-                <div className="bg-white/30 rounded-xl border border-white/60 shadow-[0_8px_32px_rgba(0,0,0,0.02),inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
+                <div className="bg-slate-50/30 rounded-xl border border-slate-50/60 shadow-[0_8px_32px_rgba(0,0,0,0.02),inset_0_0_20px_rgba(255,255,255,0.2)] overflow-hidden">
                   <table className="w-full text-sm text-left border-collapse">
-                    <thead className="bg-white/45 text-slate-800 font-bold border-b border-black/5">
+                    <thead className="bg-slate-50/45 text-slate-800 font-bold border-b border-black/5">
                       <tr>
                         <th className="px-6 py-5 w-1/3">PROPERTY</th>
                         <th className="px-6 py-5 w-2/3">VALUE</th>
@@ -590,7 +590,7 @@ export function AnalysisPage() {
                           hidden: { opacity: 0, x: -10 },
                           show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                         }}
-                        className="hover:bg-white/50 transition-colors group"
+                        className="hover:bg-slate-50/50 transition-colors group"
                       >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Target Domain</td>
                         <td className="px-6 py-4 font-mono text-sm">{rawData.domain}</td>
@@ -600,7 +600,7 @@ export function AnalysisPage() {
                           hidden: { opacity: 0, x: -10 },
                           show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                         }}
-                        className="hover:bg-white/50 transition-colors group"
+                        className="hover:bg-slate-50/50 transition-colors group"
                       >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">DNS Status</td>
                         <td className="px-6 py-4">
@@ -617,7 +617,7 @@ export function AnalysisPage() {
                           hidden: { opacity: 0, x: -10 },
                           show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                         }}
-                        className="hover:bg-white/50 transition-colors group"
+                        className="hover:bg-slate-50/50 transition-colors group"
                       >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Nameservers</td>
                         <td className="px-6 py-4 font-mono text-sm">
@@ -629,7 +629,7 @@ export function AnalysisPage() {
                           hidden: { opacity: 0, x: -10 },
                           show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                         }}
-                        className="hover:bg-white/50 transition-colors group"
+                        className="hover:bg-slate-50/50 transition-colors group"
                       >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Certificate</td>
                         <td className="px-6 py-4">
@@ -657,7 +657,7 @@ export function AnalysisPage() {
                               hidden: { opacity: 0, x: -10 },
                               show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                             }}
-                            className="hover:bg-white/50 transition-colors group"
+                            className="hover:bg-slate-50/50 transition-colors group"
                           >
                             <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">TLS Subject</td>
                             <td className="px-6 py-4 font-mono text-sm">
@@ -671,7 +671,7 @@ export function AnalysisPage() {
                               hidden: { opacity: 0, x: -10 },
                               show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                             }}
-                            className="hover:bg-white/50 transition-colors group"
+                            className="hover:bg-slate-50/50 transition-colors group"
                           >
                             <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Certificate Validity</td>
                             <td className="px-6 py-4 text-sm">
@@ -686,7 +686,7 @@ export function AnalysisPage() {
                           hidden: { opacity: 0, x: -10 },
                           show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                         }}
-                        className="hover:bg-white/50 transition-colors group"
+                        className="hover:bg-slate-50/50 transition-colors group"
                       >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">WHOIS Registrar</td>
                         <td className="px-6 py-4 font-medium">
@@ -703,7 +703,7 @@ export function AnalysisPage() {
                             hidden: { opacity: 0, x: -10 },
                             show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                           }}
-                          className="hover:bg-white/50 transition-colors group"
+                          className="hover:bg-slate-50/50 transition-colors group"
                         >
                           <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Registration Date</td>
                           <td className="px-6 py-4 font-medium">
@@ -717,7 +717,7 @@ export function AnalysisPage() {
                           hidden: { opacity: 0, x: -10 },
                           show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 20 } }
                         }}
-                        className="hover:bg-white/50 transition-colors group"
+                        className="hover:bg-slate-50/50 transition-colors group"
                       >
                         <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Verdict</td>
                         <td className="px-6 py-4">
@@ -756,21 +756,21 @@ export function AnalysisPage() {
               exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.2 } }}
               layout
               className={`pointer-events-auto px-5 py-3 rounded-xl shadow-lg border backdrop-blur-md flex items-center gap-3 w-max max-w-sm ${
-                t.type === 'allow' ? 'bg-[#F4C2C2]/90 border-[#F4C2C2] text-white' :
-                t.type === 'block' ? 'bg-[#64748b]/90 border-[#64748b] text-white' :
+                t.type === 'allow' ? 'bg-[#F4C2C2]/90 border-[#F4C2C2] text-slate-50' :
+                t.type === 'block' ? 'bg-[#64748b]/90 border-[#64748b] text-slate-50' :
                 t.type === 'success' ? 'bg-teal-500/10 border-teal-500/20 text-teal-800' :
                 t.type === 'error' ? 'bg-rose-500/10 border-rose-500/20 text-rose-800' :
                 'bg-slate-800/10 border-slate-800/20 text-slate-800'
               }`}
             >
-              {t.type === 'allow' || t.type === 'success' ? <CheckCircle2 size={18} className={t.type === 'allow' ? "text-white shrink-0" : "text-teal-600 shrink-0"} /> :
-               t.type === 'block' ? <ShieldBan size={18} className="text-white shrink-0" /> :
+              {t.type === 'allow' || t.type === 'success' ? <CheckCircle2 size={18} className={t.type === 'allow' ? "text-slate-50 shrink-0" : "text-teal-600 shrink-0"} /> :
+               t.type === 'block' ? <ShieldBan size={18} className="text-slate-50 shrink-0" /> :
                t.type === 'error' ? <AlertTriangle size={18} className="text-rose-600 shrink-0" /> :
                <Info size={18} className="text-slate-600 shrink-0" />}
               <span className="font-semibold text-sm">{t.message}</span>
               <button 
                 onClick={() => setToasts(prev => prev.filter(toast => toast.id !== t.id))}
-                className={`ml-2 transition-colors ${t.type === 'allow' || t.type === 'block' ? 'text-white/70 hover:text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                className={`ml-2 transition-colors ${t.type === 'allow' || t.type === 'block' ? 'text-slate-50/70 hover:text-slate-50' : 'text-slate-400 hover:text-slate-700'}`}
               >
                 <X size={14} strokeWidth={3} />
               </button>

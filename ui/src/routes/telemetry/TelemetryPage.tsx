@@ -369,11 +369,11 @@ export function TelemetryPage() {
                   transition={{ type: "spring", stiffness: 500, damping: 15 }} 
                   className="w-36"
                 >
-                  <SelectTrigger className="bg-white/60 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none transition-shadow duration-300 shadow-sm w-full">
+                  <SelectTrigger className="bg-slate-50/60 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none transition-shadow duration-300 shadow-sm w-full">
                     <SelectValue placeholder="Period" />
                   </SelectTrigger>
                 </motion.div>
-                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
                   {PERIOD_OPTIONS.map((option, i) => (
                     <motion.div
                       key={option.value}
@@ -390,7 +390,7 @@ export function TelemetryPage() {
             <motion.button 
               whileTap={{ scale: 0.92 }}
               transition={{ type: "spring", stiffness: 400, damping: 12 }}
-              className="flex items-center gap-2 bg-white/60 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-shadow duration-300 shadow-sm whitespace-nowrap"
+              className="flex items-center gap-2 bg-slate-50/60 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-shadow duration-300 shadow-sm whitespace-nowrap"
               type="button" 
               onClick={() => void loadTelemetry(true)}
             >
@@ -433,7 +433,7 @@ export function TelemetryPage() {
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 24 }}
-              className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.04)] transition-shadow"
+              className="bg-slate-50/60 backdrop-blur-xl border border-slate-50 rounded-3xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_32px_rgba(0,0,0,0.04)] transition-shadow"
             >
               <div className="flex items-center gap-3 mb-4">
                 <div className={`p-2.5 rounded-xl ${colors[card.tone]}`}>
@@ -486,7 +486,7 @@ export function TelemetryPage() {
         {/* Charts Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Trend Chart */}
-          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-3">
+          <article className="bg-slate-50/60 backdrop-blur-xl border border-slate-50 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-3">
             <div className="mb-6 flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Threat trend</h2>
               <InfoTooltip content="Displays the volume of telemetry events classified as suspicious or malicious over the selected period. Useful for identifying abnormal traffic spikes." />
@@ -531,7 +531,7 @@ export function TelemetryPage() {
                             initial={{ opacity: 0, y: 8, scale: 0.95 }}
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                            className="bg-white/95 backdrop-blur-md border border-white/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
+                            className="bg-slate-50/95 backdrop-blur-md border border-slate-50/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
                           >
                             <p className="text-slate-500 font-medium text-sm mb-3">{label}</p>
                             <div className="space-y-2">
@@ -639,7 +639,7 @@ export function TelemetryPage() {
             </div>
           </article>
 
-          <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-2">
+          <article className="bg-slate-50/60 backdrop-blur-xl border border-slate-50 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)] flex flex-col h-[360px] lg:col-span-2">
             <div className="mb-6 flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Score distribution</h2>
               <InfoTooltip content="Groups all telemetry events into 5 specific threat score ranges (from 0 to 100), providing a detailed view of the risk landscape." />
@@ -695,7 +695,7 @@ export function TelemetryPage() {
         </div>
 
         {/* Table */}
-        <article className="bg-white/60 backdrop-blur-xl border border-white rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)]">
+        <article className="bg-slate-50/60 backdrop-blur-xl border border-slate-50 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.02)]">
           <div className="flex justify-between items-center mb-8">
             <div>
               <h2 className="text-xl font-bold text-slate-800 mb-1">Recent activity</h2>
@@ -718,7 +718,7 @@ export function TelemetryPage() {
                     setDomain(event.target.value);
                   }}
                   placeholder="Filter by domain fragment"
-                  className="w-full bg-white/70 border border-slate-200 rounded-xl !py-3 !pr-4 !pl-12 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm"
+                  className="w-full bg-slate-50/70 border border-slate-200 rounded-xl !py-3 !pr-4 !pl-12 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm"
                 />
               </div>
             </div>
@@ -737,11 +737,11 @@ export function TelemetryPage() {
                   whileTap={{ scale: 0.95, y: 0 }} 
                   transition={{ type: "spring", stiffness: 500, damping: 15 }}
                 >
-                  <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
+                  <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
                     <SelectValue placeholder="Verdict" />
                   </SelectTrigger>
                 </motion.div>
-                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
                   {VERDICT_OPTIONS.map((option, i) => (
                     <motion.div
                       key={option.label}
@@ -770,11 +770,11 @@ export function TelemetryPage() {
                   whileTap={{ scale: 0.95, y: 0 }} 
                   transition={{ type: "spring", stiffness: 500, damping: 15 }}
                 >
-                  <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
+                  <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
                     <SelectValue placeholder="Source" />
                   </SelectTrigger>
                 </motion.div>
-                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
                   {SOURCE_OPTIONS.map((option, i) => (
                     <motion.div
                       key={option.label}
@@ -843,7 +843,7 @@ export function TelemetryPage() {
                         hidden: { opacity: 0, x: -10 },
                         show: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 24 } }
                       }}
-                      className="hover:bg-white/50 transition-colors group"
+                      className="hover:bg-slate-50/50 transition-colors group"
                     >
                       <td className="py-4 pl-4">
                         <div className="flex flex-col">
@@ -882,7 +882,7 @@ export function TelemetryPage() {
                       <td className="py-4 pr-4 text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
                       <td className="py-4 pr-4 text-right">
                         <button
-                          className="inline-flex items-center gap-2 px-4 py-2 bg-white/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm group/btn active:scale-95"
+                          className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50/60 hover:bg-sky-50 text-sky-600 border border-sky-100 hover:border-sky-200 rounded-xl font-bold text-sm transition-all shadow-sm group/btn active:scale-95"
                           type="button"
                           onClick={() => navigate(`/analysis?domain=${encodeURIComponent(entry.domain)}`)}
                         >
@@ -903,7 +903,7 @@ export function TelemetryPage() {
             </span>
             <div className="flex gap-3 mr-4">
               <button
-                className="px-6 py-3 bg-white/60 hover:bg-white/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
+                className="px-6 py-3 bg-slate-50/60 hover:bg-slate-50/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
                 type="button"
                 disabled={page === 1 || refreshing}
                 onClick={() => setPage((value) => Math.max(1, value - 1))}
@@ -911,7 +911,7 @@ export function TelemetryPage() {
                 Previous
               </button>
               <button
-                className="px-6 py-3 bg-white/60 hover:bg-white/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
+                className="px-6 py-3 bg-slate-50/60 hover:bg-slate-50/90 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:pointer-events-none shadow-sm active:scale-95"
                 type="button"
                 disabled={entries.length < PAGE_SIZE || refreshing}
                 onClick={() => setPage((value) => value + 1)}
