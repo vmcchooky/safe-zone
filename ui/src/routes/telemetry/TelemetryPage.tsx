@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   TriangleAlert,
+  Zap,
   RadioTower,
 } from 'lucide-react';
 import {
