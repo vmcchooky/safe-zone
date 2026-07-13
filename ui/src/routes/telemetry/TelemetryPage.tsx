@@ -217,7 +217,7 @@ export function TelemetryPage() {
                   setPeriod(val);
                 }}
               >
-                <SelectTrigger className="bg-white/60 hover:bg-white/90 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:shadow-sm transition-all duration-300 shadow-sm group-hover:-translate-y-0.5 group-hover:scale-[1.02] w-36">
+                <SelectTrigger className="bg-white/60 hover:bg-white/90 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none hover:shadow-sm transition-all duration-300 shadow-sm group-hover:-translate-y-0.5 group-hover:scale-[1.02] w-36">
                   <SelectValue placeholder="Period" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
@@ -416,7 +416,7 @@ export function TelemetryPage() {
                   setVerdict(val);
                 }}
               >
-                <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm">
+                <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none hover:border-slate-300 transition-all shadow-sm">
                   <SelectValue placeholder="Verdict" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
@@ -436,7 +436,7 @@ export function TelemetryPage() {
                   setSource(val);
                 }}
               >
-                <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm">
+                <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-white/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none hover:border-slate-300 transition-all shadow-sm">
                   <SelectValue placeholder="Source" />
                 </SelectTrigger>
                 <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white/90 backdrop-blur-xl">
