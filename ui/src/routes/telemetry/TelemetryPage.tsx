@@ -91,24 +91,6 @@ function formatCompact(value: number) {
   }).format(value);
 }
 
-const renderActiveShape = (props: any) => {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
-  return (
-    <g>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius}
-        outerRadius={outerRadius + 8}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        style={{ outline: 'none', filter: 'drop-shadow(0px 8px 16px rgba(0,0,0,0.15))' }}
-        cornerRadius={6}
-      />
-    </g>
-  );
-};
 
 export function TelemetryPage() {
   const navigate = useNavigate();
@@ -534,9 +516,43 @@ export function TelemetryPage() {
                     cornerRadius={6}
                     stroke="none"
                     // @ts-ignore
-                    activeIndex={activeIndex ?? undefined}
-                    // @ts-ignore
-                    activeShape={renderActiveShape}
+                    shape={(props: any) => {
+                      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
+                      const isHovered = index === activeIndex;
+                      return (
+                        <motion.g
+                          initial={false}
+                          animate={{
+                            scale: isHovered ? 1.05 : 1,
+                          }}
+                          style={{
+                            transformOrigin: `${cx}px ${cy}px`,
+                          }}
+                          transition={{
+                            type: "spring",
+                            stiffness: 350,
+                            damping: 14,
+                            mass: 0.6
+                          }}
+                        >
+                          <Sector
+                            cx={cx}
+                            cy={cy}
+                            innerRadius={innerRadius}
+                            outerRadius={outerRadius}
+                            startAngle={startAngle}
+                            endAngle={endAngle}
+                            fill={fill}
+                            style={{ 
+                              outline: 'none', 
+                              filter: isHovered ? 'drop-shadow(0px 8px 20px rgba(0,0,0,0.18))' : 'none',
+                              cursor: 'pointer'
+                            }}
+                            cornerRadius={6}
+                          />
+                        </motion.g>
+                      );
+                    }}
                     onMouseEnter={(_, index) => setActiveIndex(index)}
                     onMouseLeave={() => setActiveIndex(null)}
                   >
