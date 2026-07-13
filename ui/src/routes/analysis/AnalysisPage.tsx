@@ -257,7 +257,7 @@ export function AnalysisPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Risk Dossier */}
-        <section className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[500px] flex flex-col">
+        <section className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[430px] flex flex-col">
           
           <div className="flex justify-between items-start mb-6 z-10">
             <div className="flex items-center gap-2">
@@ -468,7 +468,7 @@ export function AnalysisPage() {
         </section>
 
         {/* Event Stream */}
-        <aside className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[500px]">
+        <aside className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[430px]">
           <div className="flex justify-between items-start mb-6">
             <div>
               <div className="text-xs font-semibold tracking-wider uppercase text-slate-500 mb-1">Event Stream</div>

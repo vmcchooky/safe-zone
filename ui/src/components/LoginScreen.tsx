@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 import { useAuth } from '../auth/AuthProvider';
 import { messageFromError } from '../lib/api';
+import { ScreenLoader } from '../App';
 
 export function LoginScreen({ initialError }: { initialError: string | null }) {
   const { login } = useAuth();
@@ -128,6 +129,20 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
           )}
         </AnimatePresence>
       </motion.div>
+
+      {/* Show full screen Lottie when authenticating */}
+      <AnimatePresence>
+        {submitting && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[1000]"
+          >
+            <ScreenLoader />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

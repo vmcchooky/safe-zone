@@ -29,7 +29,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSession = useCallback(async () => {
     try {
-      const nextSession = await apiFetch<AuthSession>('/v1/auth/session');
+      const minDelay = new Promise(res => setTimeout(res, 1200));
+      const req = apiFetch<AuthSession>('/v1/auth/session');
+      const [nextSession] = await Promise.all([req, minDelay]);
       startTransition(() => {
         setSession(nextSession);
         setError(null);
@@ -59,7 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string) => {
     setError(null);
-    await apiJSON<{ status: string }>('/v1/auth/login', { username, password }, { method: 'POST' });
+    const minDelay = new Promise(res => setTimeout(res, 1200));
+    const req = apiJSON<{ status: string }>('/v1/auth/login', { username, password }, { method: 'POST' });
+    await Promise.all([req, minDelay]);
+    
     startTransition(() => {
       setLoading(true);
     });
