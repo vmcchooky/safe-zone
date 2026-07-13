@@ -43,10 +43,8 @@ import {
   YAxis,
   Sector,
 } from 'recharts';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, animate } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-
-const MotionSector = motion(Sector) as any;
 
 import { apiFetch, messageFromError } from '../../lib/api';
 import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
@@ -93,6 +91,49 @@ function formatCompact(value: number) {
   }).format(value);
 }
 
+const SpringSector = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
+  const [animatedOuterRadius, setAnimatedOuterRadius] = useState(outerRadius);
+  const [animatedOpacity, setAnimatedOpacity] = useState(opacity);
+
+  useEffect(() => {
+    const controlsRadius = animate(animatedOuterRadius, isHovered ? outerRadius + 12 : outerRadius, {
+      type: "spring",
+      stiffness: 140,
+      damping: 18,
+      mass: 0.8,
+      onUpdate: (latest) => setAnimatedOuterRadius(latest)
+    });
+    
+    const controlsOpacity = animate(animatedOpacity, opacity, {
+      duration: 0.25,
+      onUpdate: (latest) => setAnimatedOpacity(latest)
+    });
+
+    return () => {
+      controlsRadius.stop();
+      controlsOpacity.stop();
+    };
+  }, [isHovered, outerRadius, opacity]);
+
+  return (
+    <Sector
+      cx={cx}
+      cy={cy}
+      innerRadius={innerRadius}
+      outerRadius={animatedOuterRadius}
+      startAngle={startAngle}
+      endAngle={endAngle}
+      fill={fill}
+      style={{ 
+        outline: 'none', 
+        cursor: 'pointer',
+        filter: isHovered ? 'drop-shadow(0px 8px 24px rgba(0,0,0,0.16))' : 'none',
+      }}
+      opacity={animatedOpacity}
+      cornerRadius={cornerRadius}
+    />
+  );
+};
 
 export function TelemetryPage() {
   const navigate = useNavigate();
@@ -522,36 +563,20 @@ export function TelemetryPage() {
                       const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
                       const isHovered = index === activeIndex;
                       const isAnyHovered = activeIndex !== null;
-                      const targetOuterRadius = isHovered ? outerRadius + 12 : outerRadius;
                       const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
                       return (
-                        <g>
-                          <MotionSector
-                            cx={cx}
-                            cy={cy}
-                            innerRadius={innerRadius}
-                            // @ts-ignore
-                            animate={{
-                              outerRadius: targetOuterRadius,
-                              opacity: opacity,
-                            }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 140,
-                              damping: 18,
-                              mass: 0.8
-                            }}
-                            startAngle={startAngle}
-                            endAngle={endAngle}
-                            fill={fill}
-                            style={{ 
-                              outline: 'none', 
-                              cursor: 'pointer',
-                              filter: isHovered ? 'drop-shadow(0px 8px 24px rgba(0,0,0,0.16))' : 'none',
-                            }}
-                            cornerRadius={6}
-                          />
-                        </g>
+                        <SpringSector
+                          cx={cx}
+                          cy={cy}
+                          innerRadius={innerRadius}
+                          outerRadius={outerRadius}
+                          startAngle={startAngle}
+                          endAngle={endAngle}
+                          fill={fill}
+                          isHovered={isHovered}
+                          opacity={opacity}
+                          cornerRadius={6}
+                        />
                       );
                     }}
                     onMouseEnter={(_, index) => setActiveIndex(index)}
