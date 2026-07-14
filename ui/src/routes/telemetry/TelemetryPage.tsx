@@ -943,9 +943,9 @@ export function TelemetryPage() {
             </span>
             <div className="flex gap-3 mr-4">
               <button
-                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.96] disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-150 ease-out active:duration-75 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
-                disabled={page === 1 || refreshing}
+                disabled={page === 1}
                 onClick={() => {
                   setPage((value) => Math.max(1, value - 1));
                 }}
@@ -953,9 +953,9 @@ export function TelemetryPage() {
                 Previous
               </button>
               <button
-                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.96] disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-150 ease-out active:duration-75 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
-                disabled={entries.length < PAGE_SIZE || refreshing}
+                disabled={entries.length < PAGE_SIZE}
                 onClick={() => {
                   setPage((value) => value + 1);
                 }}
