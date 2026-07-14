@@ -18,6 +18,7 @@ export function AppShell({
 }) {
   const { logout } = useAuth();
   const [showNav, setShowNav] = useState(true);
+  const [spinCount, setSpinCount] = useState(0);
 
   // Auto-hide navigation logic based on mouse movement (macOS Dock style)
   useEffect(() => {
@@ -72,8 +73,26 @@ export function AppShell({
       {/* Top Floating Header for Brand and User Actions */}
       <div className="shell-floating-header">
         <div className="flex items-center" style={{ pointerEvents: 'auto' }}>
-          <div className="shrink-0 flex items-center justify-center shadow-sm relative z-10" style={{ width: 76, height: 76, borderRadius: '50%', backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}>
-            <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          <div 
+            className="shrink-0 flex items-center justify-center shadow-sm relative z-10 overflow-hidden cursor-pointer" 
+            style={{ width: 76, height: 76, borderRadius: '50%', backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.06)' }}
+            onClick={() => setSpinCount(c => c + 1)}
+          >
+            <motion.div 
+              className="absolute inset-[-50%] z-0"
+              initial={{ opacity: 0 }}
+              animate={spinCount > 0 ? { 
+                 rotate: spinCount * 360,
+                 opacity: [0, 1, 1, 0] 
+              } : { opacity: 0 }}
+              transition={{ 
+                 rotate: { duration: 1, ease: "linear" },
+                 opacity: { duration: 1, times: [0, 0.1, 0.9, 1] } 
+              }}
+              style={{ background: 'conic-gradient(from 0deg, #ff9a9e, #fecfef, white, #fecfef, #ff9a9e)' }}
+            />
+            <div className="absolute inset-[3px] bg-white rounded-full z-10" />
+            <img src={logoImg} alt="Logo" className="relative z-20" style={{ width: 'calc(100% - 6px)', height: 'calc(100% - 6px)', objectFit: 'cover', borderRadius: '50%' }} />
           </div>
           <div className="shell-brand relative z-0" style={{ padding: '6px 14px 6px 28px', borderRadius: '0 12px 12px 0', marginLeft: '-20px', backgroundColor: '#fff' }}>
             <div className="shell-brand-copy">
