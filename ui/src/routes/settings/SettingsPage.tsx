@@ -1,6 +1,10 @@
 import { useState, useEffect } from 'react';
 import type { FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+
 import { 
   Key, 
   Bell, 
@@ -58,6 +62,33 @@ interface Toast {
   type: 'ok' | 'err';
 }
 
+
+const coreSchema = z.object({
+  geminiKey: z.string().min(1, 'API key is required'),
+  webhookUrl: z.string().url('Must be a valid URL'),
+  retentionDays: z.number().min(1, 'Min 1 day').max(90, 'Max 90 days')
+});
+
+const guestSchema = z.object({
+  guestPassword: z.string().optional().refine(val => !val || val.length >= 6, 'Password must be at least 6 characters')
+});
+
+const scoringSchema = z.object({
+  punycode_score: z.number().min(0).max(100),
+  long_domain_length: z.number().min(1).max(255),
+  long_domain_score: z.number().min(0).max(100),
+  hyphen_count_threshold: z.number().min(1).max(50),
+  hyphen_score: z.number().min(0).max(100),
+  digit_ratio_threshold: z.number().min(0).max(1),
+  digit_ratio_score: z.number().min(0).max(100),
+  mixed_script_score: z.number().min(0).max(100),
+  keyword_base_score: z.number().min(0).max(100),
+  keyword_match_score: z.number().min(0).max(100),
+  brand_spoofing_score: z.number().min(0).max(100),
+  entropy_threshold: z.number().min(0).max(10),
+  entropy_score: z.number().min(0).max(100)
+});
+
 export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [savingCore, setSavingCore] = useState(false);
@@ -65,6 +96,12 @@ export function SettingsPage() {
   const [savingScoring, setSavingScoring] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const { confirm } = useDialog();
+  const { register: registerCore, handleSubmit: handleSubmitCore, formState: { errors: coreErrors }, reset: resetCore, watch: watchCore } = useForm<z.infer<typeof coreSchema>>({ resolver: zodResolver(coreSchema) });
+  const { register: registerGuest, handleSubmit: handleSubmitGuest, formState: { errors: guestErrors }, reset: resetGuest } = useForm<z.infer<typeof guestSchema>>({ resolver: zodResolver(guestSchema) });
+  const { register: registerScoring, handleSubmit: handleSubmitScoring, formState: { errors: scoringErrors }, reset: resetScoring } = useForm<z.infer<typeof scoringSchema>>({ resolver: zodResolver(scoringSchema) });
+  const geminiKeyValue = watchCore('geminiKey', '');
+  const webhookUrlValue = watchCore('webhookUrl', '');
+
 
   // Core settings states
   const [geminiKey, setGeminiKey] = useState('');
@@ -122,11 +159,9 @@ export function SettingsPage() {
       if (!res.ok) throw new Error('Failed to load settings');
       const data = await res.json();
 
-      setGeminiKey(data.settings.gemini_api_key || '');
-      setWebhookUrl(data.settings.agent_webhook_url || '');
-      setRetentionDays(data.settings.telemetry_retention_days || 30);
+      resetCore({ geminiKey: data.settings.gemini_api_key || '', webhookUrl: data.settings.agent_webhook_url || '', retentionDays: data.settings.telemetry_retention_days || 30 });
 
-      if (data.analysis_config) setScoring(data.analysis_config);
+      if (data.analysis_config) { setScoring(data.analysis_config); resetScoring(data.analysis_config); }
       if (data.guest_access) setGuest(data.guest_access);
 
       setLoading(false);
@@ -140,14 +175,11 @@ export function SettingsPage() {
     loadSettings();
   }, []);
 
-  const handleSaveCore = async (e: FormEvent) => {
-    e.preventDefault();
+  const handleSaveCore = async (data: z.infer<typeof coreSchema>) => {
     setSavingCore(true);
     try {
       const payload = {
-        telemetry_retention_days: retentionDays,
-        gemini_api_key: geminiKey.trim(),
-        agent_webhook_url: webhookUrl.trim()
+        telemetry_retention_days: data.retentionDays, gemini_api_key: data.geminiKey.trim(), agent_webhook_url: data.webhookUrl.trim()
       };
       const res = await fetch('/v1/settings', {
         method: 'POST',
@@ -167,13 +199,13 @@ export function SettingsPage() {
     }
   };
 
-  const handleSaveScoring = async () => {
+  const handleSaveScoring = async (data: z.infer<typeof scoringSchema>) => { const fullScoring = { ...scoring, ...data };
     setSavingScoring(true);
     try {
       const res = await fetch('/v1/config/analysis', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(scoring)
+        body: JSON.stringify(fullScoring)
       });
       if (!res.ok) {
         const error = await res.json();
@@ -206,16 +238,14 @@ export function SettingsPage() {
     }
   };
 
-  const handleSaveGuest = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!guestPassword && !guest.exists) {
+  const handleSaveGuest = async (data: z.infer<typeof guestSchema>) => { if (!data.guestPassword && !guest.exists) {
       showToast('Password is required to initialize guest access', 'err');
       return;
     }
     setSavingGuest(true);
     try {
       const payload: Record<string, any> = { enabled: guest.enabled };
-      if (guestPassword) payload.password = guestPassword;
+      if (data.guestPassword) payload.password = data.guestPassword;
 
       const res = await fetch('/v1/settings/guest-access', {
         method: 'POST',
@@ -227,7 +257,7 @@ export function SettingsPage() {
         throw new Error(error.error || 'Failed to update guest access');
       }
       showToast('Guest access configurations saved', 'ok');
-      setGuestPassword('');
+      resetGuest({ guestPassword: '' });
       loadSettings();
     } catch (err: any) {
       showToast(err.message, 'err');
@@ -353,7 +383,7 @@ export function SettingsPage() {
           
           {/* Core Integrations */}
           <motion.form 
-            onSubmit={handleSaveCore}
+            onSubmit={handleSubmitCore(handleSaveCore)}
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
             transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
@@ -380,19 +410,19 @@ export function SettingsPage() {
                 </div>
                 <div className="relative">
                   <input 
-                    type={showApiKey && !geminiKey.includes('*') ? "text" : "password"}
-                    value={geminiKey}
-                    onChange={(e) => setGeminiKey(e.target.value)}
+                    type={showApiKey && !geminiKeyValue.includes('*') ? "text" : "password"}
+                    {...registerCore("geminiKey")}
                     placeholder="Enter API Key"
                     className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-mono text-slate-700"
                     autoComplete="off"
                   />
+{coreErrors.geminiKey && <p className="text-red-500 text-xs mt-1">{coreErrors.geminiKey.message}</p>}
                   <button 
                     type="button"
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                     onClick={() => setShowApiKey(!showApiKey)}
                   >
-                    {showApiKey && !geminiKey.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {showApiKey && !geminiKeyValue.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
                 
@@ -421,19 +451,19 @@ export function SettingsPage() {
                 </div>
                 <div className="relative">
                   <input 
-                    type={showWebhook && !webhookUrl.includes('*') ? "text" : "password"}
-                    value={webhookUrl}
-                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    type={showWebhook && !webhookUrlValue.includes('*') ? "text" : "password"}
+                    {...registerCore("webhookUrl")}
                     placeholder="https://..."
                     className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm font-mono text-slate-700"
                     autoComplete="off"
                   />
+{coreErrors.webhookUrl && <p className="text-red-500 text-xs mt-1">{coreErrors.webhookUrl.message}</p>}
                   <button 
                     type="button"
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                     onClick={() => setShowWebhook(!showWebhook)}
                   >
-                    {showWebhook && !webhookUrl.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
+                    {showWebhook && !webhookUrlValue.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
                 
@@ -465,11 +495,11 @@ export function SettingsPage() {
                     type="number"
                     min={1}
                     max={90}
-                    value={retentionDays}
-                    onChange={(e) => setRetentionDays(parseInt(e.target.value) || 30)}
+                    {...registerCore("retentionDays", { valueAsNumber: true })}
                     className="w-16 text-center px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-medium text-slate-700 text-sm"
                   />
                   <span className="text-xs font-medium text-slate-500">Days</span>
+{coreErrors.retentionDays && <p className="text-red-500 text-xs ml-2">{coreErrors.retentionDays.message}</p>}
                 </div>
               </div>
             </div>
@@ -488,7 +518,7 @@ export function SettingsPage() {
 
           {/* Access Control */}
           <motion.form 
-            onSubmit={handleSaveGuest}
+            onSubmit={handleSubmitGuest(handleSaveGuest)}
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
             transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
@@ -530,12 +560,12 @@ export function SettingsPage() {
                   <div className="relative">
                     <input 
                       type={showGuestPassword ? "text" : "password"}
-                      value={guestPassword}
-                      onChange={(e) => setGuestPassword(e.target.value)}
+                      {...registerGuest("guestPassword")}
                       placeholder="Enter password..."
                       className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-mono text-slate-700"
                       autoComplete="new-password"
                     />
+{guestErrors.guestPassword && <p className="text-red-500 text-xs mt-1">{guestErrors.guestPassword.message}</p>}
                     <button 
                       type="button"
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
@@ -591,7 +621,7 @@ export function SettingsPage() {
                   Reset Defaults
                 </button>
                 <button 
-                  onClick={handleSaveScoring}
+                  onClick={handleSubmitScoring(handleSaveScoring)}
                   disabled={savingScoring}
                   className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50"
                 >
@@ -612,22 +642,28 @@ export function SettingsPage() {
                 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
                   <label className="text-xs font-medium text-slate-600">Punycode Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.punycode_score} onChange={(e) => updateScoringField('punycode_score', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("punycode_score", { valueAsNumber: true })} />
+{scoringErrors.punycode_score && <span className="text-red-500 text-[10px]">punycode_score</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Mixed Script Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.mixed_script_score} onChange={(e) => updateScoringField('mixed_script_score', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("mixed_script_score", { valueAsNumber: true })} />
+{scoringErrors.mixed_script_score && <span className="text-red-500 text-[10px]">mixed_script_score</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Long Domain (Chars)</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.long_domain_length} onChange={(e) => updateScoringField('long_domain_length', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("long_domain_length", { valueAsNumber: true })} />
+{scoringErrors.long_domain_length && <span className="text-red-500 text-[10px]">long_domain_length</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Long Domain Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.long_domain_score} onChange={(e) => updateScoringField('long_domain_score', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("long_domain_score", { valueAsNumber: true })} />
+{scoringErrors.long_domain_score && <span className="text-red-500 text-[10px]">long_domain_score</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Hyphen Threshold</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.hyphen_count_threshold} onChange={(e) => updateScoringField('hyphen_count_threshold', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("hyphen_count_threshold", { valueAsNumber: true })} />
+{scoringErrors.hyphen_count_threshold && <span className="text-red-500 text-[10px]">hyphen_count_threshold</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Hyphen Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.hyphen_score} onChange={(e) => updateScoringField('hyphen_score', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("hyphen_score", { valueAsNumber: true })} />
+{scoringErrors.hyphen_score && <span className="text-red-500 text-[10px]">hyphen_score</span>}
                 </div>
               </div>
 
@@ -640,16 +676,20 @@ export function SettingsPage() {
                 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
                   <label className="text-xs font-medium text-slate-600">Digit Ratio Threshold</label>
-                  <input type="number" step="0.05" className="settings-num-input text-sm" value={scoring.digit_ratio_threshold} onChange={(e) => updateScoringField('digit_ratio_threshold', parseFloat(e.target.value) || 0)} />
+                  <input type="number" step="0.05" className="settings-num-input text-sm" {...registerScoring("digit_ratio_threshold", { valueAsNumber: true })} />
+{scoringErrors.digit_ratio_threshold && <span className="text-red-500 text-[10px]">digit_ratio_threshold</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Digit Ratio Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.digit_ratio_score} onChange={(e) => updateScoringField('digit_ratio_score', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("digit_ratio_score", { valueAsNumber: true })} />
+{scoringErrors.digit_ratio_score && <span className="text-red-500 text-[10px]">digit_ratio_score</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Entropy Threshold</label>
-                  <input type="number" step="0.1" className="settings-num-input text-sm" value={scoring.entropy_threshold} onChange={(e) => updateScoringField('entropy_threshold', parseFloat(e.target.value) || 0)} />
+                  <input type="number" step="0.1" className="settings-num-input text-sm" {...registerScoring("entropy_threshold", { valueAsNumber: true })} />
+{scoringErrors.entropy_threshold && <span className="text-red-500 text-[10px]">entropy_threshold</span>}
                   
                   <label className="text-xs font-medium text-slate-600">Entropy Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" value={scoring.entropy_score} onChange={(e) => updateScoringField('entropy_score', parseInt(e.target.value) || 0)} />
+                  <input type="number" className="settings-num-input text-sm" {...registerScoring("entropy_score", { valueAsNumber: true })} />
+{scoringErrors.entropy_score && <span className="text-red-500 text-[10px]">entropy_score</span>}
                 </div>
               </div>
 
@@ -663,15 +703,18 @@ export function SettingsPage() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Keyword Base Score</label>
-                    <input type="number" className="settings-num-input text-sm" value={scoring.keyword_base_score} onChange={(e) => updateScoringField('keyword_base_score', parseInt(e.target.value) || 0)} />
+                    <input type="number" className="settings-num-input text-sm" {...registerScoring("keyword_base_score", { valueAsNumber: true })} />
+{scoringErrors.keyword_base_score && <span className="text-red-500 text-[10px]">keyword_base_score</span>}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Match Multiplier</label>
-                    <input type="number" className="settings-num-input text-sm" value={scoring.keyword_match_score} onChange={(e) => updateScoringField('keyword_match_score', parseInt(e.target.value) || 0)} />
+                    <input type="number" className="settings-num-input text-sm" {...registerScoring("keyword_match_score", { valueAsNumber: true })} />
+{scoringErrors.keyword_match_score && <span className="text-red-500 text-[10px]">keyword_match_score</span>}
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">Brand Spoof Penalty</label>
-                    <input type="number" className="settings-num-input text-sm" value={scoring.brand_spoofing_score} onChange={(e) => updateScoringField('brand_spoofing_score', parseInt(e.target.value) || 0)} />
+                    <input type="number" className="settings-num-input text-sm" {...registerScoring("brand_spoofing_score", { valueAsNumber: true })} />
+{scoringErrors.brand_spoofing_score && <span className="text-red-500 text-[10px]">brand_spoofing_score</span>}
                   </div>
                 </div>
 

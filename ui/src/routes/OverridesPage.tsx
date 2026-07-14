@@ -2,9 +2,20 @@ import { useState } from 'react';
 import useSWR from 'swr';
 import { apiFetch, apiJSON, messageFromError } from '../lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 import { ShieldAlert, Plus, Trash2, CheckCircle2, XCircle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { useDialog } from '../components/DialogContext';
+
+const overrideSchema = z.object({
+  domain: z.string().min(1, 'Domain is required').regex(/^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/, 'Invalid domain format'),
+  action: z.enum(['allow', 'block']),
+  reason: z.string().max(200, 'Reason too long').optional(),
+});
+
+type OverrideFormValues = z.infer<typeof overrideSchema>;
 
 interface Override {
   domain: string;
@@ -18,31 +29,33 @@ export function OverridesPage() {
   const { data, error, mutate } = useSWR<{ items: Override[] }>('/v1/overrides', apiFetch, { keepPreviousData: true });
   const { alert, confirm } = useDialog();
 
-  const [newDomain, setNewDomain] = useState('');
-  const [newAction, setNewAction] = useState<'allow' | 'block'>('block');
-  const [newReason, setNewReason] = useState('');
+  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<OverrideFormValues>({
+    resolver: zodResolver(overrideSchema),
+    defaultValues: {
+      domain: '',
+      action: 'block',
+      reason: '',
+    }
+  });
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
   
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 12;
 
-  const handleAddOverride = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDomain.trim()) return;
-
+  const onSubmit = async (data: OverrideFormValues) => {
     setIsSubmitting(true);
     setSubmitError('');
 
     try {
       await apiJSON('/v1/overrides', {
-        domain: newDomain.trim(),
-        action: newAction,
-        reason: newReason.trim() || 'Manual override',
+        domain: data.domain.trim(),
+        action: data.action,
+        reason: data.reason?.trim() || 'Manual override',
       }, { method: 'POST' });
       
-      setNewDomain('');
-      setNewReason('');
+      reset();
       mutate();
     } catch (err) {
       setSubmitError(messageFromError(err));
@@ -99,43 +112,49 @@ export function OverridesPage() {
           Add New Override
         </h2>
         
-        <form onSubmit={handleAddOverride} className="flex items-start gap-4">
-          <div className="w-72 shrink-0 space-y-2">
+        <form onSubmit={handleSubmit(onSubmit)} className="flex items-start gap-4">
+          <div className="w-72 shrink-0 space-y-1">
             <input
               type="text"
               placeholder="e.g., trusted-domain.com"
-              value={newDomain}
-              onChange={(e) => setNewDomain(e.target.value)}
-              className="w-full h-11 px-4 bg-white/80 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+              {...register('domain')}
+              className={`w-full h-11 px-4 bg-white/80 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-all shadow-sm ${errors.domain ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500' : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'}`}
               disabled={isSubmitting}
             />
+            {errors.domain && <p className="text-rose-500 text-xs pl-1">{errors.domain.message}</p>}
           </div>
 
-          <motion.button
-            whileHover={{ scale: 1.02, y: -1 }}
-            whileTap={{ scale: 0.95, y: 0 }}
-            transition={{ type: "spring", stiffness: 500, damping: 15 }}
-            type="button"
-            onClick={() => setNewAction(prev => prev === 'allow' ? 'block' : 'allow')}
-            className={`w-32 h-11 rounded-xl text-sm font-medium transition-colors duration-200 shadow-sm flex items-center justify-center gap-2 shrink-0 ${
-              newAction === 'allow' 
-                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' 
-                : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
-            }`}
-          >
-            {newAction === 'allow' ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-            {newAction === 'allow' ? 'Allow' : 'Block'}
-          </motion.button>
+          <Controller
+            name="action"
+            control={control}
+            render={({ field }) => (
+              <motion.button
+                whileHover={{ scale: 1.02, y: -1 }}
+                whileTap={{ scale: 0.95, y: 0 }}
+                transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                type="button"
+                onClick={() => field.onChange(field.value === 'allow' ? 'block' : 'allow')}
+                className={`w-32 h-11 rounded-xl text-sm font-medium transition-colors duration-200 shadow-sm flex items-center justify-center gap-2 shrink-0 ${
+                  field.value === 'allow' 
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' 
+                    : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                }`}
+              >
+                {field.value === 'allow' ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {field.value === 'allow' ? 'Allow' : 'Block'}
+              </motion.button>
+            )}
+          />
 
-          <div className="flex-1 space-y-2">
+          <div className="flex-1 space-y-1">
             <input
               type="text"
               placeholder="Reason for override..."
-              value={newReason}
-              onChange={(e) => setNewReason(e.target.value)}
-              className="w-full h-11 px-4 bg-white/80 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all shadow-sm"
+              {...register('reason')}
+              className={`w-full h-11 px-4 bg-white/80 border rounded-xl text-sm focus:outline-none focus:ring-2 transition-all shadow-sm ${errors.reason ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500' : 'border-slate-200 focus:ring-blue-500/20 focus:border-blue-500'}`}
               disabled={isSubmitting}
             />
+            {errors.reason && <p className="text-rose-500 text-xs pl-1">{errors.reason.message}</p>}
           </div>
 
           <motion.button
@@ -143,7 +162,7 @@ export function OverridesPage() {
             whileTap={{ scale: 0.95, y: 0 }}
             transition={{ type: "spring", stiffness: 500, damping: 15 }}
             type="submit"
-            disabled={!newDomain.trim() || isSubmitting}
+            disabled={isSubmitting}
             className="w-24 h-11 bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:opacity-50 disabled:pointer-events-none transition-colors duration-200 shadow-sm flex items-center justify-center shrink-0"
           >
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}

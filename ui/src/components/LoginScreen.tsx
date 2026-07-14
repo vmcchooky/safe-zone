@@ -2,44 +2,37 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { ArrowRight, KeyRound, LoaderCircle, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
 
 import { useAuth } from '../auth/AuthProvider';
 import { messageFromError } from '../lib/api';
 import { ScreenLoader } from '../App';
 
+const loginSchema = z.object({
+  username: z.string().min(3, 'Username must be at least 3 characters.').regex(/^[a-zA-Z0-9_-]+$/, 'Invalid username: only alphanumeric characters, dashes, and underscores are allowed.'),
+  password: z.string().min(6, 'Password must be at least 6 characters.')
+});
+
+type LoginFormValues = z.infer<typeof loginSchema>;
+
 export function LoginScreen({ initialError }: { initialError: string | null }) {
   const { login } = useAuth();
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(initialError);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    
-    const trimmedUsername = username.trim();
-    if (!trimmedUsername) {
-      setFormError('Username is required.');
-      return;
-    }
-    
-    // Validate username to prevent injection (only allow alphanumeric, dash, underscore)
-    const usernameRegex = /^[a-zA-Z0-9_-]+$/;
-    if (!usernameRegex.test(trimmedUsername)) {
-      setFormError('Invalid username: only alphanumeric characters, dashes, and underscores are allowed.');
-      return;
-    }
-    
-    if (!password) {
-      setFormError('Password is required.');
-      return;
-    }
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: { username: '', password: '' }
+  });
 
+  const onSubmit = async (data: LoginFormValues) => {
     setSubmitting(true);
     setFormError(null);
 
     try {
-      await login(trimmedUsername, password);
+      await login(data.username, data.password);
     } catch (error) {
       setFormError(messageFromError(error));
     } finally {
@@ -78,17 +71,17 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
         
         <h1 className="text-4xl font-semibold text-slate-900 mb-8 tracking-tight">Operator sign-in</h1>
 
-        <form className="space-y-5" onSubmit={handleSubmit}>
+        <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-2">
             <label htmlFor="auth-username" className="text-sm font-medium text-slate-600 pl-1">Username</label>
             <input
               id="auth-username"
               autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
               placeholder="Enter your username"
-              className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-sky-500/15 focus:border-sky-500/50 transition-all shadow-sm hover:border-slate-300"
+              {...register('username')}
+              className={`w-full bg-white border rounded-2xl px-4 py-3.5 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-4 transition-all shadow-sm ${errors.username ? 'border-rose-400 focus:ring-rose-500/15 focus:border-rose-500/50' : 'border-slate-200 focus:ring-sky-500/15 focus:border-sky-500/50 hover:border-slate-300'}`}
             />
+            {errors.username && <p className="text-rose-500 text-sm pl-1">{errors.username.message}</p>}
           </div>
 
           <div className="space-y-2">
@@ -97,11 +90,11 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
               id="auth-password"
               type="password"
               autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
               placeholder="Enter your access secret"
-              className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3.5 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-4 focus:ring-sky-500/15 focus:border-sky-500/50 transition-all shadow-sm hover:border-slate-300"
+              {...register('password')}
+              className={`w-full bg-white border rounded-2xl px-4 py-3.5 text-slate-900 placeholder:text-slate-500 focus:outline-none focus:ring-4 transition-all shadow-sm ${errors.password ? 'border-rose-400 focus:ring-rose-500/15 focus:border-rose-500/50' : 'border-slate-200 focus:ring-sky-500/15 focus:border-sky-500/50 hover:border-slate-300'}`}
             />
+            {errors.password && <p className="text-rose-500 text-sm pl-1">{errors.password.message}</p>}
           </div>
 
           <button 

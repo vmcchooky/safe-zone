@@ -1,6 +1,27 @@
 import { useState } from 'react';
 import { Shield, Activity, Server, Database, Plus, Trash2, Play, Users, Link as LinkIcon, AlertCircle, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+
+const mappingSchema = z.object({
+  mapType: z.enum(['ip', 'cidr', 'client_id']),
+  mapValue: z.string().min(1, 'Mapping value is required'),
+  mapGroupId: z.string().min(1, 'Group is required')
+}).superRefine((data, ctx) => {
+  if (data.mapType === 'ip') {
+    if (!/^((25[0-5]|(2[0-4]|1\d|[1-9]|)\d)\.?\b){4}$/.test(data.mapValue) && !/^[a-fA-F0-9:]+$/.test(data.mapValue)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid IP address', path: ['mapValue'] });
+    }
+  } else if (data.mapType === 'cidr') {
+    if (!/^([0-9]{1,3}\.){3}[0-9]{1,3}(\/([0-9]|[1-2][0-9]|3[0-2]))$/.test(data.mapValue)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Invalid CIDR', path: ['mapValue'] });
+    }
+  }
+});
+
+type MappingFormValues = z.infer<typeof mappingSchema>;
 import useSWR from 'swr';
 import { apiFetch, apiJSON } from '../lib/api';
 import type { AgentStatus, PolicyGroup, ClientMapping } from '../lib/types';
@@ -28,9 +49,11 @@ export function EndpointsPage() {
   const [editingGroup, setEditingGroup] = useState<PolicyGroup | null>(null);
 
   // Mapping Form State
-  const [mapType, setMapType] = useState<'ip' | 'cidr' | 'client_id'>('ip');
-  const [mapValue, setMapValue] = useState('');
-  const [mapGroupId, setMapGroupId] = useState('');
+  const { register, handleSubmit, control, reset, formState: { errors }, watch } = useForm<MappingFormValues>({
+    resolver: zodResolver(mappingSchema),
+    defaultValues: { mapType: 'ip', mapValue: '', mapGroupId: '' }
+  });
+  const mapType = watch('mapType');
 
   const { alert, confirm } = useDialog();
 
@@ -65,25 +88,15 @@ export function EndpointsPage() {
     }
   };
 
-  const createMapping = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!mapValue.trim()) {
-      await alert({ message: 'Mapping value is required', type: 'error' });
-      return;
-    }
-    if (!mapGroupId) {
-      await alert({ message: 'Valid group selection is required', type: 'error' });
-      return;
-    }
-
+  const createMapping = async (data: MappingFormValues) => {
     try {
       await apiJSON('/v1/mappings', {
-        mapping_type: mapType,
-        value: mapValue.trim(),
-        group_id: parseInt(mapGroupId, 10),
+        mapping_type: data.mapType,
+        value: data.mapValue.trim(),
+        group_id: parseInt(data.mapGroupId, 10),
       }, { method: 'POST' });
       
-      setMapValue('');
+      reset({ ...data, mapValue: '' });
       await mutateMappings();
     } catch (err: any) {
       await alert({ message: `Error adding mapping: ${err.message}`, type: 'error' });
@@ -389,71 +402,93 @@ export function EndpointsPage() {
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">
-          <form onSubmit={createMapping} className="flex flex-1 flex-col md:flex-row gap-3 bg-white/40 backdrop-blur-md p-2 rounded-2xl">
-            <Select value={mapType} onValueChange={(val: any) => setMapType(val)}>
-              <motion.div
-                whileHover={{ scale: 1.02, y: -1 }}
-                whileTap={{ scale: 0.95, y: 0 }} 
-                transition={{ type: "spring", stiffness: 500, damping: 15 }}
-              >
-                <SelectTrigger className="w-40 bg-white border-none rounded-xl px-4 py-3 text-sm outline-none focus:ring-0 focus:ring-offset-0 text-slate-700 font-medium cursor-pointer h-auto min-h-[44px]">
-                  <SelectValue placeholder="Map type" />
-                </SelectTrigger>
-              </motion.div>
-              <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
-                {[
-                  { value: 'ip', label: 'IP Address' },
-                  { value: 'cidr', label: 'CIDR Range' },
-                  { value: 'client_id', label: 'DoH Client ID' }
-                ].map((option, i) => (
+          <form onSubmit={handleSubmit(createMapping)} className="flex flex-1 flex-col md:flex-row gap-3 bg-white/40 backdrop-blur-md p-2 rounded-2xl relative">
+            <Controller
+              name="mapType"
+              control={control}
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
                   <motion.div
-                    key={option.value}
-                    initial={{ opacity: 0, x: -15 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                    whileHover={{ scale: 1.02, y: -1 }}
+                    whileTap={{ scale: 0.95, y: 0 }} 
+                    transition={{ type: "spring", stiffness: 500, damping: 15 }}
                   >
-                    <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                    <SelectTrigger className="w-40 bg-white border-none rounded-xl px-4 py-3 text-sm outline-none focus:ring-0 focus:ring-offset-0 text-slate-700 font-medium cursor-pointer h-auto min-h-[44px]">
+                      <SelectValue placeholder="Map type" />
+                    </SelectTrigger>
                   </motion.div>
-                ))}
-              </SelectContent>
-            </Select>
-            <input 
-              type="text" 
-              placeholder="e.g. 192.168.1.50" 
-              value={mapValue}
-              onChange={e => setMapValue(e.target.value)}
-              className="flex-1 bg-white rounded-xl border-none px-4 py-3 text-sm outline-none placeholder:text-slate-400 font-medium"
+                  <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
+                    {[
+                      { value: 'ip', label: 'IP Address' },
+                      { value: 'cidr', label: 'CIDR Range' },
+                      { value: 'client_id', label: 'DoH Client ID' }
+                    ].map((option, i) => (
+                      <motion.div
+                        key={option.value}
+                        initial={{ opacity: 0, x: -15 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                      >
+                        <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                      </motion.div>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             />
-            <Select value={mapGroupId} onValueChange={setMapGroupId}>
-              <motion.div
-                whileHover={{ scale: 1.02, y: -1 }}
-                whileTap={{ scale: 0.95, y: 0 }} 
-                transition={{ type: "spring", stiffness: 500, damping: 15 }}
-              >
-                <SelectTrigger className="w-48 bg-white border-none rounded-xl px-4 py-3 text-sm outline-none focus:ring-0 focus:ring-offset-0 text-slate-700 font-medium cursor-pointer h-auto min-h-[44px]">
-                  <SelectValue placeholder="Select Group..." />
-                </SelectTrigger>
-              </motion.div>
-              <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
-                {groups.map((g, i) => (
-                  <motion.div
-                    key={g.id}
-                    initial={{ opacity: 0, x: -15 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
-                  >
-                    <SelectItem value={g.id.toString()} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{g.name}</SelectItem>
-                  </motion.div>
-                ))}
-              </SelectContent>
-            </Select>
+            
+            <div className="flex-1 relative">
+              <input 
+                type="text" 
+                placeholder={mapType === 'ip' ? "e.g. 192.168.1.50" : mapType === 'cidr' ? "e.g. 192.168.1.0/24" : "e.g. device-01"} 
+                {...register('mapValue')}
+                className={`w-full bg-white rounded-xl border ${errors.mapValue ? 'border-rose-400' : 'border-transparent'} px-4 py-3 text-sm outline-none placeholder:text-slate-400 font-medium`}
+              />
+              {errors.mapValue && <p className="absolute -bottom-5 left-2 text-[10px] text-rose-500 font-medium">{errors.mapValue.message}</p>}
+            </div>
+
+            <div className="relative">
+              <Controller
+                name="mapGroupId"
+                control={control}
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <motion.div
+                      whileHover={{ scale: 1.02, y: -1 }}
+                      whileTap={{ scale: 0.95, y: 0 }} 
+                      transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                    >
+                      <SelectTrigger className={`w-48 bg-white border ${errors.mapGroupId ? 'border-rose-400' : 'border-transparent'} rounded-xl px-4 py-3 text-sm outline-none focus:ring-0 focus:ring-offset-0 text-slate-700 font-medium cursor-pointer h-auto min-h-[44px]`}>
+                        <SelectValue placeholder="Select Group..." />
+                      </SelectTrigger>
+                    </motion.div>
+                    <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
+                      {groups.map((g, i) => (
+                        <motion.div
+                          key={g.id}
+                          initial={{ opacity: 0, x: -15 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                        >
+                          <SelectItem value={g.id.toString()} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{g.name}</SelectItem>
+                        </motion.div>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {errors.mapGroupId && <p className="absolute -bottom-5 left-2 text-[10px] text-rose-500 font-medium">{errors.mapGroupId.message}</p>}
+            </div>
+
             <motion.button 
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: 1.02, y: -1 }}
+              whileTap={{ scale: 0.95, y: 0 }}
+              transition={{ type: "spring", stiffness: 500, damping: 15 }}
               type="submit" 
-              className="px-6 py-3 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 transition-colors whitespace-nowrap shadow-md shadow-slate-900/10"
+              className="bg-slate-900 text-white px-5 py-3 rounded-xl font-medium text-sm flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors shadow-sm"
             >
-              Add Mapping
+              <Plus size={16} />
+              Add Map
             </motion.button>
           </form>
         </div>

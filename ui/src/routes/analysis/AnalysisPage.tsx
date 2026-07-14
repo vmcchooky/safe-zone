@@ -190,11 +190,30 @@ export function AnalysisPage() {
             <input 
               type="text" 
               value={domain}
-              onChange={(e) => setDomain(e.target.value)}
+              onChange={(e) => {
+                let val = e.target.value;
+                try {
+                  if (val.startsWith('http://') || val.startsWith('https://')) {
+                    val = new URL(val).hostname;
+                  }
+                } catch (err) {}
+                setDomain(val);
+              }}
+              onPaste={(e) => {
+                e.preventDefault();
+                let val = e.clipboardData.getData('text');
+                try {
+                  if (val.startsWith('http://') || val.startsWith('https://')) {
+                    val = new URL(val).hostname;
+                  }
+                } catch (err) {}
+                setDomain(val);
+              }}
               placeholder="secure-login-wallet-example.com"
               className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl !py-4 !pr-4 !pl-16 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 hover:shadow-md focus:shadow-md transition-all duration-300 shadow-sm"
               spellCheck="false"
               autoComplete="off"
+              required
             />
           </div>
           <button 
@@ -333,10 +352,13 @@ export function AnalysisPage() {
                   animate={{ opacity: 1, y: 0 }}
                   className="flex flex-col gap-6"
                 >
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-2xl font-bold text-slate-900 mb-2 flex items-center gap-2">
-                        <Globe className="text-slate-400" /> {result.domain}
+                  <div className="flex items-start justify-between w-full min-w-0">
+                    <div className="min-w-0 w-full">
+                      <h3 className="text-2xl font-bold text-slate-900 mb-2 flex items-center gap-2 w-full min-w-0">
+                        <Globe className="text-slate-400 shrink-0" /> 
+                        <div className="overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] flex-1 min-w-0">
+                          {result.domain}
+                        </div>
                       </h3>
                       <div className="flex gap-3">
                         <span className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1.5 ${
@@ -512,9 +534,9 @@ export function AnalysisPage() {
                 }`}
                 onClick={() => setQuickDomain(item.domain)}
               >
-                <div className="flex justify-between items-start">
-                  <span className="font-semibold text-slate-900 truncate pr-2 text-sm group-hover:text-sky-600 transition-colors">{item.domain}</span>
-                  <span className="text-xs text-slate-400 whitespace-nowrap">
+                <div className="flex justify-between items-start gap-2">
+                  <span className="font-semibold text-slate-900 truncate pr-2 text-sm group-hover:text-sky-600 transition-colors min-w-0 flex-1">{item.domain}</span>
+                  <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
                     {new Date(item.analyzed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
@@ -614,8 +636,12 @@ export function AnalysisPage() {
                         }}
                         className="hover:bg-slate-50/50 transition-colors group"
                       >
-                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors">Target Domain</td>
-                        <td className="px-6 py-4 font-mono text-sm">{rawData.domain}</td>
+                        <td className="px-6 py-4 font-semibold text-slate-600 group-hover:text-slate-900 transition-colors whitespace-nowrap w-1/3">Target Domain</td>
+                        <td className="px-6 py-4 font-mono text-sm max-w-0 w-2/3">
+                          <div className="overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                            {rawData.domain}
+                          </div>
+                        </td>
                       </motion.tr>
                       <motion.tr 
                         variants={{
