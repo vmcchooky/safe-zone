@@ -90,7 +90,11 @@ export function AppShell({
           <motion.div 
             initial={false}
             animate={{
-              borderColor: eventState === 'error' ? 'rgba(244, 63, 94, 0.8)' : eventState === 'success' ? 'rgba(14, 165, 233, 0.8)' : 'rgba(0,0,0,0.1)',
+              background: eventState === 'error' 
+                ? 'conic-gradient(rgba(244, 63, 94, 0.9) 0deg 120deg, rgba(255, 255, 255, 0.9) 120deg 240deg, rgba(253, 164, 175, 0.9) 240deg 360deg)' 
+                : eventState === 'success' 
+                ? 'conic-gradient(rgba(14, 165, 233, 0.9) 0deg 120deg, rgba(255, 255, 255, 0.9) 120deg 240deg, rgba(125, 211, 252, 0.9) 240deg 360deg)' 
+                : 'conic-gradient(rgba(0,0,0,0.1) 0deg 120deg, rgba(0,0,0,0.1) 120deg 240deg, rgba(0,0,0,0.1) 240deg 360deg)',
               boxShadow: eventState === 'error' ? '0 0 12px rgba(244, 63, 94, 0.3)' : 
                          eventState === 'success' ? '0 0 12px rgba(14, 165, 233, 0.3)' : 
                          '0 0 0px rgba(0,0,0,0)',
@@ -99,9 +103,11 @@ export function AppShell({
               duration: eventState !== 'idle' ? 0.3 : 0.8,
               ease: "easeInOut"
             }}
-            style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', border: '2px solid rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', flexShrink: 0, zIndex: 10 }}
+            style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, zIndex: 10 }}
           >
-            <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            <div style={{ width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </div>
           </motion.div>
           <div className="shell-brand-copy">
             <strong>Safe Zone</strong>
