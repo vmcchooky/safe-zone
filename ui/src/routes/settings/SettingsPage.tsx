@@ -22,11 +22,11 @@ import {
   Lock,
   Globe,
   Activity,
-  Shield
+  Shield,
+  Settings
 } from 'lucide-react';
 import { useDialog } from '../../components/DialogContext';
-
-type Tab = 'CORE' | 'SCORING' | 'ACCESS';
+import { InfoTooltip } from '../../components/InfoTooltip';
 
 interface AnalysisConfig {
   punycode_score: number;
@@ -59,9 +59,10 @@ interface Toast {
 }
 
 export function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>('CORE');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingCore, setSavingCore] = useState(false);
+  const [savingGuest, setSavingGuest] = useState(false);
+  const [savingScoring, setSavingScoring] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const { confirm } = useDialog();
 
@@ -141,7 +142,7 @@ export function SettingsPage() {
 
   const handleSaveCore = async (e: FormEvent) => {
     e.preventDefault();
-    setSaving(true);
+    setSavingCore(true);
     try {
       const payload = {
         telemetry_retention_days: retentionDays,
@@ -162,12 +163,12 @@ export function SettingsPage() {
     } catch (err: any) {
       showToast(err.message, 'err');
     } finally {
-      setSaving(false);
+      setSavingCore(false);
     }
   };
 
   const handleSaveScoring = async () => {
-    setSaving(true);
+    setSavingScoring(true);
     try {
       const res = await fetch('/v1/config/analysis', {
         method: 'PUT',
@@ -182,13 +183,13 @@ export function SettingsPage() {
     } catch (err: any) {
       showToast(err.message, 'err');
     } finally {
-      setSaving(false);
+      setSavingScoring(false);
     }
   };
 
   const handleResetScoring = async () => {
     if (!(await confirm('Are you sure you want to reset all scoring thresholds to default?'))) return;
-    setSaving(true);
+    setSavingScoring(true);
     try {
       const res = await fetch('/v1/config/analysis/reset', { method: 'POST' });
       if (!res.ok) {
@@ -201,7 +202,7 @@ export function SettingsPage() {
     } catch (err: any) {
       showToast(err.message, 'err');
     } finally {
-      setSaving(false);
+      setSavingScoring(false);
     }
   };
 
@@ -211,7 +212,7 @@ export function SettingsPage() {
       showToast('Password is required to initialize guest access', 'err');
       return;
     }
-    setSaving(true);
+    setSavingGuest(true);
     try {
       const payload: Record<string, any> = { enabled: guest.enabled };
       if (guestPassword) payload.password = guestPassword;
@@ -231,7 +232,7 @@ export function SettingsPage() {
     } catch (err: any) {
       showToast(err.message, 'err');
     } finally {
-      setSaving(false);
+      setSavingGuest(false);
     }
   };
 
@@ -292,14 +293,18 @@ export function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8">
+      <div className="flex-1 flex items-center justify-center p-8 h-64">
         <Loader2 size={32} className="animate-spin text-slate-400" />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 p-6 lg:p-8 max-w-[1200px] mx-auto w-full flex flex-col gap-8">
+    <motion.div 
+      initial={{ opacity: 0 }} 
+      animate={{ opacity: 1 }} 
+      className="space-y-8 max-w-7xl mx-auto p-4 lg:p-8 pb-32"
+    >
       
       {/* Toasts */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
@@ -323,421 +328,400 @@ export function SettingsPage() {
         </AnimatePresence>
       </div>
 
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900 mb-2">Platform Settings</h1>
-        <p className="text-slate-500">Configure core integrations, scoring thresholds, and access controls.</p>
-      </div>
+      {/* Header */}
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }} 
+        animate={{ opacity: 1, y: 0 }} 
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="flex flex-col md:flex-row md:items-center justify-between gap-6"
+      >
+        <div>
+          <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-1">Configuration</div>
+          <div className="flex items-center gap-2.5">
+            <Settings size={24} className="text-sky-500" />
+            <h1 className="text-3xl font-bold text-slate-900 tracking-tight leading-none">Settings</h1>
+            <InfoTooltip content="Configure core integrations, scoring thresholds, and access controls." />
+          </div>
+        </div>
+      </motion.div>
 
-      {/* Modern Pill Tabs */}
-      <div className="flex flex-wrap items-center gap-2 p-1.5 bg-slate-100/80 backdrop-blur-md rounded-2xl w-max border border-slate-200/50">
-        {[
-          { id: 'CORE', label: 'Core Integrations', icon: Key },
-          { id: 'SCORING', label: 'Scoring Engine', icon: Sliders },
-          { id: 'ACCESS', label: 'Access Control', icon: Users }
-        ].map(tab => (
-          <button 
-            key={tab.id}
-            className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium text-sm transition-colors ${
-              activeTab === tab.id ? 'text-slate-900' : 'text-slate-500 hover:text-slate-700'
-            }`}
-            onClick={() => setActiveTab(tab.id as Tab)}
-          >
-            {activeTab === tab.id && (
-              <motion.div 
-                layoutId="activeSettingsTab"
-                className="absolute inset-0 bg-white rounded-xl shadow-[0_2px_8px_-2px_rgba(0,0,0,0.05)] border border-slate-200/50"
-                transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-              />
-            )}
-            <tab.icon size={16} className={`relative z-10 ${activeTab === tab.id ? 'text-indigo-500' : ''}`} />
-            <span className="relative z-10">{tab.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Main Content Area */}
-      <div className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-[2rem] p-6 lg:p-8 shadow-sm relative overflow-hidden min-h-[600px]">
-        {/* Background blobs for premium feel */}
-        <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-blue-50/40 rounded-full blur-[80px] -z-10 -translate-y-1/2 translate-x-1/3"></div>
-        <div className="absolute bottom-0 left-0 w-[500px] h-[500px] bg-indigo-50/40 rounded-full blur-[80px] -z-10 translate-y-1/3 -translate-x-1/3"></div>
-
-        <AnimatePresence mode="wait">
+      {/* Main Grid Layout */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
+        
+        {/* Left Column: Core & Access */}
+        <div className="xl:col-span-1 space-y-6">
           
-          {/* =========================================
-              CORE TAB 
-          ========================================= */}
-          {activeTab === 'CORE' && (
-            <motion.form 
-              key="core"
-              onSubmit={handleSaveCore}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col h-full"
-            >
-              <div className="mb-8">
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
-                  <span className="p-2 bg-indigo-100 text-indigo-600 rounded-xl"><Server size={20} /></span>
-                  Core Integrations
-                </h2>
-                <p className="text-slate-500 text-sm mt-2 ml-12">Configure external threat intelligence APIs and alert webhooks.</p>
+          {/* Core Integrations */}
+          <motion.form 
+            onSubmit={handleSaveCore}
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+            className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col"
+          >
+            <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 translate-x-1/2"></div>
+            
+            <div className="flex items-center gap-3 mb-6 relative z-10">
+              <div className="p-2.5 bg-indigo-100/80 text-indigo-600 rounded-xl">
+                <Key size={20} />
               </div>
-
-              <div className="space-y-6 max-w-3xl">
-                {/* API Key Box */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="block font-semibold text-slate-900 text-sm">Gemini AI Client API Key</label>
-                      <p className="text-xs text-slate-500 mt-1">Used by AI classifier node to enrich and confirm domain risk dossiers.</p>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <input 
-                      type={showApiKey && !geminiKey.includes('*') ? "text" : "password"}
-                      value={geminiKey}
-                      onChange={(e) => setGeminiKey(e.target.value)}
-                      placeholder="Enter Google Gemini API Key"
-                      className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-mono text-slate-700"
-                      autoComplete="off"
-                    />
-                    <button 
-                      type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-                      onClick={() => setShowApiKey(!showApiKey)}
-                    >
-                      {showApiKey && !geminiKey.includes('*') ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-50">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <Check size={16} className="text-emerald-500" />
-                      <span>Integration Status</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      onClick={handleTestAi}
-                      disabled={testingAi}
-                      className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                    >
-                      {testingAi ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                      Test Connection
-                    </button>
-                  </div>
-                </div>
-
-                {/* Webhook Box */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <label className="block font-semibold text-slate-900 text-sm">Incident Agent Webhook URL</label>
-                      <p className="text-xs text-slate-500 mt-1">Endpoint to send instant alert payloads when suspicious activity is blocked.</p>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <input 
-                      type={showWebhook && !webhookUrl.includes('*') ? "text" : "password"}
-                      value={webhookUrl}
-                      onChange={(e) => setWebhookUrl(e.target.value)}
-                      placeholder="https://hooks.slack.com/services/..."
-                      className="w-full pl-4 pr-12 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm font-mono text-slate-700"
-                      autoComplete="off"
-                    />
-                    <button 
-                      type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-                      onClick={() => setShowWebhook(!showWebhook)}
-                    >
-                      {showWebhook && !webhookUrl.includes('*') ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                  
-                  <div className="flex items-center justify-between pt-2 border-t border-slate-50">
-                    <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <Bell size={16} className="text-blue-500" />
-                      <span>Delivery Pipeline</span>
-                    </div>
-                    <button 
-                      type="button" 
-                      onClick={handleTestAlert}
-                      disabled={testingAlert}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-sm font-medium transition-colors disabled:opacity-50"
-                    >
-                      {testingAlert ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
-                      Test Payload
-                    </button>
-                  </div>
-                </div>
-
-                {/* Telemetry Box */}
-                <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-between">
-                  <div>
-                    <label className="block font-semibold text-slate-900 text-sm">Telemetry Log Retention</label>
-                    <p className="text-xs text-slate-500 mt-1">Days to keep diagnostic logs before auto-pruning.</p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <input 
-                      type="number"
-                      min={1}
-                      max={90}
-                      value={retentionDays}
-                      onChange={(e) => setRetentionDays(parseInt(e.target.value) || 30)}
-                      className="w-24 text-center px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-medium text-slate-700"
-                    />
-                    <span className="text-sm font-medium text-slate-500">Days</span>
-                  </div>
-                </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Core Integrations</h2>
+                <p className="text-sm text-slate-500">API keys and webhooks</p>
               </div>
+            </div>
 
-              <div className="mt-10 pt-6 border-t border-slate-200/50">
-                <button 
-                  type="submit" 
-                  disabled={saving}
-                  className="flex items-center gap-2 px-6 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-colors disabled:opacity-50 shadow-sm"
-                >
-                  {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                  Save Integrations
-                </button>
-              </div>
-            </motion.form>
-          )}
-
-          {/* =========================================
-              SCORING TAB 
-          ========================================= */}
-          {activeTab === 'SCORING' && (
-            <motion.div 
-              key="scoring"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col h-full"
-            >
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div className="space-y-4 relative z-10">
+              {/* API Key Box */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div>
-                  <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
-                    <span className="p-2 bg-amber-100 text-amber-600 rounded-xl"><Sliders size={20} /></span>
-                    Engine Thresholds
-                  </h2>
-                  <p className="text-slate-500 text-sm mt-2 ml-12">Configure fine-grained scoring weights and heuristic triggers.</p>
+                  <label className="block font-semibold text-slate-900 text-sm">Gemini API Key</label>
+                  <p className="text-xs text-slate-500 mt-0.5">Used by AI classifier node.</p>
                 </div>
-                <div className="flex items-center gap-3 ml-12 md:ml-0">
+                <div className="relative">
+                  <input 
+                    type={showApiKey && !geminiKey.includes('*') ? "text" : "password"}
+                    value={geminiKey}
+                    onChange={(e) => setGeminiKey(e.target.value)}
+                    placeholder="Enter API Key"
+                    className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-mono text-slate-700"
+                    autoComplete="off"
+                  />
                   <button 
-                    onClick={handleResetScoring}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-sm font-medium transition-all shadow-sm"
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                    onClick={() => setShowApiKey(!showApiKey)}
                   >
-                    <RotateCcw size={16} />
-                    Reset to Defaults
-                  </button>
-                  <button 
-                    onClick={handleSaveScoring}
-                    disabled={saving}
-                    className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-medium transition-colors shadow-sm disabled:opacity-50"
-                  >
-                    {saving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
-                    Apply Config
+                    {showApiKey && !geminiKey.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pb-8">
-                {/* Section 1: Domain Structure */}
-                <div className="p-6 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-5">
-                  <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-50 pb-3">
-                    <Globe size={18} className="text-slate-400" />
-                    Domain Structure Analysis
-                  </h3>
-                  
-                  <div className="grid grid-cols-2 gap-4 items-center">
-                    <label className="text-sm font-medium text-slate-600">Punycode Penalty</label>
-                    <input type="number" className="settings-num-input" value={scoring.punycode_score} onChange={(e) => updateScoringField('punycode_score', parseInt(e.target.value) || 0)} />
-                    
-                    <label className="text-sm font-medium text-slate-600">Mixed Script Penalty</label>
-                    <input type="number" className="settings-num-input" value={scoring.mixed_script_score} onChange={(e) => updateScoringField('mixed_script_score', parseInt(e.target.value) || 0)} />
-                    
-                    <label className="text-sm font-medium text-slate-600">Long Domain (Chars)</label>
-                    <input type="number" className="settings-num-input" value={scoring.long_domain_length} onChange={(e) => updateScoringField('long_domain_length', parseInt(e.target.value) || 0)} />
-                    
-                    <label className="text-sm font-medium text-slate-600">Long Domain Penalty</label>
-                    <input type="number" className="settings-num-input" value={scoring.long_domain_score} onChange={(e) => updateScoringField('long_domain_score', parseInt(e.target.value) || 0)} />
-                    
-                    <label className="text-sm font-medium text-slate-600">Hyphen Threshold</label>
-                    <input type="number" className="settings-num-input" value={scoring.hyphen_count_threshold} onChange={(e) => updateScoringField('hyphen_count_threshold', parseInt(e.target.value) || 0)} />
-                    
-                    <label className="text-sm font-medium text-slate-600">Hyphen Penalty</label>
-                    <input type="number" className="settings-num-input" value={scoring.hyphen_score} onChange={(e) => updateScoringField('hyphen_score', parseInt(e.target.value) || 0)} />
+                
+                <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <Check size={14} className="text-emerald-500" />
+                    <span>Status</span>
                   </div>
-                </div>
-
-                {/* Section 2: Complexity & Keywords */}
-                <div className="space-y-6">
-                  <div className="p-6 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-5">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-50 pb-3">
-                      <Activity size={18} className="text-slate-400" />
-                      Entropy & Density
-                    </h3>
-                    
-                    <div className="grid grid-cols-2 gap-4 items-center">
-                      <label className="text-sm font-medium text-slate-600">Digit Ratio Threshold</label>
-                      <input type="number" step="0.05" className="settings-num-input" value={scoring.digit_ratio_threshold} onChange={(e) => updateScoringField('digit_ratio_threshold', parseFloat(e.target.value) || 0)} />
-                      
-                      <label className="text-sm font-medium text-slate-600">Digit Ratio Penalty</label>
-                      <input type="number" className="settings-num-input" value={scoring.digit_ratio_score} onChange={(e) => updateScoringField('digit_ratio_score', parseInt(e.target.value) || 0)} />
-                      
-                      <label className="text-sm font-medium text-slate-600">Entropy Threshold</label>
-                      <input type="number" step="0.1" className="settings-num-input" value={scoring.entropy_threshold} onChange={(e) => updateScoringField('entropy_threshold', parseFloat(e.target.value) || 0)} />
-                      
-                      <label className="text-sm font-medium text-slate-600">Entropy Penalty</label>
-                      <input type="number" className="settings-num-input" value={scoring.entropy_score} onChange={(e) => updateScoringField('entropy_score', parseInt(e.target.value) || 0)} />
-                    </div>
-                  </div>
-
-                  <div className="p-6 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-5">
-                    <h3 className="font-bold text-slate-800 flex items-center gap-2 border-b border-slate-50 pb-3">
-                      <Shield size={18} className="text-slate-400" />
-                      Keyword Heuristics
-                    </h3>
-                    
-                    <div className="grid grid-cols-2 gap-4 items-center mb-4">
-                      <label className="text-sm font-medium text-slate-600">Keyword Base Score</label>
-                      <input type="number" className="settings-num-input" value={scoring.keyword_base_score} onChange={(e) => updateScoringField('keyword_base_score', parseInt(e.target.value) || 0)} />
-                      
-                      <label className="text-sm font-medium text-slate-600">Match Multiplier</label>
-                      <input type="number" className="settings-num-input" value={scoring.keyword_match_score} onChange={(e) => updateScoringField('keyword_match_score', parseInt(e.target.value) || 0)} />
-                      
-                      <label className="text-sm font-medium text-slate-600">Brand Spoof Penalty</label>
-                      <input type="number" className="settings-num-input" value={scoring.brand_spoofing_score} onChange={(e) => updateScoringField('brand_spoofing_score', parseInt(e.target.value) || 0)} />
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-slate-600 mb-2">Suspicious Keywords Dictionary</label>
-                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 min-h-[100px]">
-                        <div className="flex flex-wrap gap-2 mb-3">
-                          <AnimatePresence>
-                            {scoring.keywords.map(kw => (
-                              <motion.span 
-                                key={kw} 
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                exit={{ opacity: 0, scale: 0.8 }}
-                                className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-medium shadow-sm"
-                              >
-                                {kw}
-                                <button onClick={() => handleRemoveKeyword(kw)} className="text-slate-400 hover:text-red-500 focus:outline-none transition-colors">
-                                  <X size={14} />
-                                </button>
-                              </motion.span>
-                            ))}
-                          </AnimatePresence>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <Plus size={16} className="text-slate-400 ml-1" />
-                          <input 
-                            type="text" 
-                            className="flex-1 bg-transparent border-none focus:ring-0 text-sm outline-none placeholder:text-slate-400 font-medium text-slate-700" 
-                            placeholder="Add keyword and press Enter..." 
-                            value={newKeyword}
-                            onChange={(e) => setNewKeyword(e.target.value)}
-                            onKeyDown={handleAddKeyword}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                  <button 
+                    type="button" 
+                    onClick={handleTestAi}
+                    disabled={testingAi}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {testingAi ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                    Test API
+                  </button>
                 </div>
               </div>
-            </motion.div>
-          )}
 
-          {/* =========================================
-              ACCESS TAB 
-          ========================================= */}
-          {activeTab === 'ACCESS' && (
-            <motion.form 
-              key="access"
-              onSubmit={handleSaveGuest}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.2 }}
-              className="flex flex-col h-full"
-            >
-              <div className="mb-8">
-                <h2 className="text-xl font-bold text-slate-900 flex items-center gap-3">
-                  <span className="p-2 bg-emerald-100 text-emerald-600 rounded-xl"><Lock size={20} /></span>
-                  Guest Access Control
-                </h2>
-                <p className="text-slate-500 text-sm mt-2 ml-12">Manage read-only access to the dashboard for external viewers.</p>
+              {/* Webhook Box */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
+                <div>
+                  <label className="block font-semibold text-slate-900 text-sm">Agent Webhook URL</label>
+                  <p className="text-xs text-slate-500 mt-0.5">Endpoint for instant alerts.</p>
+                </div>
+                <div className="relative">
+                  <input 
+                    type={showWebhook && !webhookUrl.includes('*') ? "text" : "password"}
+                    value={webhookUrl}
+                    onChange={(e) => setWebhookUrl(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm font-mono text-slate-700"
+                    autoComplete="off"
+                  />
+                  <button 
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                    onClick={() => setShowWebhook(!showWebhook)}
+                  >
+                    {showWebhook && !webhookUrl.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
+                  </button>
+                </div>
+                
+                <div className="flex items-center justify-between pt-2 border-t border-slate-50">
+                  <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
+                    <Bell size={14} className="text-blue-500" />
+                    <span>Pipeline</span>
+                  </div>
+                  <button 
+                    type="button" 
+                    onClick={handleTestAlert}
+                    disabled={testingAlert}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
+                  >
+                    {testingAlert ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
+                    Test Webhook
+                  </button>
+                </div>
               </div>
 
-              <div className="max-w-2xl">
-                <div className="p-6 rounded-3xl bg-white border border-slate-100 shadow-sm space-y-6">
+              {/* Telemetry Box */}
+              <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-between">
+                <div>
+                  <label className="block font-semibold text-slate-900 text-sm">Log Retention</label>
+                  <p className="text-xs text-slate-500 mt-0.5">Days to keep diagnostic logs.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="number"
+                    min={1}
+                    max={90}
+                    value={retentionDays}
+                    onChange={(e) => setRetentionDays(parseInt(e.target.value) || 30)}
+                    className="w-16 text-center px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-medium text-slate-700 text-sm"
+                  />
+                  <span className="text-xs font-medium text-slate-500">Days</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-slate-200/50">
+              <button 
+                type="submit" 
+                disabled={savingCore}
+                className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-colors disabled:opacity-50 shadow-sm text-sm"
+              >
+                {savingCore ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Save Integrations
+              </button>
+            </div>
+          </motion.form>
+
+          {/* Access Control */}
+          <motion.form 
+            onSubmit={handleSaveGuest}
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+            className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col"
+          >
+            <div className="absolute top-0 left-0 w-64 h-64 bg-emerald-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 -translate-x-1/2"></div>
+            
+            <div className="flex items-center gap-3 mb-6 relative z-10">
+              <div className="p-2.5 bg-emerald-100/80 text-emerald-600 rounded-xl">
+                <Users size={20} />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">Guest Access</h2>
+                <p className="text-sm text-slate-500">Read-only dashboard viewers</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 relative z-10">
+              <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
+                <div className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <div>
+                    <h4 className="font-semibold text-slate-900 text-sm">Enable Guest Mode</h4>
+                    <p className="text-xs text-slate-500 mt-0.5">Allows login as <code className="px-1 bg-slate-200 rounded text-slate-700 font-mono">guest</code></p>
+                  </div>
                   
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div>
-                      <h4 className="font-bold text-slate-900">Enable Guest Mode</h4>
-                      <p className="text-xs text-slate-500 mt-1">Allows login with username <code className="px-1 py-0.5 bg-slate-200 rounded text-slate-700 font-mono">guest</code></p>
-                    </div>
-                    
+                  <button 
+                    type="button"
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${guest.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
+                    onClick={() => setGuest(prev => ({ ...prev, enabled: !prev.enabled }))}
+                  >
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${guest.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    {guest.exists ? 'Reset Guest Password (Optional)' : 'Set Initial Guest Password'}
+                  </label>
+                  <div className="relative">
+                    <input 
+                      type={showGuestPassword ? "text" : "password"}
+                      value={guestPassword}
+                      onChange={(e) => setGuestPassword(e.target.value)}
+                      placeholder="Enter password..."
+                      className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-mono text-slate-700"
+                      autoComplete="new-password"
+                    />
                     <button 
                       type="button"
-                      className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${guest.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                      onClick={() => setGuest(prev => ({ ...prev, enabled: !prev.enabled }))}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                      onClick={() => setShowGuestPassword(!showGuestPassword)}
                     >
-                      <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform ${guest.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                      {showGuestPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
 
-                  <div className="space-y-3">
-                    <label className="block text-sm font-semibold text-slate-900">
-                      {guest.exists ? 'Reset Guest Password (Optional)' : 'Set Initial Guest Password'}
-                    </label>
-                    <div className="relative">
-                      <input 
-                        type={showGuestPassword ? "text" : "password"}
-                        value={guestPassword}
-                        onChange={(e) => setGuestPassword(e.target.value)}
-                        placeholder="Enter password..."
-                        className="w-full pl-4 pr-12 py-3 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-mono text-slate-700"
-                        autoComplete="new-password"
-                      />
-                      <button 
-                        type="button"
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
-                        onClick={() => setShowGuestPassword(!showGuestPassword)}
-                      >
-                        {showGuestPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                      </button>
-                    </div>
-                  </div>
+            <div className="mt-6 pt-4 border-t border-slate-200/50">
+              <button 
+                type="submit" 
+                disabled={savingGuest}
+                className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50 shadow-sm text-sm"
+              >
+                {savingGuest ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
+                Save Access Control
+              </button>
+            </div>
+          </motion.form>
 
+        </div>
+
+        {/* Right Column: Scoring Engine */}
+        <div className="xl:col-span-2">
+          <motion.section 
+            initial={{ opacity: 0, y: 20 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+            className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
+          >
+            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-amber-50/40 rounded-full blur-[80px] -z-10 -translate-y-1/2 translate-x-1/3"></div>
+            
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 relative z-10">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-100/80 text-amber-600 rounded-xl">
+                  <Sliders size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">Engine Thresholds</h2>
+                  <p className="text-sm text-slate-500">Fine-grained scoring weights and heuristics</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={handleResetScoring}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm"
+                >
+                  <RotateCcw size={14} />
+                  Reset Defaults
+                </button>
+                <button 
+                  onClick={handleSaveScoring}
+                  disabled={savingScoring}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50"
+                >
+                  {savingScoring ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  Apply Config
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+              
+              {/* Domain Structure Analysis */}
+              <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
+                <h3 className="font-semibold text-slate-800 flex items-center gap-2 text-sm">
+                  <Globe size={16} className="text-sky-500" />
+                  Domain Structure Analysis
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
+                  <label className="text-xs font-medium text-slate-600">Punycode Penalty</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.punycode_score} onChange={(e) => updateScoringField('punycode_score', parseInt(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Mixed Script Penalty</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.mixed_script_score} onChange={(e) => updateScoringField('mixed_script_score', parseInt(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Long Domain (Chars)</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.long_domain_length} onChange={(e) => updateScoringField('long_domain_length', parseInt(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Long Domain Penalty</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.long_domain_score} onChange={(e) => updateScoringField('long_domain_score', parseInt(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Hyphen Threshold</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.hyphen_count_threshold} onChange={(e) => updateScoringField('hyphen_count_threshold', parseInt(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Hyphen Penalty</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.hyphen_score} onChange={(e) => updateScoringField('hyphen_score', parseInt(e.target.value) || 0)} />
                 </div>
               </div>
 
-              <div className="mt-10 pt-6 border-t border-slate-200/50">
-                <button 
-                  type="submit" 
-                  disabled={saving}
-                  className="flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50 shadow-sm"
-                >
-                  {saving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
-                  Save Access Controls
-                </button>
+              {/* Entropy & Density */}
+              <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
+                <h3 className="font-semibold text-slate-800 flex items-center gap-2 text-sm">
+                  <Activity size={16} className="text-rose-500" />
+                  Entropy & Density
+                </h3>
+                
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
+                  <label className="text-xs font-medium text-slate-600">Digit Ratio Threshold</label>
+                  <input type="number" step="0.05" className="settings-num-input text-sm" value={scoring.digit_ratio_threshold} onChange={(e) => updateScoringField('digit_ratio_threshold', parseFloat(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Digit Ratio Penalty</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.digit_ratio_score} onChange={(e) => updateScoringField('digit_ratio_score', parseInt(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Entropy Threshold</label>
+                  <input type="number" step="0.1" className="settings-num-input text-sm" value={scoring.entropy_threshold} onChange={(e) => updateScoringField('entropy_threshold', parseFloat(e.target.value) || 0)} />
+                  
+                  <label className="text-xs font-medium text-slate-600">Entropy Penalty</label>
+                  <input type="number" className="settings-num-input text-sm" value={scoring.entropy_score} onChange={(e) => updateScoringField('entropy_score', parseInt(e.target.value) || 0)} />
+                </div>
               </div>
-            </motion.form>
-          )}
 
-        </AnimatePresence>
+              {/* Keyword Heuristics */}
+              <div className="md:col-span-2 p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4 mt-2">
+                <h3 className="font-semibold text-slate-800 flex items-center gap-2 text-sm">
+                  <Shield size={16} className="text-emerald-500" />
+                  Keyword Heuristics
+                </h3>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Keyword Base Score</label>
+                    <input type="number" className="settings-num-input text-sm" value={scoring.keyword_base_score} onChange={(e) => updateScoringField('keyword_base_score', parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Match Multiplier</label>
+                    <input type="number" className="settings-num-input text-sm" value={scoring.keyword_match_score} onChange={(e) => updateScoringField('keyword_match_score', parseInt(e.target.value) || 0)} />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">Brand Spoof Penalty</label>
+                    <input type="number" className="settings-num-input text-sm" value={scoring.brand_spoofing_score} onChange={(e) => updateScoringField('brand_spoofing_score', parseInt(e.target.value) || 0)} />
+                  </div>
+                </div>
+
+                <div className="mt-4 pt-4 border-t border-slate-50">
+                  <label className="block text-sm font-semibold text-slate-800 mb-2">Suspicious Keywords Dictionary</label>
+                  <p className="text-xs text-slate-500 mb-3">Add exact match substrings that indicate phishing or scams.</p>
+                  <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 min-h-[120px]">
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      <AnimatePresence>
+                        {scoring.keywords.map(kw => (
+                          <motion.span 
+                            key={kw} 
+                            initial={{ opacity: 0, scale: 0.8 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.8 }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-medium shadow-sm"
+                          >
+                            {kw}
+                            <button onClick={() => handleRemoveKeyword(kw)} className="text-slate-400 hover:text-red-500 focus:outline-none transition-colors ml-1">
+                              <X size={14} />
+                            </button>
+                          </motion.span>
+                        ))}
+                      </AnimatePresence>
+                    </div>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Plus size={16} className="text-slate-400 ml-1" />
+                      <input 
+                        type="text" 
+                        className="flex-1 bg-transparent border-none focus:ring-0 text-sm outline-none placeholder:text-slate-400 font-medium text-slate-700" 
+                        placeholder="Add keyword and press Enter..." 
+                        value={newKeyword}
+                        onChange={(e) => setNewKeyword(e.target.value)}
+                        onKeyDown={handleAddKeyword}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </motion.section>
+        </div>
+
       </div>
 
-      {/* Global utility class for scoring number inputs to keep code clean */}
       <style>{`
         .settings-num-input {
           width: 100%;
-          padding: 0.5rem 0.75rem;
+          padding: 0.4rem 0.75rem;
           background-color: #f8fafc;
           border: 1px solid #e2e8f0;
           border-radius: 0.75rem;
@@ -749,8 +733,9 @@ export function SettingsPage() {
         .settings-num-input:focus {
           border-color: #6366f1;
           box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+          background-color: #ffffff;
         }
       `}</style>
-    </div>
+    </motion.div>
   );
 }
