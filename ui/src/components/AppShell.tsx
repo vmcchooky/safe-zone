@@ -91,10 +91,10 @@ export function AppShell({
             initial={false}
             animate={{
               background: eventState === 'error' 
-                ? 'conic-gradient(rgba(244, 63, 94, 0.9) 0deg 120deg, rgba(255, 255, 255, 0.9) 120deg 240deg, rgba(253, 164, 175, 0.9) 240deg 360deg)' 
+                ? 'conic-gradient(from 0deg, rgba(244, 63, 94, 0.9), rgba(255, 255, 255, 0.9), rgba(253, 164, 175, 0.9), rgba(244, 63, 94, 0.9))' 
                 : eventState === 'success' 
-                ? 'conic-gradient(rgba(14, 165, 233, 0.9) 0deg 120deg, rgba(255, 255, 255, 0.9) 120deg 240deg, rgba(125, 211, 252, 0.9) 240deg 360deg)' 
-                : 'conic-gradient(rgba(0,0,0,0.1) 0deg 120deg, rgba(0,0,0,0.1) 120deg 240deg, rgba(0,0,0,0.1) 240deg 360deg)',
+                ? 'conic-gradient(from 0deg, rgba(14, 165, 233, 0.9), rgba(255, 255, 255, 0.9), rgba(125, 211, 252, 0.9), rgba(14, 165, 233, 0.9))' 
+                : 'conic-gradient(from 0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1))',
               boxShadow: eventState === 'error' ? '0 0 12px rgba(244, 63, 94, 0.3)' : 
                          eventState === 'success' ? '0 0 12px rgba(14, 165, 233, 0.3)' : 
                          '0 0 0px rgba(0,0,0,0)',
