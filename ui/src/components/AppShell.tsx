@@ -72,7 +72,7 @@ export function AppShell({
       {/* Top Floating Header for Brand and User Actions */}
       <div className="shell-floating-header">
         <div className="shell-brand">
-          <div className="shell-brand-mark" style={{ width: 28, height: 28, borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.2)', padding: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' }}>
+          <div className="shell-brand-mark" style={{ width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.2)', padding: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.1)' }}>
             <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
           </div>
           <div className="shell-brand-copy">
