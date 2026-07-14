@@ -7,6 +7,7 @@ import type { AgentStatus, PolicyGroup, ClientMapping } from '../lib/types';
 import { globalLoader } from '../App';
 import { GroupModal } from '../components/GroupModal';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 export function EndpointsPage() {
   const { data: statusData, error: statusErr, mutate: mutateStatus } = useSWR<AgentStatus | { status: AgentStatus }>('/v1/agent/status', apiFetch, { refreshInterval: 5000, keepPreviousData: true });
@@ -311,7 +312,7 @@ export function EndpointsPage() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: index * 0.05 + 0.3, type: "spring", stiffness: 300, damping: 25 }}
-              className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-5 shadow-sm transition-all group flex flex-col"
+              className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm transition-all group flex flex-col"
             >
               <div className="flex justify-between items-start mb-2">
                 <h3 className="font-bold text-slate-900 text-lg group-hover:text-indigo-600 transition-colors">{g.name}</h3>
@@ -374,46 +375,77 @@ export function EndpointsPage() {
         initial={{ opacity: 0, y: 20 }} 
         animate={{ opacity: 1, y: 0 }} 
         transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
-        className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm"
+        className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden"
       >
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2 bg-rose-100/80 text-rose-600 rounded-xl">
             <LinkIcon size={20} />
           </div>
-          <div>
+          <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-900">Client Mappings</h2>
-            <p className="text-sm text-slate-500">Map specific devices or networks to a policy group.</p>
+            <InfoTooltip content="Map specific devices or networks to a policy group." />
           </div>
         </div>
 
         <div className="flex flex-col md:flex-row gap-4 mb-6">
-          <form onSubmit={createMapping} className="flex flex-1 flex-col md:flex-row gap-3 bg-white p-2 rounded-2xl border border-slate-100 shadow-sm">
-            <select 
-              value={mapType} 
-              onChange={e => setMapType(e.target.value as any)}
-              className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-sky-500/20 text-slate-700 font-medium cursor-pointer"
-            >
-              <option value="ip">IP Address</option>
-              <option value="cidr">CIDR Range</option>
-              <option value="client_id">DoH Client ID</option>
-            </select>
+          <form onSubmit={createMapping} className="flex flex-1 flex-col md:flex-row gap-3 bg-white/40 backdrop-blur-md p-2 rounded-2xl">
+            <Select value={mapType} onValueChange={(val: any) => setMapType(val)}>
+              <motion.div
+                whileHover={{ scale: 1.02, y: -1 }}
+                whileTap={{ scale: 0.95, y: 0 }} 
+                transition={{ type: "spring", stiffness: 500, damping: 15 }}
+              >
+                <SelectTrigger className="w-40 bg-white border-none rounded-xl px-4 py-3 text-sm outline-none focus:ring-0 focus:ring-offset-0 text-slate-700 font-medium cursor-pointer h-auto min-h-[44px]">
+                  <SelectValue placeholder="Map type" />
+                </SelectTrigger>
+              </motion.div>
+              <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
+                {[
+                  { value: 'ip', label: 'IP Address' },
+                  { value: 'cidr', label: 'CIDR Range' },
+                  { value: 'client_id', label: 'DoH Client ID' }
+                ].map((option, i) => (
+                  <motion.div
+                    key={option.value}
+                    initial={{ opacity: 0, x: -15 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                  >
+                    <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                  </motion.div>
+                ))}
+              </SelectContent>
+            </Select>
             <input 
               type="text" 
               placeholder="e.g. 192.168.1.50" 
               value={mapValue}
               onChange={e => setMapValue(e.target.value)}
-              className="flex-1 bg-transparent border-none px-4 py-3 text-sm outline-none placeholder:text-slate-400 font-medium"
+              className="flex-1 bg-white rounded-xl border-none px-4 py-3 text-sm outline-none placeholder:text-slate-400 font-medium"
             />
-            <select 
-              value={mapGroupId} 
-              onChange={e => setMapGroupId(e.target.value)}
-              className="bg-slate-50 border-none rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-sky-500/20 text-slate-700 font-medium cursor-pointer"
-            >
-              <option value="" disabled>Select Group...</option>
-              {groups.map(g => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
-            </select>
+            <Select value={mapGroupId} onValueChange={setMapGroupId}>
+              <motion.div
+                whileHover={{ scale: 1.02, y: -1 }}
+                whileTap={{ scale: 0.95, y: 0 }} 
+                transition={{ type: "spring", stiffness: 500, damping: 15 }}
+              >
+                <SelectTrigger className="w-48 bg-white border-none rounded-xl px-4 py-3 text-sm outline-none focus:ring-0 focus:ring-offset-0 text-slate-700 font-medium cursor-pointer h-auto min-h-[44px]">
+                  <SelectValue placeholder="Select Group..." />
+                </SelectTrigger>
+              </motion.div>
+              <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
+                {groups.map((g, i) => (
+                  <motion.div
+                    key={g.id}
+                    initial={{ opacity: 0, x: -15 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                  >
+                    <SelectItem value={g.id.toString()} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{g.name}</SelectItem>
+                  </motion.div>
+                ))}
+              </SelectContent>
+            </Select>
             <motion.button 
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
