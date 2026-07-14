@@ -17,6 +17,7 @@ import {
   TriangleAlert,
   Zap,
   RadioTower,
+  Ban,
 } from 'lucide-react';
 import {
   Select,
@@ -880,21 +881,25 @@ export function TelemetryPage() {
                         }}
                         className="hover:bg-slate-50/50 transition-colors group align-middle"
                       >
-                        <td className="py-4 pl-4 align-middle">
-                          <div className="flex flex-col">
-                            <strong className="font-mono text-[15px] group-hover:text-sky-600 transition-colors">{entry.domain}</strong>
-                            <span className="text-xs text-slate-500 font-medium">{entry.confidence ? `${Math.round(entry.confidence * 100)}% confidence` : 'No confidence score'}</span>
+                        <td className="py-4 pl-4 pr-8 align-middle max-w-0">
+                          <div className="flex flex-col w-full">
+                            <div className="overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                              <strong className="font-mono text-[15px] group-hover:text-sky-600 transition-colors pr-2">{entry.domain}</strong>
+                            </div>
+                            <span className="text-xs text-slate-500 font-medium truncate mt-1">{entry.confidence ? `${Math.round(entry.confidence * 100)}% confidence` : 'No confidence score'}</span>
                           </div>
                         </td>
                         <td className="py-4 pr-4 align-middle">
                           <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
                             entry.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
                             entry.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                            entry.verdict === 'INVALID' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
                             'bg-teal-100 text-teal-800 border border-teal-200'
                           }`}>
                             {entry.verdict === 'SAFE' ? <ShieldCheck size={14} /> : null}
                             {entry.verdict === 'SUSPICIOUS' ? <TriangleAlert size={14} /> : null}
                             {entry.verdict === 'MALICIOUS' ? <ShieldAlert size={14} /> : null}
+                            {entry.verdict === 'INVALID' ? <Ban size={14} /> : null}
                             {entry.verdict}
                           </span>
                         </td>
