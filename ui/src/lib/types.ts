@@ -111,7 +111,16 @@ export interface CoreStatus {
   };
   analysis_config_reload?: {
     enabled: boolean;
+    channel?: string;
+    poll_interval?: string;
+    node_role?: string;
+    revision?: string;
+    last_reload_source?: string;
     last_reload_at: string;
+    redis_configured?: boolean;
+    store_configured?: boolean;
+    subscriber_active?: boolean;
+    reconciler_active?: boolean;
   };
 }
 
