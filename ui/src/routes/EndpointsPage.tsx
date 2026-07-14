@@ -8,6 +8,7 @@ import { globalLoader } from '../App';
 import { GroupModal } from '../components/GroupModal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { useDialog } from '../components/DialogContext';
 
 export function EndpointsPage() {
   const { data: statusData, error: statusErr, mutate: mutateStatus } = useSWR<AgentStatus | { status: AgentStatus }>('/v1/agent/status', apiFetch, { refreshInterval: 5000, keepPreviousData: true });
@@ -31,10 +32,10 @@ export function EndpointsPage() {
   const [mapValue, setMapValue] = useState('');
   const [mapGroupId, setMapGroupId] = useState('');
 
-
+  const { alert, confirm } = useDialog();
 
   const triggerTask = async (taskName: string) => {
-    if (!window.confirm(`Manually trigger agent task "${taskName}"?`)) return;
+    if (!(await confirm(`Manually trigger agent task "${taskName}"?`))) return;
     
     globalLoader.show();
     try {
@@ -43,7 +44,7 @@ export function EndpointsPage() {
       await new Promise(r => setTimeout(r, 1000));
       await mutateStatus();
     } catch (err: any) {
-      alert(`Error triggering task: ${err.message}`);
+      await alert({ message: `Error triggering task: ${err.message}`, type: 'error' });
     } finally {
       globalLoader.hide();
     }
@@ -51,27 +52,27 @@ export function EndpointsPage() {
 
   const deleteGroup = async (group: PolicyGroup) => {
     if (group.id === 1 || group.name.toLowerCase() === 'default') {
-      alert('Cannot delete default group');
+      await alert({ message: 'Cannot delete default group', type: 'error' });
       return;
     }
-    if (!window.confirm(`Delete group "${group.name}"? This will remove all associated client mappings and overrides.`)) return;
+    if (!(await confirm(`Delete group "${group.name}"? This will remove all associated client mappings and overrides.`))) return;
     
     try {
       await apiFetch(`/v1/groups?id=${group.id}`, { method: 'DELETE' });
       await mutateGroups();
     } catch (err: any) {
-      alert(`Error deleting group: ${err.message}`);
+      await alert({ message: `Error deleting group: ${err.message}`, type: 'error' });
     }
   };
 
   const createMapping = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mapValue.trim()) {
-      alert('Mapping value is required');
+      await alert({ message: 'Mapping value is required', type: 'error' });
       return;
     }
     if (!mapGroupId) {
-      alert('Valid group selection is required');
+      await alert({ message: 'Valid group selection is required', type: 'error' });
       return;
     }
 
@@ -85,17 +86,17 @@ export function EndpointsPage() {
       setMapValue('');
       await mutateMappings();
     } catch (err: any) {
-      alert(`Error adding mapping: ${err.message}`);
+      await alert({ message: `Error adding mapping: ${err.message}`, type: 'error' });
     }
   };
 
   const deleteMapping = async (id: number) => {
-    if (!window.confirm('Delete this client mapping?')) return;
+    if (!(await confirm('Delete this client mapping?'))) return;
     try {
       await apiFetch(`/v1/mappings?id=${id}`, { method: 'DELETE' });
       await mutateMappings();
     } catch (err: any) {
-      alert(`Error deleting mapping: ${err.message}`);
+      await alert({ message: `Error deleting mapping: ${err.message}`, type: 'error' });
     }
   };
 

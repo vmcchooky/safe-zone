@@ -4,6 +4,7 @@ import { apiFetch, apiJSON, messageFromError } from '../lib/api';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldAlert, Plus, Trash2, CheckCircle2, XCircle, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { useDialog } from '../components/DialogContext';
 
 interface Override {
   domain: string;
@@ -15,6 +16,7 @@ interface Override {
 
 export function OverridesPage() {
   const { data, error, mutate } = useSWR<{ items: Override[] }>('/v1/overrides', apiFetch, { keepPreviousData: true });
+  const { alert, confirm } = useDialog();
 
   const [newDomain, setNewDomain] = useState('');
   const [newAction, setNewAction] = useState<'allow' | 'block'>('block');
@@ -50,11 +52,12 @@ export function OverridesPage() {
   };
 
   const handleDelete = async (domain: string) => {
+    if (!(await confirm(`Delete override for ${domain}?`))) return;
     try {
       await apiFetch(`/v1/overrides?domain=${encodeURIComponent(domain)}`, { method: 'DELETE' });
       mutate();
     } catch (err) {
-      alert(`Failed to delete override for ${domain}: ${messageFromError(err)}`);
+      await alert({ message: `Failed to delete override for ${domain}: ${messageFromError(err)}`, type: 'error' });
     }
   };
 

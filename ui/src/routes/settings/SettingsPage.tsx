@@ -18,6 +18,7 @@ import {
   Loader2,
   Info
 } from 'lucide-react';
+import { useDialog } from '../../components/DialogContext';
 import './SettingsPage.css';
 
 type Tab = 'CORE' | 'SCORING' | 'ACCESS';
@@ -57,6 +58,7 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const { confirm } = useDialog();
 
   // Core settings states
   const [geminiKey, setGeminiKey] = useState('');
@@ -195,7 +197,7 @@ export function SettingsPage() {
   };
 
   const handleResetScoring = async () => {
-    if (!window.confirm('Are you sure you want to reset all scoring thresholds to default?')) return;
+    if (!(await confirm('Are you sure you want to reset all scoring thresholds to default?'))) return;
     setSaving(true);
     try {
       const res = await fetch('/v1/config/analysis/reset', {

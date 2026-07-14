@@ -6,6 +6,7 @@ import { apiFetch } from '../lib/api';
 import type { AgentStatus, CoreStatus, MetricsResponse } from '../lib/types';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { globalLoader } from '../App';
+import { useDialog } from '../components/DialogContext';
 
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
   constructor(props: any) {
@@ -37,21 +38,23 @@ function SystemPageContent() {
   const { data: metricsData, error: metricsErr } = useSWR<MetricsResponse>('/metrics', apiFetch, { refreshInterval: 5000, keepPreviousData: true });
   
   const [isClearing, setIsClearing] = useState(false);
+  const { alert, confirm } = useDialog();
 
-  const status = statusData ? ('status' in statusData ? statusData.status : statusData) : null;
-  const loading = !status && !coreStatus && !metricsData && !statusErr && !coreErr && !metricsErr;
+  const engineStatus = statusData ? ('status' in statusData ? statusData.status : statusData) : null;
+  const agentResponse = statusData ? ('status' in statusData ? (statusData as any) : statusData) : null;
+  const loading = !engineStatus && !coreStatus && !metricsData && !statusErr && !coreErr && !metricsErr;
   const errorObj = statusErr || coreErr || metricsErr;
   const error = errorObj ? (errorObj.message || 'Failed to load system status') : null;
 
   const handleClearCache = async () => {
-    if (!window.confirm("Are you sure you want to flush the system cache?")) return;
+    if (!(await confirm("Are you sure you want to flush the system cache?"))) return;
     setIsClearing(true);
     globalLoader.show();
     try {
       await apiFetch('/v1/cache/flush', { method: 'POST' });
-      alert("Cache flushed successfully.");
+      await alert({ message: "Cache flushed successfully.", type: 'success' });
     } catch (err: any) {
-      alert(`Error flushing cache: ${err.message}`);
+      await alert({ message: `Error flushing cache: ${err.message}`, type: 'error' });
     } finally {
       setIsClearing(false);
       globalLoader.hide();
@@ -131,7 +134,7 @@ function SystemPageContent() {
               </div>
               <div className="flex justify-between items-center text-sm mb-2">
                 <span className="text-slate-500">Engine Status</span>
-                {status?.enabled ? (
+                {engineStatus?.enabled ? (
                   <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 font-medium border border-emerald-100">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />Active
                   </span>
@@ -141,7 +144,7 @@ function SystemPageContent() {
               </div>
               <div className="flex justify-between items-center text-sm">
                 <span className="text-slate-500">Active Tasks</span>
-                <span className="font-medium text-slate-900">{(status?.tasks || []).filter(t => t.state === 'running').length} Running</span>
+                <span className="font-medium text-slate-900">{(engineStatus?.tasks || []).filter((t: any) => t.state === 'running').length} Running</span>
               </div>
             </div>
 
@@ -152,15 +155,15 @@ function SystemPageContent() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Database Size</span>
-                  <span className="font-medium text-slate-900">{(status?.database_stats?.file_size_mb || 0).toFixed(2)} MB</span>
+                  <span className="font-medium text-slate-900">{(agentResponse?.database_stats?.file_size_mb || 0).toFixed(2)} MB</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Disk Free Space</span>
-                  <span className="font-medium text-slate-900">{(status?.database_stats?.disk_free_gb || 0).toFixed(2)} GB</span>
+                  <span className="font-medium text-slate-900">{(agentResponse?.database_stats?.disk_free_gb || 0).toFixed(2)} GB</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Telemetry Retention</span>
-                  <span className="font-medium text-slate-900">{status?.telemetry_retention_days || 30} Days</span>
+                  <span className="font-medium text-slate-900">{agentResponse?.telemetry_retention_days || 30} Days</span>
                 </div>
               </div>
               </div>
@@ -254,23 +257,23 @@ function SystemPageContent() {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500">Loaded Domains</span>
-                  <span className="font-medium text-slate-900">{(status?.whitelist_stats?.loaded_domains || 0).toLocaleString()}</span>
+                  <span className="font-medium text-slate-900">{(agentResponse?.whitelist_stats?.loaded_domains || 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Hash Functions</span>
-                  <span className="font-medium text-slate-900">{status?.whitelist_stats?.bloom_hashes || 0}</span>
+                  <span className="font-medium text-slate-900">{agentResponse?.whitelist_stats?.bloom_hashes || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Bloom Filter Bits</span>
-                  <span className="font-medium text-slate-900">{(status?.whitelist_stats?.bloom_bits || 0).toLocaleString()}</span>
+                  <span className="font-medium text-slate-900">{(agentResponse?.whitelist_stats?.bloom_bits || 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">Memory Usage (RAM)</span>
-                  <span className="font-medium text-slate-900">{(status?.whitelist_stats?.bloom_size_ram_kb || 0).toFixed(2)} KB</span>
+                  <span className="font-medium text-slate-900">{(agentResponse?.whitelist_stats?.bloom_size_ram_kb || 0).toFixed(2)} KB</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500">False Positive Rate</span>
-                  <span className="font-medium text-slate-900">{((status?.whitelist_stats?.fpr || 0) * 100).toFixed(4)}%</span>
+                  <span className="font-medium text-slate-900">{((agentResponse?.whitelist_stats?.fpr || 0) * 100).toFixed(4)}%</span>
                 </div>
               </div>
             </div>
