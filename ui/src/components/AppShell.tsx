@@ -87,9 +87,23 @@ export function AppShell({
       {/* Top Floating Header for Brand and User Actions */}
       <div className="shell-floating-header">
         <div className="shell-brand">
-          <div style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', border: `2px solid ${eventState === 'error' ? 'rgba(244, 63, 94, 0.8)' : eventState === 'success' ? 'rgba(14, 165, 233, 0.8)' : 'rgba(0,0,0,0.1)'}`, transition: 'border-color 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', flexShrink: 0 }}>
+          <motion.div 
+            initial={false}
+            animate={{
+              borderColor: eventState === 'error' ? 'rgba(244, 63, 94, 0.9)' : eventState === 'success' ? 'rgba(14, 165, 233, 0.9)' : 'rgba(0,0,0,0.1)',
+              boxShadow: eventState === 'error' ? '0 0 24px rgba(244, 63, 94, 0.6), inset 0 0 12px rgba(244, 63, 94, 0.3)' : 
+                         eventState === 'success' ? '0 0 24px rgba(14, 165, 233, 0.6), inset 0 0 12px rgba(14, 165, 233, 0.3)' : 
+                         '0 0 0px rgba(0,0,0,0)',
+              scale: eventState !== 'idle' ? [1, 1.15, 1] : 1,
+            }}
+            transition={{
+              duration: eventState !== 'idle' ? 0.5 : 1,
+              ease: "easeInOut"
+            }}
+            style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', border: '2px solid rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', flexShrink: 0, zIndex: 10 }}
+          >
             <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
-          </div>
+          </motion.div>
           <div className="shell-brand-copy">
             <strong>Safe Zone</strong>
             <span>Quorix Engine v1.0</span>
