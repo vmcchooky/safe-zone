@@ -100,7 +100,7 @@ export function AppShell({
           <a className="button-secondary shell-toolbar-button" href="/dashboard" title="Legacy Dashboard">
             Legacy
           </a>
-          <button className="button-danger shell-toolbar-button" type="button" onClick={() => void logout()} title="Sign Out">
+          <button className="shell-logout-btn" type="button" onClick={() => void logout()} title="Sign Out">
             <LogOut size={16} />
           </button>
         </div>
