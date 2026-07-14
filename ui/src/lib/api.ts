@@ -37,21 +37,33 @@ function extractMessage(payload: unknown, fallback: string): string {
 }
 
 export async function apiFetch<T>(input: RequestInfo | URL, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(input, {
-    credentials: 'same-origin',
-    ...init,
-  });
-  const payload = await readPayload(response);
+  try {
+    const response = await fetch(input, {
+      credentials: 'same-origin',
+      ...init,
+    });
+    const payload = await readPayload(response);
 
-  if (!response.ok) {
-    throw new ApiError(
-      extractMessage(payload, `Request failed with status ${response.status}`),
-      response.status,
-      payload,
-    );
+    if (!response.ok) {
+      window.dispatchEvent(new CustomEvent('app:event', { detail: { type: 'error' } }));
+      throw new ApiError(
+        extractMessage(payload, `Request failed with status ${response.status}`),
+        response.status,
+        payload,
+      );
+    }
+
+    if (init.method && ['POST', 'PUT', 'DELETE', 'PATCH'].includes(init.method.toUpperCase())) {
+      window.dispatchEvent(new CustomEvent('app:event', { detail: { type: 'success' } }));
+    }
+
+    return payload as T;
+  } catch (error) {
+    if (!(error instanceof ApiError)) {
+      window.dispatchEvent(new CustomEvent('app:event', { detail: { type: 'error' } }));
+    }
+    throw error;
   }
-
-  return payload as T;
 }
 
 export async function apiJSON<T>(

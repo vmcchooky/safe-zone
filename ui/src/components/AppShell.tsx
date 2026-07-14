@@ -18,6 +18,21 @@ export function AppShell({
 }) {
   const { logout } = useAuth();
   const [showNav, setShowNav] = useState(true);
+  const [eventState, setEventState] = useState<'idle' | 'success' | 'error'>('idle');
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const handleEvent = (e: any) => {
+      setEventState(e.detail?.type || 'idle');
+      clearTimeout(timer);
+      timer = setTimeout(() => setEventState('idle'), 4000);
+    };
+    window.addEventListener('app:event', handleEvent);
+    return () => {
+      window.removeEventListener('app:event', handleEvent);
+      clearTimeout(timer);
+    };
+  }, []);
 
   // Auto-hide navigation logic based on mouse movement (macOS Dock style)
   useEffect(() => {
@@ -72,7 +87,7 @@ export function AppShell({
       {/* Top Floating Header for Brand and User Actions */}
       <div className="shell-floating-header">
         <div className="shell-brand">
-          <div style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', border: '2px solid rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', flexShrink: 0 }}>
+          <div style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', border: `2px solid ${eventState === 'error' ? 'rgba(244, 63, 94, 0.8)' : eventState === 'success' ? 'rgba(14, 165, 233, 0.8)' : 'rgba(0,0,0,0.1)'}`, transition: 'border-color 0.3s ease', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', flexShrink: 0 }}>
             <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
           </div>
           <div className="shell-brand-copy">

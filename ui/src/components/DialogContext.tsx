@@ -37,9 +37,19 @@ export function DialogProvider({ children }: { children: ReactNode }) {
   const showDialog = (options: string | DialogOptions, isConfirm: boolean) => {
     return new Promise<any>((resolve) => {
       const opts = typeof options === 'string' ? { message: options } : options;
+      
+      const configType = isConfirm ? 'warning' : 'info';
+      const finalType = opts.type || configType;
+
+      if (finalType === 'error') {
+        window.dispatchEvent(new CustomEvent('app:event', { detail: { type: 'error' } }));
+      } else if (finalType === 'success') {
+        window.dispatchEvent(new CustomEvent('app:event', { detail: { type: 'success' } }));
+      }
+
       setConfig({
         title: isConfirm ? 'Confirm' : 'Alert',
-        type: isConfirm ? 'warning' : 'info',
+        type: configType,
         confirmText: 'OK',
         cancelText: 'Cancel',
         ...opts,
