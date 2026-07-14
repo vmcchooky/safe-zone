@@ -72,12 +72,12 @@ export function AppShell({
       {/* Top Floating Header for Brand and User Actions */}
       <div className="shell-floating-header">
         <div className="shell-brand">
-          <div className="shrink-0 flex items-center justify-center" style={{ width: 56, height: 56, borderRadius: '50%', backgroundColor: '#fff', border: '3px solid #ff9a9e' }}>
+          <div className="shrink-0 flex items-center justify-center" style={{ width: 76, height: 76, borderRadius: '50%', backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.04)' }}>
             <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
           </div>
           <div className="shell-brand-copy">
             <strong>Safe Zone</strong>
-            <span>Quorix Engine v1.0</span>
+            <span>Quorix Engine</span>
           </div>
         </div>
 
