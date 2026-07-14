@@ -27,9 +27,12 @@ func NewRedis(addr, password string, db int) *Redis {
 
 	return &Redis{
 		client: redis.NewClient(&redis.Options{
-			Addr:     addr,
-			Password: password,
-			DB:       db,
+			Addr:         addr,
+			Password:     password,
+			DB:           db,
+			DialTimeout:  500 * time.Millisecond,
+			ReadTimeout:  500 * time.Millisecond,
+			WriteTimeout: 500 * time.Millisecond,
 		}),
 	}
 }
