@@ -104,14 +104,13 @@ function SystemPageContent() {
         </motion.div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
           {/* Status Card */}
           <motion.section 
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
             transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
-            className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden self-start"
+            className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
           >
           <div className="absolute top-0 right-0 w-64 h-64 bg-blue-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 translate-x-1/2"></div>
           
@@ -173,7 +172,7 @@ function SystemPageContent() {
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
             transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
-            className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col"
+            className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
           >
             <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 -translate-x-1/2"></div>
             
@@ -233,15 +232,13 @@ function SystemPageContent() {
               </div>
             </div>
           </motion.section>
-        </div>
 
-        {/* Management Card */}
-        <div className="space-y-6">
+          {/* Management Card */}
           <motion.section 
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
             transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
-            className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden"
+            className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
           >
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2.5 bg-purple-100/80 text-purple-600 rounded-xl">
@@ -283,7 +280,7 @@ function SystemPageContent() {
               whileTap={{ scale: 0.98 }}
               onClick={handleClearCache}
               disabled={isClearing}
-              className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50"
+              className="w-full mt-auto flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50"
             >
               <RefreshCw size={18} className={isClearing ? 'animate-spin' : ''} />
               {isClearing ? 'Flushing Cache...' : 'Flush Cache'}
@@ -294,7 +291,7 @@ function SystemPageContent() {
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
             transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
-            className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden"
+            className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden lg:col-start-3"
           >
             <div className="flex items-center gap-3 mb-6">
               <div className="p-2.5 bg-orange-100/80 text-orange-600 rounded-xl">
@@ -320,9 +317,6 @@ function SystemPageContent() {
               Download Diagnostic Logs
             </motion.button>
           </motion.section>
-
-
-        </div>
       </div>
 
       {/* Request Metrics Panel */}
