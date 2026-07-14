@@ -72,16 +72,8 @@ export function AppShell({
       {/* Top Floating Header for Brand and User Actions */}
       <div className="shell-floating-header">
         <div className="shell-brand">
-          <div className="relative flex items-center justify-center shrink-0 rounded-full overflow-hidden" style={{ width: 68, height: 68, minWidth: 68, minHeight: 68, padding: 3 }}>
-            <motion.div 
-              className="absolute inset-[-50%]"
-              animate={{ rotate: 360 }}
-              transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
-              style={{ background: 'conic-gradient(from 0deg, #ff9a9e, #fecfef, white, #fecfef, #ff9a9e)' }}
-            />
-            <div className="relative w-full h-full rounded-full overflow-hidden z-10 bg-white">
-              <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            </div>
+          <div className="shrink-0 flex items-center justify-center" style={{ width: 68, height: 68, borderRadius: '50%', backgroundColor: '#fff', border: '2px solid rgba(0,0,0,0.06)' }}>
+            <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
           </div>
           <div className="shell-brand-copy">
             <strong>Safe Zone</strong>
@@ -100,7 +92,7 @@ export function AppShell({
           <a className="button-secondary shell-toolbar-button" href="/dashboard" title="Legacy Dashboard">
             Legacy
           </a>
-          <button className="shell-logout-btn" type="button" onClick={() => void logout()} title="Sign Out">
+          <button className="button-danger shell-toolbar-button" type="button" onClick={() => void logout()} title="Sign Out">
             <LogOut size={16} />
           </button>
         </div>
