@@ -78,7 +78,7 @@ export function AppShell({
           <div className="shell-brand relative z-0" style={{ padding: '6px 14px 6px 28px', borderRadius: '0 12px 12px 0', marginLeft: '-20px' }}>
             <div className="shell-brand-copy">
               <strong>Safe Zone</strong>
-              <span>Quorix Engine</span>
+              <span style={{ fontSize: '0.7rem' }}>Quorix Engine</span>
             </div>
           </div>
         </div>
