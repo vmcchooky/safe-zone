@@ -18,21 +18,6 @@ export function AppShell({
 }) {
   const { logout } = useAuth();
   const [showNav, setShowNav] = useState(true);
-  const [eventState, setEventState] = useState<'idle' | 'success' | 'error'>('idle');
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    const handleEvent = (e: any) => {
-      setEventState(e.detail?.type || 'idle');
-      clearTimeout(timer);
-      timer = setTimeout(() => setEventState('idle'), 4000);
-    };
-    window.addEventListener('app:event', handleEvent);
-    return () => {
-      window.removeEventListener('app:event', handleEvent);
-      clearTimeout(timer);
-    };
-  }, []);
 
   // Auto-hide navigation logic based on mouse movement (macOS Dock style)
   useEffect(() => {
@@ -87,28 +72,17 @@ export function AppShell({
       {/* Top Floating Header for Brand and User Actions */}
       <div className="shell-floating-header">
         <div className="shell-brand">
-          <motion.div 
-            initial={false}
-            animate={{
-              background: eventState === 'error' 
-                ? 'conic-gradient(from 0deg, rgba(244, 63, 94, 0.9), rgba(255, 255, 255, 0.9), rgba(253, 164, 175, 0.9), rgba(244, 63, 94, 0.9))' 
-                : eventState === 'success' 
-                ? 'conic-gradient(from 0deg, rgba(14, 165, 233, 0.9), rgba(255, 255, 255, 0.9), rgba(125, 211, 252, 0.9), rgba(14, 165, 233, 0.9))' 
-                : 'conic-gradient(from 0deg, rgba(0,0,0,0.1), rgba(0,0,0,0.1))',
-              boxShadow: eventState === 'error' ? '0 0 12px rgba(244, 63, 94, 0.3)' : 
-                         eventState === 'success' ? '0 0 12px rgba(14, 165, 233, 0.3)' : 
-                         '0 0 0px rgba(0,0,0,0)',
-            }}
-            transition={{
-              duration: eventState !== 'idle' ? 0.3 : 0.8,
-              ease: "easeInOut"
-            }}
-            style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', padding: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, zIndex: 10 }}
-          >
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%', overflow: 'hidden', backgroundColor: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="relative flex items-center justify-center shrink-0 rounded-full overflow-hidden" style={{ width: 68, height: 68, minWidth: 68, minHeight: 68, padding: 3 }}>
+            <motion.div 
+              className="absolute inset-[-50%]"
+              animate={{ rotate: 360 }}
+              transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
+              style={{ background: 'conic-gradient(from 0deg, #ff9a9e, #fecfef, white, #fecfef, #ff9a9e)' }}
+            />
+            <div className="relative w-full h-full rounded-full overflow-hidden z-10 bg-white">
               <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
-          </motion.div>
+          </div>
           <div className="shell-brand-copy">
             <strong>Safe Zone</strong>
             <span>Quorix Engine v1.0</span>
