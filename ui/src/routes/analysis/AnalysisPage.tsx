@@ -137,9 +137,18 @@ export function AnalysisPage() {
 
   return (
     <>
-      <div className="flex flex-col gap-6 max-w-7xl mx-auto p-4 lg:p-8 animate-in fade-in duration-500 pb-32">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="flex flex-col gap-6 max-w-7xl mx-auto p-4 lg:p-8 pb-32"
+      >
         {/* Page Header */}
-      <header className="mb-4">
+      <motion.header 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="mb-4"
+      >
         <div className="text-xs font-bold tracking-wider uppercase text-sky-600 mb-1.5 pl-8">
           Analysis Deck
         </div>
@@ -148,10 +157,15 @@ export function AnalysisPage() {
           <h1 className="text-2xl font-bold text-slate-900 leading-none">Domain Inspection</h1>
           <InfoTooltip content="Fast lexical and evidence-backed triage for suspicious destinations." />
         </div>
-      </header>
+      </motion.header>
 
       {/* Inspection Dock */}
-      <section className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+      <motion.section 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+        className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden"
+      >
         {/* Subtle decorative glow */}
         <motion.div 
           className="absolute top-0 right-0 w-64 h-64 bg-sky-400/10 rounded-full blur-3xl pointer-events-none"
@@ -251,13 +265,18 @@ export function AnalysisPage() {
             </motion.div>
           )}
         </AnimatePresence>
-      </section>
+      </motion.section>
 
       {/* Grid: Risk Dossier + Event Stream */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         
         {/* Risk Dossier */}
-        <section className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[430px] flex flex-col">
+        <motion.section 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+          className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[430px] flex flex-col"
+        >
           
           <div className="flex justify-between items-start mb-6 z-10">
             <div className="flex items-center gap-2">
@@ -465,10 +484,15 @@ export function AnalysisPage() {
               )}
             </AnimatePresence>
           </div>
-        </section>
+        </motion.section>
 
         {/* Event Stream */}
-        <aside className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[430px]">
+        <motion.aside 
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+          className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[430px]"
+        >
           <div className="flex justify-between items-start mb-6">
             <div>
               <div className="text-xs font-semibold tracking-wider uppercase text-slate-500 mb-1">Event Stream</div>
@@ -508,10 +532,10 @@ export function AnalysisPage() {
               </div>
             ))}
           </div>
-        </aside>
+        </motion.aside>
 
       </div>
-    </div>
+    </motion.div>
 
       {/* Raw Data Modal */}
       <AnimatePresence>

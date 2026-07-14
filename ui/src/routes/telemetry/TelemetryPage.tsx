@@ -48,8 +48,8 @@ import { apiFetch, messageFromError } from '../../lib/api';
 import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
 
 const PAGE_SIZE = 12;
-const CHART_MOTION_DURATION = 720;
-const CHART_MOTION_EASING = 'ease-in-out' as const;
+const CHART_MOTION_DURATION = 1400;
+const CHART_MOTION_EASING = 'ease-out' as const;
 const SPRING_MOTION = { stiffness: 105, damping: 23, mass: 0.72 } as const;
 const PERIOD_OPTIONS = [
   { label: '24 hours', value: '24h' },
@@ -305,11 +305,20 @@ export function TelemetryPage() {
   const centerNumericValue = Number(centerPercentage);
 
   return (
-    <section className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8 overflow-x-hidden">
+    <motion.section 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8 overflow-x-hidden"
+    >
 
       <div className="max-w-7xl mx-auto space-y-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4">
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+          className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4"
+        >
           <header>
             <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-8">Live telemetry workspace</div>
             <div className="flex items-center gap-2.5">
@@ -362,7 +371,7 @@ export function TelemetryPage() {
               Refresh now
             </motion.button>
           </div>
-        </div>
+        </motion.div>
 
         {error ? (
           <motion.div 
@@ -396,7 +405,7 @@ export function TelemetryPage() {
               key={card.label}
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05, type: 'spring', stiffness: 300, damping: 24 }}
+              transition={{ delay: index * 0.05 + 0.1, type: 'spring', stiffness: 300, damping: 24 }}
               className="bg-slate-50 border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="flex items-center gap-3 mb-4">
@@ -414,7 +423,12 @@ export function TelemetryPage() {
         </div>
 
         {/* Threat Pressure Bar */}
-        <div className="bg-transparent border border-black/5 rounded-3xl p-8 shadow-sm relative">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+          className="bg-transparent border border-black/5 rounded-3xl p-8 shadow-sm relative"
+        >
           <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
             <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full -translate-y-1/2 translate-x-1/2 opacity-50" />
           </div>
@@ -449,79 +463,96 @@ export function TelemetryPage() {
               }}
             />
           </div>
-        </div>
+        </motion.div>
+
 
         {/* Charts Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+        >
           {/* Trend Chart */}
           <article className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[360px] lg:col-span-3">
             <div className="mb-6 flex items-center gap-2">
               <h2 className="text-xl font-bold text-slate-800">Threat trend</h2>
               <InfoTooltip content="Displays the volume of telemetry events classified as suspicious or malicious over the selected period. Useful for identifying abnormal traffic spikes." />
             </div>
-            <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                  <defs>
-                    <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#14b8a6" />
-                    </pattern>
-                    <pattern id="pattern-suspicious-area" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#f59e0b" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
-                    </pattern>
-                    <pattern id="pattern-malicious-area" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#f43f5e" />
-                      <circle cx="4" cy="4" r="1.5" fill="#f8fafc" />
-                    </pattern>
-                  </defs>
-                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
-                  <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} dy={10} minTickGap={30} />
-                  <YAxis
-                    tick={{ fill: '#94a3b8', fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(value) => formatCompact(Number(value))}
-                    dx={-5}
-                    width={40}
-                    allowDecimals={false}
-                    domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.1))]}
-                  />
-                  <Tooltip 
-                    cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
-                    isAnimationActive={true}
-                    animationDuration={150}
-                    animationEasing="ease-out"
-                    content={({ active, payload, label }) => {
-                      if (active && payload && payload.length) {
-                        return (
-                          <motion.div
-                            initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                            className="bg-slate-50/95 backdrop-blur-md border border-slate-50/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
-                          >
-                            <p className="text-slate-500 font-medium text-sm mb-3">{label}</p>
-                            <div className="space-y-2">
-                              {payload.map((entry: any, index: number) => (
-                                <div key={index} className="flex items-center gap-3 text-sm">
-                                  <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
-                                  <span className="text-slate-600 font-medium">{entry.name}:</span>
-                                  <span className="text-slate-900 font-bold ml-auto">{entry.value}</span>
+            <div className="flex-1 min-h-0 relative">
+              <AnimatePresence mode="wait">
+                <motion.div 
+                  key={period}
+                  initial={{ opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                  className="w-full h-full absolute inset-0"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#14b8a6" />
+                        </pattern>
+                        <pattern id="pattern-suspicious-area" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f59e0b" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
+                        </pattern>
+                        <pattern id="pattern-malicious-area" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f43f5e" />
+                          <circle cx="4" cy="4" r="1.5" fill="#f8fafc" />
+                        </pattern>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                      <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} dy={10} minTickGap={30} />
+                      <YAxis
+                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(value) => formatCompact(Number(value))}
+                        dx={-5}
+                        width={40}
+                        allowDecimals={false}
+                        domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.1))]}
+                      />
+                      <Tooltip 
+                        cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
+                        isAnimationActive={true}
+                        animationDuration={150}
+                        animationEasing="ease-out"
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <motion.div
+                                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                                className="bg-slate-50/95 backdrop-blur-md border border-slate-50/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
+                              >
+                                <p className="text-slate-500 font-medium text-sm mb-3">{label}</p>
+                                <div className="space-y-2">
+                                  {payload.map((entry: any, index: number) => (
+                                    <div key={index} className="flex items-center gap-3 text-sm">
+                                      <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
+                                      <span className="text-slate-600 font-medium">{entry.name}:</span>
+                                      <span className="text-slate-900 font-bold ml-auto">{entry.value}</span>
+                                    </div>
+                                  ))}
                                 </div>
-                              ))}
-                            </div>
-                          </motion.div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
-                  <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
-                  <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
-                </AreaChart>
-              </ResponsiveContainer>
+                              </motion.div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                      <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                      <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </AnimatePresence>
             </div>
           </article>
 
@@ -531,71 +562,84 @@ export function TelemetryPage() {
               <InfoTooltip content="Shows the overall distribution of safety verdicts (Safe, Suspicious, Malicious) for all processed telemetry events in this time window." />
             </div>
             <div className="flex-1 min-h-0 relative">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <defs>
-                    <pattern id="pattern-safe-pie" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#14b8a6" />
-                    </pattern>
-                    <pattern id="pattern-suspicious-pie" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#f59e0b" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
-                    </pattern>
-                    <pattern id="pattern-malicious-pie" width="6" height="6" patternUnits="userSpaceOnUse">
-                      <rect width="6" height="6" fill="#f43f5e" />
-                      <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
-                    </pattern>
-                  </defs>
-                  <Pie
-                    data={distribution}
-                    dataKey="value"
-                    nameKey="name"
-                    cx="50%"
-                    cy="50%"
-                    innerRadius="62%"
-                    outerRadius="85%"
-                    paddingAngle={4}
-                    cornerRadius={6}
-                    stroke="none"
-                    startAngle={90}
-                    endAngle={-270}
-                    isAnimationActive
-                    animationDuration={CHART_MOTION_DURATION}
-                    animationEasing={CHART_MOTION_EASING}
-                    animationMatchBy="index"
-                    // @ts-ignore
-                    shape={(props: any) => {
-                      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
-                      const isHovered = index === activeIndex;
-                      const isAnyHovered = activeIndex !== null;
-                      const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
-                      return (
-                        <PieSectorShape
-                          cx={cx}
-                          cy={cy}
-                          innerRadius={innerRadius}
-                          outerRadius={outerRadius}
-                          startAngle={startAngle}
-                          endAngle={endAngle}
-                          fill={fill}
-                          isHovered={isHovered}
-                          opacity={opacity}
-                          cornerRadius={6}
-                        />
-                      );
-                    }}
-                    onMouseEnter={(_, index) => handleMouseEnter(index)}
-                    onMouseLeave={handleMouseLeave}
-                  >
-                    {distribution.map((slice) => (
-                      <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
-                    ))}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
+              <AnimatePresence mode="wait">
+                <motion.div 
+                  key={period}
+                  initial={{ opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                  className="w-full h-full absolute inset-0"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <defs>
+                        <pattern id="pattern-safe-pie" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#14b8a6" />
+                        </pattern>
+                        <pattern id="pattern-suspicious-pie" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f59e0b" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
+                        </pattern>
+                        <pattern id="pattern-malicious-pie" width="6" height="6" patternUnits="userSpaceOnUse">
+                          <rect width="6" height="6" fill="#f43f5e" />
+                          <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
+                        </pattern>
+                      </defs>
+                      <Pie
+                        data={distribution}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="62%"
+                        outerRadius="85%"
+                        paddingAngle={4}
+                        cornerRadius={6}
+                        stroke="none"
+                        startAngle={90}
+                        endAngle={-270}
+                        isAnimationActive
+                        animationDuration={CHART_MOTION_DURATION}
+                        animationEasing={CHART_MOTION_EASING}
+                        animationMatchBy="index"
+                        // @ts-ignore
+                        shape={(props: any) => {
+                          const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
+                          const isHovered = index === activeIndex;
+                          const isAnyHovered = activeIndex !== null;
+                          const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
+                          return (
+                            <PieSectorShape
+                              cx={cx}
+                              cy={cy}
+                              innerRadius={innerRadius}
+                              outerRadius={outerRadius}
+                              startAngle={startAngle}
+                              endAngle={endAngle}
+                              fill={fill}
+                              isHovered={isHovered}
+                              opacity={opacity}
+                              cornerRadius={6}
+                            />
+                          );
+                        }}
+                        onMouseEnter={(_, index) => handleMouseEnter(index)}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        {distribution.map((slice) => (
+                          <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </AnimatePresence>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
                 <motion.div
-                  animate={{ scale: activeIndex === null ? 1 : 1.025 }}
+                  key={period}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: activeIndex === null ? 1 : 1.025 }}
                   transition={{ type: 'spring', stiffness: 180, damping: 20 }}
                   className="flex flex-col items-center justify-center"
                 >
@@ -613,58 +657,74 @@ export function TelemetryPage() {
               <h2 className="text-xl font-bold text-slate-800">Score distribution</h2>
               <InfoTooltip content="Groups all telemetry events into 5 specific threat score ranges (from 0 to 100), providing a detailed view of the risk landscape." />
             </div>
-            <div className="flex-1 min-h-0">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={scoreBands} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-                  <defs>
-                    <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#14b8a6" />
-                    </pattern>
-                    <pattern id="pattern-safe-low-bar" width="8" height="8" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#10b981" />
-                    </pattern>
-                    <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#f59e0b" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
-                    </pattern>
-                    <pattern id="pattern-high-risk-bar" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
-                      <rect width="8" height="8" fill="#f97316" />
-                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
-                    </pattern>
-                    <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
-                      <rect width="6" height="6" fill="#f43f5e" />
-                      <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
-                    </pattern>
-                  </defs>
-                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
-                  <YAxis
-                    tick={{ fill: '#94a3b8', fontSize: 12 }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(value) => formatCompact(Number(value))}
-                    dx={-10}
-                  />
-                  <Tooltip 
-                    formatter={(value: number, name: string, props: any) => [formatCompact(Number(value)), props.payload.name]}
-                    contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
-                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
-                    labelStyle={{ display: 'none' }}
-                  />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index">
-                    {scoreBands.map((bar) => (
-                      <Cell key={bar.label} fill={bar.fill} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="flex-1 min-h-0 relative">
+              <AnimatePresence mode="wait">
+                <motion.div 
+                  key={period}
+                  initial={{ opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                  className="w-full h-full absolute inset-0"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={scoreBands} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+                      <defs>
+                        <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#14b8a6" />
+                        </pattern>
+                        <pattern id="pattern-safe-low-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#10b981" />
+                        </pattern>
+                        <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f59e0b" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
+                        </pattern>
+                        <pattern id="pattern-high-risk-bar" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f97316" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
+                        </pattern>
+                        <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
+                          <rect width="6" height="6" fill="#f43f5e" />
+                          <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
+                        </pattern>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
+                      <YAxis
+                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(value) => formatCompact(Number(value))}
+                        dx={-10}
+                      />
+                      <Tooltip 
+                        formatter={(value: number, name: string, props: any) => [formatCompact(Number(value)), props.payload.name]}
+                        contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
+                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                        itemStyle={{ color: '#1e293b', fontWeight: 600 }}
+                        labelStyle={{ display: 'none' }}
+                      />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index">
+                        {scoreBands.map((bar) => (
+                          <Cell key={bar.label} fill={bar.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </AnimatePresence>
             </div>
           </article>
-        </div>
+        </motion.div>
 
         {/* Table - Outer transparent frame */}
-        <div className="border border-white/70 rounded-[2rem] p-1.5 shadow-sm">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.4, ease: "easeOut" }}
+          className="border border-white/70 rounded-[2rem] p-1.5 shadow-sm"
+        >
         <article className="bg-slate-50/95 rounded-3xl p-8">
           <div className="flex justify-between items-center mb-8">
             <div className="flex items-center gap-2">
@@ -900,8 +960,8 @@ export function TelemetryPage() {
             </div>
           </div>
         </article>
-        </div>
+        </motion.div>
       </div>
-    </section>
+    </motion.section>
   );
 }

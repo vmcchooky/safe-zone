@@ -45,12 +45,18 @@ func (h *Handler) ListReportsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reports, err := db.ListBlockReportsFiltered(r.Context(), store.BlockReportFilter{
+	filter := store.BlockReportFilter{
 		Status: status,
 		Query:  query,
-	}, limit, offset)
+	}
+	reports, err := db.ListBlockReportsFiltered(r.Context(), filter, limit, offset)
 	if err != nil {
 		httputil.WriteError(w, http.StatusInternalServerError, "failed to list reports: "+err.Error())
+		return
+	}
+	total, err := db.CountBlockReportsFiltered(r.Context(), filter)
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to count reports: "+err.Error())
 		return
 	}
 	if reports == nil {
@@ -59,6 +65,7 @@ func (h *Handler) ListReportsHandler(w http.ResponseWriter, r *http.Request) {
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"reports": reports,
+		"total":   total,
 		"filter": map[string]string{
 			"status": status,
 			"q":      query,

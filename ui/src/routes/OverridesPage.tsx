@@ -171,7 +171,7 @@ export function OverridesPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto flex-1">
               <table className="w-full text-left text-base whitespace-nowrap table-fixed">
               <thead className="bg-slate-50/50 text-slate-500 border-b border-slate-200/50">
                 <tr>
@@ -199,7 +199,7 @@ export function OverridesPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 w-32 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-medium border ${
+                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-medium border ${
                           override.action === 'allow'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
                             : 'bg-rose-50 text-rose-700 border-rose-200/60'
@@ -234,16 +234,16 @@ export function OverridesPage() {
             </table>
           </div>
           
-          {totalPages > 1 && (
+          {totalItems > 0 && (
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t border-slate-200/50 bg-slate-50/30">
               <span className="text-sm text-slate-500">
-                Showing <span className="font-medium text-slate-700">{startIndex + 1}</span> to <span className="font-medium text-slate-700">{Math.min(startIndex + itemsPerPage, totalItems)}</span> of <span className="font-medium text-slate-700">{totalItems}</span> entries
+                Total: <span className="font-medium text-slate-700">{totalItems}</span>
               </span>
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                   disabled={safeCurrentPage === 1}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
                 >
                   <ChevronLeft className="w-5 h-5" />
                 </button>
@@ -252,10 +252,10 @@ export function OverridesPage() {
                     <button
                       key={page}
                       onClick={() => setCurrentPage(page)}
-                      className={`min-w-[32px] h-8 flex items-center justify-center rounded-lg text-sm font-medium transition-colors ${
+                      className={`min-w-[32px] h-8 flex items-center justify-center rounded-lg text-sm font-medium active:scale-95 transition-all duration-200 ${
                         safeCurrentPage === page
-                          ? 'bg-sky-50 text-sky-600 font-semibold'
-                          : 'text-slate-600 hover:bg-slate-100'
+                          ? 'bg-blue-50 text-blue-600 font-semibold'
+                          : 'text-slate-600 hover:bg-slate-100 active:bg-slate-200'
                       }`}
                     >
                       {page}
@@ -265,7 +265,7 @@ export function OverridesPage() {
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                   disabled={safeCurrentPage === totalPages}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:pointer-events-none transition-colors"
+                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
                 >
                   <ChevronRight className="w-5 h-5" />
                 </button>

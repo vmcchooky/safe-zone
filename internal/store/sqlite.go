@@ -1856,6 +1856,38 @@ func (d *DB) ListBlockReportsFiltered(ctx context.Context, filter BlockReportFil
 	return reports, rows.Err()
 }
 
+// CountBlockReportsFiltered returns the total number of reports matching a filter.
+// It is intentionally separate from ListBlockReportsFiltered so callers can paginate
+// at the database layer without loading all matching reports into memory.
+func (d *DB) CountBlockReportsFiltered(ctx context.Context, filter BlockReportFilter) (int, error) {
+	if !d.Enabled() {
+		return 0, nil
+	}
+
+	query := `SELECT COUNT(*) FROM block_reports `
+	var args []any
+	var clauses []string
+	if filter.Status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, strings.TrimSpace(filter.Status))
+	}
+	if filter.Query != "" {
+		needle := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+		clauses = append(clauses, "(LOWER(domain) LIKE ? OR LOWER(COALESCE(contact, '')) LIKE ? OR LOWER(COALESCE(note, '')) LIKE ?)")
+		args = append(args, needle, needle, needle)
+	}
+	if len(clauses) > 0 {
+		// #nosec G202 -- clauses are safely concatenated
+		query += `WHERE ` + strings.Join(clauses, " AND ")
+	}
+
+	var total int
+	if err := d.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count block reports: %w", err)
+	}
+	return total, nil
+}
+
 // UpdateBlockReportStatus updates the status of a specific block report.
 func (d *DB) UpdateBlockReportStatus(ctx context.Context, id int64, status string) error {
 	if !d.Enabled() {
