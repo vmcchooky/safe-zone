@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -150,4 +151,45 @@ func logAnalysisConfigReloadStatus(service string, riskService *risk.Service) {
 
 func (h *Handler) FeedStatus(ctx context.Context) feed.StatusSummary {
 	return feed.ReadStatusSummary(ctx, h.Risk.RedisCache(), h.Config.FeedKey, h.Config.FeedPreset, h.Config.FeedSources, h.Config.FeedStaleAfter)
+}
+
+func (h *Handler) CacheFlushHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if h.Risk != nil && h.Risk.Whitelist() != nil {
+		err := h.Risk.Whitelist().LoadFromDB()
+		if err != nil {
+			httputil.WriteError(w, http.StatusInternalServerError, "Failed to flush cache: "+err.Error())
+			return
+		}
+	}
+	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "message": "Cache flushed"})
+}
+
+func (h *Handler) LogsExportHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain")
+	w.Header().Set("Content-Disposition", "attachment; filename=\"safe-zone-diagnostics.log\"")
+
+	w.Write([]byte("Safe-Zone Diagnostic Logs\n=========================\n\n"))
+	
+	db := h.Risk.StoreDB()
+	if db != nil {
+		events, err := db.QueryAgentEvents(r.Context(), time.Now().Add(-7*24*time.Hour), []string{}, 1000)
+		if err == nil {
+			for _, ev := range events {
+				w.Write([]byte(fmt.Sprintf("[%s] %s: %s - %s (Domain: %s)\n", ev.CreatedAt, ev.TaskName, ev.EventType, ev.Details, ev.Domain)))
+			}
+		} else {
+			w.Write([]byte("Error fetching events: " + err.Error() + "\n"))
+		}
+	} else {
+		w.Write([]byte("Store DB is disabled or unavailable.\n"))
+	}
 }

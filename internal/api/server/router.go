@@ -21,6 +21,8 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/readyz", handlers.HealthHandler("core-api"))
 	mux.HandleFunc("/v1/version", h.VersionHandler)
 	mux.HandleFunc("/metrics", h.MetricsHandler)
+	mux.HandleFunc("/v1/cache/flush", h.RequireAdminForMutationFunc(h.CacheFlushHandler))
+	mux.HandleFunc("/v1/logs/export", h.RequireAdminFunc(h.LogsExportHandler))
 
 	// Block Pages
 	mux.HandleFunc("/block", h.BlockPageHandler)

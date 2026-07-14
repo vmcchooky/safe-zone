@@ -12,7 +12,7 @@ function normalizeBasePath(value: string) {
 }
 
 function buildProxy(target: string) {
-  const proxyPaths = ['/v1', '/assets', '/dashboard', '/healthz', '/readyz', '/block'];
+  const proxyPaths = ['/v1', '/assets', '/dashboard', '/healthz', '/readyz', '/block', '/metrics'];
 
   return Object.fromEntries(
     proxyPaths.map((path) => [

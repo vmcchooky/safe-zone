@@ -87,3 +87,51 @@ export interface AgentStatus {
   };
   telemetry_retention_days?: number;
 }
+
+export interface CoreStatus {
+  service: string;
+  status: string;
+  mode?: string;
+  deployment_tier?: string;
+  redis?: {
+    configured: boolean;
+    status: string;
+    error?: string;
+  };
+  feed_sync?: {
+    status: string;
+    total_domains: number;
+    last_sync: string;
+    error?: string;
+  };
+  adblock?: {
+    enabled: boolean;
+    loaded_rules: number;
+    status: string;
+  };
+  analysis_config_reload?: {
+    enabled: boolean;
+    last_reload_at: string;
+  };
+}
+
+export interface RequestSummary {
+  count: number;
+  bytes: number;
+  total_duration_ms: number;
+  max_duration_ms: number;
+  last_status: number;
+}
+
+export interface MetricsSnapshot {
+  started_at: string;
+  uptime_seconds: number;
+  request_summary: Record<string, RequestSummary>;
+  counters?: Record<string, number>;
+}
+
+export interface MetricsResponse {
+  service: string;
+  status: string;
+  metrics: MetricsSnapshot;
+}
