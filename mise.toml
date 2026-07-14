@@ -1,6 +1,7 @@
 [tools]
 go = "1.26.4"
 node = "24"
+"go:golangci-lint" = "1.64.5"
 
 [tasks.default]
 description = "Run the default repository verification suite"
@@ -9,12 +10,12 @@ run = "echo Safe Zone default checks passed."
 
 [tasks.check]
 description = "Run the standard local verification suite"
-depends = ["go:test", "go:build"]
+depends = ["go:lint", "go:test", "go:build"]
 run = "echo Safe Zone checks passed."
 
 [tasks.ci]
 description = "Run the CI verification suite"
-depends = ["check", "go:security"]
+depends = ["check", "ui:e2e", "go:security"]
 run = "echo Safe Zone CI checks passed."
 
 [tasks."ui:install"]
@@ -65,6 +66,11 @@ description = "Run the UI verification suite without syncing the embedded bundle
 run = "sh ./scripts/ui.sh check"
 run_windows = "pwsh -NoProfile -File scripts/ui.ps1 check"
 
+[tasks."ui:e2e"]
+description = "Run the UI E2E tests"
+run = "npm --prefix ui run test:e2e"
+run_windows = "cmd.exe /c \"cd ui && npm run test:e2e\""
+
 [tasks."go:test"]
 description = "Run the Go test suite with the embedded UI bundle refreshed first"
 depends = ["ui:bundle"]
@@ -74,6 +80,10 @@ run = "go test ./..."
 description = "Build all Go packages with the embedded UI bundle refreshed first"
 depends = ["ui:bundle"]
 run = "go build ./..."
+
+[tasks."go:lint"]
+description = "Run the Go linter"
+run = "golangci-lint run"
 
 [tasks."go:security"]
 description = "Run the Go security scans used in CI"

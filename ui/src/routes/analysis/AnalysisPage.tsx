@@ -367,7 +367,7 @@ export function AnalysisPage() {
                           result.verdict === 'INVALID' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
                           'bg-teal-100 text-teal-700 border border-teal-200'
                         }`}>
-                          {result.verdict === 'MALICIOUS' ? <ShieldBan size={16} /> : result.verdict === 'INVALID' ? <Ban size={16} /> : result.verdict === 'SUSPICIOUS' ? <TriangleAlert size={16} /> : <ShieldCheck size={16} />}
+                          {result.verdict === 'MALICIOUS' ? <ShieldBan size={16} /> : result.verdict === 'INVALID' ? <Ban size={16} /> : result.verdict === 'SUSPICIOUS' ? <AlertTriangle size={16} /> : <ShieldCheck size={16} />}
                           {result.verdict}
                         </span>
                         <span className="px-3 py-1 rounded-full text-sm font-medium bg-slate-100 text-slate-600 border border-slate-200">

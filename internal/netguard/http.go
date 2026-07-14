@@ -52,8 +52,6 @@ func GuardedTransport(base http.RoundTripper, allowPrivate bool) http.RoundTripp
 			}
 			return baseDial(ctx, network, net.JoinHostPort(ips[0].String(), port))
 		}
-		transport.Dial = nil
-		transport.DialTLS = nil
 		transport.DialTLSContext = nil
 		return transport
 	}

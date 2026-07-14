@@ -17,18 +17,7 @@ import (
 	"safe-zone/internal/netguard"
 )
 
-const defaultThreatFeedKey = "safe-zone:threat:feed"
 
-type syncReport struct {
-	Source     string          `json:"source"`
-	Key        string          `json:"key"`
-	DryRun     bool            `json:"dry_run"`
-	Replace    bool            `json:"replace"`
-	Stats      feed.ParseStats `json:"stats"`
-	Written    int64           `json:"written"`
-	RedisAddr  string          `json:"redis_addr,omitempty"`
-	FinishedAt string          `json:"finished_at"`
-}
 
 func main() {
 	buildinfo.Link()

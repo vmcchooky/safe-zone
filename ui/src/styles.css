@@ -35,6 +35,8 @@ body {
   background-color: #f3f4f6; /* Fallback */
   color: var(--ink);
   overflow-x: hidden;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 a {
@@ -45,8 +47,16 @@ a {
 button,
 input,
 select,
-textarea {
+textarea,
+[contenteditable="true"] {
   font: inherit;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: auto;
+  -webkit-user-select: auto;
 }
 
 button {

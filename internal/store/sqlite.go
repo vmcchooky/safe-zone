@@ -1035,7 +1035,7 @@ func (d *DB) ReplaceOSINTEvidence(ctx context.Context, domain string, evidence [
 	if err != nil {
 		return fmt.Errorf("begin osint evidence transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM osint_evidence WHERE domain = ?`, domain); err != nil {
 		return fmt.Errorf("delete old osint evidence: %w", err)
@@ -1118,7 +1118,7 @@ func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
 	if err != nil {
 		return fmt.Errorf("begin whitelist transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, "DELETE FROM whitelist_domains")
 	if err != nil {

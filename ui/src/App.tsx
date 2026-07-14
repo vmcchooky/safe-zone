@@ -4,6 +4,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { AppShell } from './components/AppShell';
 import { LoginScreen } from './components/LoginScreen';
 import { useAuth } from './auth/AuthProvider';
+import { useAntiInspect } from './hooks/useAntiInspect';
 import './app.css';
 
 // --- Global Loader Engine ---
@@ -172,6 +173,7 @@ function ProtectedRoutes() {
 }
 
 export function App() {
+  useAntiInspect();
   const { loading, session, error } = useAuth();
 
   useEffect(() => {

@@ -9,7 +9,6 @@ import (
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/buildinfo"
 	"safe-zone/internal/feed"
-	"safe-zone/internal/logjson"
 	"safe-zone/internal/risk"
 )
 
@@ -116,38 +115,6 @@ func (h *Handler) VersionHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, buildinfo.Snapshot("core-api", h.Config.DeploymentTier))
 }
 
-func logCacheStatus(service string, riskService *risk.Service) {
-	status := riskService.CacheStatus(context.Background())
-	if !status.Configured {
-		return
-	}
-	if status.Status == "ok" {
-		logjson.Info("redis cache connected", map[string]any{"service": service})
-		return
-	}
-	logjson.Warn("redis cache unavailable at startup", map[string]any{
-		"service": service,
-		"error":   status.Error,
-	})
-}
-
-func logAnalysisConfigReloadStatus(service string, riskService *risk.Service) {
-	status := riskService.AnalysisConfigReloadStatus()
-	logjson.Info("analysis config reload status", map[string]any{
-		"service":            service,
-		"enabled":            status.Enabled,
-		"channel":            status.Channel,
-		"poll_interval":      status.PollInterval,
-		"node_role":          status.NodeRole,
-		"revision":           status.Revision,
-		"last_reload_source": status.LastReloadSource,
-		"last_reload_at":     status.LastReloadAt,
-		"redis_configured":   status.RedisConfigured,
-		"store_configured":   status.StoreConfigured,
-		"subscriber_active":  status.SubscriberActive,
-		"reconciler_active":  status.ReconcilerActive,
-	})
-}
 
 func (h *Handler) FeedStatus(ctx context.Context) feed.StatusSummary {
 	return feed.ReadStatusSummary(ctx, h.Risk.RedisCache(), h.Config.FeedKey, h.Config.FeedPreset, h.Config.FeedSources, h.Config.FeedStaleAfter)
@@ -177,19 +144,19 @@ func (h *Handler) LogsExportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Content-Disposition", "attachment; filename=\"safe-zone-diagnostics.log\"")
 
-	w.Write([]byte("Safe-Zone Diagnostic Logs\n=========================\n\n"))
+	_, _ = w.Write([]byte("Safe-Zone Diagnostic Logs\n=========================\n\n"))
 	
 	db := h.Risk.StoreDB()
 	if db != nil {
 		events, err := db.QueryAgentEvents(r.Context(), time.Now().Add(-7*24*time.Hour), []string{}, 1000)
 		if err == nil {
 			for _, ev := range events {
-				w.Write([]byte(fmt.Sprintf("[%s] %s: %s - %s (Domain: %s)\n", ev.CreatedAt, ev.TaskName, ev.EventType, ev.Details, ev.Domain)))
+				_, _ = w.Write([]byte(fmt.Sprintf("[%s] %s: %s - %s (Domain: %s)\n", ev.CreatedAt, ev.TaskName, ev.EventType, ev.Details, ev.Domain)))
 			}
 		} else {
-			w.Write([]byte("Error fetching events: " + err.Error() + "\n"))
+			_, _ = w.Write([]byte("Error fetching events: " + err.Error() + "\n"))
 		}
 	} else {
-		w.Write([]byte("Store DB is disabled or unavailable.\n"))
+		_, _ = w.Write([]byte("Store DB is disabled or unavailable.\n"))
 	}
 }

@@ -2248,51 +2248,6 @@ func (s *Service) bumpBrandRevision(ctx context.Context) {
 
 // --- Local Overrides ---
 
-func (s *Service) checkOverride(domain string) *analysis.Result {
-	if s.store == nil {
-		return nil
-	}
-	override, err := s.store.GetOverride(context.Background(), domain)
-	if err != nil {
-		logjson.Warn("override check failed", map[string]any{
-			"service": "risk",
-			"domain":  domain,
-			"error":   err.Error(),
-		})
-		return nil // fail-open
-	}
-	if override == nil {
-		return nil
-	}
-
-	switch override.Action {
-	case "block":
-		reason := "admin override: block"
-		if override.Reason != "" {
-			reason = fmt.Sprintf("admin override: block (%s)", override.Reason)
-		}
-		return &analysis.Result{
-			Domain:     domain,
-			Verdict:    analysis.VerdictMalicious,
-			Confidence: 1.0,
-			Score:      100,
-			Reasons:    []string{reason},
-		}
-	case "allow":
-		reason := "admin override: allow"
-		if override.Reason != "" {
-			reason = fmt.Sprintf("admin override: allow (%s)", override.Reason)
-		}
-		return &analysis.Result{
-			Domain:     domain,
-			Verdict:    analysis.VerdictSafe,
-			Confidence: 1.0,
-			Score:      0,
-			Reasons:    []string{reason},
-		}
-	}
-	return nil
-}
 
 // --- Telemetry ---
 
