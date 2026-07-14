@@ -90,14 +90,13 @@ export function AppShell({
           <motion.div 
             initial={false}
             animate={{
-              borderColor: eventState === 'error' ? 'rgba(244, 63, 94, 0.9)' : eventState === 'success' ? 'rgba(14, 165, 233, 0.9)' : 'rgba(0,0,0,0.1)',
-              boxShadow: eventState === 'error' ? '0 0 24px rgba(244, 63, 94, 0.6), inset 0 0 12px rgba(244, 63, 94, 0.3)' : 
-                         eventState === 'success' ? '0 0 24px rgba(14, 165, 233, 0.6), inset 0 0 12px rgba(14, 165, 233, 0.3)' : 
+              borderColor: eventState === 'error' ? 'rgba(244, 63, 94, 0.8)' : eventState === 'success' ? 'rgba(14, 165, 233, 0.8)' : 'rgba(0,0,0,0.1)',
+              boxShadow: eventState === 'error' ? '0 0 12px rgba(244, 63, 94, 0.3)' : 
+                         eventState === 'success' ? '0 0 12px rgba(14, 165, 233, 0.3)' : 
                          '0 0 0px rgba(0,0,0,0)',
-              scale: eventState !== 'idle' ? [1, 1.15, 1] : 1,
             }}
             transition={{
-              duration: eventState !== 'idle' ? 0.5 : 1,
+              duration: eventState !== 'idle' ? 0.3 : 0.8,
               ease: "easeInOut"
             }}
             style={{ width: 64, height: 64, minWidth: 64, minHeight: 64, borderRadius: '50%', border: '2px solid rgba(0,0,0,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', flexShrink: 0, zIndex: 10 }}
