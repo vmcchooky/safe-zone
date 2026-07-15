@@ -352,6 +352,155 @@
   margin: 0 auto 20px;
 }
 
+.guest-brand-mark {
+  position: relative;
+  z-index: 11;
+  flex: 0 0 76px;
+  width: 76px;
+  height: 76px;
+}
+
+.guest-notice-bell {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 50%;
+  z-index: 2;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  color: #9f6516;
+  background: rgba(255, 251, 235, 0.96);
+  border: 1px solid rgba(217, 119, 6, 0.28);
+  border-radius: 999px;
+  box-shadow: 0 7px 16px rgba(120, 53, 15, 0.16), inset 0 1px rgba(255, 255, 255, 0.9);
+  cursor: help;
+  transform: translateX(-50%);
+  transition: color 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.guest-notice-bell:hover,
+.guest-notice-bell:focus-visible {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: rgba(217, 119, 6, 0.48);
+  box-shadow: 0 10px 22px rgba(120, 53, 15, 0.22), inset 0 1px rgba(255, 255, 255, 0.95);
+  outline: none;
+}
+
+.guest-notice-bell-icon {
+  transform-origin: 50% 10%;
+}
+
+.guest-notice-bell.is-ringing .guest-notice-bell-icon {
+  animation: guestNoticeBellRing 1.7s ease-in-out infinite;
+}
+
+.guest-notice-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border: 1.5px solid #fffbeb;
+  border-radius: 999px;
+  background: #ef4444;
+}
+
+.guest-notice-bubble {
+  position: absolute;
+  top: calc(100% + 14px);
+  left: -38px;
+  width: min(380px, calc(100vw - 32px));
+  display: block;
+  padding: 13px 14px 13px 17px;
+  color: #78350f;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.55;
+  text-align: left;
+  text-wrap: pretty;
+  overflow-wrap: break-word;
+  white-space: normal;
+  pointer-events: auto;
+  visibility: hidden;
+  opacity: 0;
+  background: rgba(255, 251, 235, 0.96);
+  border: 1px solid rgba(217, 119, 6, 0.28);
+  border-radius: 16px;
+  box-shadow: 0 14px 32px rgba(120, 53, 15, 0.16), inset 3px 0 #f59e0b, inset 0 1px rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(18px) saturate(140%);
+  transform: translate(0, -7px) scale(0.96);
+  transform-origin: top left;
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1), visibility 0s linear 180ms;
+}
+
+.guest-notice-bubble-line {
+  display: block;
+  white-space: nowrap;
+}
+
+.guest-notice-bubble-line.is-justified {
+  text-align: justify;
+  text-align-last: justify;
+}
+
+.guest-notice-bubble::before {
+  position: absolute;
+  top: -6px;
+  left: 51px;
+  width: 12px;
+  height: 12px;
+  content: '';
+  background: rgba(255, 251, 235, 0.96);
+  border-bottom: 1px solid rgba(217, 119, 6, 0.28);
+  border-left: 1px solid rgba(217, 119, 6, 0.28);
+  transform: rotate(135deg);
+}
+
+.guest-notice-bell:hover .guest-notice-bubble,
+.guest-notice-bell:focus-visible .guest-notice-bubble {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(0, 0) scale(1);
+  transition-delay: 0s;
+}
+
+@keyframes guestNoticeBellRing {
+  0%, 58%, 100% { transform: rotate(0deg); }
+  64% { transform: rotate(16deg); }
+  70% { transform: rotate(-13deg); }
+  76% { transform: rotate(10deg); }
+  82% { transform: rotate(-6deg); }
+  88% { transform: rotate(3deg); }
+}
+
+@media (max-width: 560px) {
+  .guest-notice-bubble {
+    left: -19px;
+    width: min(340px, calc(100vw - 40px));
+  }
+
+  .guest-notice-bubble-line {
+    white-space: normal;
+  }
+
+  .guest-notice-bubble::before {
+    left: 32px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .guest-notice-bell.is-ringing .guest-notice-bell-icon {
+    animation: none;
+  }
+
+  .guest-notice-bubble {
+    transition: none;
+  }
+}
+
 .analysis-placeholder {
   display: grid;
   gap: 18px;

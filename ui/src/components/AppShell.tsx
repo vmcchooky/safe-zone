@@ -1,4 +1,4 @@
-import { LogOut, RadioTower, Settings2, Shield, Sparkles, MonitorSmartphone, ShieldAlert, Flag, HardDrive } from 'lucide-react';
+import { Bell, LogOut, RadioTower, Settings2, Shield, Sparkles, MonitorSmartphone, ShieldAlert, Flag, HardDrive } from 'lucide-react';
 import { NavLink } from 'react-router-dom';
 import logoImg from '../assets/logo.png';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -8,6 +8,20 @@ import { useAuth } from '../auth/AuthProvider';
 import type { AuthSession } from '../lib/types';
 
 const preloadTelemetry = () => import('../routes/telemetry/TelemetryPage');
+const DEFAULT_GUEST_NOTICE = 'Khách không được quyền thay đổi hoặc áp dụng các chính sách mới vào hệ thống, nếu muốn hãy liên hệ với quản trị viên của Safe Zone DNS tại contact@quorix.io.vn.';
+const DEFAULT_GUEST_NOTICE_LINES = [
+  'Khách không được quyền thay đổi hoặc áp dụng',
+  'các chính sách mới vào hệ thống, nếu muốn hãy liên hệ',
+  'với quản trị viên của Safe Zone DNS tại contact@quorix.io.vn.',
+];
+
+function guestNoticeLines(message: string) {
+  if (message === DEFAULT_GUEST_NOTICE) {
+    return DEFAULT_GUEST_NOTICE_LINES;
+  }
+
+  return message.split(/\r?\n/).filter(Boolean);
+}
 
 export function AppShell({
   children,
@@ -18,6 +32,9 @@ export function AppShell({
 }) {
   const { logout } = useAuth();
   const [showNav, setShowNav] = useState(true);
+  const [hasViewedGuestNotice, setHasViewedGuestNotice] = useState(false);
+  const guestMessage = session.read_only ? session.guest_message?.trim() : '';
+  const noticeLines = guestMessage ? guestNoticeLines(guestMessage) : [];
 
   // Auto-hide navigation logic based on mouse movement (macOS Dock style)
   useEffect(() => {
@@ -67,13 +84,37 @@ export function AppShell({
     return () => window.clearTimeout(preloadTimer);
   }, []);
 
+  useEffect(() => {
+    setHasViewedGuestNotice(false);
+  }, [guestMessage]);
+
   return (
     <div className="shell">
-      {/* Top Floating Header for Brand and User Actions */}
-      <div className="shell-floating-header">
+        {/* Top Floating Header for Brand and User Actions */}
+        <div className="shell-floating-header">
         <div className="flex items-center" style={{ pointerEvents: 'auto' }}>
-          <div className="shrink-0 flex items-center justify-center shadow-sm relative z-10" style={{ width: 76, height: 76, borderRadius: '50%', backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '3px' }}>
-            <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+          <div className="guest-brand-mark">
+            <div className="shrink-0 flex items-center justify-center shadow-sm relative z-10" style={{ width: 76, height: 76, borderRadius: '50%', backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '3px' }}>
+              <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
+            </div>
+            {guestMessage ? (
+              <button
+                className={`guest-notice-bell${hasViewedGuestNotice ? ' is-seen' : ' is-ringing'}`}
+                type="button"
+                aria-label="Guest access notice"
+                aria-describedby="guest-access-notice"
+                onPointerEnter={() => setHasViewedGuestNotice(true)}
+                onFocus={() => setHasViewedGuestNotice(true)}
+              >
+                <Bell className="guest-notice-bell-icon" size={17} aria-hidden="true" />
+                <span className="guest-notice-dot" aria-hidden="true" />
+                <span className="guest-notice-bubble" id="guest-access-notice" role="tooltip">
+                  {noticeLines.map((line, index) => (
+                    <span className={`guest-notice-bubble-line${index < noticeLines.length - 1 ? ' is-justified' : ''}`} key={`${index}-${line}`}>{line}</span>
+                  ))}
+                </span>
+              </button>
+            ) : null}
           </div>
           <div className="shell-brand relative z-0" style={{ padding: '6px 14px 6px 28px', borderRadius: '0 12px 12px 0', marginLeft: '-20px', backgroundColor: '#fff' }}>
             <div className="shell-brand-copy">
@@ -101,9 +142,6 @@ export function AppShell({
       </div>
 
       <main className="shell-main">
-        {session.read_only && session.guest_message ? (
-          <div className="shell-banner">{session.guest_message}</div>
-        ) : null}
         <div className="shell-content">
           {children}
         </div>
