@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.4.0",
+    "@lottiefiles/dotlottie-wc": "^0.9.14",
     "@radix-ui/react-select": "^2.3.3",
     "@radix-ui/react-slot": "^1.3.0",
     "class-variance-authority": "^0.7.1",

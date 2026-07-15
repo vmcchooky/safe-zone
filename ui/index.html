@@ -4,10 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Safe Zone UI Workspace</title>
+    <link rel="preload" href="/src/assets/moody-dog.lottie" as="fetch" type="application/zip" crossorigin />
+    <style>
+      html, body, #root { min-height: 100%; margin: 0; background: #f8fafc; }
+      #startup-loader { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(248, 250, 252, 0.96); }
+      #startup-loader::before { content: ''; width: 84px; height: 84px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #e0f2fe 0 28%, #bae6fd 29% 55%, #f8fafc 56%); animation: startup-pulse 0.9s ease-in-out infinite alternate; }
+      @keyframes startup-pulse { to { transform: scale(1.12); opacity: 0.72; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.14/dist/dotlottie-wc.js" type="module"></script>
+    <div id="root"><div id="startup-loader" role="status" aria-label="Loading Safe Zone"></div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
   </html>

@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import type { FormEvent } from 'react';
 import { ArrowRight, KeyRound, LoaderCircle, Shield } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm } from 'react-hook-form';
@@ -8,7 +7,6 @@ import * as z from 'zod';
 
 import { useAuth } from '../auth/AuthProvider';
 import { messageFromError } from '../lib/api';
-import { ScreenLoader } from '../App';
 
 const loginSchema = z.object({
   username: z.string().min(3, 'Username must be at least 3 characters.').regex(/^[a-zA-Z0-9_-]+$/, 'Invalid username: only alphanumeric characters, dashes, and underscores are allowed.'),
@@ -122,20 +120,6 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
           )}
         </AnimatePresence>
       </motion.div>
-
-      {/* Show full screen Lottie when authenticating */}
-      <AnimatePresence>
-        {submitting && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[1000]"
-          >
-            <ScreenLoader />
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

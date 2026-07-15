@@ -32,6 +32,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const minDelay = new Promise(res => setTimeout(res, 1200));
       const req = apiFetch<AuthSession>('/v1/auth/session');
       const [nextSession] = await Promise.all([req, minDelay]);
+      if (!nextSession || typeof nextSession !== 'object' || Array.isArray(nextSession)) {
+        throw new Error('The Safe Zone API returned an invalid session response. Check the API origin and restart the UI after changing it.');
+      }
       startTransition(() => {
         setSession(nextSession);
         setError(null);
@@ -61,14 +64,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (username: string, password: string) => {
     setError(null);
-    const minDelay = new Promise(res => setTimeout(res, 1200));
-    const req = apiJSON<{ status: string }>('/v1/auth/login', { username, password }, { method: 'POST' });
-    await Promise.all([req, minDelay]);
-    
-    startTransition(() => {
-      setLoading(true);
-    });
-    await refreshSession();
+    setLoading(true);
+
+    try {
+      const minDelay = new Promise(res => setTimeout(res, 1200));
+      const req = apiJSON<{ status: string }>('/v1/auth/login', { username, password }, { method: 'POST' });
+      await Promise.all([req, minDelay]);
+      await refreshSession();
+    } catch (err) {
+      startTransition(() => {
+        setSession(null);
+        setError(messageFromError(err));
+        setLoading(false);
+      });
+      throw err;
+    }
   };
 
   const logout = async () => {

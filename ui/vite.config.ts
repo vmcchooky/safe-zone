@@ -36,6 +36,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: basePath,
+    assetsInclude: ['**/*.lottie'],
     plugins: [react()],
     resolve: {
       alias: {

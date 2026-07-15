@@ -1,3 +1,38 @@
+.app-loader-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(248, 250, 252, 0.86);
+  backdrop-filter: blur(12px);
+  opacity: 0;
+  pointer-events: none;
+  visibility: hidden;
+  transition: opacity 120ms ease, visibility 0s linear 120ms;
+}
+
+.app-loader-backdrop.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+  visibility: visible;
+  transition: opacity 120ms ease;
+}
+
+.app-loader {
+  display: grid;
+  place-items: center;
+  width: min(390px, calc(100vw - 48px));
+  aspect-ratio: 1;
+}
+
+.app-loader dotlottie-wc {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
 .auth-screen {
   min-height: 100vh;
   display: grid;

@@ -1,6 +1,8 @@
-import React, { Suspense, useEffect, useState } from 'react';
+import React, { Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
+import '@lottiefiles/dotlottie-wc';
 
+import moodyDogLoader from './assets/moody-dog.lottie';
 import { AppShell } from './components/AppShell';
 import { LoginScreen } from './components/LoginScreen';
 import { useAuth } from './auth/AuthProvider';
@@ -31,8 +33,9 @@ export const globalLoader = {
   }
 };
 
-export function ScreenLoader() {
+export function ScreenLoader({ forceVisible = false }: { forceVisible?: boolean }) {
   const [visible, setVisible] = useState(loaderCount > 0);
+  const isVisible = forceVisible || visible;
   
   useEffect(() => {
     const l = (v: boolean) => setVisible(v);
@@ -40,16 +43,16 @@ export function ScreenLoader() {
     return () => { listeners = listeners.filter(x => x !== l); };
   }, []);
 
-  if (!visible) return null;
-
   return (
-    <div className="fixed inset-0 z-[999] flex items-center justify-center bg-slate-50/80 backdrop-blur-md">
-      {React.createElement('dotlottie-wc', {
-        src: "https://lottie.host/4d159429-fadb-46ea-8674-69760c81ad64/IRJeMelDRC.lottie",
-        style: { width: 450, height: 450 },
-        autoplay: true,
-        loop: true
-      })}
+		<div className={`app-loader-backdrop${isVisible ? ' is-visible' : ''}`} aria-hidden={!isVisible}>
+			<div className="app-loader" role={isVisible ? 'status' : undefined} aria-label="Loading Safe Zone">
+				{React.createElement('dotlottie-wc', {
+					src: moodyDogLoader,
+					style: { width: 390, height: 390 },
+					autoplay: true,
+					loop: true,
+				})}
+			</div>
     </div>
   );
 }
@@ -78,20 +81,15 @@ function lazyWithLoader<T extends React.ComponentType<any>>(factory: () => Promi
     const [Component, setComponent] = useState<T | null>(() => CachedComponent);
     const [loadError, setLoadError] = useState<unknown>(null);
 
-    useEffect(() => {
+    useLayoutEffect(() => {
       if (Component) return; // Already loaded from cache
 
       let cancelled = false;
-      let loaderVisible = false;
       let loaderFinished = false;
-      const loaderTimer = window.setTimeout(() => {
-        loaderVisible = true;
-        globalLoader.show();
-      }, 160);
+      globalLoader.show();
 
       const finishLoader = () => {
-        window.clearTimeout(loaderTimer);
-        if (loaderVisible && !loaderFinished) {
+        if (!loaderFinished) {
           loaderFinished = true;
           globalLoader.hide();
         }
@@ -176,16 +174,9 @@ export function App() {
   useAntiInspect();
   const { loading, session, error } = useAuth();
 
-  useEffect(() => {
-    if (loading) {
-      globalLoader.show();
-      return () => globalLoader.hide();
-    }
-  }, [loading]);
-
   return (
     <>
-      <ScreenLoader />
+			<ScreenLoader forceVisible={loading} />
       {(!loading && !session) ? (
         <LoginScreen initialError={error} />
       ) : (
