@@ -21,36 +21,27 @@ jobs:
         id: meta
         run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-  test-security:
-    name: Test and security scan
+  quality:
+    name: Repository quality checks
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - name: Set up mise
+        uses: jdx/mise-action@v4
         with:
-          go-version-file: go.mod
           cache: true
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Download modules
-        run: go mod download
-
-      - name: Run tests
-        run: go test ./...
-
-      - name: Run gosec
-        run: go run github.com/securego/gosec/v2/cmd/gosec@latest ./...
-
-      - name: Run govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      - name: Run CI task graph
+        run: mise run ci
 
   docker-build:
     name: Docker build (${{ matrix.service }})
     runs-on: ubuntu-latest
     needs:
-      - test-security
+      - quality
       - build-metadata
     strategy:
       fail-fast: false

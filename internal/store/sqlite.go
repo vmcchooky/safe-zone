@@ -87,14 +87,31 @@ type Override struct {
 	UpdatedAt string `json:"updated_at"`
 }
 
-// Stats contains aggregate telemetry statistics.
-type Stats struct {
-	Total      int64  `json:"total"`
+// TrendPoint represents a single data point in a time-series trend.
+type TrendPoint struct {
+	Timestamp  string `json:"timestamp"`
 	Safe       int64  `json:"safe"`
 	Suspicious int64  `json:"suspicious"`
 	Malicious  int64  `json:"malicious"`
-	CacheHits  int64  `json:"cache_hits"`
-	Period     string `json:"period"`
+	Threats    int64  `json:"threats"`
+}
+
+// ScoreBand is an aggregate count for one inclusive threat-score range.
+type ScoreBand struct {
+	Label string `json:"label"`
+	Value int64  `json:"value"`
+}
+
+// Stats contains aggregate telemetry statistics.
+type Stats struct {
+	Total      int64        `json:"total"`
+	Safe       int64        `json:"safe"`
+	Suspicious int64        `json:"suspicious"`
+	Malicious  int64        `json:"malicious"`
+	CacheHits  int64        `json:"cache_hits"`
+	Period     string       `json:"period"`
+	ScoreBands []ScoreBand  `json:"score_bands"`
+	Trend      []TrendPoint `json:"trend"`
 }
 
 // AgentEvent represents a single entry in the agent_audit_log table.
@@ -587,11 +604,31 @@ func telemetryWhereClause(filter TelemetryFilter) (string, []any) {
 	return "WHERE " + strings.Join(clauses, " AND "), args
 }
 
-// QueryStats returns aggregate telemetry statistics since the given time.
-func (d *DB) QueryStats(ctx context.Context, since time.Time) (Stats, error) {
+// QueryStats returns aggregate telemetry statistics and trend data for the given period.
+func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 	if !d.Enabled() {
 		return Stats{}, nil
 	}
+
+	now := time.Now()
+	var since time.Time
+	var bucketDuration time.Duration
+
+	switch period {
+	case "7d":
+		since = now.Add(-7 * 24 * time.Hour)
+		bucketDuration = 4 * time.Hour
+	case "30d":
+		since = now.Add(-30 * 24 * time.Hour)
+		bucketDuration = 12 * time.Hour
+	case "24h":
+		fallthrough
+	default:
+		period = "24h"
+		since = now.Add(-24 * time.Hour)
+		bucketDuration = 1 * time.Hour
+	}
+
 	sinceStr := since.UTC().Format(time.RFC3339)
 	row := d.db.QueryRowContext(ctx, `
 		SELECT
@@ -599,13 +636,104 @@ func (d *DB) QueryStats(ctx context.Context, since time.Time) (Stats, error) {
 			COALESCE(SUM(CASE WHEN verdict = 'SAFE' THEN 1 ELSE 0 END), 0) AS safe,
 			COALESCE(SUM(CASE WHEN verdict = 'SUSPICIOUS' THEN 1 ELSE 0 END), 0) AS suspicious,
 			COALESCE(SUM(CASE WHEN verdict = 'MALICIOUS' THEN 1 ELSE 0 END), 0) AS malicious,
-			COALESCE(SUM(cache_hit), 0) AS cache_hits
+			COALESCE(SUM(cache_hit), 0) AS cache_hits,
+			COALESCE(SUM(CASE WHEN score BETWEEN 0 AND 20 THEN 1 ELSE 0 END), 0) AS score_0_20,
+			COALESCE(SUM(CASE WHEN score BETWEEN 21 AND 40 THEN 1 ELSE 0 END), 0) AS score_21_40,
+			COALESCE(SUM(CASE WHEN score BETWEEN 41 AND 60 THEN 1 ELSE 0 END), 0) AS score_41_60,
+			COALESCE(SUM(CASE WHEN score BETWEEN 61 AND 80 THEN 1 ELSE 0 END), 0) AS score_61_80,
+			COALESCE(SUM(CASE WHEN score BETWEEN 81 AND 100 THEN 1 ELSE 0 END), 0) AS score_81_100
 		FROM analysis_log WHERE analyzed_at >= ?`, sinceStr)
 
 	var s Stats
-	if err := row.Scan(&s.Total, &s.Safe, &s.Suspicious, &s.Malicious, &s.CacheHits); err != nil {
+	var score0To20, score21To40, score41To60, score61To80, score81To100 int64
+	if err := row.Scan(
+		&s.Total,
+		&s.Safe,
+		&s.Suspicious,
+		&s.Malicious,
+		&s.CacheHits,
+		&score0To20,
+		&score21To40,
+		&score41To60,
+		&score61To80,
+		&score81To100,
+	); err != nil {
 		return Stats{}, fmt.Errorf("query stats: %w", err)
 	}
+	s.Period = period
+	s.ScoreBands = []ScoreBand{
+		{Label: "0-20", Value: score0To20},
+		{Label: "21-40", Value: score21To40},
+		{Label: "41-60", Value: score41To60},
+		{Label: "61-80", Value: score61To80},
+		{Label: "81-100", Value: score81To100},
+	}
+
+	// Query hourly data for the trend chart
+	trendRows, err := d.db.QueryContext(ctx, `
+		SELECT
+			substr(analyzed_at, 1, 13) AS hr,
+			COALESCE(SUM(CASE WHEN verdict = 'SAFE' THEN 1 ELSE 0 END), 0) AS safe,
+			COALESCE(SUM(CASE WHEN verdict = 'SUSPICIOUS' THEN 1 ELSE 0 END), 0) AS suspicious,
+			COALESCE(SUM(CASE WHEN verdict = 'MALICIOUS' THEN 1 ELSE 0 END), 0) AS malicious
+		FROM analysis_log 
+		WHERE analyzed_at >= ?
+		GROUP BY hr
+		ORDER BY hr ASC`, sinceStr)
+
+	if err != nil {
+		return Stats{}, fmt.Errorf("query trend: %w", err)
+	}
+	defer trendRows.Close()
+
+	// Map to hold hourly counts
+	hourlyMap := make(map[string]TrendPoint)
+	for trendRows.Next() {
+		var hr string
+		var safe, suspicious, malicious int64
+		if err := trendRows.Scan(&hr, &safe, &suspicious, &malicious); err == nil {
+			hourlyMap[hr] = TrendPoint{
+				Safe:       safe,
+				Suspicious: suspicious,
+				Malicious:  malicious,
+				Threats:    suspicious + malicious,
+			}
+		}
+	}
+	if err := trendRows.Err(); err != nil {
+		return Stats{}, fmt.Errorf("read trend: %w", err)
+	}
+
+	// Generate every bucket intersecting the requested rolling period. Including
+	// the partial first and current buckets keeps the trend total consistent with
+	// the aggregate total instead of silently dropping the period edges.
+	var trend []TrendPoint
+	firstBucketTime := since.UTC().Truncate(bucketDuration)
+	currentBucketTime := now.UTC().Truncate(bucketDuration)
+	for bucketStart := firstBucketTime; !bucketStart.After(currentBucketTime); bucketStart = bucketStart.Add(bucketDuration) {
+
+		tp := TrendPoint{
+			Timestamp: bucketStart.Format(time.RFC3339),
+		}
+
+		// Sum up the hours that fall into this bucket
+		// E.g., for a 4-hour bucket, check the 4 hours starting at bucketStart
+		hoursInBucket := int(bucketDuration / time.Hour)
+		for h := 0; h < hoursInBucket; h++ {
+			hrTime := bucketStart.Add(time.Duration(h) * time.Hour)
+			hrStr := hrTime.UTC().Format("2006-01-02T15")
+			if pt, ok := hourlyMap[hrStr]; ok {
+				tp.Safe += pt.Safe
+				tp.Suspicious += pt.Suspicious
+				tp.Malicious += pt.Malicious
+				tp.Threats += pt.Threats
+			}
+		}
+
+		trend = append(trend, tp)
+	}
+	s.Trend = trend
+
 	return s, nil
 }
 
@@ -907,7 +1035,7 @@ func (d *DB) ReplaceOSINTEvidence(ctx context.Context, domain string, evidence [
 	if err != nil {
 		return fmt.Errorf("begin osint evidence transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	if _, err := tx.ExecContext(ctx, `DELETE FROM osint_evidence WHERE domain = ?`, domain); err != nil {
 		return fmt.Errorf("delete old osint evidence: %w", err)
@@ -990,7 +1118,7 @@ func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
 	if err != nil {
 		return fmt.Errorf("begin whitelist transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx, "DELETE FROM whitelist_domains")
 	if err != nil {
@@ -1726,6 +1854,38 @@ func (d *DB) ListBlockReportsFiltered(ctx context.Context, filter BlockReportFil
 		reports = append(reports, r)
 	}
 	return reports, rows.Err()
+}
+
+// CountBlockReportsFiltered returns the total number of reports matching a filter.
+// It is intentionally separate from ListBlockReportsFiltered so callers can paginate
+// at the database layer without loading all matching reports into memory.
+func (d *DB) CountBlockReportsFiltered(ctx context.Context, filter BlockReportFilter) (int, error) {
+	if !d.Enabled() {
+		return 0, nil
+	}
+
+	query := `SELECT COUNT(*) FROM block_reports `
+	var args []any
+	var clauses []string
+	if filter.Status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, strings.TrimSpace(filter.Status))
+	}
+	if filter.Query != "" {
+		needle := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+		clauses = append(clauses, "(LOWER(domain) LIKE ? OR LOWER(COALESCE(contact, '')) LIKE ? OR LOWER(COALESCE(note, '')) LIKE ?)")
+		args = append(args, needle, needle, needle)
+	}
+	if len(clauses) > 0 {
+		// #nosec G202 -- clauses are safely concatenated
+		query += `WHERE ` + strings.Join(clauses, " AND ")
+	}
+
+	var total int
+	if err := d.db.QueryRowContext(ctx, query, args...).Scan(&total); err != nil {
+		return 0, fmt.Errorf("count block reports: %w", err)
+	}
+	return total, nil
 }
 
 // UpdateBlockReportStatus updates the status of a specific block report.

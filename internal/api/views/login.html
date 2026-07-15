@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel Command OS Login</title>
+  <link rel="stylesheet" href="/assets/quorix.min.css?v=__SAFE_ZONE_ASSET_REV__">
+  <link rel="stylesheet" href="/assets/safe-zone.css?v=__SAFE_ZONE_ASSET_REV__">
+</head>
+<body class="sentinel-access-page">
+  <main class="access-portal" id="loginCard">
+    <section class="access-brand-pane">
+      <div class="access-brand-mark stellar-pulse">SZ</div>
+      <h1 class="access-brand-title">Sentinel Command OS</h1>
+      <p class="access-brand-subtitle">Local-first anti-phishing control plane</p>
+    </section>
+
+    <section class="access-form-pane">
+      <div id="inlineError" class="access-error" aria-live="assertive"></div>
+      
+      <form id="adminLoginForm" class="access-form">
+        <div class="form-group">
+          <label for="username">Identity</label>
+          <input type="text" id="username" required autocomplete="off" placeholder="Enter username">
+        </div>
+
+        <div class="form-group">
+          <label for="password">Access token</label>
+          <input type="password" id="password" required placeholder="Enter token" autofocus>
+        </div>
+
+        <button type="submit" id="submitBtn" class="access-submit">
+          <span id="btnText">Establish connection</span>
+          <span id="btnIcon" aria-hidden="true">-&gt;</span>
+        </button>
+      </form>
+
+      <p class="access-footer-note">Verified by core API.</p>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script src="/assets/login.js?v=__SAFE_ZONE_ASSET_REV__"></script>
+</body>
+</html>

@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"safe-zone/internal/agent"
+	apiapp "safe-zone/internal/api/app"
+	apiassets "safe-zone/internal/api/assets"
 	"safe-zone/internal/api/handlers"
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/api/server"
@@ -90,6 +92,7 @@ func main() {
 			ratelimit.Tier{PathPrefix: "/v1/auth/login", Limiter: authLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/analyze", Limiter: analyzeLimiter},
 			ratelimit.Tier{PathPrefix: "/assets/", Limiter: dashboardLimiter},
+			ratelimit.Tier{PathPrefix: "/app", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/dashboard", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/status", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/version", Limiter: dashboardLimiter},
@@ -228,7 +231,7 @@ func main() {
 	}
 
 	h := handlers.New(riskService, metrics, cfg)
-	mux := server.NewRouter(h, agentEngine, handlers.AssetsFS)
+	mux := server.NewRouter(h, agentEngine, apiassets.FS, apiapp.StaticFS)
 
 	var handler http.Handler = mux
 	if tiered != nil {
@@ -236,7 +239,8 @@ func main() {
 	}
 
 	recoveryHandler := serve.Recovery(handler, metrics)
-	requestIDHandler := serve.WithRequestID(httputil.LogRequests("core-api", metrics)(recoveryHandler))
+	securityHeadersHandler := serve.SecurityHeaders(recoveryHandler)
+	requestIDHandler := serve.WithRequestID(httputil.LogRequests("core-api", metrics)(securityHeadersHandler))
 
 	srv := &http.Server{
 		Addr:              addr,

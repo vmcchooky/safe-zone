@@ -1,13 +1,12 @@
 package handlers
 
 import (
-	_ "embed"
 	"encoding/json"
-	"html/template"
 	"net"
 	"net/http"
 	"net/url"
 	"safe-zone/internal/api/httputil"
+	"safe-zone/internal/api/views"
 	"strings"
 	"time"
 
@@ -16,11 +15,6 @@ import (
 	"safe-zone/internal/logjson"
 	"safe-zone/internal/serve"
 )
-
-//go:embed block.html
-var blockHTML string
-
-var blockTemplate = template.Must(template.New("block").Parse(blockHTML))
 
 type blockPageData struct {
 	Domain          string
@@ -54,7 +48,7 @@ func (h *Handler) BlockPageHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := blockTemplate.Execute(w, data); err != nil {
+	if err := views.ExecuteBlockPage(w, data); err != nil {
 		logjson.Error("block page render failed", correlation.Fields(r.Context(), map[string]any{
 			"service": "core-api",
 			"error":   err.Error(),

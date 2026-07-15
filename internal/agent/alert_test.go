@@ -84,6 +84,7 @@ func TestAlertTaskSendsWebhook(t *testing.T) {
 		WebhookURL: server.URL,
 		MinEvents:  1,
 	})
+	task.http = server.Client()
 
 	task.mu.Lock()
 	task.lastAlert = time.Now().Add(-24 * time.Hour)
@@ -121,6 +122,7 @@ func TestAlertTaskWebhookError(t *testing.T) {
 		WebhookURL: server.URL,
 		MinEvents:  1,
 	})
+	task.http = server.Client()
 	task.mu.Lock()
 	task.lastAlert = time.Now().Add(-24 * time.Hour)
 	task.mu.Unlock()
@@ -128,6 +130,30 @@ func TestAlertTaskWebhookError(t *testing.T) {
 	err = task.Run(context.Background())
 	if err == nil {
 		t.Error("expected error for webhook failure")
+	}
+}
+
+func TestAlertTaskRejectsPrivateWebhookURL(t *testing.T) {
+	db, err := store.New(":memory:", 30)
+	if err != nil {
+		t.Fatalf("create test store: %v", err)
+	}
+	defer db.Close()
+
+	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "evil.test", `{}`)
+	time.Sleep(50 * time.Millisecond)
+
+	task := NewAlertTask(db, AlertConfig{
+		WebhookURL: "http://127.0.0.1:9999/hook",
+		MinEvents:  1,
+	})
+	task.mu.Lock()
+	task.lastAlert = time.Now().Add(-24 * time.Hour)
+	task.mu.Unlock()
+
+	err = task.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "blocked private or local address") {
+		t.Fatalf("expected private webhook rejection, got %v", err)
 	}
 }
 
@@ -302,6 +328,49 @@ func TestAlertTaskAdvancedChannels(t *testing.T) {
 		if !contains(text, "vietcombbank.com.vn") || !contains(text, "Ngân hàng Việt Nam") {
 			t.Errorf("Telegram payload doesn't contain spoof details: %q", text)
 		}
+	}
+}
+
+func TestSendTelegramEscapesHTMLFields(t *testing.T) {
+	task := NewAlertTask(nil, AlertConfig{
+		TelegramEnabled: true,
+		TelegramToken:   "dummy_token",
+		TelegramChatID:  "dummy_chat_id",
+	})
+
+	var received map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		_ = json.NewDecoder(r.Body).Decode(&received)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	task.http.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if req.URL.Host == "api.telegram.org" {
+			req.URL.Scheme = "http"
+			req.URL.Host = rxtHost(server.URL)
+		}
+		return http.DefaultTransport.RoundTrip(req)
+	})
+
+	err := task.sendTelegram(context.Background(), []SpoofResult{{
+		Domain:         `bad"><b>domain</b>.test`,
+		Category:       `<i>fake</i>`,
+		BrandName:      `<script>alert(1)</script>`,
+		OfficialDomain: `official.example.test`,
+		Reason:         `look <b>here</b>`,
+	}})
+	if err != nil {
+		t.Fatalf("sendTelegram returned error: %v", err)
+	}
+
+	text, _ := received["text"].(string)
+	if contains(text, `<script>alert(1)</script>`) || contains(text, `<b>here</b>`) {
+		t.Fatalf("expected telegram payload to escape HTML, got %q", text)
+	}
+	if !contains(text, "&lt;script&gt;alert(1)&lt;/script&gt;") || !contains(text, "look &lt;b&gt;here&lt;/b&gt;") {
+		t.Fatalf("expected escaped HTML entities in telegram payload, got %q", text)
 	}
 }
 

@@ -1,0 +1,976 @@
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  useRef,
+} from 'react';
+import useSWR from 'swr';
+import {
+  AlertTriangle,
+  Database,
+  LoaderCircle,
+  RefreshCcw,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  TriangleAlert,
+  Zap,
+  RadioTower,
+  Ban,
+} from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '../../components/ui/select';
+import { InfoTooltip } from '../../components/InfoTooltip';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+  Sector,
+} from 'recharts';
+import { motion, AnimatePresence, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+
+import { apiFetch, messageFromError } from '../../lib/api';
+import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
+
+const PAGE_SIZE = 12;
+const CHART_MOTION_DURATION = 1400;
+const CHART_MOTION_EASING = 'ease-out' as const;
+const SPRING_MOTION = { stiffness: 105, damping: 23, mass: 0.72 } as const;
+const PERIOD_OPTIONS = [
+  { label: '24 hours', value: '24h' },
+  { label: '7 days', value: '7d' },
+  { label: '30 days', value: '30d' },
+] as const;
+
+const VERDICT_OPTIONS = [
+  { label: 'All verdicts', value: '' },
+  { label: 'Safe', value: 'SAFE' },
+  { label: 'Suspicious', value: 'SUSPICIOUS' },
+  { label: 'Malicious', value: 'MALICIOUS' },
+] as const;
+
+const SOURCE_OPTIONS = [
+  { label: 'All sources', value: '' },
+  { label: 'Cache', value: 'cache' },
+  { label: 'Lexical', value: 'lexical' },
+  { label: 'AI', value: 'ai' },
+  { label: 'OSINT', value: 'osint' },
+] as const;
+
+function verdictTone(verdict: string) {
+  switch (verdict) {
+    case 'SAFE':
+      return 'safe';
+    case 'SUSPICIOUS':
+      return 'warn';
+    case 'MALICIOUS':
+      return 'bad';
+    default:
+      return 'muted';
+  }
+}
+
+function formatCompact(value: number) {
+  return new Intl.NumberFormat('en', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+function useStableChartData<T>(value: T[]) {
+  const state = useRef({ signature: JSON.stringify(value), value });
+  const signature = JSON.stringify(value);
+
+  if (state.current.signature !== signature) {
+    state.current = { signature, value };
+  }
+
+  return state.current.value;
+}
+
+function AnimatedMetric({ value, suffix = '', precision = 0 }: { value: number; suffix?: string; precision?: number }) {
+  const target = useMotionValue(0);
+  const spring = useSpring(target, SPRING_MOTION);
+  const display = useTransform(spring, (current) => {
+    const multiplier = 10 ** precision;
+    const rounded = Math.max(0, Math.round(current * multiplier) / multiplier);
+    return suffix ? `${rounded.toFixed(precision)}${suffix}` : formatCompact(rounded);
+  });
+
+  useEffect(() => {
+    target.set(value);
+  }, [target, value]);
+
+  return <motion.span>{display}</motion.span>;
+}
+
+const PieSectorShape = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
+  return (
+    <Sector
+      cx={cx}
+      cy={cy}
+      innerRadius={innerRadius}
+      outerRadius={outerRadius}
+      startAngle={startAngle}
+      endAngle={endAngle}
+      fill={fill}
+      style={{ 
+        outline: 'none', 
+        cursor: 'pointer',
+        transform: isHovered ? 'scale(1.025)' : 'scale(1)',
+        transformOrigin: `${cx}px ${cy}px`,
+        transition: 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), opacity 180ms ease-out',
+      }}
+      opacity={opacity}
+      cornerRadius={cornerRadius}
+    />
+  );
+};
+
+export function TelemetryPage() {
+  const navigate = useNavigate();
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMouseEnter = useCallback((index: number) => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+
+    if (activeIndex !== null) {
+      // If already hovering another slice, switch immediately to keep it responsive
+      setActiveIndex(index);
+    } else {
+      // Hovering in from outside, debounce for 120ms to ignore fast cursor swipes
+      hoverTimeoutRef.current = setTimeout(() => {
+        setActiveIndex(index);
+      }, 120);
+    }
+  }, [activeIndex]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current);
+      hoverTimeoutRef.current = null;
+    }
+
+    // Grace period of 80ms before shrinking to prevent jitter when slipping off the slice boundary
+    hoverTimeoutRef.current = setTimeout(() => {
+      setActiveIndex(null);
+    }, 80);
+  }, []);
+
+  useEffect(() => () => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+  }, []);
+
+  const [period, setPeriod] = useState('24h');
+  const [domain, setDomain] = useState('');
+  const [verdict, setVerdict] = useState('');
+  const [source, setSource] = useState('');
+  const [page, setPage] = useState(1);
+
+  const [debouncedDomain, setDebouncedDomain] = useState('');
+
+  useEffect(() => {
+    const timeout = setTimeout(() => setDebouncedDomain(domain.trim()), 250);
+    return () => clearTimeout(timeout);
+  }, [domain]);
+
+  const params = new URLSearchParams({
+    period,
+    limit: String(PAGE_SIZE),
+    offset: String((page - 1) * PAGE_SIZE),
+  });
+  if (debouncedDomain) params.set('domain', debouncedDomain);
+  if (verdict)        params.set('verdict', verdict);
+  if (source)         params.set('source', source);
+
+  const statsUrl = `/v1/telemetry/stats?period=${period}`;
+  const recentUrl = `/v1/telemetry/recent?${params.toString()}`;
+
+  const swrOptions = { refreshInterval: 5000, keepPreviousData: true, refreshWhenHidden: false, refreshWhenOffline: false };
+  const { data: stats, error: statsErr, isValidating: refreshingStats, mutate: mutateStats } = useSWR<TelemetryStats>(statsUrl, apiFetch, swrOptions);
+  const { data: recentRes, error: recentErr, isValidating: refreshingRecent, mutate: mutateRecent } = useSWR<{ items: TelemetryEntry[] }>(recentUrl, apiFetch, swrOptions);
+
+  const entries = recentRes?.items || [];
+  const refreshing = refreshingStats || refreshingRecent;
+  const loadingRecent = !recentRes && !recentErr;
+  
+  const errorObj = statsErr || recentErr;
+  const error = errorObj ? messageFromError(errorObj) : null;
+
+  const loadTelemetry = useCallback(async () => {
+    await Promise.all([mutateStats(), mutateRecent()]);
+  }, [mutateStats, mutateRecent]);
+
+  const nextDistribution = useMemo(() => {
+    if (!stats) {
+      return [];
+    }
+    return [
+      { name: 'Safe', value: stats.safe, fill: 'url(#pattern-safe-pie)' },
+      { name: 'Suspicious', value: stats.suspicious, fill: 'url(#pattern-suspicious-pie)' },
+      { name: 'Malicious', value: stats.malicious, fill: 'url(#pattern-malicious-pie)' },
+    ];
+  }, [stats]);
+  const distribution = useStableChartData(nextDistribution);
+
+  const nextScoreBands = useMemo(() => {
+    if (!stats) {
+      return [];
+    }
+
+    const names = ['Safe', 'Low Risk', 'Suspicious', 'High Risk', 'Malicious'];
+    const fills = [
+      'url(#pattern-safe-bar)',
+      'url(#pattern-safe-low-bar)',
+      'url(#pattern-suspicious-bar)',
+      'url(#pattern-high-risk-bar)',
+      'url(#pattern-malicious-bar)',
+    ];
+
+    return (stats.score_bands || []).map((band, index) => ({
+      ...band,
+      name: names[index] || band.label,
+      fill: fills[index] || '#64748b',
+    }));
+  }, [stats]);
+  const scoreBands = useStableChartData(nextScoreBands);
+
+  const nextTrendData = useMemo(() => {
+    if (!stats || !stats.trend) {
+      return [];
+    }
+    
+    const dataPeriod = stats.period || period;
+    const is24h = dataPeriod === '24h';
+    
+    return stats.trend.map((point: any) => {
+      const d = new Date(point.timestamp);
+      
+      let timeLabel = '';
+      if (is24h) timeLabel = d.toLocaleTimeString([], { hour: '2-digit' });
+      else if (dataPeriod === '7d') timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+      else timeLabel = d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+      
+      return {
+        time: timeLabel,
+        malicious: point.malicious || 0,
+        suspicious: point.suspicious || 0,
+        safe: point.safe || 0,
+        threats: point.threats || 0
+      };
+    });
+  }, [stats, period]);
+  const trendData = useStableChartData(nextTrendData);
+
+  const riskRatio = stats?.total
+    ? Math.round(((stats.suspicious + stats.malicious) / stats.total) * 100)
+    : 0;
+  const safeRatio = stats?.total ? Math.round((stats.safe / stats.total) * 100) : 100;
+  const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
+
+  const hoveredSlice = activeIndex !== null ? distribution[activeIndex] : null;
+
+  let centerPercentage: number | string = safeRatio;
+  let centerLabel = 'Safe';
+  let centerColor = 'text-teal-600';
+
+  if (hoveredSlice) {
+    let rawPercent = stats?.total ? ((hoveredSlice.value / stats.total) * 100).toFixed(1) : '0';
+    if (rawPercent.endsWith('.0')) rawPercent = rawPercent.slice(0, -2);
+    centerPercentage = rawPercent;
+    centerLabel = hoveredSlice.name;
+    if (hoveredSlice.name === 'Safe') centerColor = 'text-teal-600';
+    if (hoveredSlice.name === 'Suspicious') centerColor = 'text-amber-600';
+    if (hoveredSlice.name === 'Malicious') centerColor = 'text-rose-600';
+  }
+  const centerNumericValue = Number(centerPercentage);
+
+  return (
+    <motion.section 
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="relative min-h-[calc(100vh-4rem)] p-4 sm:p-8 overflow-x-hidden"
+    >
+
+      <div className="max-w-7xl mx-auto space-y-8">
+        {/* Header */}
+        <motion.div 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
+          className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4"
+        >
+          <header>
+            <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-8">Live telemetry workspace</div>
+            <div className="flex items-center gap-2.5">
+              <RadioTower size={24} className="text-sky-500" />
+              <h1 className="text-2xl font-bold text-slate-900 leading-none">Network Telemetry</h1>
+              <InfoTooltip content="Live feed of API decisions and threat metrics." />
+            </div>
+          </header>
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Select 
+                value={period} 
+                onValueChange={(val) => {
+                  setPage(1);
+                  setPeriod(val);
+                }}
+              >
+                <motion.div 
+                  whileHover={{ scale: 1.02, y: -1 }}
+                  whileTap={{ scale: 0.95, y: 0 }} 
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }} 
+                  className="w-36"
+                >
+                  <SelectTrigger className="bg-slate-50/60 border border-slate-200 rounded-2xl pl-5 pr-4 py-4 h-[58px] text-slate-700 font-semibold focus:outline-none transition-shadow duration-300 shadow-sm w-full">
+                    <SelectValue placeholder="Period" />
+                  </SelectTrigger>
+                </motion.div>
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
+                  {PERIOD_OPTIONS.map((option, i) => (
+                    <motion.div
+                      key={option.value}
+                      initial={{ opacity: 0, x: -15 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
+                    >
+                      <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                    </motion.div>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <motion.button 
+              whileTap={{ scale: 0.92 }}
+              transition={{ type: "spring", stiffness: 400, damping: 12 }}
+              className="flex items-center gap-2 bg-slate-50/60 border border-slate-200 text-slate-700 px-6 py-4 rounded-2xl font-semibold transition-shadow duration-300 shadow-sm whitespace-nowrap"
+              type="button" 
+              onClick={() => void loadTelemetry()}
+            >
+              {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : <RefreshCcw size={20} className="text-sky-500" />}
+              Refresh now
+            </motion.button>
+          </div>
+        </motion.div>
+
+        {error ? (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }} 
+            animate={{ opacity: 1, y: 0 }} 
+            className="bg-rose-50 border border-rose-200 text-rose-600 px-6 py-4 rounded-2xl flex gap-3 items-center"
+          >
+            <AlertTriangle size={20} />
+            <span className="font-medium">{error}</span>
+          </motion.div>
+        ) : null}
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
+          {[
+            { label: 'Total analyzed', value: stats?.total || 0, tone: 'sky', icon: <Database size={20} /> },
+            { label: 'Safe', value: stats?.safe || 0, tone: 'teal', icon: <ShieldCheck size={20} /> },
+            { label: 'Suspicious', value: stats?.suspicious || 0, tone: 'amber', icon: <TriangleAlert size={20} /> },
+            { label: 'Malicious', value: stats?.malicious || 0, tone: 'rose', icon: <ShieldAlert size={20} /> },
+            { label: 'Cache efficiency', value: cacheRatio, suffix: '%', tone: 'indigo', icon: <Zap size={20} /> },
+          ].map((card, index) => {
+            const colors: Record<string, string> = {
+              sky: 'text-sky-600 bg-sky-100',
+              teal: 'text-teal-600 bg-teal-100',
+              amber: 'text-amber-600 bg-amber-100',
+              rose: 'text-rose-600 bg-rose-100',
+              indigo: 'text-indigo-600 bg-indigo-100',
+            };
+            return (
+            <motion.div
+              key={card.label}
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.02 + 0.1, type: 'spring', stiffness: 300, damping: 24 }}
+              className="bg-slate-50 border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className={`p-2.5 rounded-xl ${colors[card.tone]}`}>
+                  {card.icon}
+                </div>
+                <span className="text-slate-500 font-semibold">{card.label}</span>
+              </div>
+              <div className="text-3xl font-extrabold text-slate-800">
+                <AnimatedMetric value={card.value} suffix={card.suffix} />
+              </div>
+            </motion.div>
+            );
+          })}
+        </div>
+
+        {/* Threat Pressure Bar */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
+          className="bg-transparent border border-black/5 rounded-3xl p-8 shadow-sm relative"
+        >
+          <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-rose-400/20 to-amber-400/20 rounded-full -translate-y-1/2 translate-x-1/2 opacity-50" />
+          </div>
+          <div className="flex justify-between items-end mb-6 relative z-10">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <h2 className="text-xl font-bold text-slate-800">Threat pressure</h2>
+                <InfoTooltip content="Share of suspicious and malicious verdicts in the selected period." />
+              </div>
+            </div>
+            <strong className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-amber-500 to-rose-500">
+              <AnimatedMetric value={riskRatio} suffix="% risk" />
+            </strong>
+          </div>
+          <div className="w-full h-5 rounded-full bg-slate-100 relative z-10 overflow-hidden shadow-inner flex">
+            <motion.div 
+              initial={false}
+              animate={{ flexGrow: 100 - riskRatio }}
+              transition={{ duration: CHART_MOTION_DURATION / 1000, ease: [0.22, 1, 0.36, 1] }}
+              className="h-full bg-teal-500"
+              style={{ flexBasis: 0 }}
+            />
+            <motion.div 
+              initial={false}
+              animate={{ flexGrow: riskRatio }}
+              transition={{ duration: CHART_MOTION_DURATION / 1000, ease: [0.22, 1, 0.36, 1] }}
+              className="h-full bg-rose-500"
+              style={{
+                flexBasis: 0,
+                backgroundImage: 'radial-gradient(circle, rgba(255, 255, 255, 0.35) 20%, transparent 20%)',
+                backgroundSize: '6px 6px'
+              }}
+            />
+          </div>
+        </motion.div>
+
+
+        {/* Charts Grid */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
+          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+        >
+          {/* Trend Chart */}
+          <article className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[360px] lg:col-span-3">
+            <div className="mb-6 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-800">Threat trend</h2>
+              <InfoTooltip content="Displays the volume of telemetry events classified as suspicious or malicious over the selected period. Useful for identifying abnormal traffic spikes." />
+            </div>
+            <div className="flex-1 min-h-0 relative">
+              <AnimatePresence mode="wait">
+                <motion.div 
+                  key={period}
+                  initial={{ opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                  className="w-full h-full absolute inset-0"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#14b8a6" />
+                        </pattern>
+                        <pattern id="pattern-suspicious-area" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f59e0b" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
+                        </pattern>
+                        <pattern id="pattern-malicious-area" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f43f5e" />
+                          <circle cx="4" cy="4" r="1.5" fill="#f8fafc" />
+                        </pattern>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                      <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} dy={10} minTickGap={30} />
+                      <YAxis
+                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(value) => formatCompact(Number(value))}
+                        dx={-5}
+                        width={40}
+                        allowDecimals={false}
+                        domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.1))]}
+                      />
+                      <Tooltip 
+                        cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
+                        isAnimationActive={true}
+                        animationDuration={150}
+                        animationEasing="ease-out"
+                        content={({ active, payload, label }) => {
+                          if (active && payload && payload.length) {
+                            return (
+                              <motion.div
+                                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                                className="bg-slate-50/95 backdrop-blur-md border border-slate-50/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
+                              >
+                                <p className="text-slate-500 font-medium text-sm mb-3">{label}</p>
+                                <div className="space-y-2">
+                                  {payload.map((entry: any, index: number) => (
+                                    <div key={index} className="flex items-center gap-3 text-sm">
+                                      <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
+                                      <span className="text-slate-600 font-medium">{entry.name}:</span>
+                                      <span className="text-slate-900 font-bold ml-auto">{entry.value}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </motion.div>
+                            );
+                          }
+                          return null;
+                        }}
+                      />
+                      <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                      <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                      <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          </article>
+
+          <article className="bg-transparent border border-black/5 rounded-3xl p-4 shadow-sm flex flex-col h-[360px] lg:col-span-1">
+            <div className="mb-6 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-800">Verdict distribution</h2>
+              <InfoTooltip content="Shows the overall distribution of safety verdicts (Safe, Suspicious, Malicious) for all processed telemetry events in this time window." />
+            </div>
+            <div className="flex-1 min-h-0 relative">
+              <AnimatePresence mode="wait">
+                <motion.div 
+                  key={period}
+                  initial={{ opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                  className="w-full h-full absolute inset-0"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <defs>
+                        <pattern id="pattern-safe-pie" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#14b8a6" />
+                        </pattern>
+                        <pattern id="pattern-suspicious-pie" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f59e0b" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
+                        </pattern>
+                        <pattern id="pattern-malicious-pie" width="6" height="6" patternUnits="userSpaceOnUse">
+                          <rect width="6" height="6" fill="#f43f5e" />
+                          <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
+                        </pattern>
+                      </defs>
+                      <Pie
+                        data={distribution}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="62%"
+                        outerRadius="85%"
+                        paddingAngle={4}
+                        cornerRadius={6}
+                        stroke="none"
+                        startAngle={90}
+                        endAngle={-270}
+                        isAnimationActive
+                        animationDuration={CHART_MOTION_DURATION}
+                        animationEasing={CHART_MOTION_EASING}
+                        animationMatchBy="index"
+                        // @ts-ignore
+                        shape={(props: any) => {
+                          const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
+                          const isHovered = index === activeIndex;
+                          const isAnyHovered = activeIndex !== null;
+                          const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
+                          return (
+                            <PieSectorShape
+                              cx={cx}
+                              cy={cy}
+                              innerRadius={innerRadius}
+                              outerRadius={outerRadius}
+                              startAngle={startAngle}
+                              endAngle={endAngle}
+                              fill={fill}
+                              isHovered={isHovered}
+                              opacity={opacity}
+                              cornerRadius={6}
+                            />
+                          );
+                        }}
+                        onMouseEnter={(_, index) => handleMouseEnter(index)}
+                        onMouseLeave={handleMouseLeave}
+                      >
+                        {distribution.map((slice) => (
+                          <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </AnimatePresence>
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
+                <motion.div
+                  key={period}
+                  initial={{ opacity: 0, scale: 0.8 }}
+                  animate={{ opacity: 1, scale: activeIndex === null ? 1 : 1.025 }}
+                  transition={{ type: 'spring', stiffness: 180, damping: 20 }}
+                  className="flex flex-col items-center justify-center"
+                >
+                  <span className="text-4xl font-extrabold text-slate-800">
+                    <AnimatedMetric value={centerNumericValue} suffix="%" precision={1} />
+                  </span>
+                  <span className={`text-sm font-bold uppercase tracking-wide transition-colors duration-300 ${centerColor}`}>{centerLabel}</span>
+                </motion.div>
+              </div>
+            </div>
+          </article>
+
+          <article className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[360px] lg:col-span-2">
+            <div className="mb-6 flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-800">Score distribution</h2>
+              <InfoTooltip content="Groups all telemetry events into 5 specific threat score ranges (from 0 to 100), providing a detailed view of the risk landscape." />
+            </div>
+            <div className="flex-1 min-h-0 relative">
+              <AnimatePresence mode="wait">
+                <motion.div 
+                  key={period}
+                  initial={{ opacity: 0, filter: 'blur(4px)' }}
+                  animate={{ opacity: 1, filter: 'blur(0px)' }}
+                  exit={{ opacity: 0, filter: 'blur(4px)' }}
+                  transition={{ duration: 0.35, ease: "easeInOut" }}
+                  className="w-full h-full absolute inset-0"
+                >
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={scoreBands} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+                      <defs>
+                        <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#14b8a6" />
+                        </pattern>
+                        <pattern id="pattern-safe-low-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#10b981" />
+                        </pattern>
+                        <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f59e0b" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
+                        </pattern>
+                        <pattern id="pattern-high-risk-bar" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
+                          <rect width="8" height="8" fill="#f97316" />
+                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
+                        </pattern>
+                        <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
+                          <rect width="6" height="6" fill="#f43f5e" />
+                          <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
+                        </pattern>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
+                      <YAxis
+                        tick={{ fill: '#94a3b8', fontSize: 12 }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(value) => formatCompact(Number(value))}
+                        dx={-10}
+                      />
+                      <Tooltip 
+                        formatter={(value: number, name: string, props: any) => [formatCompact(Number(value)), props.payload.name]}
+                        contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
+                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                        itemStyle={{ color: '#1e293b', fontWeight: 600 }}
+                        labelStyle={{ display: 'none' }}
+                      />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index">
+                        {scoreBands.map((bar) => (
+                          <Cell key={bar.label} fill={bar.fill} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          </article>
+        </motion.div>
+
+        {/* Table - Outer transparent frame */}
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.2, ease: "easeOut" }}
+          className="border border-white/70 rounded-[2rem] p-1.5 shadow-sm"
+        >
+        <article className="bg-slate-50/95 rounded-3xl p-8">
+          <div className="flex justify-between items-center mb-8">
+            <div className="flex items-center gap-2">
+              <h2 className="text-xl font-bold text-slate-800">Recent activity</h2>
+              <InfoTooltip content="Real-time log of security triage results and network telemetry events with dynamic filtering." />
+            </div>
+            {refreshing ? <LoaderCircle size={20} className="animate-spin text-sky-500" /> : null}
+          </div>
+
+          {/* Table Filters */}
+          <div className="flex flex-wrap gap-4 items-end mb-8 bg-slate-50/50 p-5 rounded-3xl border border-slate-100">
+            <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
+              <label htmlFor="telemetry-domain" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Domain search</label>
+              <div className="relative">
+                <Search size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  id="telemetry-domain"
+                  value={domain}
+                  onChange={(event) => {
+                    setPage(1);
+                    setDomain(event.target.value);
+                  }}
+                  placeholder="Filter by domain fragment"
+                  className="w-full bg-slate-50/70 border border-slate-200 rounded-xl !py-3 !pr-4 !pl-12 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all shadow-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 w-48">
+              <label htmlFor="telemetry-verdict" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Verdict</label>
+              <Select 
+                value={verdict} 
+                onValueChange={(val) => {
+                  setPage(1);
+                  setVerdict(val);
+                }}
+              >
+                <motion.div 
+                  whileHover={{ scale: 1.02, y: -1 }}
+                  whileTap={{ scale: 0.95, y: 0 }} 
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                >
+                  <SelectTrigger id="telemetry-verdict" className="w-full h-[46px] bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
+                    <SelectValue placeholder="Verdict" />
+                  </SelectTrigger>
+                </motion.div>
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
+                  {VERDICT_OPTIONS.map((option, i) => (
+                    <motion.div
+                      key={option.label}
+                      initial={{ opacity: 0, x: -15 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
+                    >
+                      <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                    </motion.div>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-2 w-48">
+              <label htmlFor="telemetry-source" className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-1">Source</label>
+              <Select 
+                value={source} 
+                onValueChange={(val) => {
+                  setPage(1);
+                  setSource(val);
+                }}
+              >
+                <motion.div 
+                  whileHover={{ scale: 1.02, y: -1 }}
+                  whileTap={{ scale: 0.95, y: 0 }} 
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                >
+                  <SelectTrigger id="telemetry-source" className="w-full h-[46px] bg-slate-50/70 border border-slate-200 rounded-xl px-4 py-3 text-slate-900 font-medium focus:outline-none transition-shadow shadow-sm">
+                    <SelectValue placeholder="Source" />
+                  </SelectTrigger>
+                </motion.div>
+                <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-slate-50/90 backdrop-blur-xl">
+                  {SOURCE_OPTIONS.map((option, i) => (
+                    <motion.div
+                      key={option.label}
+                      initial={{ opacity: 0, x: -15 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
+                    >
+                      <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
+                    </motion.div>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="overflow-clip">
+            <table className="w-full text-left border-collapse min-w-[800px]">
+              <thead>
+                <tr className="border-b border-black/5 text-slate-500 text-sm">
+                  <th className="w-[30%] pb-4 font-bold uppercase tracking-wider pl-4">Domain</th>
+                  <th className="w-[15%] pb-4 font-bold uppercase tracking-wider">Verdict</th>
+                  <th className="w-[12%] pb-4 font-bold uppercase tracking-wider">Source</th>
+                  <th className="w-[15%] pb-4 font-bold uppercase tracking-wider">Score</th>
+                  <th className="w-[18%] pb-4 font-bold uppercase tracking-wider">Analyzed at</th>
+                  <th className="w-[10%] pb-4 font-bold uppercase tracking-wider text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/5 text-slate-800">
+                <AnimatePresence mode="wait">
+                  {loadingRecent ? (
+                    Array.from({ length: 5 }).map((_, i) => (
+                      <motion.tr 
+                        key={`skeleton-${i}`}
+                        initial={{ opacity: 0, x: -16, y: -8 }}
+                        animate={{ opacity: 1, x: 0, y: 0 }}
+                        exit={{ opacity: 0, x: 16, y: 8 }}
+                        transition={{ delay: i * 0.015, duration: 0.08 }}
+                        className="animate-pulse border-b border-black/5 last:border-0 align-middle"
+                      >
+                        <td className="py-4 pl-4"><div className="h-5 bg-slate-200/60 rounded-md w-48"></div></td>
+                        <td className="py-4"><div className="h-6 bg-slate-200/60 rounded-full w-24"></div></td>
+                        <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-20"></div></td>
+                        <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-16"></div></td>
+                        <td className="py-4"><div className="h-5 bg-slate-200/60 rounded-md w-32"></div></td>
+                        <td className="py-4"><div className="h-8 bg-slate-200/60 rounded-lg w-20 mx-auto"></div></td>
+                      </motion.tr>
+                    ))
+                  ) : entries.length === 0 ? (
+                    <motion.tr
+                      key="empty"
+                      initial={{ opacity: 0, y: -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: 6 }}
+                      transition={{ duration: 0.1 }}
+                    >
+                      <td colSpan={6} className="py-16 text-center align-middle">
+                        <div className="flex flex-col items-center justify-center text-slate-500 gap-4">
+                          <AlertTriangle size={28} className="text-amber-500" />
+                          <span className="font-medium">No telemetry records match the current filters.</span>
+                        </div>
+                      </td>
+                    </motion.tr>
+                  ) : (
+                    entries.map((entry, index) => (
+                      <motion.tr 
+                        key={`${entry.id}-${entry.domain}`}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ 
+                          duration: 0.2,
+                          delay: index * 0.015
+                        }}
+                        className="hover:bg-slate-50/50 transition-colors group align-middle"
+                      >
+                        <td className="py-4 pl-4 pr-8 align-middle max-w-0">
+                          <div className="flex flex-col w-full">
+                            <div className="overflow-x-auto whitespace-nowrap [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                              <strong className="font-mono text-[15px] group-hover:text-sky-600 transition-colors pr-2">{entry.domain}</strong>
+                            </div>
+                            <span className="text-xs text-slate-500 font-medium truncate mt-1">{entry.confidence ? `${Math.round(entry.confidence * 100)}% confidence` : 'No confidence score'}</span>
+                          </div>
+                        </td>
+                        <td className="py-4 pr-4 align-middle">
+                          <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-sm ${
+                            entry.verdict === 'MALICIOUS' ? 'bg-rose-100 text-rose-700 border border-rose-200' :
+                            entry.verdict === 'SUSPICIOUS' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                            entry.verdict === 'INVALID' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                            'bg-teal-100 text-teal-800 border border-teal-200'
+                          }`}>
+                            {entry.verdict === 'SAFE' ? <ShieldCheck size={14} /> : null}
+                            {entry.verdict === 'SUSPICIOUS' ? <TriangleAlert size={14} /> : null}
+                            {entry.verdict === 'MALICIOUS' ? <ShieldAlert size={14} /> : null}
+                            {entry.verdict === 'INVALID' ? <Ban size={14} /> : null}
+                            {entry.verdict}
+                          </span>
+                        </td>
+                        <td className="py-4 pr-4 align-middle font-medium text-slate-600">
+                          <span className="px-2 py-1 bg-slate-100 text-slate-700 rounded-md text-xs font-bold uppercase">
+                            {entry.source || (entry.cache_hit ? 'cache' : '--')}
+                          </span>
+                        </td>
+                        <td className="py-4 pr-4 align-middle">
+                          <div className="flex items-center gap-3">
+                            <div className="w-16 h-2.5 rounded-full bg-slate-200 overflow-hidden shadow-inner">
+                              <div 
+                                className={`h-full rounded-full ${entry.score > 70 ? 'bg-rose-500' : entry.score > 30 ? 'bg-amber-500' : 'bg-teal-500'}`} 
+                                style={{ width: `${entry.score}%` }} 
+                              />
+                            </div>
+                            <span className="text-sm font-bold text-slate-600 w-6">{entry.score}</span>
+                          </div>
+                        </td>
+                        <td className="py-4 pr-4 align-middle text-sm text-slate-500 font-medium">{new Date(entry.analyzed_at).toLocaleString()}</td>
+                        <td className="py-4 align-middle text-center">
+                          <button
+                            className="inline-flex items-center justify-center px-5 py-2 bg-white hover:bg-sky-50 text-sky-600 border border-slate-200 hover:border-sky-200 rounded-xl font-bold text-sm transition-all duration-200 ease-out shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_4px_12px_-4px_rgba(14,165,233,0.2)] hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.96]"
+                            type="button"
+                            onClick={() => navigate(`/analysis?domain=${encodeURIComponent(entry.domain)}`)}
+                          >
+                            Review
+                          </button>
+                        </td>
+                      </motion.tr>
+                    ))
+                  )}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-8 flex items-center justify-between border-t border-black/5 pt-6">
+            <span className="text-slate-500 font-medium ml-4">
+              Page <strong className="text-slate-800">{page}</strong>
+            </span>
+            <div className="flex gap-3 mr-4">
+              <button
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
+                type="button"
+                disabled={page === 1}
+                onClick={() => {
+                  setTimeout(() => {
+                    setPage((value) => Math.max(1, value - 1));
+                  }, 100);
+                }}
+              >
+                Previous
+              </button>
+              <button
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
+                type="button"
+                disabled={entries.length < PAGE_SIZE}
+                onClick={() => {
+                  setTimeout(() => {
+                    setPage((value) => value + 1);
+                  }, 100);
+                }}
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </article>
+        </motion.div>
+      </div>
+    </motion.section>
+  );
+}

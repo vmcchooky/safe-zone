@@ -5,12 +5,13 @@ import (
 	"net/http"
 
 	"safe-zone/internal/agent"
+	apiapp "safe-zone/internal/api/app"
 	"safe-zone/internal/api/handlers"
 	"safe-zone/internal/serve"
 )
 
 // NewRouter constructs a new ServeMux with all the routes registered.
-func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *http.ServeMux {
+func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, appFS fs.FS) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// System & Health
@@ -20,6 +21,8 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 	mux.HandleFunc("/readyz", handlers.HealthHandler("core-api"))
 	mux.HandleFunc("/v1/version", h.VersionHandler)
 	mux.HandleFunc("/metrics", h.MetricsHandler)
+	mux.HandleFunc("/v1/cache/flush", h.RequireAdminForMutationFunc(h.CacheFlushHandler))
+	mux.HandleFunc("/v1/logs/export", h.RequireAdminFunc(h.LogsExportHandler))
 
 	// Block Pages
 	mux.HandleFunc("/block", h.BlockPageHandler)
@@ -32,6 +35,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 
 	// Analysis & OSINT
 	mux.HandleFunc("/v1/analyze", h.AnalyzeHandler)
+	mux.HandleFunc("/v1/analyze/raw", h.RawDataHandler)
 	mux.HandleFunc("/v1/osint/evidence", h.RequireAuthFunc(h.OsintEvidenceHandler))
 	mux.HandleFunc("/v1/analysis/recent", h.RecentAnalysisHandler)
 
@@ -72,7 +76,11 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS) *
 
 	// Static Assets & Dashboard
 	if assetsFS != nil {
-		mux.Handle("/assets/", http.FileServer(http.FS(assetsFS)))
+		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
+	}
+	if appFS != nil {
+		mux.HandleFunc(apiapp.MountPath, apiapp.RedirectRoot)
+		mux.Handle(apiapp.MountPath+"/", apiapp.NewHandler(appFS))
 	}
 	mux.HandleFunc("/dashboard", h.DashboardHandler)
 	mux.HandleFunc("/dashboard/", h.DashboardHandler)

@@ -1,4 +1,12 @@
-FROM golang:1.26.4-alpine AS build
+FROM node:24-alpine AS ui-build
+
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run check
+
+FROM golang:1.26.5-alpine AS build
 
 ARG SERVICE=core-api
 ARG VERSION=dev
@@ -11,6 +19,7 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+COPY --from=ui-build /ui/dist ./internal/api/app/dist
 
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
   -ldflags="-s -w -X safe-zone/internal/buildinfo.Version=${VERSION} -X safe-zone/internal/buildinfo.GitCommit=${GIT_COMMIT} -X safe-zone/internal/buildinfo.BuildTime=${BUILD_TIME} -X safe-zone/internal/buildinfo.ImageTag=${IMAGE_TAG} -X safe-zone/internal/buildinfo.SourceRepo=${SOURCE_REPO}" \

@@ -18,6 +18,13 @@ Legacy note: [docs/Safe_Zone_SRS_Zero_Cost_v1.0.md](docs/Safe_Zone_SRS_Zero_Cost
 - `internal/risk`: shared analysis, cache, policy, and status service used by both binaries
 - `internal/serve`: graceful shutdown helper for local and container runs
 
+## Frontend workspaces
+
+- `internal/api/views`: embedded HTML templates for the current server-rendered dashboard, login, and block page
+- `internal/api/assets`: embedded CSS, JS, and font assets served at `/assets/*` by `core-api`
+- `internal/api/handlers`: HTTP handler logic only
+- `ui/`: the separate React SPA workspace for dashboard prototyping and future frontend iterations; it intentionally lives outside Go `internal/` packages
+
 ## Run locally
 
 ```bash

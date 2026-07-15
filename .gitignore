@@ -30,6 +30,10 @@ tmp_test.js
 .idea/
 .vscode/
 coverage.txt
+node_modules/
+ui/.vite/
+ui/coverage/
+*.tsbuildinfo
 
 # Runtime adblock cache/meta
 **/adblock_cache.txt
@@ -38,3 +42,9 @@ coverage.txt
 **/adblock_meta.json.tmp*
 **/adblock_sources/
 **/adblock_sources/*.tmp*
+
+# Keep the embedded React bundle directory present for go:embed on fresh clones.
+!internal/api/app/
+!internal/api/app/dist/
+internal/api/app/dist/*
+!internal/api/app/dist/.keep

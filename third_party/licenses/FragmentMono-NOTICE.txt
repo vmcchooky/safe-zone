@@ -1,0 +1,7 @@
+Fragment Mono
+Source repository: https://github.com/weiweihuanghuang/fragment-mono
+License: SIL Open Font License 1.1
+
+Repository metadata and upstream distribution identify Fragment Mono as an OFL font.
+Use the bundled OFL-1.1.txt in this directory for the license text that applies to
+the vendored font file used by Safe Zone.

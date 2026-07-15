@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quarantine Gate | Safe Zone</title>
+  <link rel="stylesheet" href="/assets/quorix.min.css?v=__SAFE_ZONE_ASSET_REV__">
+  <link rel="stylesheet" href="/assets/safe-zone.css?v=__SAFE_ZONE_ASSET_REV__">
+  <script src="/assets/quorix.min.js?v=__SAFE_ZONE_ASSET_REV__" defer></script>
+</head>
+<body class="block-page quarantine-page">
+  <main class="shell block-shell quarantine-shell">
+    <section class="quarantine-hero" aria-labelledby="quarantine-title">
+      <div class="quarantine-orbit" aria-hidden="true"></div>
+      <div class="quarantine-hero-copy">
+        <div class="eyebrow danger-soft">Safe Zone</div>
+        <h1 id="quarantine-title">Quarantine Gate</h1>
+        <p class="quarantine-message">This site was blocked.</p>
+        <p class="lede">Safe Zone redirected this request because the destination matched policy or risk signals. The connection has been paused so you can review the details or request an operator review.</p>
+      </div>
+      <div class="quarantine-domain-card">
+        <span class="section-kicker">Blocked destination</span>
+        <strong class="quarantine-domain">{{.Domain}}</strong>
+        <span class="quarantine-path">{{.RequestedPath}}</span>
+      </div>
+    </section>
+
+    <section class="quarantine-grid">
+      <div class="quarantine-main">
+        {{if .ReportReceived}}
+        <div class="quarantine-success">
+          <span class="section-kicker">Review request received</span>
+          <h2>Report queued for operator review.</h2>
+          <p>Your false-positive report was received. Keep request ID <code>{{.RequestID}}</code> for follow-up.</p>
+        </div>
+        {{end}}
+
+        <section class="quarantine-panel quarantine-facts" aria-labelledby="quarantine-facts-title">
+          <div class="quarantine-panel-head">
+            <span class="section-kicker">Request dossier</span>
+            <h2 id="quarantine-facts-title">Block details</h2>
+          </div>
+          <div class="quarantine-fact-grid">
+            <div class="quarantine-fact">
+              <span>Blocked domain</span>
+              <strong>{{.Domain}}</strong>
+            </div>
+            <div class="quarantine-fact">
+              <span>Requested path</span>
+              <strong>{{.RequestedPath}}</strong>
+            </div>
+            <div class="quarantine-fact">
+              <span>Category</span>
+              <strong>{{.Category}}</strong>
+            </div>
+            <div class="quarantine-fact">
+              <span>Request ID</span>
+              <strong>{{.RequestID}}</strong>
+            </div>
+          </div>
+          <div class="quarantine-reason">
+            <span>Reason</span>
+            <p>{{.Reason}}</p>
+          </div>
+        </section>
+
+        <section class="quarantine-panel quarantine-form" aria-labelledby="quarantine-review-title">
+          <div class="quarantine-panel-head">
+            <span class="section-kicker">Operator review</span>
+            <h2 id="quarantine-review-title">Request a review</h2>
+          </div>
+          <p class="quarantine-note">If this destination is expected and business-approved, send a short false-positive report. The request is stored locally for a Safe Zone operator to investigate.</p>
+          <div class="quarantine-success block-report-status" id="block-report-status">
+            Report received. An operator can review it with request ID <code>{{.RequestID}}</code>.
+          </div>
+          <div class="quarantine-toast" id="block-report-toast" aria-live="polite" aria-atomic="true" role="status">
+            <div class="quarantine-toast-card">
+              <strong>Review request submitted</strong>
+              <span>Your note has been queued for operator review.</span>
+            </div>
+          </div>
+          <form action="/block/report" method="post" id="block-report-form">
+            <input type="hidden" name="domain" value="{{.Domain}}">
+            <input type="hidden" name="requested_path" value="{{.RequestedPath}}">
+
+            <label>
+              Contact
+              <input type="text" name="contact" maxlength="200" placeholder="email, ticket number, or team name">
+            </label>
+
+            <label>
+              Review note
+              <textarea name="note" maxlength="2000" placeholder="Describe why this site should be reviewed or allowed."></textarea>
+            </label>
+
+            <button type="submit">Submit review request</button>
+          </form>
+        </section>
+      </div>
+
+      <aside class="quarantine-side">
+        <section class="quarantine-panel quarantine-next">
+          <span class="section-kicker">Next action</span>
+          <h3>What to do next</h3>
+          <p class="quarantine-note">If you expected this domain to be safe, submit the review form and keep the request ID. For internal business systems, contact your Safe Zone operator or network administrator.</p>
+          {{if .SupportEmail}}
+          <p class="quarantine-contact">Support contact <strong>{{.SupportEmail}}</strong></p>
+          {{end}}
+        </section>
+
+        {{if .HTTPSLimitation}}
+        <section class="quarantine-panel quarantine-technical-note">
+          <span class="section-kicker">Technical note</span>
+          <h3>HTTPS certificate behavior</h3>
+          <p class="quarantine-note">Direct HTTPS access to a blocked third-party domain may show a browser certificate warning before this page can render. TLS validates the original domain name before Safe Zone can display the block explanation.</p>
+        </section>
+        {{end}}
+
+        <p class="quarantine-foot">Safe Zone may keep this page generic when DNS sinkholing does not include the full verdict context at render time.</p>
+      </aside>
+    </section>
+  </main>
+  <script src="/assets/block.js?v=__SAFE_ZONE_ASSET_REV__"></script>
+</body>
+</html>

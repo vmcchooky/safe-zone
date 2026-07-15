@@ -61,53 +61,6 @@ func TestQueryReadsLongWhoisLines(t *testing.T) {
 	}
 }
 
-func TestQueryLimitsOversizedResponses(t *testing.T) {
-	response := strings.Repeat("A", maxResponseBytes+8*1024)
-
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to start mock WHOIS server: %v", err)
-	}
-	t.Cleanup(func() { _ = ln.Close() })
-
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-
-			go func(c net.Conn) {
-				defer c.Close()
-
-				scanner := bufio.NewScanner(c)
-				if !scanner.Scan() {
-					return
-				}
-
-				_, _ = fmt.Fprint(c, response)
-			}(conn)
-		}
-	}()
-
-	originalDial := whoisDialContext
-	whoisDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		var d net.Dialer
-		return d.DialContext(ctx, network, ln.Addr().String())
-	}
-	t.Cleanup(func() {
-		whoisDialContext = originalDial
-	})
-
-	raw, err := query(context.Background(), "mock.whois.local", "example.com")
-	if err != nil {
-		t.Fatalf("query returned error for oversized WHOIS response: %v", err)
-	}
-	if got := len(raw); got != maxResponseBytes {
-		t.Fatalf("expected WHOIS response to be capped at %d bytes, got %d", maxResponseBytes, got)
-	}
-}
-
 func TestQueryAppliesDefaultTimeoutWithoutContextDeadline(t *testing.T) {
 	clientConn, serverConn := net.Pipe()
 	t.Cleanup(func() {
@@ -146,6 +99,45 @@ func TestQueryAppliesDefaultTimeoutWithoutContextDeadline(t *testing.T) {
 	timeout := capturedDeadline.Sub(start)
 	if timeout < 4*time.Second || timeout > 6*time.Second {
 		t.Fatalf("expected default timeout near 5s, got %s", timeout)
+	}
+}
+
+func TestQueryRejectsOversizedResponse(t *testing.T) {
+	response := "Creation Date: 2024-01-01T00:00:00Z\n" + strings.Repeat("A", int(maxResponseBytes)+32)
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to start mock WHOIS server: %v", err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				scanner := bufio.NewScanner(c)
+				if !scanner.Scan() {
+					return
+				}
+				_, _ = fmt.Fprint(c, response)
+			}(conn)
+		}
+	}()
+
+	originalDial := whoisDialContext
+	whoisDialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		var d net.Dialer
+		return d.DialContext(ctx, network, ln.Addr().String())
+	}
+	t.Cleanup(func() { whoisDialContext = originalDial })
+
+	_, err = query(context.Background(), "mock.whois.local", "example.com")
+	if err == nil || !strings.Contains(err.Error(), "whois response exceeded") {
+		t.Fatalf("expected oversized WHOIS response rejection, got %v", err)
 	}
 }
 

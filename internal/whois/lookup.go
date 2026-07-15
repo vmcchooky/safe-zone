@@ -53,7 +53,7 @@ var whoisDialContext = func(ctx context.Context, network, address string) (net.C
 
 const defaultQueryTimeout = 5 * time.Second
 const defaultCacheTTL = 7 * 24 * time.Hour
-const maxResponseBytes = 64 * 1024
+const maxResponseBytes int64 = 1 << 20
 
 // datePatterns are tried in order to extract creation dates from WHOIS text.
 var datePatterns = []*regexp.Regexp{
@@ -163,8 +163,12 @@ func query(ctx context.Context, server, domain string) (string, error) {
 	}
 
 	var sb strings.Builder
-	if _, err := io.Copy(&sb, io.LimitReader(conn, maxResponseBytes)); err != nil {
+	n, err := io.Copy(&sb, io.LimitReader(conn, maxResponseBytes+1))
+	if err != nil {
 		return "", fmt.Errorf("whois read: %w", err)
+	}
+	if n > maxResponseBytes {
+		return "", fmt.Errorf("whois response exceeded %d bytes", maxResponseBytes)
 	}
 	return sb.String(), nil
 }

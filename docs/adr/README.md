@@ -7,3 +7,4 @@ These ADRs capture production-relevant decisions that future maintainers should 
 - [ADR 0003: Redis cache plus SQLite operator data](0003-redis-cache-plus-sqlite-operator-data.md)
 - [ADR 0004: Caddy as the public HTTP edge](0004-caddy-public-http-edge.md)
 - [ADR 0005: Optional AI provider strategy](0005-optional-ai-provider-strategy.md)
+- [ADR 0006: Repository naming and layout conventions](0006-repository-naming-and-layout-conventions.md)

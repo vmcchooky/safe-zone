@@ -1,6 +1,6 @@
 param(
   [Parameter(Position = 0)]
-  [ValidateSet('help', 'deploy', 'deploy-dev', 'status', 'backup', 'restore', 'prune', 'feed-sync')]
+  [ValidateSet('help', 'deploy', 'deploy-dev', 'status', 'logs', 'backup', 'restore', 'prune', 'feed-sync')]
   [string]$Command = 'help',
   [ValidateSet('production', 'dev')]
   [string]$Stack = 'production',
@@ -18,6 +18,27 @@ $BackupsRoot = Join-Path $RepoRoot 'backups'
 $TmpRoot = Join-Path $RepoRoot 'tmp'
 $SqliteContainerPath = '/app/data/safe-zone.db'
 
+if (-not $PSBoundParameters.ContainsKey('Stack') -and $env:SAFE_ZONE_SCRIPT_STACK) {
+  $Stack = $env:SAFE_ZONE_SCRIPT_STACK
+}
+if (-not $PSBoundParameters.ContainsKey('BackupPath') -and $env:SAFE_ZONE_SCRIPT_BACKUP_PATH) {
+  $BackupPath = $env:SAFE_ZONE_SCRIPT_BACKUP_PATH
+}
+if (-not $PSBoundParameters.ContainsKey('Keep') -and $env:SAFE_ZONE_SCRIPT_KEEP) {
+  $Keep = [int]$env:SAFE_ZONE_SCRIPT_KEEP
+}
+if (-not $PSBoundParameters.ContainsKey('LogRetentionDays') -and $env:SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS) {
+  $LogRetentionDays = [int]$env:SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS
+}
+if (-not $PSBoundParameters.ContainsKey('FeedSync') -and $env:SAFE_ZONE_SCRIPT_FEED_SYNC) {
+  switch ($env:SAFE_ZONE_SCRIPT_FEED_SYNC.Trim().ToLowerInvariant()) {
+    '1' { $FeedSync = $true }
+    'true' { $FeedSync = $true }
+    'yes' { $FeedSync = $true }
+    'on' { $FeedSync = $true }
+  }
+}
+
 function Write-Section {
   param([string]$Text)
   Write-Host ''
@@ -32,6 +53,33 @@ function Write-Warn {
 function Write-ErrorMessage {
   param([string]$Text)
   Write-Host "ERROR: $Text" -ForegroundColor Red
+}
+
+function Invoke-MiseTask {
+  param([string]$TaskName)
+
+  if ($env:SAFE_ZONE_SKIP_MISE -eq '1') {
+    return $false
+  }
+
+  $mise = Get-Command mise -ErrorAction SilentlyContinue
+  if (-not $mise) {
+    Write-Warn "mise not found on PATH; running $Command directly"
+    return $false
+  }
+
+  $env:SAFE_ZONE_SCRIPT_STACK = $Stack
+  $env:SAFE_ZONE_SCRIPT_BACKUP_PATH = $BackupPath
+  $env:SAFE_ZONE_SCRIPT_KEEP = "$Keep"
+  $env:SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS = "$LogRetentionDays"
+  if ($FeedSync) {
+    $env:SAFE_ZONE_SCRIPT_FEED_SYNC = '1'
+  } else {
+    $env:SAFE_ZONE_SCRIPT_FEED_SYNC = '0'
+  }
+
+  & $mise.Source run $TaskName
+  exit $LASTEXITCODE
 }
 
 function Set-BuildMetadataEnv {
@@ -705,6 +753,7 @@ Usage:
   pwsh ./scripts/safe-zone.ps1 deploy
   pwsh ./scripts/safe-zone.ps1 deploy-dev
   pwsh ./scripts/safe-zone.ps1 status
+  pwsh ./scripts/safe-zone.ps1 logs
   pwsh ./scripts/safe-zone.ps1 backup
   pwsh ./scripts/safe-zone.ps1 restore [-BackupPath <backup-directory>]
   pwsh ./scripts/safe-zone.ps1 prune [-Keep 7] [-LogRetentionDays 7]
@@ -714,6 +763,7 @@ Commands:
   deploy      Build and start the production Compose stack, then wait for loopback health.
   deploy-dev  Build and start the local developer stack.
   status      Show Compose status and probe the local health endpoints.
+  logs        Follow Compose logs for the selected stack.
   backup      Save Redis, SQLite, env, and Caddy snapshots into ./backups/<timestamp>/.
   restore     Restore Redis and SQLite from the latest backup directory or -BackupPath.
   prune       Keep the newest backup directories and delete stale tmp/*.log files.
@@ -748,6 +798,20 @@ function Resolve-FeedSources {
   }
 
   return @()
+}
+
+$miseTasks = @{
+  'deploy' = 'ops:deploy'
+  'deploy-dev' = 'ops:deploy-dev'
+  'status' = 'ops:status'
+  'logs' = 'ops:logs'
+  'backup' = 'ops:backup'
+  'restore' = 'ops:restore'
+  'prune' = 'ops:prune'
+  'feed-sync' = 'ops:feed-sync'
+}
+if ($miseTasks.ContainsKey($Command)) {
+  [void](Invoke-MiseTask -TaskName $miseTasks[$Command])
 }
 
 switch ($Command) {
@@ -789,6 +853,14 @@ switch ($Command) {
         Write-Host "$($item.Name): offline"
       }
     }
+  }
+  'logs' {
+    Write-Section 'Compose logs'
+    $logTail = $env:SAFE_ZONE_LOG_TAIL
+    if (-not $logTail) {
+      $logTail = '100'
+    }
+    Invoke-Compose -SubCommandArgs @('logs', '-f', '--tail', $logTail)
   }
   'backup' {
     Write-Section 'Backing up Safe Zone'

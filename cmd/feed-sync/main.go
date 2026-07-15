@@ -14,20 +14,10 @@ import (
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 )
 
-const defaultThreatFeedKey = "safe-zone:threat:feed"
 
-type syncReport struct {
-	Source     string          `json:"source"`
-	Key        string          `json:"key"`
-	DryRun     bool            `json:"dry_run"`
-	Replace    bool            `json:"replace"`
-	Stats      feed.ParseStats `json:"stats"`
-	Written    int64           `json:"written"`
-	RedisAddr  string          `json:"redis_addr,omitempty"`
-	FinishedAt string          `json:"finished_at"`
-}
 
 func main() {
 	buildinfo.Link()
@@ -52,6 +42,7 @@ func main() {
 	}
 
 	ctx := correlation.WithRunID(context.Background(), correlation.NewID("feed-sync"))
+	client := netguard.NewHTTPClient(nil, *timeout, false)
 	report, err := feed.Sync(ctx, feed.SyncOptions{
 		Source:                     *source,
 		FileRoot:                   config.FeedFileRoot(),
@@ -63,6 +54,7 @@ func main() {
 		DryRun:                     *dryRun,
 		Replace:                    *replace,
 		Timeout:                    *timeout,
+		Client:                     client,
 		ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
 		ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
 		CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),

@@ -351,7 +351,3 @@ func cloneAnalysisBrands(brands []analysis.Brand) []analysis.Brand {
 	}
 	return cloned
 }
-
-func isUniqueConstraint(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "constraint")
-}
