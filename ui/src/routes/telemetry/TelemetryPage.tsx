@@ -317,7 +317,7 @@ export function TelemetryPage() {
         <motion.div 
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, ease: "easeOut" }}
+          transition={{ duration: 0.3, ease: "easeOut" }}
           className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-4"
         >
           <header>
@@ -353,7 +353,7 @@ export function TelemetryPage() {
                       key={option.value}
                       initial={{ opacity: 0, x: -15 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                      transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
                     >
                       <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
                     </motion.div>
@@ -406,7 +406,7 @@ export function TelemetryPage() {
               key={card.label}
               initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: index * 0.05 + 0.1, type: 'spring', stiffness: 300, damping: 24 }}
+              transition={{ delay: index * 0.02 + 0.1, type: 'spring', stiffness: 300, damping: 24 }}
               className="bg-slate-50 border border-slate-100 rounded-3xl p-6 shadow-sm hover:shadow-md transition-shadow"
             >
               <div className="flex items-center gap-3 mb-4">
@@ -427,7 +427,7 @@ export function TelemetryPage() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+          transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
           className="bg-transparent border border-black/5 rounded-3xl p-8 shadow-sm relative"
         >
           <div className="absolute inset-0 rounded-3xl overflow-hidden pointer-events-none">
@@ -471,7 +471,7 @@ export function TelemetryPage() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+          transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
           className="grid grid-cols-1 lg:grid-cols-3 gap-6"
         >
           {/* Trend Chart */}
@@ -723,7 +723,7 @@ export function TelemetryPage() {
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4, ease: "easeOut" }}
+          transition={{ duration: 0.3, delay: 0.2, ease: "easeOut" }}
           className="border border-white/70 rounded-[2rem] p-1.5 shadow-sm"
         >
         <article className="bg-slate-50/95 rounded-3xl p-8">
@@ -778,7 +778,7 @@ export function TelemetryPage() {
                       key={option.label}
                       initial={{ opacity: 0, x: -15 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                      transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
                     >
                       <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
                     </motion.div>
@@ -811,7 +811,7 @@ export function TelemetryPage() {
                       key={option.label}
                       initial={{ opacity: 0, x: -15 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                      transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
                     >
                       <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
                     </motion.div>

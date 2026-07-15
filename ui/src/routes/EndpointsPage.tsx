@@ -131,7 +131,7 @@ export function EndpointsPage() {
       <motion.div 
         initial={{ opacity: 0, y: -20 }} 
         animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.5, ease: "easeOut" }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
         className="flex flex-col md:flex-row md:items-center justify-between gap-6"
       >
         <div>
@@ -170,7 +170,7 @@ export function EndpointsPage() {
         <motion.section 
           initial={{ opacity: 0, y: 20 }} 
           animate={{ opacity: 1, y: 0 }} 
-          transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+          transition={{ duration: 0.3, delay: 0.05, ease: "easeOut" }}
           className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden"
         >
           {/* Decorative background glow */}
@@ -255,7 +255,7 @@ export function EndpointsPage() {
                         key={t.name} 
                         initial={{ opacity: 0, x: -10 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: index * 0.05 }}
+                        transition={{ delay: index * 0.02 }}
                         className="hover:bg-slate-50/80 transition-colors"
                       >
                         <td className="px-4 py-3 font-medium text-slate-900">{t.name}</td>
@@ -299,7 +299,7 @@ export function EndpointsPage() {
       <motion.section
         initial={{ opacity: 0, y: 20 }} 
         animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+        transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
         className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden"
       >
         <div className="flex items-center justify-between mb-4">
@@ -325,7 +325,7 @@ export function EndpointsPage() {
               key={g.id} 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: index * 0.05 + 0.3, type: "spring", stiffness: 300, damping: 25 }}
+              transition={{ delay: index * 0.02 + 0.3, type: "spring", stiffness: 300, damping: 25 }}
               className="bg-white border border-slate-100 rounded-3xl p-5 shadow-sm transition-all group flex flex-col"
             >
               <div className="flex justify-between items-start mb-2">
@@ -388,7 +388,7 @@ export function EndpointsPage() {
       <motion.section 
         initial={{ opacity: 0, y: 20 }} 
         animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+        transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
         className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden"
       >
         <div className="flex items-center gap-3 mb-6">
@@ -427,7 +427,7 @@ export function EndpointsPage() {
                         key={option.value}
                         initial={{ opacity: 0, x: -15 }}
                         animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                        transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
                       >
                         <SelectItem value={option.value} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{option.label}</SelectItem>
                       </motion.div>
@@ -468,7 +468,7 @@ export function EndpointsPage() {
                           key={g.id}
                           initial={{ opacity: 0, x: -15 }}
                           animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: i * 0.04, type: "spring", stiffness: 350, damping: 25 }}
+                          transition={{ delay: i * 0.02, type: "spring", stiffness: 350, damping: 25 }}
                         >
                           <SelectItem value={g.id.toString()} className="rounded-lg font-medium text-slate-700 focus:bg-sky-50 focus:text-sky-700 cursor-pointer">{g.name}</SelectItem>
                         </motion.div>
@@ -511,7 +511,7 @@ export function EndpointsPage() {
                     key={m.id} 
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: index * 0.05 + 0.4 }}
+                    transition={{ delay: index * 0.02 + 0.4 }}
                     className="hover:bg-slate-50/80 transition-colors"
                   >
                     <td className="px-6 py-4 text-slate-500 font-medium">{typeLabels[m.mapping_type] || m.mapping_type}</td>

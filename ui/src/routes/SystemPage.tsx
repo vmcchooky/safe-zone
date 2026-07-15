@@ -83,7 +83,7 @@ function SystemPageContent() {
       <motion.div 
         initial={{ opacity: 0, y: -20 }} 
         animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.5, ease: "easeOut" }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
         className="flex flex-col md:flex-row md:items-center justify-between gap-6"
       >
         <div>
@@ -112,7 +112,7 @@ function SystemPageContent() {
           <motion.section 
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+            transition={{ duration: 0.3, delay: 0.05, ease: "easeOut" }}
             className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
           >
           <div className="absolute top-0 right-0 w-64 h-64 bg-blue-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 translate-x-1/2"></div>
@@ -174,7 +174,7 @@ function SystemPageContent() {
           <motion.section 
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+            transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
             className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
           >
             <div className="absolute top-0 left-0 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 -translate-x-1/2"></div>
@@ -240,7 +240,7 @@ function SystemPageContent() {
           <motion.section 
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+            transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
             className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
           >
             <div className="flex items-center gap-3 mb-6">
@@ -293,7 +293,7 @@ function SystemPageContent() {
           <motion.section 
             initial={{ opacity: 0, y: 20 }} 
             animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+            transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
             className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden lg:col-start-3"
           >
             <div className="flex items-center gap-3 mb-6">
@@ -326,7 +326,7 @@ function SystemPageContent() {
       <motion.section 
         initial={{ opacity: 0, y: 20 }} 
         animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.5, delay: 0.5, ease: "easeOut" }}
+        transition={{ duration: 0.3, delay: 0.25, ease: "easeOut" }}
         className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col mt-6"
       >
         <div className="flex items-center gap-3 mb-6 relative z-10">

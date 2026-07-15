@@ -146,7 +146,7 @@ export function AnalysisPage() {
       <motion.header 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
         className="mb-4"
       >
         <div className="text-xs font-bold tracking-wider uppercase text-sky-600 mb-1.5 pl-8">
@@ -163,7 +163,7 @@ export function AnalysisPage() {
       <motion.section 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.1, ease: "easeOut" }}
+        transition={{ duration: 0.3, delay: 0.05, ease: "easeOut" }}
         className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden"
       >
         {/* Subtle decorative glow */}
@@ -293,7 +293,7 @@ export function AnalysisPage() {
         <motion.section 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
+          transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
           className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[430px] flex flex-col"
         >
           
@@ -436,7 +436,7 @@ export function AnalysisPage() {
                        <motion.button 
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
-                         transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.1 }}
+                         transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.05 }}
                          style={{ backgroundColor: '#F4C2C2', color: '#f8fafc' }}
                          onClick={async () => {
                            if (!result) return;
@@ -460,7 +460,7 @@ export function AnalysisPage() {
                        <motion.button 
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
-                         transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.2 }}
+                         transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.1 }}
                          style={{ backgroundColor: '#64748b', color: '#f8fafc' }}
                          onClick={async () => {
                            if (!result) return;
@@ -484,7 +484,7 @@ export function AnalysisPage() {
                        <motion.button 
                          initial={{ opacity: 0, scale: 0.3 }}
                          animate={{ opacity: 1, scale: 1 }}
-                         transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.3 }}
+                         transition={{ type: "spring", stiffness: 300, damping: 15, delay: 0.15 }}
                          onClick={async () => {
                            if (!result) return;
                            setShowRawData(true);
@@ -515,7 +515,7 @@ export function AnalysisPage() {
         <motion.aside 
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5, delay: 0.3, ease: "easeOut" }}
+          transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
           className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[430px]"
         >
           <div className="flex justify-between items-start mb-6">
