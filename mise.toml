@@ -67,7 +67,8 @@ run = "sh ./scripts/ui.sh check"
 run_windows = "pwsh -NoProfile -File scripts/ui.ps1 check"
 
 [tasks."ui:e2e"]
-description = "Run the UI E2E tests"
+description = "Build the API first, then run the UI E2E tests"
+depends = ["go:build"]
 run = "npm --prefix ui run test:e2e"
 run_windows = "cmd.exe /c \"cd ui && npm run test:e2e\""
 

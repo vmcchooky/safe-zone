@@ -78,7 +78,9 @@ export default defineConfig({
       },
       url: `${apiOrigin}/healthz`,
       reuseExistingServer: false,
-      timeout: 120 * 1000,
+      // A clean CI runner may need to download and compile the Go dependency
+      // graph before the API can answer its first health check.
+      timeout: 300 * 1000,
     },
   ],
 });
