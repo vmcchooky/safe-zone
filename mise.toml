@@ -1,7 +1,7 @@
 [tools]
 go = "1.26.5"
 node = "24"
-"go:golangci-lint" = "1.64.5"
+"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "v1.64.5"
 
 [tasks.default]
 description = "Run the default repository verification suite"
