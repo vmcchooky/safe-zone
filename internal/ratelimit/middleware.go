@@ -109,10 +109,14 @@ func init() {
 }
 
 func isTrustedProxy(ip string) bool {
-	parsedIP := net.ParseIP(ip)
+	parsedIP := parseHeaderIP(ip)
 	if parsedIP == nil {
 		return false
 	}
+	return isTrustedProxyIP(parsedIP)
+}
+
+func isTrustedProxyIP(parsedIP net.IP) bool {
 	for _, network := range defaultTrustedProxies {
 		if network.Contains(parsedIP) {
 			return true
@@ -121,8 +125,39 @@ func isTrustedProxy(ip string) bool {
 	return false
 }
 
+func parseHeaderIP(value string) net.IP {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	if host, _, err := net.SplitHostPort(value); err == nil {
+		value = host
+	}
+	value = strings.Trim(value, "[]")
+	return net.ParseIP(value)
+}
+
+func clientIPFromXForwardedFor(xff string) string {
+	parts := strings.Split(xff, ",")
+	valid := make([]net.IP, 0, len(parts))
+	for _, part := range parts {
+		if ip := parseHeaderIP(part); ip != nil {
+			valid = append(valid, ip)
+		}
+	}
+	if len(valid) == 0 {
+		return ""
+	}
+	for i := len(valid) - 1; i >= 0; i-- {
+		if !isTrustedProxyIP(valid[i]) {
+			return valid[i].String()
+		}
+	}
+	return valid[0].String()
+}
+
 // ClientIP extracts the real client IP from the request.
-// Priority: X-Forwarded-For (first) → X-Real-IP → RemoteAddr.
+// Priority: X-Forwarded-For (rightmost non-trusted hop) → X-Real-IP → RemoteAddr.
 // It only trusts X-Forwarded-For if the request comes from a trusted proxy.
 func ClientIP(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
@@ -132,17 +167,13 @@ func ClientIP(r *http.Request) string {
 
 	if isTrustedProxy(host) {
 		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-			// X-Forwarded-For can be a comma-separated list; take the first.
-			if idx := strings.Index(xff, ","); idx != -1 {
-				xff = xff[:idx]
-			}
-			if ip := strings.TrimSpace(xff); ip != "" {
+			if ip := clientIPFromXForwardedFor(xff); ip != "" {
 				return ip
 			}
 		}
 		if xri := r.Header.Get("X-Real-IP"); xri != "" {
-			if ip := strings.TrimSpace(xri); ip != "" {
-				return ip
+			if ip := parseHeaderIP(xri); ip != nil {
+				return ip.String()
 			}
 		}
 	}

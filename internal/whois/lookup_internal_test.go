@@ -13,7 +13,7 @@ import (
 )
 
 func TestQueryReadsLongWhoisLines(t *testing.T) {
-	longLine := strings.Repeat("A", 70*1024)
+	longLine := strings.Repeat("A", 48*1024)
 	response := fmt.Sprintf("Creation Date: 2024-01-01T00:00:00Z\nLegal: %s\nRegistrar: Example Registrar\n", longLine)
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

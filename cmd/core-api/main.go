@@ -49,15 +49,16 @@ func main() {
 	metrics := observability.NewRegistry()
 	cfg := handlers.Config{
 
-		DeploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
-		SessionSecret:  security.sessionSecret,
-		AdminPassword:  security.adminPassword,
-		AdminAPIKey:    security.adminAPIKey,
-		PublicHost:     config.String("SAFE_ZONE_PUBLIC_HOST", ""),
-		FeedKey:        feedKey,
-		FeedPreset:     feedPreset,
-		FeedSources:    feedSources,
-		FeedStaleAfter: feedStaleAfter,
+		DeploymentTier:      config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
+		RateLimitingEnabled: config.Bool("SAFE_ZONE_RATELIMIT_ENABLED", true),
+		SessionSecret:       security.sessionSecret,
+		AdminPassword:       security.adminPassword,
+		AdminAPIKey:         security.adminAPIKey,
+		PublicHost:          config.String("SAFE_ZONE_PUBLIC_HOST", ""),
+		FeedKey:             feedKey,
+		FeedPreset:          feedPreset,
+		FeedSources:         feedSources,
+		FeedStaleAfter:      feedStaleAfter,
 	}
 	defer func() {
 		if err := riskService.Close(); err != nil {

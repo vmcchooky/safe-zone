@@ -83,7 +83,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 			"/dashboard",
 		},
 		RateLimiting: &RateLimitingStatus{
-			Enabled: true, /* TODO fix ratelimiter status */
+			Enabled: h.Config.RateLimitingEnabled,
 		},
 		Time: time.Now().UTC().Format(time.RFC3339Nano),
 	})
@@ -115,7 +115,6 @@ func (h *Handler) VersionHandler(w http.ResponseWriter, r *http.Request) {
 	httputil.WriteJSON(w, http.StatusOK, buildinfo.Snapshot("core-api", h.Config.DeploymentTier))
 }
 
-
 func (h *Handler) FeedStatus(ctx context.Context) feed.StatusSummary {
 	return feed.ReadStatusSummary(ctx, h.Risk.RedisCache(), h.Config.FeedKey, h.Config.FeedPreset, h.Config.FeedSources, h.Config.FeedStaleAfter)
 }
@@ -145,7 +144,7 @@ func (h *Handler) LogsExportHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment; filename=\"safe-zone-diagnostics.log\"")
 
 	_, _ = w.Write([]byte("Safe-Zone Diagnostic Logs\n=========================\n\n"))
-	
+
 	db := h.Risk.StoreDB()
 	if db != nil {
 		events, err := db.QueryAgentEvents(r.Context(), time.Now().Add(-7*24*time.Hour), []string{}, 1000)

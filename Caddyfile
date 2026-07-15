@@ -1,14 +1,18 @@
+(common_security_headers) {
+	header {
+		X-Frame-Options "DENY"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' https://fonts.gstatic.com data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+		Referrer-Policy "no-referrer"
+		X-Content-Type-Options "nosniff"
+	}
+}
+
 {$SAFE_ZONE_PUBLIC_HOST:localhost} {
 	encode zstd gzip
 
-	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "no-referrer"
-		X-Frame-Options "DENY"
-		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-		Permissions-Policy "camera=(), microphone=(), geolocation=()"
-	}
+	import common_security_headers
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 
 	@doh path /dns-query
 	reverse_proxy @doh dns-resolver:8081
@@ -17,6 +21,8 @@
 }
 
 http:// {
+	import common_security_headers
+
 	route {
 		@assets path /assets/*
 		reverse_proxy @assets core-api:8080

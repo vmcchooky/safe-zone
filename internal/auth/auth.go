@@ -126,7 +126,7 @@ func NormalizeRole(username, role string) string {
 	if username == RoleGuest {
 		return RoleGuest
 	}
-	return RoleAdmin
+	return RoleGuest
 }
 
 func HashPassword(password string) (string, error) {

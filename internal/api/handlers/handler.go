@@ -8,15 +8,16 @@ import (
 )
 
 type Config struct {
-	DeploymentTier string
-	SessionSecret  []byte
-	AdminPassword  string
-	AdminAPIKey    string
-	PublicHost     string
-	FeedKey        string
-	FeedPreset     string
-	FeedSources    []string
-	FeedStaleAfter time.Duration
+	DeploymentTier      string
+	RateLimitingEnabled bool
+	SessionSecret       []byte
+	AdminPassword       string
+	AdminAPIKey         string
+	PublicHost          string
+	FeedKey             string
+	FeedPreset          string
+	FeedSources         []string
+	FeedStaleAfter      time.Duration
 }
 
 type Handler struct {
