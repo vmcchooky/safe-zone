@@ -8,9 +8,9 @@ This redesign brief outlines the visual, interaction, and technical guidelines f
 
 ## 1. Product Identity
 
-**Safe Zone** is a local-first anti-phishing and safe browsing control system. It helps users inspect risky domains, block malicious destinations, monitor threat feed freshness, and operate a small self-hosted protection stack.
+**Safe Zone** is the operator control plane for an open-source, nonprofit DNS-level anti-phishing project focused on protecting users and organizations in Vietnam. The project is in active development and helps operators inspect risky domains, block malicious destinations, monitor threat-feed freshness, and operate a self-hosted protection stack.
 
-*   **Primary User**: Self-hosting technology operators, home laboratory administrators, and small-business network security managers who prioritize high-efficiency, privacy-preserving, and low-overhead protection.
+*   **Primary User**: Vietnamese users, organizations, self-hosting technology operators, home laboratory administrators, and small-business network security managers who need privacy-preserving, low-overhead domain protection.
 *   **Main User Goals**:
     1.  Perform quick lexical and OSINT-linked hazard queries on suspicious domains.
     2.  Maintain threat feed sync health and inspect background automated agent states.

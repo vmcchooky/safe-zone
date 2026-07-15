@@ -4,6 +4,8 @@ Date: 2026-05-21
 
 This file is the single operational checklist for moving Safe Zone from the current repository state to production-ready, and then to "perfect production". It intentionally does not merge detailed design/spec documents. Those remain in `docs/specs/` as technical references.
 
+> **Project status:** Safe Zone remains an actively developed open-source, nonprofit project. This checklist tracks repository capabilities and release-readiness work; it is not a claim that the overall system is complete or production-ready for every environment.
+
 ## Status Legend
 
 - `[x]` Done in the current repo.

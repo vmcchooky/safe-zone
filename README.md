@@ -1,16 +1,25 @@
 # Safe Zone
 
-Safe Zone is a zero-cost-first anti-phishing system whose default deployment target is a single budget VPS, with local-friendly Go services for development and validation.
+Safe Zone is an open-source, nonprofit project developing a DNS-level anti-phishing system for protecting users and organizations from phishing and impersonation websites in Vietnam.
+
+The project is currently in active development. This repository describes an evolving implementation intended to become a useful community-serving tool; it does not claim complete coverage or production readiness for every deployment scenario. The public project direction is summarized on the [Safe Zone project page](https://www.quorix.io.vn/projects/safe-zone/).
 
 The operator-facing production source of truth is [docs/production-completion-checklist.md](docs/production-completion-checklist.md). Historical design notes and implementation records remain under [docs/specs/](docs/specs/).
 
+## Project direction
+
+- **Scope:** DNS-level anti-phishing and domain-risk analysis for Vietnamese users and organizations.
+- **Current status:** In development; features, integrations, and operational guidance continue to evolve.
+- **Target outcome:** An open-source, community-serving system for filtering malicious domains through local policy and threat intelligence.
+- **Core approach:** Go services, DoH and DoT, lexical analysis, threat feeds, optional local AI refinement, and a self-hosted operator control plane.
+
 ## Current build
 
-- `core-api`: HTTP API for health checks, cached domain analysis, `/metrics`, and the local dashboard
-- `dns-resolver`: local policy service with a real DoH `/dns-query` endpoint and `/metrics`
+- `core-api`: HTTP API for health checks, cached domain analysis, `/metrics`, and the self-hosted operator UI
+- `dns-resolver`: local policy service with DoH `/dns-query`, optional DoT, and `/metrics`
 - `feed-syncd`: optional interval-based threat-feed sync daemon for scheduled updates
 - `redis`: optional local cache for analysis results and dashboard history
-- `internal/analysis`: deterministic lexical scoring for the first release
+- `internal/analysis`: deterministic lexical scoring foundation
 - `internal/cache`: Redis JSON helpers with fail-open behavior
 - `internal/feed`: feed parsing and sync helpers shared by the CLI and daemon
 - `internal/ai`: optional Gemini 2.5 Flash Lite refinement for ambiguous domains
@@ -260,10 +269,10 @@ For a Linux VPS, [ops/cron/safe-zone.cron.example](ops/cron/safe-zone.cron.examp
 
 - Redis is optional for local development and stays disabled unless `SAFE_ZONE_REDIS_ADDR` is set.
 - `feed-syncd` is optional and only runs when the `feed-sync` Compose profile is enabled.
-- Metrics, health checks, and the current local dashboard remain self-hosted and dependency-free.
+- Metrics, health checks, and the operator UI remain self-hosted; the runtime does not depend on a hosted SaaS control plane.
 
 ## Notes
 
-This build is still local-first. DoT, Gemini, public TLS, DuckDNS, and production Caddy wiring can layer on top of the current Redis and DoH foundation.
+This project remains in active development. DoT, Gemini, public TLS, DuckDNS, and production Caddy wiring are available as optional capabilities, while real-environment validation and release hardening continue.
 Roadmap decisions should follow [docs/Safe_Zone_OPEX_Estimate.md](docs/Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
 Cost-sensitive changes should follow [docs/specs/opex-cost-optimization/policy.md](docs/specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](.github/pull_request_template.md).
