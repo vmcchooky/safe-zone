@@ -287,14 +287,12 @@ export function SettingsPage() {
   const handleTestAlert = async () => {
     setTestingAlert(true);
     try {
-      const res = await fetch('/v1/settings/test-webhook', { method: 'POST' });
+      const res = await fetch('/v1/settings/test-alert', { method: 'POST' });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Delivery failed');
-      if (data.status === 'ok') {
-        showToast('Test alert delivered successfully', 'ok');
-      } else {
-        throw new Error(data.message || 'Delivery failed');
+      if (!res.ok || data.status !== 'ok') {
+        throw new Error(data.error || data.message || 'Delivery failed');
       }
+      showToast('Test alert delivered successfully', 'ok');
     } catch (err: any) {
       showToast(err.message, 'err');
     } finally {

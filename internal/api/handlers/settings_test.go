@@ -168,3 +168,32 @@ func TestSettingsHandlerRejectsPrivateWebhookURL(t *testing.T) {
 		t.Fatalf("expected save 400, got %d: %s", saveResp.StatusCode, body)
 	}
 }
+
+func TestTestAlertEndpointRequiresWebhook(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings/test-alert", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.addAdminBearer(req)
+
+	resp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected missing webhook to return 400, got %d: %s", resp.StatusCode, body)
+	}
+
+	var payload map[string]string
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["error"] != "No webhook URL configured" {
+		t.Fatalf("unexpected missing webhook error: %q", payload["error"])
+	}
+}
