@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  memo,
   useMemo,
   useState,
   useRef,
@@ -52,6 +53,16 @@ const PAGE_SIZE = 12;
 const CHART_MOTION_DURATION = 1400;
 const CHART_MOTION_EASING = 'ease-out' as const;
 const SPRING_MOTION = { stiffness: 105, damping: 23, mass: 0.72 } as const;
+const COMPACT_NUMBER_FORMATTER = new Intl.NumberFormat('en', {
+  notation: 'compact',
+  maximumFractionDigits: 1,
+});
+const TELEMETRY_SWR_OPTIONS = {
+  refreshInterval: 5000,
+  keepPreviousData: true,
+  refreshWhenHidden: false,
+  refreshWhenOffline: false,
+};
 const PERIOD_OPTIONS = [
   { label: '24 hours', value: '24h' },
   { label: '7 days', value: '7d' },
@@ -87,13 +98,10 @@ function verdictTone(verdict: string) {
 }
 
 function formatCompact(value: number) {
-  return new Intl.NumberFormat('en', {
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  }).format(value);
+  return COMPACT_NUMBER_FORMATTER.format(value);
 }
 
-function useStableChartData<T>(value: T[]) {
+function useStableValue<T>(value: T) {
   const state = useRef({ signature: JSON.stringify(value), value });
   const signature = JSON.stringify(value);
 
@@ -104,7 +112,11 @@ function useStableChartData<T>(value: T[]) {
   return state.current.value;
 }
 
-function AnimatedMetric({ value, suffix = '', precision = 0 }: { value: number; suffix?: string; precision?: number }) {
+function useStableChartData<T>(value: T[]) {
+  return useStableValue(value);
+}
+
+const AnimatedMetric = memo(function AnimatedMetric({ value, suffix = '', precision = 0 }: { value: number; suffix?: string; precision?: number }) {
   const target = useMotionValue(0);
   const spring = useSpring(target, SPRING_MOTION);
   const display = useTransform(spring, (current) => {
@@ -118,7 +130,7 @@ function AnimatedMetric({ value, suffix = '', precision = 0 }: { value: number; 
   }, [target, value]);
 
   return <motion.span>{display}</motion.span>;
-}
+});
 
 const PieSectorShape = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, isHovered, opacity, cornerRadius }: any) => {
   return (
@@ -143,8 +155,42 @@ const PieSectorShape = ({ cx, cy, innerRadius, outerRadius, startAngle, endAngle
   );
 };
 
-export function TelemetryPage() {
-  const navigate = useNavigate();
+type TrendDatum = {
+  time: string;
+  malicious: number;
+  suspicious: number;
+  safe: number;
+  threats: number;
+};
+
+type DistributionSlice = {
+  name: string;
+  value: number;
+  fill: string;
+};
+
+type ScoreBand = {
+  label: string;
+  value: number;
+  name: string;
+  fill: string;
+};
+
+const TelemetryCharts = memo(function TelemetryCharts({
+  period,
+  trendData,
+  distribution,
+  scoreBands,
+  safeRatio,
+  total,
+}: {
+  period: string;
+  trendData: TrendDatum[];
+  distribution: DistributionSlice[];
+  scoreBands: ScoreBand[];
+  safeRatio: number;
+  total: number;
+}) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const hoverTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -155,10 +201,8 @@ export function TelemetryPage() {
     }
 
     if (activeIndex !== null) {
-      // If already hovering another slice, switch immediately to keep it responsive
       setActiveIndex(index);
     } else {
-      // Hovering in from outside, debounce for 120ms to ignore fast cursor swipes
       hoverTimeoutRef.current = setTimeout(() => {
         setActiveIndex(index);
       }, 120);
@@ -171,7 +215,6 @@ export function TelemetryPage() {
       hoverTimeoutRef.current = null;
     }
 
-    // Grace period of 80ms before shrinking to prevent jitter when slipping off the slice boundary
     hoverTimeoutRef.current = setTimeout(() => {
       setActiveIndex(null);
     }, 80);
@@ -180,6 +223,278 @@ export function TelemetryPage() {
   useEffect(() => () => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
   }, []);
+
+  const hoveredSlice = activeIndex !== null ? distribution[activeIndex] : null;
+  let centerPercentage: number | string = safeRatio;
+  let centerLabel = 'Safe';
+  let centerColor = 'text-teal-600';
+
+  if (hoveredSlice) {
+    let rawPercent = total ? ((hoveredSlice.value / total) * 100).toFixed(1) : '0';
+    if (rawPercent.endsWith('.0')) rawPercent = rawPercent.slice(0, -2);
+    centerPercentage = rawPercent;
+    centerLabel = hoveredSlice.name;
+    if (hoveredSlice.name === 'Safe') centerColor = 'text-teal-600';
+    if (hoveredSlice.name === 'Suspicious') centerColor = 'text-amber-600';
+    if (hoveredSlice.name === 'Malicious') centerColor = 'text-rose-600';
+  }
+  const centerNumericValue = Number(centerPercentage);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
+      className="grid grid-cols-1 lg:grid-cols-3 gap-6"
+    >
+      <article className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[360px] lg:col-span-3">
+        <div className="mb-6 flex items-center gap-2">
+          <h2 className="text-xl font-bold text-slate-800">Threat trend</h2>
+          <InfoTooltip content="Displays the volume of telemetry events classified as suspicious or malicious over the selected period. Useful for identifying abnormal traffic spikes." />
+        </div>
+        <div className="flex-1 min-h-0 relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={period}
+              initial={{ opacity: 0, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, filter: 'blur(4px)' }}
+              transition={{ duration: 0.35, ease: "easeInOut" }}
+              className="w-full h-full absolute inset-0"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#14b8a6" />
+                    </pattern>
+                    <pattern id="pattern-suspicious-area" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#f59e0b" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
+                    </pattern>
+                    <pattern id="pattern-malicious-area" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#f43f5e" />
+                      <circle cx="4" cy="4" r="1.5" fill="#f8fafc" />
+                    </pattern>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} dy={10} minTickGap={30} />
+                  <YAxis
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(value) => formatCompact(Number(value))}
+                    dx={-5}
+                    width={40}
+                    allowDecimals={false}
+                    domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.1))]}
+                  />
+                  <Tooltip
+                    cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
+                    isAnimationActive
+                    animationDuration={150}
+                    animationEasing="ease-out"
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <motion.div
+                            initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ type: "spring", stiffness: 400, damping: 20 }}
+                            className="bg-slate-50/95 backdrop-blur-md border border-slate-50/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
+                          >
+                            <p className="text-slate-500 font-medium text-sm mb-3">{label}</p>
+                            <div className="space-y-2">
+                              {payload.map((entry: any, index: number) => (
+                                <div key={index} className="flex items-center gap-3 text-sm">
+                                  <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
+                                  <span className="text-slate-600 font-medium">{entry.name}:</span>
+                                  <span className="text-slate-900 font-bold ml-auto">{entry.value}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </motion.div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                  <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                  <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </article>
+
+      <article className="bg-transparent border border-black/5 rounded-3xl p-4 shadow-sm flex flex-col h-[360px] lg:col-span-1">
+        <div className="mb-6 flex items-center gap-2">
+          <h2 className="text-xl font-bold text-slate-800">Verdict distribution</h2>
+          <InfoTooltip content="Shows the overall distribution of safety verdicts (Safe, Suspicious, Malicious) for all processed telemetry events in this time window." />
+        </div>
+        <div className="flex-1 min-h-0 relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={period}
+              initial={{ opacity: 0, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, filter: 'blur(4px)' }}
+              transition={{ duration: 0.35, ease: "easeInOut" }}
+              className="w-full h-full absolute inset-0"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <defs>
+                    <pattern id="pattern-safe-pie" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#14b8a6" />
+                    </pattern>
+                    <pattern id="pattern-suspicious-pie" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#f59e0b" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
+                    </pattern>
+                    <pattern id="pattern-malicious-pie" width="6" height="6" patternUnits="userSpaceOnUse">
+                      <rect width="6" height="6" fill="#f43f5e" />
+                      <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
+                    </pattern>
+                  </defs>
+                  <Pie
+                    data={distribution}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius="62%"
+                    outerRadius="85%"
+                    paddingAngle={4}
+                    cornerRadius={6}
+                    stroke="none"
+                    startAngle={90}
+                    endAngle={-270}
+                    isAnimationActive
+                    animationDuration={CHART_MOTION_DURATION}
+                    animationEasing={CHART_MOTION_EASING}
+                    animationMatchBy="index"
+                    // @ts-ignore
+                    shape={(props: any) => {
+                      const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
+                      const isHovered = index === activeIndex;
+                      const isAnyHovered = activeIndex !== null;
+                      const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
+                      return (
+                        <PieSectorShape
+                          cx={cx}
+                          cy={cy}
+                          innerRadius={innerRadius}
+                          outerRadius={outerRadius}
+                          startAngle={startAngle}
+                          endAngle={endAngle}
+                          fill={fill}
+                          isHovered={isHovered}
+                          opacity={opacity}
+                          cornerRadius={6}
+                        />
+                      );
+                    }}
+                    onMouseEnter={(_, index) => handleMouseEnter(index)}
+                    onMouseLeave={handleMouseLeave}
+                  >
+                    {distribution.map((slice) => (
+                      <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
+                    ))}
+                  </Pie>
+                </PieChart>
+              </ResponsiveContainer>
+            </motion.div>
+          </AnimatePresence>
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
+            <motion.div
+              key={period}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: activeIndex === null ? 1 : 1.025 }}
+              transition={{ type: 'spring', stiffness: 180, damping: 20 }}
+              className="flex flex-col items-center justify-center"
+            >
+              <span className="text-4xl font-extrabold text-slate-800">
+                <AnimatedMetric value={centerNumericValue} suffix="%" precision={1} />
+              </span>
+              <span className={`text-sm font-bold uppercase tracking-wide transition-colors duration-300 ${centerColor}`}>{centerLabel}</span>
+            </motion.div>
+          </div>
+        </div>
+      </article>
+
+      <article className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[360px] lg:col-span-2">
+        <div className="mb-6 flex items-center gap-2">
+          <h2 className="text-xl font-bold text-slate-800">Score distribution</h2>
+          <InfoTooltip content="Groups all telemetry events into 5 specific threat score ranges (from 0 to 100), providing a detailed view of the risk landscape." />
+        </div>
+        <div className="flex-1 min-h-0 relative">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={period}
+              initial={{ opacity: 0, filter: 'blur(4px)' }}
+              animate={{ opacity: 1, filter: 'blur(0px)' }}
+              exit={{ opacity: 0, filter: 'blur(4px)' }}
+              transition={{ duration: 0.35, ease: "easeInOut" }}
+              className="w-full h-full absolute inset-0"
+            >
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={scoreBands} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+                  <defs>
+                    <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#14b8a6" />
+                    </pattern>
+                    <pattern id="pattern-safe-low-bar" width="8" height="8" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#10b981" />
+                    </pattern>
+                    <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#f59e0b" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
+                    </pattern>
+                    <pattern id="pattern-high-risk-bar" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
+                      <rect width="8" height="8" fill="#f97316" />
+                      <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
+                    </pattern>
+                    <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
+                      <rect width="6" height="6" fill="#f43f5e" />
+                      <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
+                    </pattern>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
+                  <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
+                  <YAxis
+                    tick={{ fill: '#94a3b8', fontSize: 12 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(value) => formatCompact(Number(value))}
+                    dx={-10}
+                  />
+                  <Tooltip
+                    formatter={(value: number, name: string, props: any) => [formatCompact(Number(value)), props.payload.name]}
+                    contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
+                    cursor={{ fill: 'rgba(0,0,0,0.02)' }}
+                    itemStyle={{ color: '#1e293b', fontWeight: 600 }}
+                    labelStyle={{ display: 'none' }}
+                  />
+                  <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index">
+                    {scoreBands.map((bar) => (
+                      <Cell key={bar.label} fill={bar.fill} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </article>
+    </motion.div>
+  );
+});
+
+export function TelemetryPage() {
+  const navigate = useNavigate();
 
   const [period, setPeriod] = useState('24h');
   const [domain, setDomain] = useState('');
@@ -206,10 +521,10 @@ export function TelemetryPage() {
   const statsUrl = `/v1/telemetry/stats?period=${period}`;
   const recentUrl = `/v1/telemetry/recent?${params.toString()}`;
 
-  const swrOptions = { refreshInterval: 5000, keepPreviousData: true, refreshWhenHidden: false, refreshWhenOffline: false };
-  const { data: stats, error: statsErr, isValidating: refreshingStats, mutate: mutateStats } = useSWR<TelemetryStats>(statsUrl, apiFetch, swrOptions);
-  const { data: recentRes, error: recentErr, isValidating: refreshingRecent, mutate: mutateRecent } = useSWR<{ items: TelemetryEntry[] }>(recentUrl, apiFetch, swrOptions);
+  const { data: fetchedStats, error: statsErr, isValidating: refreshingStats, mutate: mutateStats } = useSWR<TelemetryStats>(statsUrl, apiFetch, TELEMETRY_SWR_OPTIONS);
+  const { data: recentRes, error: recentErr, isValidating: refreshingRecent, mutate: mutateRecent } = useSWR<{ items: TelemetryEntry[] }>(recentUrl, apiFetch, TELEMETRY_SWR_OPTIONS);
 
+  const stats = useStableValue(fetchedStats);
   const entries = recentRes?.items || [];
   const refreshing = refreshingStats || refreshingRecent;
   const loadingRecent = !recentRes && !recentErr;
@@ -287,23 +602,6 @@ export function TelemetryPage() {
     : 0;
   const safeRatio = stats?.total ? Math.round((stats.safe / stats.total) * 100) : 100;
   const cacheRatio = stats?.total ? Math.round((stats.cache_hits / stats.total) * 100) : 0;
-
-  const hoveredSlice = activeIndex !== null ? distribution[activeIndex] : null;
-
-  let centerPercentage: number | string = safeRatio;
-  let centerLabel = 'Safe';
-  let centerColor = 'text-teal-600';
-
-  if (hoveredSlice) {
-    let rawPercent = stats?.total ? ((hoveredSlice.value / stats.total) * 100).toFixed(1) : '0';
-    if (rawPercent.endsWith('.0')) rawPercent = rawPercent.slice(0, -2);
-    centerPercentage = rawPercent;
-    centerLabel = hoveredSlice.name;
-    if (hoveredSlice.name === 'Safe') centerColor = 'text-teal-600';
-    if (hoveredSlice.name === 'Suspicious') centerColor = 'text-amber-600';
-    if (hoveredSlice.name === 'Malicious') centerColor = 'text-rose-600';
-  }
-  const centerNumericValue = Number(centerPercentage);
 
   return (
     <motion.section 
@@ -467,257 +765,14 @@ export function TelemetryPage() {
         </motion.div>
 
 
-        {/* Charts Grid */}
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
-          className="grid grid-cols-1 lg:grid-cols-3 gap-6"
-        >
-          {/* Trend Chart */}
-          <article className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[360px] lg:col-span-3">
-            <div className="mb-6 flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-800">Threat trend</h2>
-              <InfoTooltip content="Displays the volume of telemetry events classified as suspicious or malicious over the selected period. Useful for identifying abnormal traffic spikes." />
-            </div>
-            <div className="flex-1 min-h-0 relative">
-              <AnimatePresence mode="wait">
-                <motion.div 
-                  key={period}
-                  initial={{ opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ duration: 0.35, ease: "easeInOut" }}
-                  className="w-full h-full absolute inset-0"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={trendData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                      <defs>
-                        <pattern id="pattern-safe-area" width="8" height="8" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#14b8a6" />
-                        </pattern>
-                        <pattern id="pattern-suspicious-area" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#f59e0b" />
-                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
-                        </pattern>
-                        <pattern id="pattern-malicious-area" width="8" height="8" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#f43f5e" />
-                          <circle cx="4" cy="4" r="1.5" fill="#f8fafc" />
-                        </pattern>
-                      </defs>
-                      <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
-                      <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 500 }} axisLine={false} tickLine={false} dy={10} minTickGap={30} />
-                      <YAxis
-                        tick={{ fill: '#94a3b8', fontSize: 12 }}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={(value) => formatCompact(Number(value))}
-                        dx={-5}
-                        width={40}
-                        allowDecimals={false}
-                        domain={[0, (dataMax: number) => Math.max(10, Math.ceil(dataMax * 1.1))]}
-                      />
-                      <Tooltip 
-                        cursor={{ stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: 2, strokeDasharray: '4 4', style: { transition: 'all 0.1s ease' } }}
-                        isAnimationActive={true}
-                        animationDuration={150}
-                        animationEasing="ease-out"
-                        content={({ active, payload, label }) => {
-                          if (active && payload && payload.length) {
-                            return (
-                              <motion.div
-                                initial={{ opacity: 0, y: 8, scale: 0.95 }}
-                                animate={{ opacity: 1, y: 0, scale: 1 }}
-                                transition={{ type: "spring", stiffness: 400, damping: 20 }}
-                                className="bg-slate-50/95 backdrop-blur-md border border-slate-50/80 rounded-2xl p-4 shadow-[0_8px_32px_rgba(0,0,0,0.12)] min-w-[140px]"
-                              >
-                                <p className="text-slate-500 font-medium text-sm mb-3">{label}</p>
-                                <div className="space-y-2">
-                                  {payload.map((entry: any, index: number) => (
-                                    <div key={index} className="flex items-center gap-3 text-sm">
-                                      <div className="w-2.5 h-2.5 rounded-full shadow-sm" style={{ backgroundColor: entry.color }} />
-                                      <span className="text-slate-600 font-medium">{entry.name}:</span>
-                                      <span className="text-slate-900 font-bold ml-auto">{entry.value}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </motion.div>
-                            );
-                          }
-                          return null;
-                        }}
-                      />
-                      <Area type="monotone" stackId="1" dataKey="safe" name="Safe" stroke="#14b8a6" strokeWidth={2} fillOpacity={1} fill="url(#pattern-safe-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#14b8a6' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
-                      <Area type="monotone" stackId="1" dataKey="suspicious" name="Suspicious" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#pattern-suspicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f59e0b' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
-                      <Area type="monotone" stackId="1" dataKey="malicious" name="Malicious" stroke="#f43f5e" strokeWidth={2} fillOpacity={1} fill="url(#pattern-malicious-area)" activeDot={{ r: 6, strokeWidth: 0, fill: '#f43f5e' }} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </article>
-
-          <article className="bg-transparent border border-black/5 rounded-3xl p-4 shadow-sm flex flex-col h-[360px] lg:col-span-1">
-            <div className="mb-6 flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-800">Verdict distribution</h2>
-              <InfoTooltip content="Shows the overall distribution of safety verdicts (Safe, Suspicious, Malicious) for all processed telemetry events in this time window." />
-            </div>
-            <div className="flex-1 min-h-0 relative">
-              <AnimatePresence mode="wait">
-                <motion.div 
-                  key={period}
-                  initial={{ opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ duration: 0.35, ease: "easeInOut" }}
-                  className="w-full h-full absolute inset-0"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <defs>
-                        <pattern id="pattern-safe-pie" width="8" height="8" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#14b8a6" />
-                        </pattern>
-                        <pattern id="pattern-suspicious-pie" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#f59e0b" />
-                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
-                        </pattern>
-                        <pattern id="pattern-malicious-pie" width="6" height="6" patternUnits="userSpaceOnUse">
-                          <rect width="6" height="6" fill="#f43f5e" />
-                          <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
-                        </pattern>
-                      </defs>
-                      <Pie
-                        data={distribution}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius="62%"
-                        outerRadius="85%"
-                        paddingAngle={4}
-                        cornerRadius={6}
-                        stroke="none"
-                        startAngle={90}
-                        endAngle={-270}
-                        isAnimationActive
-                        animationDuration={CHART_MOTION_DURATION}
-                        animationEasing={CHART_MOTION_EASING}
-                        animationMatchBy="index"
-                        // @ts-ignore
-                        shape={(props: any) => {
-                          const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, index } = props;
-                          const isHovered = index === activeIndex;
-                          const isAnyHovered = activeIndex !== null;
-                          const opacity = isHovered ? 1 : (isAnyHovered ? 0.35 : 1);
-                          return (
-                            <PieSectorShape
-                              cx={cx}
-                              cy={cy}
-                              innerRadius={innerRadius}
-                              outerRadius={outerRadius}
-                              startAngle={startAngle}
-                              endAngle={endAngle}
-                              fill={fill}
-                              isHovered={isHovered}
-                              opacity={opacity}
-                              cornerRadius={6}
-                            />
-                          );
-                        }}
-                        onMouseEnter={(_, index) => handleMouseEnter(index)}
-                        onMouseLeave={handleMouseLeave}
-                      >
-                        {distribution.map((slice) => (
-                          <Cell key={slice.name} fill={slice.fill} style={{ outline: 'none' }} />
-                        ))}
-                      </Pie>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </motion.div>
-              </AnimatePresence>
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none flex-col mt-2">
-                <motion.div
-                  key={period}
-                  initial={{ opacity: 0, scale: 0.8 }}
-                  animate={{ opacity: 1, scale: activeIndex === null ? 1 : 1.025 }}
-                  transition={{ type: 'spring', stiffness: 180, damping: 20 }}
-                  className="flex flex-col items-center justify-center"
-                >
-                  <span className="text-4xl font-extrabold text-slate-800">
-                    <AnimatedMetric value={centerNumericValue} suffix="%" precision={1} />
-                  </span>
-                  <span className={`text-sm font-bold uppercase tracking-wide transition-colors duration-300 ${centerColor}`}>{centerLabel}</span>
-                </motion.div>
-              </div>
-            </div>
-          </article>
-
-          <article className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[360px] lg:col-span-2">
-            <div className="mb-6 flex items-center gap-2">
-              <h2 className="text-xl font-bold text-slate-800">Score distribution</h2>
-              <InfoTooltip content="Groups all telemetry events into 5 specific threat score ranges (from 0 to 100), providing a detailed view of the risk landscape." />
-            </div>
-            <div className="flex-1 min-h-0 relative">
-              <AnimatePresence mode="wait">
-                <motion.div 
-                  key={period}
-                  initial={{ opacity: 0, filter: 'blur(4px)' }}
-                  animate={{ opacity: 1, filter: 'blur(0px)' }}
-                  exit={{ opacity: 0, filter: 'blur(4px)' }}
-                  transition={{ duration: 0.35, ease: "easeInOut" }}
-                  className="w-full h-full absolute inset-0"
-                >
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={scoreBands} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-                      <defs>
-                        <pattern id="pattern-safe-bar" width="8" height="8" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#14b8a6" />
-                        </pattern>
-                        <pattern id="pattern-safe-low-bar" width="8" height="8" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#10b981" />
-                        </pattern>
-                        <pattern id="pattern-suspicious-bar" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#f59e0b" />
-                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="2.5" />
-                        </pattern>
-                        <pattern id="pattern-high-risk-bar" width="8" height="8" patternTransform="rotate(-45)" patternUnits="userSpaceOnUse">
-                          <rect width="8" height="8" fill="#f97316" />
-                          <line x1="0" y1="0" x2="0" y2="8" stroke="#f8fafc" strokeWidth="1.5" />
-                        </pattern>
-                        <pattern id="pattern-malicious-bar" width="6" height="6" patternUnits="userSpaceOnUse">
-                          <rect width="6" height="6" fill="#f43f5e" />
-                          <circle cx="3" cy="3" r="1.2" fill="#f8fafc" />
-                        </pattern>
-                      </defs>
-                      <CartesianGrid strokeDasharray="4 4" stroke="rgba(0,0,0,0.05)" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fill: '#64748b', fontSize: 12, fontWeight: 600 }} axisLine={false} tickLine={false} dy={10} />
-                      <YAxis
-                        tick={{ fill: '#94a3b8', fontSize: 12 }}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={(value) => formatCompact(Number(value))}
-                        dx={-10}
-                      />
-                      <Tooltip 
-                        formatter={(value: number, name: string, props: any) => [formatCompact(Number(value)), props.payload.name]}
-                        contentStyle={{ borderRadius: '16px', border: '1px solid rgba(255,255,255,0.8)', background: 'rgba(255,255,255,0.9)', boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}
-                        cursor={{ fill: 'rgba(0,0,0,0.02)' }}
-                        itemStyle={{ color: '#1e293b', fontWeight: 600 }}
-                        labelStyle={{ display: 'none' }}
-                      />
-                      <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={CHART_MOTION_DURATION} animationEasing={CHART_MOTION_EASING} animationMatchBy="index">
-                        {scoreBands.map((bar) => (
-                          <Cell key={bar.label} fill={bar.fill} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </motion.div>
-              </AnimatePresence>
-            </div>
-          </article>
-        </motion.div>
+        <TelemetryCharts
+          period={period}
+          trendData={trendData}
+          distribution={distribution}
+          scoreBands={scoreBands}
+          safeRatio={safeRatio}
+          total={stats?.total || 0}
+        />
 
         {/* Table - Outer transparent frame */}
         <motion.div 
