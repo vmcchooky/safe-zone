@@ -102,7 +102,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 			"/dashboard",
 		},
 		RateLimiting: &RateLimitingStatus{
-			Enabled: true, /* TODO fix ratelimiter status */
+			Enabled: h.Config.RateLimitingEnabled,
 		},
 		Time: time.Now().UTC().Format(time.RFC3339Nano),
 	})

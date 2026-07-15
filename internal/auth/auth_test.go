@@ -6,6 +6,29 @@ import (
 	"time"
 )
 
+func TestNormalizeRole(t *testing.T) {
+	testCases := []struct {
+		name     string
+		username string
+		role     string
+		want     string
+	}{
+		{name: "explicit admin role preserved", username: "admin", role: RoleAdmin, want: RoleAdmin},
+		{name: "explicit guest role preserved", username: "guest", role: RoleGuest, want: RoleGuest},
+		{name: "guest username without role stays guest", username: "guest", role: "", want: RoleGuest},
+		{name: "invalid role for non guest falls back to guest", username: "alice", role: "superadmin", want: RoleGuest},
+		{name: "empty role for non guest falls back to guest", username: "admin", role: "", want: RoleGuest},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NormalizeRole(tc.username, tc.role); got != tc.want {
+				t.Fatalf("NormalizeRole(%q, %q) = %q, want %q", tc.username, tc.role, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestAuthSessionLifecycle(t *testing.T) {
 	// Generate random secret key
 	secret := make([]byte, 32)
