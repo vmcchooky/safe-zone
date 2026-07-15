@@ -1,8 +1,8 @@
 import { Bell, LogOut, RadioTower, Settings2, Shield, Sparkles, MonitorSmartphone, ShieldAlert, Flag, HardDrive } from 'lucide-react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import logoImg from '../assets/logo.png';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 import { useAuth } from '../auth/AuthProvider';
 import type { AuthSession } from '../lib/types';
@@ -31,6 +31,8 @@ export function AppShell({
   session: AuthSession;
 }) {
   const { logout } = useAuth();
+  const location = useLocation();
+  const dockRef = useRef<HTMLElement | null>(null);
   const [showNav, setShowNav] = useState(true);
   const [hasViewedGuestNotice, setHasViewedGuestNotice] = useState(false);
   const guestMessage = session.read_only ? session.guest_message?.trim() : '';
@@ -88,11 +90,20 @@ export function AppShell({
     setHasViewedGuestNotice(false);
   }, [guestMessage]);
 
+  useEffect(() => {
+    const activeLink = dockRef.current?.querySelector<HTMLElement>('a.active');
+    if (!activeLink || !window.matchMedia('(max-width: 760px)').matches) {
+      return;
+    }
+
+    activeLink.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  }, [location.pathname, session.can_view_settings]);
+
   return (
     <div className="shell">
         {/* Top Floating Header for Brand and User Actions */}
         <div className="shell-floating-header">
-        <div className="flex items-center" style={{ pointerEvents: 'auto' }}>
+        <div className="shell-floating-brand flex items-center" style={{ pointerEvents: 'auto' }}>
           <div className="guest-brand-mark">
             <div className="shrink-0 flex items-center justify-center shadow-sm relative z-10" style={{ width: 76, height: 76, borderRadius: '50%', backgroundColor: '#fff', border: '1px solid rgba(0,0,0,0.06)', padding: '3px' }}>
               <img src={logoImg} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '50%' }} />
@@ -116,7 +127,7 @@ export function AppShell({
               </button>
             ) : null}
           </div>
-          <div className="shell-brand relative z-0" style={{ padding: '6px 14px 6px 28px', borderRadius: '0 12px 12px 0', marginLeft: '-20px', backgroundColor: '#fff' }}>
+          <div className="shell-brand relative z-0">
             <div className="shell-brand-copy">
               <strong>Safe Zone</strong>
               <span style={{ fontSize: '0.7rem' }}>Quorix Engine</span>
@@ -152,6 +163,7 @@ export function AppShell({
         <AnimatePresence>
           {showNav && (
             <motion.nav 
+              ref={dockRef}
               className="shell-floating-dock-inner"
               initial={{ y: 100, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}

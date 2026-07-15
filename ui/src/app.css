@@ -176,16 +176,28 @@
   pointer-events: auto; /* Re-enable clicks for actual elements */
 }
 
+.shell-floating-brand {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .shell-brand {
   display: flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 14px;
-  background: rgba(255, 255, 255, 0.6);
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+  white-space: nowrap;
+  background: #fff;
   backdrop-filter: blur(12px);
-  padding: 8px 16px 8px 8px;
-  border-radius: 20px;
+  padding: 6px 14px 6px 28px;
+  margin-left: -20px;
+  border-radius: 0 12px 12px 0;
   border: 1px solid rgba(0, 0, 0, 0.06);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.05);
+  transition: max-width 220ms ease, padding 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
 }
 
 .shell-brand-mark {
@@ -203,6 +215,8 @@
 .shell-brand-copy {
   display: grid;
   gap: 2px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .shell-brand-copy strong {
@@ -272,6 +286,8 @@
 .shell-floating-dock-inner {
   display: flex;
   align-items: center;
+  min-width: 0;
+  max-width: calc(100vw - 24px);
   gap: 8px;
   padding: 8px;
   background: rgba(255, 255, 255, 0.2); /* 20% opacity */
@@ -280,10 +296,20 @@
   border-radius: 24px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.05), inset 0 1px 3px rgba(255, 255, 255, 0.9), inset 0 -1px 2px rgba(255, 255, 255, 0.2);
   pointer-events: auto;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  scroll-behavior: smooth;
+}
+
+.shell-floating-dock-inner::-webkit-scrollbar {
+  display: none;
 }
 
 .shell-floating-dock-inner a {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
@@ -327,6 +353,63 @@
 
 .shell-floating-dock-inner a.active .dock-label {
   opacity: 1;
+}
+
+@media (max-width: 760px) {
+  .shell-brand {
+    flex-basis: 0;
+    max-width: 0;
+    margin-left: -76px;
+    padding: 0;
+    border-color: transparent;
+    box-shadow: none;
+  }
+
+  .shell-brand-copy {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .shell-floating-dock-wrapper {
+    right: 0;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 0;
+    padding: 0 12px;
+  }
+
+  .shell-floating-dock-inner {
+    width: 100%;
+    max-width: 100%;
+    gap: 6px;
+    padding: 6px;
+    border-radius: 20px;
+    scroll-snap-type: x mandatory;
+    touch-action: pan-x;
+  }
+
+  .shell-floating-dock-inner a {
+    flex-basis: clamp(72px, 22vw, 92px);
+    min-width: 0;
+    height: 58px;
+    padding: 0 8px;
+    border-radius: 16px;
+    gap: 4px;
+    scroll-snap-align: center;
+  }
+
+  .shell-floating-dock-inner a svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .shell-floating-dock-inner a .dock-label {
+    font-size: clamp(0.65rem, 2.7vw, 0.75rem);
+    white-space: nowrap;
+  }
+
+  .shell-floating-dock-inner a:hover {
+    transform: none;
+  }
 }
 
 .shell-main {
