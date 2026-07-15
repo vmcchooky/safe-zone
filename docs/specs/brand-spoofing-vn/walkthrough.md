@@ -102,23 +102,23 @@ SAFE_ZONE_TELEMETRY_RETENTION_DAYS=30
 
 # --- AI Agent Workflow ---
 SAFE_ZONE_AGENT_ENABLED=true                # Bật/tắt toàn bộ hệ thống Agent
-SAFE_ZONE_AGENT_AUDIT_INTERVAL=5m           # Tần suất chạy tác vụ tuần tra làm giàu thông tin
-SAFE_ZONE_AGENT_AUDIT_TIMEOUT=1m
-SAFE_ZONE_AGENT_AUDIT_LIMIT_PER_CYCLE=10    # Số lượng domain tối đa phân tích mỗi chu kỳ
+SAFE_ZONE_AGENT_AUDIT_INTERVAL_SECONDS=3600 # Tần suất chạy tác vụ tuần tra làm giàu thông tin
+SAFE_ZONE_AGENT_AUDIT_TIMEOUT_SECONDS=300
+SAFE_ZONE_AGENT_AUDIT_MAX_PER_CYCLE=10      # Số lượng domain tối đa phân tích mỗi chu kỳ
 
-SAFE_ZONE_AGENT_FEED_SYNC_INTERVAL=1h       # Tần suất đồng bộ threat feeds
-SAFE_ZONE_AGENT_FEED_SYNC_TIMEOUT=5m
+SAFE_ZONE_AGENT_FEED_INTERVAL_SECONDS=3600  # Tần suất đồng bộ threat feeds
+SAFE_ZONE_AGENT_FEED_TIMEOUT_SECONDS=300
 SAFE_ZONE_AGENT_FEED_SOURCES=https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
 
-SAFE_ZONE_AGENT_ALERT_INTERVAL=1m           # Tần suất quét và gửi cảnh báo
-SAFE_ZONE_AGENT_ALERT_TIMEOUT=30s
+SAFE_ZONE_AGENT_ALERT_INTERVAL_SECONDS=60   # Tần suất quét và gửi cảnh báo
+SAFE_ZONE_AGENT_ALERT_TIMEOUT_SECONDS=30
 SAFE_ZONE_AGENT_WEBHOOK_URL=https://discord.com/api/webhooks/...  # Địa chỉ nhận thông báo
 
 # --- Whitelist Auto-Update & Optimization ---
-SAFE_ZONE_WHITELIST_ENABLED=true                # Bật/tắt tính năng lọc nhanh qua Whitelist
-SAFE_ZONE_WHITELIST_UPDATE_INTERVAL=24h         # Tần suất tự động tải và cập nhật Whitelist từ Tranco
-SAFE_ZONE_WHITELIST_UPDATE_TIMEOUT=10m          # Timeout tối đa cho tác vụ cập nhật Whitelist
-SAFE_ZONE_WHITELIST_SOURCE_URL=https://tranco-list.eu/top-1m.csv.zip # Nguồn danh sách Whitelist
+SAFE_ZONE_AGENT_WHITELIST_ENABLED=true         # Bật/tắt tác vụ cập nhật Whitelist
+SAFE_ZONE_AGENT_WHITELIST_INTERVAL_SECONDS=86400 # Tần suất cập nhật Whitelist từ Tranco
+SAFE_ZONE_AGENT_WHITELIST_TIMEOUT_SECONDS=600  # Timeout tối đa cho tác vụ cập nhật Whitelist
+SAFE_ZONE_AGENT_WHITELIST_SOURCE_URL=https://tranco-list.eu/download/L/1000000 # Nguồn danh sách Whitelist
 ```
 
 ---

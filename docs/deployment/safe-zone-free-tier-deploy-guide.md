@@ -406,11 +406,10 @@ SAFE_ZONE_ADMIN_PASSWORD=change-me-long-random
 SAFE_ZONE_ADMIN_API_KEY=change-me-long-random
 
 SAFE_ZONE_AI_PROVIDER=none
-SAFE_ZONE_MODE=demo
-SAFE_ZONE_ENABLE_DOT=false
-SAFE_ZONE_ENABLE_DOH=true
-SAFE_ZONE_REDIS_URL=
-PORT=8080
+SAFE_ZONE_ENV=production
+SAFE_ZONE_DNS_DOT_ENABLED=false
+SAFE_ZONE_REDIS_ADDR=
+SAFE_ZONE_CORE_API_ADDR=:8080
 ```
 
 If your app currently requires Redis, either:
@@ -463,10 +462,9 @@ SAFE_ZONE_PUBLIC_HOST=safe-api.quorix.io.vn
 SAFE_ZONE_ADMIN_PASSWORD=...
 SAFE_ZONE_ADMIN_API_KEY=...
 SAFE_ZONE_AI_PROVIDER=none
-SAFE_ZONE_MODE=demo
-SAFE_ZONE_ENABLE_DOT=false
-SAFE_ZONE_ENABLE_DOH=true
-PORT=8080
+SAFE_ZONE_ENV=production
+SAFE_ZONE_DNS_DOT_ENABLED=false
+SAFE_ZONE_CORE_API_ADDR=:8080
 ```
 
 7. Add custom domain:
@@ -518,10 +516,9 @@ SAFE_ZONE_PUBLIC_HOST=safe-api.quorix.io.vn
 SAFE_ZONE_ADMIN_PASSWORD=...
 SAFE_ZONE_ADMIN_API_KEY=...
 SAFE_ZONE_AI_PROVIDER=none
-SAFE_ZONE_MODE=demo
-SAFE_ZONE_ENABLE_DOT=false
-SAFE_ZONE_ENABLE_DOH=true
-PORT=8080
+SAFE_ZONE_ENV=production
+SAFE_ZONE_DNS_DOT_ENABLED=false
+SAFE_ZONE_CORE_API_ADDR=:8080
 ```
 
 6. Add custom domain in Koyeb.
@@ -555,10 +552,9 @@ SAFE_ZONE_PUBLIC_HOST=safe-api.quorix.io.vn
 SAFE_ZONE_ADMIN_PASSWORD=...
 SAFE_ZONE_ADMIN_API_KEY=...
 SAFE_ZONE_AI_PROVIDER=none
-SAFE_ZONE_MODE=demo
-SAFE_ZONE_ENABLE_DOT=false
-SAFE_ZONE_ENABLE_DOH=true
-PORT=8080
+SAFE_ZONE_ENV=production
+SAFE_ZONE_DNS_DOT_ENABLED=false
+SAFE_ZONE_CORE_API_ADDR=:8080
 ```
 
 4. Add custom domain:
@@ -616,7 +612,7 @@ SAFE_ZONE_ADMIN_PASSWORD=your-long-random-password
 SAFE_ZONE_ADMIN_API_KEY=your-long-random-api-key
 
 SAFE_ZONE_AI_PROVIDER=none
-SAFE_ZONE_ENABLE_DOT=false
+SAFE_ZONE_DNS_DOT_ENABLED=false
 ```
 
 Start locally:
@@ -830,7 +826,7 @@ curl "https://safe.quorix.io.vn/v1/analyze?domain=example.com"
 Dashboard:
 
 ```text
-https://safe.quorix.io.vn/dashboard
+https://safe.quorix.io.vn/app/
 ```
 
 Login:
@@ -911,10 +907,7 @@ Use:
 
 ```env
 SAFE_ZONE_AI_PROVIDER=none
-SAFE_ZONE_ENABLE_DOT=false
-SAFE_ZONE_FEED_SYNC_ON_START=false
-SAFE_ZONE_MAX_WORKERS=1
-SAFE_ZONE_LOG_LEVEL=info
+SAFE_ZONE_DNS_DOT_ENABLED=false
 ```
 
 ### 15.3 Avoid on free PaaS
@@ -1046,15 +1039,12 @@ SAFE_ZONE_ADMIN_PASSWORD=change-me
 SAFE_ZONE_ADMIN_API_KEY=change-me
 
 SAFE_ZONE_AI_PROVIDER=none
-SAFE_ZONE_MODE=demo
+SAFE_ZONE_ENV=production
 
-SAFE_ZONE_ENABLE_DOH=true
-SAFE_ZONE_ENABLE_DOT=false
-SAFE_ZONE_FEED_SYNC_ON_START=false
+SAFE_ZONE_DNS_DOT_ENABLED=false
 
-SAFE_ZONE_REDIS_URL=
-SAFE_ZONE_MAX_WORKERS=1
-PORT=8080
+SAFE_ZONE_REDIS_ADDR=
+SAFE_ZONE_CORE_API_ADDR=:8080
 ```
 
 ### 18.2 `docker-compose.demo.yml`

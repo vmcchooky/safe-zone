@@ -578,7 +578,7 @@ HTTPS hoạt động
 Mở dashboard:
 
 ```text
-https://safe.quorix.io.vn/dashboard
+https://safe.quorix.io.vn/app/
 ```
 
 Đăng nhập:
@@ -1232,4 +1232,3 @@ Test-NetConnection safe.quorix.io.vn -Port 853
 - Railway Pricing: free/trial credit và giới hạn tài nguyên service.
 - Fly.io Free Trial/Pricing: trial ngắn/credit, không nên xem như free VPS dài hạn.
 - Cloudflare Tunnel: publish app local qua public hostname.
-

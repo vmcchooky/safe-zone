@@ -36,7 +36,7 @@ Synced with repository state on 2026-05-26. Code-backed items are checked; the r
 
 ## Milestone 5: Dashboard Integration
 
-- [x] Cập nhật `cmd/core-api/dashboard.html` tab System: hiển thị Agent status, task list, trigger buttons.
+- [x] Cập nhật `internal/api/views/dashboard.html` tab System: hiển thị Agent status, task list, trigger buttons.
 
 ## Milestone 6: Verification
 

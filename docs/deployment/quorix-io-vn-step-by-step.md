@@ -24,7 +24,7 @@ This is the safest path because it avoids breaking the current website.
 
 Safe Zone public endpoints would then be:
 
-- Dashboard: `https://safe.quorix.io.vn/dashboard`
+- Dashboard: `https://safe.quorix.io.vn/app/`
 - Analyze API: `https://safe.quorix.io.vn/v1/analyze`
 - DoH: `https://safe.quorix.io.vn/dns-query`
 - DoT: `safe.quorix.io.vn:853`
@@ -350,7 +350,7 @@ Expected:
 
 Open:
 
-- `https://safe.quorix.io.vn/dashboard`
+- `https://safe.quorix.io.vn/app/`
 
 Login values:
 

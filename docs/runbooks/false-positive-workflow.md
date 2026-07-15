@@ -22,7 +22,7 @@ Restore legitimate access quickly without losing operator traceability.
 
 ## Step 1: Confirm the current behavior
 
-1. Open the admin dashboard at `/dashboard`.
+1. Open the primary admin dashboard at `/app/`. Use `/dashboard` only when validating the legacy compatibility UI.
 2. Analyze the reported domain in the `Analysis` tab.
 3. Confirm whether the current result is:
    - an `admin override: block`

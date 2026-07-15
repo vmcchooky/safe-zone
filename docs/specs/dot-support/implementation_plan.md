@@ -1,5 +1,7 @@
 # Kế hoạch triển khai: Hỗ trợ DNS-over-TLS (DoT) (Hướng 7)
 
+> **Trạng thái tài liệu:** Đây là kế hoạch lịch sử. Repo hiện tại không còn file test riêng dưới `cmd/dns-resolver`; các mục test bên dưới cần được xem là phạm vi cần tái xác minh, không phải danh sách file hiện có.
+
 Bản kế hoạch này mô tả chi tiết phương án thiết kế và triển khai cổng **DNS-over-TLS (DoT)** trên cổng `853` song song với cổng **DNS-over-HTTPS (DoH)** hiện có. Điều này giúp dự án bảo vệ các thiết bị di động (đặc biệt là Android với tính năng Private DNS mặc định) mà không cần cài đặt phần mềm ngoài, tuân thủ triết lý **Zero-Cost** cho vận hành và **Zero-Configuration** cho local/dev khi không cấu hình chứng chỉ thật.
 
 ---
@@ -40,7 +42,7 @@ Thực hiện cập nhật và cấu hình để chạy song song server DoT và
 -   **Hàm `blockedDNSMessage(query *dns.Msg) (*dns.Msg, error)`:** Dịch chuyển logic tạo message DNS block từ byte thô của DoH sang đối tượng `dns.Msg` của DoT, đồng thời áp dụng `sinkhole`, `nxdomain`, `refused`, hoặc `nullip`.
 -   **Hàm `sendServfail(w dns.ResponseWriter, r *dns.Msg)`:** Đóng gói gửi phản hồi ServFail.
 
-#### [MODIFY] [main_test.go](file:///D:/Quorix/services/safe-zone/cmd/dns-resolver/main_test.go)
+#### [MODIFY] Test coverage cho `cmd/dns-resolver` (file lịch sử không còn trong repo hiện tại)
 -   Bổ sung test suite cho DoT:
     -   `TestGenerateSelfSignedCert`: Kiểm thử thành công tính năng tự sinh SSL.
     -   `TestDoTHandlerBasic`: Gửi truy vấn DoT giả lập (Allow & Block) và kiểm tra kết quả trả về.

@@ -27,7 +27,7 @@ The existing dashboard (`dashboard.html`, ~716 lines) provides:
 
 - **Stats cards**: Total, Safe, Suspicious, Malicious, Cache Hits — from `/v1/telemetry/stats`.
 - **Period selector**: 24h / 7d / 30d toggle.
-- **Trend chart**: Doughnut or bar chart showing verdict distribution — using Chart.js from CDN.
+- **Trend chart**: Doughnut or bar chart showing verdict distribution — using the embedded Chart.js bundle.
 - **Recent telemetry table**: Paginated, sortable, from `/v1/telemetry/recent`.
 
 ### Milestone 2: Override Manager Tab
@@ -54,10 +54,10 @@ The existing dashboard (`dashboard.html`, ~716 lines) provides:
 ## Technical Constraints
 
 - **Single HTML file**: Embedded via `//go:embed`. No build step, no npm, no bundler.
-- **Minimal external deps**: Only Chart.js from CDN (already a standard choice for lightweight charts).
+- **Minimal external deps**: No runtime chart CDN dependency; Chart.js is served from the embedded static assets.
 - **No framework**: Vanilla JS only. Alpine.js optional if it simplifies state management significantly.
 - **Budget VPS friendly**: No WebSocket, no SSE. Polling only (15s interval).
-- **Offline-capable**: Dashboard works even when CDN unreachable (charts just don't render).
+- **Offline-capable**: Dashboard works even when the chart asset is unavailable (charts just don't render).
 
 ## Acceptance Criteria
 

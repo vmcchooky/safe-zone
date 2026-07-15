@@ -2,6 +2,8 @@
 
 This inventory report provides a detailed factual catalog of the front-end layout, visual architectures, routing, state models, and underlying API contracts for the Safe Zone repository. It serves as a comprehensive reference guide for a future UI/UX redesign.
 
+> **Current scope:** The primary operator UI is the React workspace in `ui/`, served at `/app/*` and embedded by `core-api`. This document focuses on the legacy compatibility UI at `/dashboard`, whose templates live under `internal/api/views` and whose static assets live under `internal/api/assets`.
+
 ---
 
 ## 1. Full Repository Structure
@@ -10,49 +12,33 @@ Below is the repository tree outlining all top-level directories and nested path
 
 ```
 safe-zone/
-├─ .github/             # GitHub workflow templates and pull request templates
-├─ cmd/                 # Application entrypoints (compilable Go main packages)
-│  ├─ core-api/         # Core HTTP API & localized Dashboard/Admin Portal
-│  │  ├─ assets/        # Static assets embedded directly into the Go binary
-│  │  │  ├─ AWSDiatypeRoundedSemi-Mono-Bold-SHCJOQIT.woff2 # Font asset
-│  │  │  ├─ AWSDiatypeRoundedSemi-Mono-Regular-NWNFA2XJ.woff2 # Font asset
-│  │  │  ├─ FragmentMono-Regular-GORNZRHI.woff2 # Font asset
-│  │  │  ├─ quorix.min.css          # Shared design system framework CSS
-│  │  │  ├─ quorix.min.js           # Shared design system utility library JS
-│  │  │  └─ safe-zone.css           # Custom CSS style rules for dashboard & block page
-│  │  ├─ block.go       # Route handler for the blocked site details page
-│  │  ├─ block.html     # Go HTML template for blocked page redirect
-│  │  ├─ dashboard.go   # Route handler serving control plane dashboard and login shell
-│  │  ├─ dashboard.html # HTML template containing layout and all UI JavaScript
-│  │  ├─ login.html     # Tailwind CSS styled glassmorphic administrator login page
-│  │  ├─ main.go        # Main router setup, port configurations, and API controllers
-│  │  └─ security.go    # Admin session key generation and CSRF protection validations
-│  ├─ dns-resolver/     # Local policy engine for DOH client lookups
-│  ├─ feed-sync/        # Threat feed command-line sync tool
-│  ├─ feed-syncd/       # Thread-safe threat-feed sync schedule daemon
-│  └─ load-test/        # Benchmarking script for load-capacity testing
-├─ internal/            # Core business logic packages (non-importable externally)
-│  ├─ agent/            # Agent background processing engine (scheduler, audits, feed syncs, alerts)
-│  ├─ ai/               # Optional Gemini 2.5 Flash Lite engine client
-│  ├─ analysis/         # Lexical parsing and domain security heuristics
-│  ├─ auth/             # Session management (session validation & generation)
-│  ├─ config/           # Environment and configuration parser
-│  ├─ risk/             # Orchestrator combining caches, feeds, policies, and OSINT
-│  ├─ serve/            # Graceful HTTP server setup & recovery/panic custom middleware
-│  └─ store/            # Engine backend database drivers
+├─ cmd/                 # Go service entrypoints only
+│  ├─ core-api/         # Core HTTP API process
+│  ├─ dns-resolver/     # DoH/DoT policy service
+│  ├─ feed-sync/        # One-shot threat-feed sync tool
+│  ├─ feed-syncd/       # Scheduled threat-feed sync daemon
+│  └─ load-test/        # Load-test executable
+├─ internal/            # Private Go packages and embedded browser surfaces
+│  ├─ api/               # Handlers, legacy views/assets, and embedded React bundle mount
+│  ├─ agent/             # Optional background task engine
+│  ├─ analysis/          # Lexical parsing and domain heuristics
+│  ├─ config/            # Environment and configuration parsing
+│  ├─ risk/              # Analysis, cache, feed, policy, and OSINT orchestration
+│  └─ store/             # SQLite and persistence adapters
+├─ ui/                  # Primary React/Vite workspace served at /app/*
+│  ├─ public/            # Frontend public assets
+│  ├─ src/               # React application source
+│  └─ tests/             # Playwright E2E and manual UI checks
 ├─ docs/                # Project plans, manuals, specifications, and checklists
-├─ ops/                 # Operational configs (compose stacks, cron scripts, alerts)
-│  ├─ alerts/           # Alerting yaml criteria rules
-│  ├─ cron/             # Background shell-scheduler templates
-│  └─ secrets/          # Production environment secret guidelines
-├─ scripts/             # Operational build, deployment, backup, and cleanup helpers
-├─ tmp/                 # Local workspace logs and temporary generated secrets
-├─ Caddyfile            # Production reverse-proxy config (handles TLS/HTTPS redirects)
-├─ Dockerfile           # Multi-stage release containerization definition
-├─ docker-compose.yml   # Multi-container local/production docker configuration file
-├─ go.mod               # Dependency tracking file
-├─ README.md            # Repository overview & setup documentation
-└─ start.bat / stop.bat # Windows convenience automation start/stop scripts
+├─ ops/                 # Deployment, alerting, cron, and secret guidance
+├─ scripts/             # Deployment, maintenance, QA, and release helpers
+├─ tmp/                 # Ignored local runtime/release evidence output
+├─ Caddyfile            # Production reverse-proxy configuration
+├─ Dockerfile           # Multi-stage release container definition
+├─ docker-compose.yml   # Base Compose configuration
+├─ go.mod               # Go module definition
+├─ README.md            # Repository overview and setup documentation
+└─ start.bat / stop.bat # Windows convenience automation scripts
 ```
 
 ### Top-Level Directory Purposes
@@ -71,17 +57,16 @@ Below is a complete factual inventory of every file related to UI structure, sty
 
 | Path | Type | Purpose | UI Elements | Routes/pages | Safe to edit? | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `cmd/core-api/dashboard.html` | HTML / CSS / JS | Main Single-Page Admin Dashboard interface | Hero summary stats grid, tab selector controls, live results search input form, dynamic laser scanner animations, verdict charts (Chart.js doughnut), recent activity logs, overrides tables, policy card grid, client mapping forms, system health cards, agent trigger tables | `GET /dashboard`, `GET /dashboard/` (when session is active) | Partially. Safe to modify structural HTML/CSS, but DOM element IDs and CSS layout bindings must align with the inline Javascript logic to avoid breaks. | Medium | Relies heavily on relative REST fetches targeting `/v1/*` endpoints. Consumes Chart.js from CDN. |
-| `cmd/core-api/login.html` | HTML / CSS / JS | Administrator gateway authentication login screen | Dark glassmorphic card container, Identity input field, Access Token password field, Connection submit button, loading animations, error toast | Served via `GET /dashboard` when no session is active | Yes. Mostly styled with Tailwind CSS, meaning inline visual styling edits can be made with high isolation. | Low | Submits JSON request to `/v1/auth/login`. Triggers `window.location.reload()` on status 200. |
-| `cmd/core-api/block.html` | Go HTML Template | Site blocking notification landing page | Cyber warning header banner, blocked data summary (domain, path, category, policy reason, request ID), false-positive report inputs, next step guidelines, HTTPS certificate warning block | `GET /block` | Yes, but Go template interpolation blocks (e.g. `{{.Domain}}`, `{{.RequestedPath}}`) must be preserved exactly. | Medium | Directly parsed by `blockTemplate` inside Go backend. Form submits standard POST payload to `/block/report`. |
-| `cmd/core-api/assets/safe-zone.css` | CSS | Primary custom styling sheet for the user interfaces | Base typography settings, glassmorphic panels styles, color palettes, visual layout grids, status text glows, scan animations, modal overlays, toasts transitions | `GET /dashboard`, `GET /block` | Yes. Safe to edit styling properties. Highly recommended starting point for visual adjustments. | Low | Extends and overrides default components provided by `quorix.min.css`. |
-| `cmd/core-api/assets/quorix.min.css` | CSS (Minified) | Vendor system styles baseline layout framework | Baseline margins, grid architectures, default typographic scaling | `GET /dashboard`, `GET /block` | No. Minified vendor dependency. Visual overrides should reside in `safe-zone.css`. | High | Imported style asset that must be protected. |
-| `cmd/core-api/assets/quorix.min.js` | JS (Minified) | Vendor utility framework for base animations | Core canvas helpers and visual triggers | `GET /dashboard`, `GET /block` | No. Minified asset. | High | Deferred vendor script. |
-| `cmd/core-api/assets/AWSDiatypeRounded*.woff2` | WOFF2 Font | Premium font weight asset | Bold and regular round sans-serif headings | `GET /dashboard`, `GET /block` | No. Binary asset. | Low | Loaded via CSS `@font-face` rules. |
-| `cmd/core-api/assets/FragmentMono-Regular.woff2` | WOFF2 Font | Premium monospace font asset | Monospace tables, codes, and metric prints | `GET /dashboard`, `GET /block` | No. Binary asset. | Low | Loaded via CSS `@font-face` rules. |
+| `internal/api/views/dashboard.html` | HTML / CSS / JS | Main Single-Page Admin Dashboard interface | Hero summary stats grid, tab selector controls, live results search input form, dynamic laser scanner animations, verdict charts (Chart.js doughnut), recent activity logs, overrides tables, policy card grid, client mapping forms, system health cards, agent trigger tables | `GET /dashboard`, `GET /dashboard/` (when session is active) | Partially. Safe to modify structural HTML/CSS, but DOM element IDs and CSS layout bindings must align with the inline Javascript logic to avoid breaks. | Medium | Relies heavily on relative REST fetches targeting `/v1/*` endpoints. Loads the embedded Chart.js bundle from `/assets/chart.umd.min.js`. |
+| `internal/api/views/login.html` | HTML / CSS / JS | Administrator gateway authentication login screen | Dark glassmorphic card container, Identity input field, Access Token password field, Connection submit button, loading animations, error toast | Served via `GET /dashboard` when no session is active | Yes. Uses the embedded local CSS assets, so inline visual styling edits can be made with high isolation. | Low | Submits JSON request to `/v1/auth/login`. Triggers `window.location.reload()` on status 200. |
+| `internal/api/views/block.html` | Go HTML Template | Site blocking notification landing page | Cyber warning header banner, blocked data summary (domain, path, category, policy reason, request ID), false-positive report inputs, next step guidelines, HTTPS certificate warning block | `GET /block` | Yes, but Go template interpolation blocks (e.g. `{{.Domain}}`, `{{.RequestedPath}}`) must be preserved exactly. | Medium | Directly parsed by `blockTemplate` inside Go backend. Form submits standard POST payload to `/block/report`. |
+| `internal/api/assets/safe-zone.css` | CSS | Primary custom styling sheet for the user interfaces | Base typography settings, glassmorphic panels styles, color palettes, visual layout grids, status text glows, scan animations, modal overlays, toasts transitions | `GET /dashboard`, `GET /block` | Yes. Safe to edit styling properties. Highly recommended starting point for visual adjustments. | Low | Extends and overrides default components provided by `quorix.min.css`. |
+| `internal/api/assets/quorix.min.css` | CSS (Minified) | Vendor system styles baseline layout framework | Baseline margins, grid architectures, default typographic scaling | `GET /dashboard`, `GET /block` | No. Minified vendor dependency. Visual overrides should reside in `safe-zone.css`. | High | Imported style asset that must be protected. |
+| `internal/api/assets/quorix.min.js` | JS (Minified) | Vendor utility framework for base animations | Core canvas helpers and visual triggers | `GET /dashboard`, `GET /block` | No. Minified asset. | High | Deferred vendor script. |
+| `internal/api/assets/FragmentMono-Regular-GORNZRHI.woff2` | WOFF2 Font | Embedded monospace font asset | Monospace tables, codes, and metric prints | `GET /dashboard`, `GET /block` | No. Binary asset. | Low | Loaded via CSS `@font-face` rules. |
 | `internal/serve/http.go` | Go Source (embedded HTML) | Emergency server recovery page | Danger warning banner, call stack trace dump, redirect action button | Any active route under `core-api` that undergoes a runtime panic (for HTML requests) | No. Requires updating Go code and compiling. | High | Serves as the panic recovery interface. HTML is hardcoded as a Go string literal inside `getGlassmorphicErrorHTML`. |
-| `cmd/core-api/dashboard.go` | Go Source | Orchestrates dashboard delivery and session checks | None directly (serves as the delivery controller) | `GET /dashboard` | No. Backend session validation. | High | Embeds `dashboard.html`, `login.html`, and static assets FS into Go binaries. |
-| `cmd/core-api/block.go` | Go Source | Parses query info and compiles block template data | None directly (server controller executing `blockTemplate`) | `GET /block`, `POST /block/report` | No. Controls DB writes and redirection routing. | High | Directly binds template parameters and processes false-positive form inputs. |
+| `internal/api/handlers/dashboard.go` | Go Source | Orchestrates dashboard delivery and session checks | None directly (serves as the delivery controller) | `GET /dashboard` | No. Backend session validation. | High | Renders the embedded `dashboard.html` and `login.html` templates after validating the session cookie; static assets are mounted by the router. |
+| `internal/api/handlers/block.go` | Go Source | Parses query info and compiles block template data | None directly (server controller executing `blockTemplate`) | `GET /block`, `POST /block/report` | No. Controls DB writes and redirection routing. | High | Directly binds template parameters and processes false-positive form inputs. |
 | `cmd/core-api/main.go` | Go Source | Configures application handlers and router scopes | None directly (registers route patterns) | All web routes (`/dashboard`, `/assets/*`, `/v1/*`) | No. | High | Defines API routes and CORS/CSRF boundaries. Modifying this breaks Javascript fetches. |
 
 ### Risk Level Guide
@@ -93,25 +78,26 @@ Below is a complete factual inventory of every file related to UI structure, sty
 
 ## 3. Frontend Structure Only
 
-The Safe Zone project **does not have a dedicated frontend folder** (such as `frontend/` or `src/`). The frontend codebase is embedded inside the Go backend binary. The visual layout templates and static assets live within `cmd/core-api/` and `internal/serve/`:
+The primary frontend lives in the dedicated `ui/` React/Vite workspace. Its production bundle is built into `internal/api/app/dist` and embedded by `core-api`. The legacy compatibility templates and static assets remain separate under `internal/api/views` and `internal/api/assets`:
 
 ```
 safe-zone/
-├─ cmd/
-│  └─ core-api/
-│     ├─ assets/                             # Embedded Web Assets FS
-│     │  ├─ AWSDiatypeRoundedSemi-Mono-Bold-SHCJOQIT.woff2
-│     │  ├─ AWSDiatypeRoundedSemi-Mono-Regular-NWNFA2XJ.woff2
-│     │  ├─ FragmentMono-Regular-GORNZRHI.woff2
-│     │  ├─ quorix.min.css                   # System CSS baseline
-│     │  ├─ quorix.min.js                    # System JS helper
-│     │  └─ safe-zone.css                    # Custom dashboard & block overrides
-│     ├─ block.html                          # Blocked Site Go HTML template
-│     ├─ dashboard.html                      # Control Plane Dashboard (HTML + inline JS)
-│     └─ login.html                          # Tailwind styled glassmorphic Login Page
-└─ internal/
-   └─ serve/
-      └─ http.go                             # Panic recovery with embedded HTTP 500 HTML string
+├─ ui/
+│  ├─ public/                                # Public React assets
+│  ├─ src/                                   # Primary React application source
+│  └─ tests/                                 # Playwright and manual UI tests
+├─ internal/
+│  ├─ api/app/                               # Embedded React build mounted at /app/*
+│  ├─ api/assets/                            # Legacy CSS, JS, and font assets
+│  │  ├─ FragmentMono-Regular-GORNZRHI.woff2
+│  │  ├─ quorix.min.css
+│  │  ├─ quorix.min.js
+│  │  └─ safe-zone.css
+│  ├─ api/views/                             # Legacy dashboard/login/block templates
+│  │  ├─ block.html
+│  │  ├─ dashboard.html
+│  │  └─ login.html
+│  └─ serve/http.go                          # Panic recovery with embedded HTTP 500 HTML
 ```
 
 ---
@@ -122,9 +108,9 @@ The following table documents all web routes served by `core-api` that return HT
 
 | Route | Source File / Handler | Purpose | Query Params | Data / API Dependencies | UI States | Redesign Safety Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `GET /dashboard` <br> `GET /dashboard/` | `cmd/core-api/dashboard.go` <br> `dashboardHandler` | Serves the central Control Plane Dashboard | None | `auth.VerifySessionCookieValue` verifies the `admin_session` cookie. | • **Unauthenticated:** Shows `login.html`. <br>• **Authenticated:** Shows `dashboard.html`. | **Highly Safe.** Structural visual changes can be made, provided script-targeted element IDs (e.g. `domain-input`) are kept. |
-| `GET /block` | `cmd/core-api/block.go` <br> `blockPageHandler` | Displays details about a blocked domain redirection | • `domain` (falls back to header/host) <br>• `path` (falls back to header/path) <br>• `category` <br>• `reason` <br>• `reported` | `config.String("SAFE_ZONE_BLOCK_PAGE_SUPPORT_EMAIL")`, `serve.RequestID(ctx)`. | • **Blocked State:** Shows domain, path, category, and reasons. <br>• **Report Confirmed State:** (`?reported=1`) Shows a success card stating the report has been received. | **Safe.** Requires preserving all Go `{{.Field}}` template tags and keeping the form submission target pointing to `/block/report`. |
-| `POST /block/report` | `cmd/core-api/block.go` <br> `blockReportHandler` | Handles false-positive form reports | None | `a.risk.StoreDB().RecordAgentEvent` | • **Redirect State:** Performs HTTP 303 redirection to `/block?reported=1...` on success. <br>• **Error State:** Renders JSON error. | **API Only.** Returns no HTML. Input names (`domain`, `requested_path`, `contact`, `note`) must not be changed. |
+| `GET /dashboard` <br> `GET /dashboard/` | `internal/api/handlers/dashboard.go` <br> `dashboardHandler` | Serves the central Control Plane Dashboard | None | `auth.VerifySessionCookieValue` verifies the `admin_session` cookie. | • **Unauthenticated:** Shows `login.html`. <br>• **Authenticated:** Shows `dashboard.html`. | **Highly Safe.** Structural visual changes can be made, provided script-targeted element IDs (e.g. `domain-input`) are kept. |
+| `GET /block` | `internal/api/handlers/block.go` <br> `blockPageHandler` | Displays details about a blocked domain redirection | • `domain` (falls back to header/host) <br>• `path` (falls back to header/path) <br>• `category` <br>• `reason` <br>• `reported` | `config.String("SAFE_ZONE_BLOCK_PAGE_SUPPORT_EMAIL")`, `serve.RequestID(ctx)`. | • **Blocked State:** Shows domain, path, category, and reasons. <br>• **Report Confirmed State:** (`?reported=1`) Shows a success card stating the report has been received. | **Safe.** Requires preserving all Go `{{.Field}}` template tags and keeping the form submission target pointing to `/block/report`. |
+| `POST /block/report` | `internal/api/handlers/block.go` <br> `blockReportHandler` | Handles false-positive form reports | None | `a.risk.StoreDB().RecordAgentEvent` | • **Redirect State:** Performs HTTP 303 redirection to `/block?reported=1...` on success. <br>• **Error State:** Renders JSON error. | **API Only.** Returns no HTML. Input names (`domain`, `requested_path`, `contact`, `note`) must not be changed. |
 | `GET /assets/*` | `cmd/core-api/main.go` <br> `assetsFS` | File server serving CSS, JS, and font files | None | Static file system | Renders file bytes. | **Fully Safe** to override or expand rules in `safe-zone.css`. |
 | Embedded panic page | `internal/serve/http.go` <br> `serve.Recovery` | Intercepts system crashes and shows debug data | None | System Go runtime panic triggers | Shows a glassmorphic error panel detailing HTTP 500 and the runtime panic message. | **Risky.** Embedded inside Go source code. Requires editing `http.go` and rebuilding. |
 
@@ -136,7 +122,7 @@ These API endpoints are queried dynamically by JavaScript in `dashboard.html` or
 
 | Endpoint | Method | Source File | Used By | Request Shape | Response Shape | Error Handling | Do Not Change |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `/v1/auth/login` | `POST` | `cmd/core-api/main.go` <br> `authLoginHandler` | `login.html` authentication form | JSON: `{"username":"...", "password":"..."}` | JSON: `{"status":"ok", "message":"..."}` (Sets `admin_session` cookie) | `400 Bad Request` (Invalid JSON), `411 Unauthorized` (Invalid credentials). UI shows toast. | URL path, method, payload JSON keys (`username`, `password`), cookie key. |
+| `/v1/auth/login` | `POST` | `cmd/core-api/main.go` <br> `authLoginHandler` | `login.html` authentication form | JSON: `{"username":"...", "password":"..."}` | JSON: `{"status":"ok"}` (Sets `admin_session` cookie) | `400 Bad Request` (Invalid JSON), `401 Unauthorized` (Invalid credentials). UI shows toast. | URL path, method, payload JSON keys (`username`, `password`), cookie key. |
 | `/v1/auth/logout` | `POST` | `cmd/core-api/main.go` <br> `authLogoutHandler` | `dashboard.html` logout click | Empty body | JSON: `{"status":"ok", "message":"..."}` (Clears `admin_session` cookie) | Returns `500` on failure. | URL path, method, cookie deletion behavior. |
 | `/healthz` | `GET` | `cmd/core-api/main.go` <br> `healthHandler` | `dashboard.html` `checkHealth()` polling | Empty query | JSON: `{"service":"core-api", "status":"ok", "time":"..."}` | Timeout or failure triggers the UI header status indicator to shift to "offline" (red). | JSON keys `status`, `service`. |
 | `/` | `GET` | `cmd/core-api/main.go` <br> `statusHandler` | `dashboard.html` health polling checks | Empty query | JSON status representing database caching configurations and threat sync summaries. | Failure marks dashboard status indicator offline. | Nested keys `redis.configured` and `redis.status`. |
@@ -178,7 +164,7 @@ Below is a step-by-step description of the operational flows available in the co
     8.  Upon reload, session cookie is valid; `core-api` serves `dashboard.html`.
     9.  The particle canvas initializes floating background animations.
     10. Default tab "Analysis" loads, and `refreshShell()` polls status, cache state, and recent activity.
-*   **Current Files Involved**: `cmd/core-api/dashboard.go`, `cmd/core-api/login.html`, `cmd/core-api/dashboard.html`, `cmd/core-api/main.go`
+*   **Current Files Involved**: `internal/api/handlers/dashboard.go`, `internal/api/views/login.html`, `internal/api/views/dashboard.html`, `cmd/core-api/main.go`
 *   **Current UX Issues**: Clicking "Establish Connection" does not feature a progress indicator overlay; success reload feels sudden; page context menus are completely disabled via `oncontextmenu="return false;"`.
 *   **Redesign Caution**: Authentication cookies delivery is critical. Preserve form structures and endpoint actions exactly.
 
@@ -190,7 +176,7 @@ Below is a step-by-step description of the operational flows available in the co
     4.  Concentric shockwave circle expands (`#analyze-shockwave`) and laser slide scanning lines (`#result-scanner`) trigger in the results panel.
     5.  Asynchronous POST payload is delivered to `/v1/analyze?include_evidence=1`.
     6.  *Response loaded:* Forms re-enable, results render inside `#result`, and recent query lists refresh.
-*   **Current Files Involved**: `cmd/core-api/dashboard.html` (HTML structure + inline JS), `cmd/core-api/main.go` (`analyzeHandler`)
+*   **Current Files Involved**: `internal/api/views/dashboard.html` (HTML structure + inline JS), `cmd/core-api/main.go` (`analyzeHandler`)
 *   **Current UX Issues**: Loading indicator is basic plain text inside the results block header; query failure renders a generic `<div class="empty">Request failed.</div>` string.
 *   **Redesign Caution**: The scanner and shockwave animations rely on specific classes (`.scanner-laser.blue.active` and `.shockwave.active`) toggled via script.
 
@@ -205,7 +191,7 @@ Below is a step-by-step description of the operational flows available in the co
     7.  The user can input an operational note in the review textarea `#fp-review-reason` and click "Allow / whitelist domain".
     8.  JavaScript submits a JSON payload to `POST /v1/overrides/review-false-positive`.
     9.  On status 200 OK, whitelisting confirmation is toasted, the override list is re-pulled, and a new analysis search is issued for that domain.
-*   **Current Files Involved**: `cmd/core-api/dashboard.html` (`renderResult`, `renderEvidence`, `renderFalsePositiveReviewPanel`, `submitFalsePositiveReview`)
+*   **Current Files Involved**: `internal/api/views/dashboard.html` (`renderResult`, `renderEvidence`, `renderFalsePositiveReviewPanel`, `submitFalsePositiveReview`)
 *   **Current UX Issues**: whitelisting submits lack a processing loader state; whitelisting confirmation requires fully re-querying the domain.
 *   **Redesign Caution**: Whitelist notes textarea MUST retain ID `#fp-review-reason` for whitelisting actions to parse it. Whitelisting action function `submitFalsePositiveReview` must be kept.
 
@@ -219,8 +205,8 @@ Below is a step-by-step description of the operational flows available in the co
     6.  Telemetry table populates showing domain name, colored verdict, score, source, analyzed time, and actions.
     7.  Clicking "← Prev" or "Next →" adjusts pagination offsets and reloads tables.
     8.  Selecting period buttons (24h, 7d, 30d) adjusts period variables and refreshes statistics and charts.
-*   **Current Files Involved**: `cmd/core-api/dashboard.html` (`loadTelemetryStats`, `loadTelemetryItems`, `renderChart`, `renderTelemRow`)
-*   **Current UX Issues**: Doughnut chart colors are hardcoded inside Javascript; failure of Chart.js CDN breaks rendering, which falls back to plain text.
+*   **Current Files Involved**: `internal/api/views/dashboard.html` (`loadTelemetryStats`, `loadTelemetryItems`, `renderChart`, `renderTelemRow`)
+*   **Current UX Issues**: Doughnut chart colors are hardcoded inside Javascript; failure of the embedded Chart.js bundle breaks rendering, which falls back to plain text.
 *   **Redesign Caution**: Keep exact dataset parsing fields inside stats responses. Chart canvas ID `#verdict-chart` must be preserved.
 
 ### 5. Manage Client Groups, Mappings, and Overrides
@@ -232,7 +218,7 @@ Below is a step-by-step description of the operational flows available in the co
     5.  JavaScript validates input name and submits payload via POST/PUT to `/v1/groups`. On success, grid refreshes.
     6.  The mappings table fetches client associations from `/v1/mappings`. Adding new IP mappings executes `POST /v1/mappings` and reloads mapping lists.
     7.  Selecting group selectors loads overrides specific to that policy group by executing `GET /v1/group-overrides?group_id=...`. Adding/deleting group overrides performs actions against `/v1/group-overrides` and updates grids.
-*   **Current Files Involved**: `cmd/core-api/dashboard.html` (`loadClientsTab`, modal controls, save handlers), `cmd/core-api/main.go` (handlers)
+*   **Current Files Involved**: `internal/api/views/dashboard.html` (`loadClientsTab`, modal controls, save handlers), `cmd/core-api/main.go` (handlers)
 *   **Current UX Issues**: Category lists in the group creation modal are static checkboxes; default group ID `1` cannot be renamed or deleted, but this limitation is only visually enforced by hiding buttons, which may confuse operators.
 *   **Redesign Caution**: Modal overlay visibility relies on the CSS class `.modal-overlay.active { display: grid; }`. Keep this class name or update modal controls.
 
@@ -245,7 +231,7 @@ Below is a step-by-step description of the operational flows available in the co
     5.  *If agents are enabled:* Populates active agent tasks (audit, feed sync, etc.) showing statuses, scheduled times, run count distributions, and last exceptions.
     6.  Clicking the "Trigger" action button opens a browser confirmation box (`confirm('Manually trigger agent task...')`).
     7.  *Confirmed:* Sends POST query to `/v1/agent/trigger?task=<task_name>` and toasts success, then reloads agent table status.
-*   **Current Files Involved**: `cmd/core-api/dashboard.html` (`loadSystem`, `checkHealth`, `loadAgentStatus`, `triggerAgentTask`), `cmd/core-api/main.go`
+*   **Current Files Involved**: `internal/api/views/dashboard.html` (`loadSystem`, `checkHealth`, `loadAgentStatus`, `triggerAgentTask`), `cmd/core-api/main.go`
 *   **Current UX Issues**: Latencies are displayed in raw milliseconds without units formatting; task error output columns are cut off without full text expansion.
 *   **Redesign Caution**: Trigger action MUST parse and supply the exact agent task name string (e.g., `"audit"`, `"feed_sync"`) to `/v1/agent/trigger?task=...`.
 
@@ -256,10 +242,10 @@ Below is a step-by-step description of the operational flows available in the co
     3.  The page renders an uppercase "This site was blocked." warning alongside details cards listing domain, path, category, request ID, and explanation.
     4.  To report a false positive, the user enters information in the "Think this is a false positive?" form inputs (optional `contact` and `note` details).
     5.  User clicks "Submit False-Positive Report".
-    6.  Browser issues a standard `POST` request to `/v1/block/report`.
+    6.  Browser issues a standard `POST` request to `/block/report`.
     7.  Backend parses parameters, records a DB event with event type `"false_positive_report"` and redirects browser to `/block?reported=1&domain=...&path=...`.
     8.  Upon reloading with `reported=1`, the block page displays a green success confirmation block at the top of the details panel.
-*   **Current Files Involved**: `cmd/core-api/block.go`, `cmd/core-api/block.html`
+*   **Current Files Involved**: `internal/api/handlers/block.go`, `internal/api/views/block.html`
 *   **Current UX Issues**: Full page redirect makes the process feel sluggish; block page layout uses simple default tables.
 *   **Redesign Caution**: Retain exact template variables (`{{.Domain}}`, `{{.RequestedPath}}`, `{{.Category}}`, `{{.Reason}}`, `{{.RequestID}}`, `{{.ReportReceived}}`, and `{{.SupportEmail}}`). Keep form field names `contact` and `note` unchanged.
 
@@ -322,9 +308,9 @@ The current UI design relies on an aesthetic theme based on the custom variables
 The front-end code is organized around embedded delivery templates and static asset pipelines:
 
 *   **CSS Architecture**:
-    *   Base styling variables and design tokens are defined globally in `:root` inside `cmd/core-api/assets/safe-zone.css`.
+    *   Base styling variables and design tokens are defined globally in `:root` inside `internal/api/assets/safe-zone.css`.
     *   The core grid layout and visual elements are styled using global selectors inside `safe-zone.css`. These are loaded in conjunction with the pre-compiled `quorix.min.css` system baseline framework.
-    *   The administrator login panel features isolated utility classes styled via the Tailwind CDN (`https://cdn.tailwindcss.com`).
+    *   The administrator login panel uses the same embedded local CSS assets as the rest of the legacy UI; it does not depend on an external CSS CDN.
 *   **JS Architecture**:
     *   Uses a mixed-delivery architecture.
     *   `login.html` features an inline form listener that handles asynchronous authentication requests.
@@ -349,13 +335,13 @@ Below is a factual catalog of visual inconsistencies, architecture constraints, 
 
 | Problem | Evidence / File | Impact | Redesign Caution |
 | --- | --- | --- | --- |
-| **Visual Inconsistency** | `cmd/core-api/login.html` vs `cmd/core-api/dashboard.html` | The login interface uses Tailwind CSS, modern icons, and a highly polished UI. The dashboard relies on custom CSS grids and emoji labels. This creates a visual mismatch during the transition from login to dashboard. | If Tailwind is introduced to the dashboard, it must be imported carefully to avoid overriding CSS rules inside `safe-zone.css` or breaking structural grids. |
-| **Hardcoded Color Tokens in Javascript** | `cmd/core-api/dashboard.html` <br> (Line 621) | Chart.js doughnut colors are hardcoded as hexadecimal strings (`'#177d53'`, `'#ab2f3f'`). If the system color palette (such as `--safe` or `--bad`) is modified in the CSS variables, the charts will retain the hardcoded values, leading to visual mismatch. | Redesign chart render logic to dynamically read computed styles from the CSS variables of the container elements. |
-| **Risk of Breaking DOM Selectors** | `cmd/core-api/dashboard.html` <br> (Lines 338–357) | JavaScript relies on exact DOM ID references (e.g. `domainInput`, `resultEl`, `metricTotal`, `recentEl`) to query and paint variables. | If the HTML layout is reorganized, these elements must retain their exact DOM IDs. Do not change these IDs without updating their references in the script block. |
-| **Server-Side Template Failure Risk** | `cmd/core-api/block.html` <br> (Lines 23–27, 33–42) | The block page contains embedded Go template directives (`{{if .ReportReceived}}`, `{{.Domain}}`, `{{.RequestID}}`). | If these variables are modified or mistyped during an HTML redesign, the Go template compiler will fail, causing server crashes (HTTP 500) at render time. |
-| **Full-Page Reloads on Form Submission** | `cmd/core-api/block.html` <br> (Line 53) | The false-positive report form uses a standard POST request `<form action="/block/report" method="post">`, which causes a full-page reload on submission. | Refactor form submission to use an asynchronous AJAX `fetch` request, allowing visual feedback without reloading the page. |
-| **Mixed Locales / Languages in UI** | `cmd/core-api/dashboard.html` <br> (Lines 43, 1210) <br> `cmd/core-api/login.html` | The UI is mostly written in English, but contains mixed Vietnamese labels (e.g. the tab logout button `🚪 Đăng xuất` and logout confirmation box `Bạn có chắc chắn...`), which impacts internationalization. | Standardize UI text elements to a single language or implement standard locale translation properties. |
-| **Synchronous UI Updates During Whitelisting** | `cmd/core-api/dashboard.html` <br> (Line 760) | whitelisting a domain executes `Promise.all([loadOverrides(), analyzeDomain(...)])`, forcing the UI to perform a full reload of overrides and trigger a fresh analysis query to update the verdict, which is slow. | Visual status transitions can be updated immediately in the local JS state without triggering redundant fetch sequences. |
+| **Visual Inconsistency** | `internal/api/views/login.html` vs `internal/api/views/dashboard.html` | The login interface uses a polished glassmorphic treatment, while the dashboard relies on custom CSS grids and emoji labels. This creates a visual mismatch during the transition from login to dashboard. | Consolidate both legacy templates on the shared `safe-zone.css` design tokens without introducing an external CSS dependency or breaking structural grids. |
+| **Hardcoded Color Tokens in Javascript** | `internal/api/views/dashboard.html` <br> (Line 621) | Chart.js doughnut colors are hardcoded as hexadecimal strings (`'#177d53'`, `'#ab2f3f'`). If the system color palette (such as `--safe` or `--bad`) is modified in the CSS variables, the charts will retain the hardcoded values, leading to visual mismatch. | Redesign chart render logic to dynamically read computed styles from the CSS variables of the container elements. |
+| **Risk of Breaking DOM Selectors** | `internal/api/views/dashboard.html` <br> (Lines 338–357) | JavaScript relies on exact DOM ID references (e.g. `domainInput`, `resultEl`, `metricTotal`, `recentEl`) to query and paint variables. | If the HTML layout is reorganized, these elements must retain their exact DOM IDs. Do not change these IDs without updating their references in the script block. |
+| **Server-Side Template Failure Risk** | `internal/api/views/block.html` <br> (Lines 23–27, 33–42) | The block page contains embedded Go template directives (`{{if .ReportReceived}}`, `{{.Domain}}`, `{{.RequestID}}`). | If these variables are modified or mistyped during an HTML redesign, the Go template compiler will fail, causing server crashes (HTTP 500) at render time. |
+| **Full-Page Reloads on Form Submission** | `internal/api/views/block.html` <br> (Line 53) | The false-positive report form uses a standard POST request `<form action="/block/report" method="post">`, which causes a full-page reload on submission. | Refactor form submission to use an asynchronous AJAX `fetch` request, allowing visual feedback without reloading the page. |
+| **Mixed Locales / Languages in UI** | `internal/api/views/dashboard.html` <br> (Lines 43, 1210) <br> `internal/api/views/login.html` | The UI is mostly written in English, but contains mixed Vietnamese labels (e.g. the tab logout button `🚪 Đăng xuất` and logout confirmation box `Bạn có chắc chắn...`), which impacts internationalization. | Standardize UI text elements to a single language or implement standard locale translation properties. |
+| **Synchronous UI Updates During Whitelisting** | `internal/api/views/dashboard.html` <br> (Line 760) | whitelisting a domain executes `Promise.all([loadOverrides(), analyzeDomain(...)])`, forcing the UI to perform a full reload of overrides and trigger a fresh analysis query to update the verdict, which is slow. | Visual status transitions can be updated immediately in the local JS state without triggering redundant fetch sequences. |
 | **CSRF Blocking Risks on API Changes** | `cmd/core-api/main.go` <br> (Line 1168) | State-modifying requests (POST, PUT, DELETE) using session cookies are strictly checked for valid Origin and Referer header matches. | Ensure that all dashboard fetch commands target local relative paths to prevent CSRF verification failures. |
 
 ---
@@ -366,70 +352,70 @@ To safely execute a complete front-end redesign without breaking functionality, 
 
 ### 1. Centralize Design Tokens
 *   **Goal**: Standardize the visual palette, hover glows, and sizing scales globally inside `:root` inside `safe-zone.css`.
-*   **Files Likely Touched**: `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Low
 *   **What Must Not Be Touched**: DOM IDs and element class names.
 *   **Manual Test Steps**: Load the dashboard and ensure all tables and panels render correctly with the updated tokens.
 
 ### 2. Add Reusable Base CSS Classes
 *   **Goal**: Replace custom inline style bindings (e.g. `style="display: grid; ..."` inside mappings forms) with semantic utility classes in `safe-zone.css` to clean up the markup.
-*   **Files Likely Touched**: `cmd/core-api/assets/safe-zone.css`, `cmd/core-api/dashboard.html`
+*   **Files Likely Touched**: `internal/api/assets/safe-zone.css`, `internal/api/views/dashboard.html`
 *   **Risk Level**: Low
 *   **What Must Not Be Touched**: JavaScript event handlers and functional selectors.
 *   **Manual Test Steps**: Verify form alignments under the "Clients & Policies" tab to ensure they match mockups.
 
 ### 3. Redesign Dashboard Shell
 *   **Goal**: Update the header panel, status badges, and tab selector buttons, adding visual hover indicators and outline animations.
-*   **Files Likely Touched**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Low
 *   **What Must Not Be Touched**: The tab button `data-tab="..."` attributes and element IDs (`tab-btn-analysis`, etc.) which are bound to the JS tab router.
 *   **Manual Test Steps**: Click through all navigation tabs to confirm they switch panel views correctly.
 
 ### 4. Redesign Domain Analyzer Control Toolbar
 *   **Goal**: Modernize the query text input field and search button, incorporating high-visibility active ring glows.
-*   **Files Likely Touched**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Low to Medium
 *   **What Must Not Be Touched**: Form ID `#analyze-form`, input ID `#domain-input`, and button ID `#analyze-btn`.
 *   **Manual Test Steps**: Input a domain, submit the query, and confirm the laser animations and shockwaves trigger correctly.
 
 ### 5. Redesign Analysis Risk Results Panel
 *   **Goal**: Modernize the visual output layout of `renderResult(item)`, replacing simple list items with detailed grid grids, polishing evidence lists, and redesigning whitelisting panels.
-*   **Files Likely Touched**: `cmd/core-api/dashboard.html` (specifically functions `renderResult`, `renderEvidence`, and `renderFalsePositiveReviewPanel`), `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/views/dashboard.html` (specifically functions `renderResult`, `renderEvidence`, and `renderFalsePositiveReviewPanel`), `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Medium to High
 *   **What Must Not Be Touched**: Whitelist note text-area ID `#fp-review-reason` and whitelist action button trigger bindings `submitFalsePositiveReview()`.
 *   **Manual Test Steps**: Query a malicious domain, type a whitelisting note in the panel, click whitelist, and verify the domain shifts to the allowlist.
 
 ### 6. Redesign Telemetry Metrics & Charting
 *   **Goal**: Style the telemetry summary metrics cards. Refactor the `renderChart` JS function to parse and apply CSS variable tokens for Chart.js.
-*   **Files Likely Touched**: `cmd/core-api/dashboard.html` (specifically `renderChart`), `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/views/dashboard.html` (specifically `renderChart`), `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Medium
 *   **What Must Not Be Touched**: canvas ID `#verdict-chart` and statistical DOM IDs (such as `st-total`, `st-safe`, etc.).
 *   **Manual Test Steps**: Open the Telemetry tab, change time periods (24h, 7d, 30d), and confirm charts reload with correct alignments and colors.
 
 ### 7. Redesign System Tab & Background Agents
 *   **Goal**: Style service health status panels, latency metrics listings, and background agent task trigger tables.
-*   **Files Likely Touched**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Medium
 *   **What Must Not Be Touched**: The trigger function binding `triggerAgentTask(name)`.
 *   **Manual Test Steps**: Open the System tab, verify latency columns load, click "Trigger" next to a background task, and verify task runs.
 
 ### 8. Redesign Block Page Landing
 *   **Goal**: Polish block page templates layout. Replace standard form submissions with AJAX fetches to prevent full-page refreshes.
-*   **Files Likely Touched**: `cmd/core-api/block.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/views/block.html`, `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Medium
 *   **What Must Not Be Touched**: Go template interpolation tags (e.g. `{{.Domain}}`).
 *   **Manual Test Steps**: Navigate to `/block?domain=malicious.com`, fill out false-positive details, click submit, and verify success indicators display.
 
 ### 9. Mobile Responsive Optimization
 *   **Goal**: Improve responsive media queries in `safe-zone.css` to support tablet and mobile screens, focusing on menu tabs wrap behaviors and table column responsive hides.
-*   **Files Likely Touched**: `cmd/core-api/assets/safe-zone.css`
+*   **Files Likely Touched**: `internal/api/assets/safe-zone.css`
 *   **Risk Level**: Low
 *   **What Must Not Be Touched**: HTML layouts or template structure.
 *   **Manual Test Steps**: Resize browser viewport down to mobile width (360px) and check if dashboard structures wrap correctly.
 
 ### 10. Motion & Accessibility Optimization
 *   **Goal**: Apply standardized keyboard focus indices (`tabindex` and `outline-glow` indicators), implement semantic ARIA tags, and refine background canvas float properties.
-*   **Files Likely Touched**: `cmd/core-api/dashboard.html`, `cmd/core-api/block.html`, `cmd/core-api/login.html`
+*   **Files Likely Touched**: `internal/api/views/dashboard.html`, `internal/api/views/block.html`, `internal/api/views/login.html`
 *   **Risk Level**: Low to Medium
 *   **What Must Not Be Touched**: API integration scopes or core router structures.
 *   **Manual Test Steps**: Navigate through all tabs and panels using only the Tab and Enter keys, confirming focus rings are clearly visible.
@@ -542,9 +528,10 @@ During a front-end redesign, these backend structures, API paths, DOM IDs, and J
 Welcome! Here is an overview of the Safe Zone front-end architecture to help you plan a future visual redesign:
 
 ### 1. Where the UI Lives
-Safe Zone is a Go-based system. It does not use a separate frontend directory. The templates and assets are embedded directly inside the compiled binary:
-*   **Templates**: `cmd/core-api/*.html` contains the base templates (`dashboard.html` for the admin panel, `login.html` for login, and `block.html` for block redirects).
-*   **Styles**: `cmd/core-api/assets/safe-zone.css` contains custom visual styling rules.
+Safe Zone has a dedicated React frontend workspace plus a legacy server-rendered compatibility UI:
+*   **Primary UI**: `ui/src/` contains the React application served at `/app/*`; its production bundle is embedded under `internal/api/app/dist`.
+*   **Legacy templates**: `internal/api/views/` contains `dashboard.html`, `login.html`, and `block.html` for `/dashboard` and `/block`.
+*   **Styles**: `internal/api/assets/safe-zone.css` contains custom visual styling rules.
 *   **Emergency Layouts**: `internal/serve/http.go` contains an emergency server panic page embedded as a multiline string in Go source code.
 
 ### 2. Main User-Facing Pages
@@ -555,8 +542,8 @@ The application serves three primary web views:
 
 ### 3. Safe Starting Edits (Low Risk)
 To begin visual adjustments, start with these low-risk areas:
-*   **`cmd/core-api/assets/safe-zone.css`**: This file contains purely visual styling. You can safely edit CSS variables, layout grids, colors, hover rules, and button styles.
-*   **`cmd/core-api/login.html`**: The login layout is isolated and styled using Tailwind CSS utility classes. Modifying it is safe, provided form inputs and button trigger names remain unchanged.
+*   **`internal/api/assets/safe-zone.css`**: This file contains purely visual styling. You can safely edit CSS variables, layout grids, colors, hover rules, and button styles.
+*   **`internal/api/views/login.html`**: The login layout is isolated and styled using shared local CSS classes. Modifying it is safe, provided form inputs and button trigger names remain unchanged.
 
 ### 4. Risky Areas (High Risk)
 Avoid making unstructured modifications to these high-risk areas:

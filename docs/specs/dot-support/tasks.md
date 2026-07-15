@@ -2,6 +2,8 @@
 
 Đã đồng bộ lại với trạng thái repo ngày 2026-05-21. Các mục code/test đã có dấu vết rõ ràng được đánh dấu hoàn tất; xác minh chạy lại sẽ được đóng sau khi rerun.
 
+> **Lưu ý cập nhật:** Các mục test trong tài liệu này là bản ghi lịch sử. Repo hiện tại không còn `cmd/dns-resolver/main_test.go`, vì vậy không dùng các mục đó làm bằng chứng cho test file đang tồn tại; cần bổ sung hoặc chạy lại coverage trước mỗi release.
+
 ## 📋 Giai đoạn 1: Thiết lập cấu hình & Biến môi trường
 - [x] Cập nhật cấu hình mặc định trong `dns-resolver`:
   - `SAFE_ZONE_DNS_DOT_ENABLED` (mặc định: `true`)

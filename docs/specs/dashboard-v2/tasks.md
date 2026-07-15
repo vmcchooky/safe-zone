@@ -14,7 +14,7 @@ Synced with repository state on 2026-05-26. Code-backed items are checked; remai
 
 - [x] Add telemetry stats cards (Total, Safe, Suspicious, Malicious, Cache Hits).
 - [x] Add period selector (24h / 7d / 30d) with active state.
-- [x] Add Chart.js `<script>` from CDN with graceful fallback.
+- [x] Add the embedded Chart.js bundle from `/assets/chart.umd.min.js` with graceful fallback.
 - [x] Add doughnut chart for verdict distribution.
 - [x] Add paginated telemetry recent table.
 - [x] Add pagination controls (Prev / Next / Page indicator).
@@ -44,7 +44,7 @@ Synced with repository state on 2026-05-26. Code-backed items are checked; remai
 - [x] Add smooth tab transition animations.
 - [ ] Test mobile layout (375px+) for all tabs.
 - [x] Add dark mode CSS via `@media (prefers-color-scheme: dark)`.
-- [x] Verify Chart.js graceful degradation when CDN unavailable.
+- [x] Verify Chart.js graceful degradation when the embedded asset is unavailable.
 - [x] Update header metrics to use telemetry stats instead of recent list.
 
 ## Phase 6: Verification

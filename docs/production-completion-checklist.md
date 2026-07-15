@@ -180,7 +180,7 @@ Goal: prove the system meets the target environment, not only local benchmarks.
 - `[x]` Local Go benchmarks exist.
 - `[~]` Local benchmark file explicitly says it does not prove 500 qps cache-hit / 50 qps miss on target VPS.
 - `[x]` Add HTTP/DoH load test script for cache hit and cache miss paths. Implemented as `cmd/load-test`.
-- `[x]` Add a reproducible performance-proof wrapper. Implemented as `scripts/performance-proof.sh`.
+- `[x]` Add a reproducible performance-proof wrapper. Implemented as `scripts/qa/performance-proof.sh`.
 - `[ ]` Run benchmark on the chosen VPS class.
 - `[ ]` Benchmark with Redis enabled, DoH through Caddy, TLS/WHOIS enrichment enabled, and AI mode explicitly selected.
 - `[x]` Record CPU, memory, latency percentiles, error rate, and cache hit rate in the benchmark tooling.
@@ -194,7 +194,7 @@ Benchmark procedure:
    ```sh
    SAFE_ZONE_BENCH_API_URL=https://safe.example.com/v1/analyze \
    SAFE_ZONE_BENCH_DOCKER_CONTAINERS="safe-zone-core-api safe-zone-redis" \
-   scripts/performance-proof.sh
+   scripts/qa/performance-proof.sh
    ```
 
 3. Archive the generated `tmp/performance-proof/<timestamp>/` directory in the release evidence bundle.
@@ -232,7 +232,7 @@ Any threshold failure blocks production release unless the release owner records
 Steps:
 
 1. Build the release candidate and start the production-like stack.
-2. Run `scripts/performance-proof.sh` and archive its evidence directory.
+2. Run `scripts/qa/performance-proof.sh` and archive its evidence directory.
 3. Run the optional DoH edge command if DoH is part of the release surface.
 4. Compare the JSON summaries and Docker stats summary against the pass/fail table.
 5. Tune rate limits, cache TTL, Redis memory, and upstream timeouts based on results.

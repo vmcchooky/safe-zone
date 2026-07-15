@@ -2,6 +2,8 @@
 
 This context document collects compact, factual code snippets related to Safe Zone's user interfaces, templates, CSS styling, client-side JavaScript, and browser-facing Go route handlers. It provides external reviewers and future implementers with a self-contained reference of all code-level dependencies and visual contracts.
 
+> **Current scope:** The primary operator UI is the React workspace in `ui/`, served at `/app/*`. The template and asset references in this document describe the legacy compatibility UI served at `/dashboard` and `/block`.
+
 ---
 
 ## 1. Purpose of This File
@@ -20,17 +22,16 @@ The following table lists all files directly involved in rendering, styling, or 
 
 | Path | Purpose | Why It Matters for Redesign |
 | --- | --- | --- |
-| `cmd/core-api/dashboard.html` | Core UI markup and controller JavaScript | Contains the structural grids for all five operational tabs, as well as the main inline script managing REST queries and canvas background drawings. |
-| `cmd/core-api/login.html` | Administrator connection screen | Uses the Tailwind CDN framework to style a standalone dark glassmorphic portal page. |
-| `cmd/core-api/block.html` | Redirection warning landing page | A Go standard `html/template` that requires exact variable parameters (`{{.Domain}}`, etc.) to parse without compiler crashes. |
-| `cmd/core-api/assets/safe-zone.css` | Custom layout overrides stylesheet | Defines primary CSS variables (colors, fonts, blurs) and visual animations (vertical lasers, expanding shockwaves). |
-| `cmd/core-api/assets/quorix.min.css` | Baseline enterprise style sheet | Vendor-provided CSS bundle that sets grid rules. Visual styles inside must be overridden in `safe-zone.css`. |
-| `cmd/core-api/assets/quorix.min.js` | Vendor animation helper script | A deferred vendor helper bundle. |
-| `cmd/core-api/assets/AWSDiatypeRounded*.woff2` | Premium round fonts | Binary font assets loaded in CSS to style visual headers. |
-| `cmd/core-api/assets/FragmentMono-Regular.woff2` | Premium monospace font | Binary font asset loaded in CSS to style code grids, hashes, and numbers. |
+| `internal/api/views/dashboard.html` | Core UI markup and controller JavaScript | Contains the structural grids for all five operational tabs, as well as the main inline script managing REST queries and canvas background drawings. |
+| `internal/api/views/login.html` | Administrator connection screen | Uses the embedded local CSS assets to style a standalone dark glassmorphic portal page. |
+| `internal/api/views/block.html` | Redirection warning landing page | A Go standard `html/template` that requires exact variable parameters (`{{.Domain}}`, etc.) to parse without compiler crashes. |
+| `internal/api/assets/safe-zone.css` | Custom layout overrides stylesheet | Defines primary CSS variables (colors, fonts, blurs) and visual animations (vertical lasers, expanding shockwaves). |
+| `internal/api/assets/quorix.min.css` | Baseline enterprise style sheet | Vendor-provided CSS bundle that sets grid rules. Visual styles inside must be overridden in `safe-zone.css`. |
+| `internal/api/assets/quorix.min.js` | Vendor animation helper script | A deferred vendor helper bundle. |
+| `internal/api/assets/FragmentMono-Regular-GORNZRHI.woff2` | Embedded monospace font | Binary font asset loaded in CSS to style code grids, hashes, and numbers. |
 | `internal/serve/http.go` | HTTP Panic Recovery middleware | Houses a hardcoded emergency Vietnamese-localized HTTP 500 landing page inside a Go string literal (`getGlassmorphicErrorHTML`). |
-| `cmd/core-api/dashboard.go` | Renders dashboard / login pages | Binds the embedded assets filesystem and validates administrator cookies before returning HTML. |
-| `cmd/core-api/block.go` | Compiles block templates data | Extracts request metadata and parses `block.html` using the standard `html/template` library. |
+| `internal/api/handlers/dashboard.go` | Renders dashboard / login pages | Binds the embedded assets filesystem and validates administrator cookies before returning HTML. |
+| `internal/api/handlers/block.go` | Compiles block templates data | Extracts request metadata and parses `block.html` using the standard `html/template` library. |
 | `cmd/core-api/main.go` | Registers application routes and boundaries | Defines the backend router paths (`/dashboard`, `/v1/*`, etc.) and enforces static Bearer tokens and cookie CSRF checks. |
 
 ---
@@ -41,7 +42,7 @@ Below are compact code snippets representing the markup structure of each primar
 
 ### Dashboard Shell
 [HTML SNIPPET]
-<!-- File: cmd/core-api/dashboard.html -->
+<!-- File: internal/api/views/dashboard.html -->
 <body class="dashboard-page">
 <canvas id="appCanvasBackground"></canvas>
 <div class="shell">
@@ -79,7 +80,7 @@ Below are compact code snippets representing the markup structure of each primar
 
 ### Domain Analyzer Form
 [HTML SNIPPET]
-<!-- File: cmd/core-api/dashboard.html -->
+<!-- File: internal/api/views/dashboard.html -->
   <div class="tab-content active" id="tab-analysis">
     <main>
       <form class="toolbar" id="analyze-form" style="position: relative; z-index: 20;">
@@ -93,7 +94,7 @@ Below are compact code snippets representing the markup structure of each primar
 
 ### Risk Result Display Panel
 [HTML SNIPPET]
-<!-- File: cmd/core-api/dashboard.html -->
+<!-- File: internal/api/views/dashboard.html -->
       <div class="grid-2">
         <section class="panel" style="position: relative;">
           <div class="panel-head"><h2>Live result</h2><span id="result-state">waiting</span></div>
@@ -106,7 +107,7 @@ Below are compact code snippets representing the markup structure of each primar
 
 ### Metrics / Status Area (Telemetry Panel)
 [HTML SNIPPET]
-<!-- File: cmd/core-api/dashboard.html -->
+<!-- File: internal/api/views/dashboard.html -->
   <div class="tab-content" id="tab-telemetry">
     <main>
       <div class="panel">
@@ -132,7 +133,7 @@ Below are compact code snippets representing the markup structure of each primar
 
 ### Agent / System Tab Controls
 [HTML SNIPPET]
-<!-- File: cmd/core-api/dashboard.html -->
+<!-- File: internal/api/views/dashboard.html -->
   <div class="tab-content" id="tab-system">
     <main>
       <div class="panel">
@@ -159,7 +160,7 @@ Below are compact code snippets representing the markup structure of each primar
 
 ### Block Page Redirect Template
 [HTML SNIPPET]
-<!-- File: cmd/core-api/block.html -->
+<!-- File: internal/api/views/block.html -->
 <body class="block-page">
   <div class="cyber-grid-bg"></div>
   <div class="scanner-laser red active"></div>
@@ -227,11 +228,11 @@ func getGlassmorphicErrorHTML(errStr string) string {
 
 ## 4. CSS Snippets
 
-Below are compact code snippets from `cmd/core-api/assets/safe-zone.css` showcasing the layout styling rules:
+Below are compact code snippets from `internal/api/assets/safe-zone.css` showcasing the layout styling rules:
 
 ### Global / Base Styles
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 :root {
   color-scheme: dark;
   --qx-font-body: 'Inter', system-ui, sans-serif;
@@ -260,7 +261,7 @@ Below are compact code snippets from `cmd/core-api/assets/safe-zone.css` showcas
 
 ### Layout Styles
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 .shell, .login-container { width: min(1240px, calc(100vw - 32px)); margin: 0 auto; }
 .shell { padding: 24px 0 48px; position: relative; z-index: 10; }
 
@@ -272,7 +273,7 @@ Below are compact code snippets from `cmd/core-api/assets/safe-zone.css` showcas
 
 ### Cards / Panels
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 header, .panel, .toolbar, .login-card, .block-shell, .card, .subcard, .metric, .recent-item, .group-card, .sys-card, .stat-card, .modal-card {
   background: var(--panel);
   backdrop-filter: var(--glass-blur);
@@ -289,7 +290,7 @@ header, .panel, .toolbar, .login-card, .block-shell, .card, .subcard, .metric, .
 
 ### Buttons
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 .tab-btn, button, .period-btn {
   min-height: 36px; border: 1px solid transparent; border-radius: 8px; font: inherit; font-weight: 600; font-size: 0.85rem; cursor: pointer;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); display: inline-flex; align-items: center; justify-content: center; position: relative; overflow: hidden;
@@ -303,7 +304,7 @@ button:not(.tab-btn):not(.period-btn):not(.ghost):not(.modal-close) {
 
 ### Inputs / Forms
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 input, select, textarea {
   width: 100%; min-height: 40px; border: 1px solid var(--line); border-radius: 8px; padding: 0 16px;
   background: rgba(0,0,0,0.2); color: white; font-family: var(--qx-font-mono); font-size: 0.9rem; outline: none; transition: all 0.3s;
@@ -313,7 +314,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 
 ### Badges / Status / Risk States
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 .chip, .verdict, .badge-allow, .badge-block, .grp-badge, .recent-tags span, .meta span, .eyebrow {
   display: inline-flex; align-items: center; min-height: 24px; padding: 0 10px; border-radius: 9999px;
   border: 1px solid var(--line); background: rgba(0,0,0,0.3); font-size: 0.7rem; font-weight: 700; text-transform: uppercase; font-family: var(--qx-font-mono);
@@ -324,7 +325,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 
 ### Tables / Lists / Logs
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 .override-table, .metrics-table { width: 100%; border-collapse: collapse; font-family: var(--qx-font-mono); font-size: 0.85rem; }
 .override-table th, .override-table td, .metrics-table th, .metrics-table td { padding: 12px 16px; border-bottom: 1px dashed var(--line); text-align: left; }
 .telemetry-row {
@@ -334,7 +335,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 
 ### Responsive Styles
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 @media (max-width: 980px) {
   .hero-grid, .stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .grid-2, .block-grid { grid-template-columns: 1fr; }
@@ -349,7 +350,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 
 ### Animation / Motion Styles
 [CSS SNIPPET]
-/* File: cmd/core-api/assets/safe-zone.css */
+/* File: internal/api/assets/safe-zone.css */
 .cyber-grid-bg {
   position: absolute; inset: 0; z-index: 0; pointer-events: none; opacity: 0.4;
   background-image: linear-gradient(rgba(244, 63, 94, 0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(244, 63, 94, 0.1) 1px, transparent 1px);
@@ -368,11 +369,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--accent); backgro
 
 ## 5. JavaScript Snippets
 
-These snippets represent the client-side JavaScript located inside the script block of `cmd/core-api/dashboard.html`:
+These snippets represent the client-side JavaScript located inside the script block of `internal/api/views/dashboard.html`:
 
 ### State Initialization
 [JS SNIPPET]
-// File: cmd/core-api/dashboard.html
+// File: internal/api/views/dashboard.html
 const state = {
   activeTab: 'analysis',
   latest: null,
@@ -387,7 +388,7 @@ const state = {
 
 ### DOM Selector Helpers
 [JS SNIPPET]
-// File: cmd/core-api/dashboard.html
+// File: internal/api/views/dashboard.html
 const $ = id => document.getElementById(id);
 const analyzeForm     = $('analyze-form');
 const domainInput     = $('domain-input');
@@ -404,7 +405,7 @@ const resultState     = $('result-state');
 
 ### Domain Analysis Request
 [JS SNIPPET]
-// File: cmd/core-api/dashboard.html
+// File: internal/api/views/dashboard.html
 async function analyzeDomain(domain, forceEvidence) {
   analyzeBtn.disabled = true;
   osintBtn.disabled = true;
@@ -433,7 +434,7 @@ async function analyzeDomain(domain, forceEvidence) {
 
 ### Rendering Result States
 [JS SNIPPET]
-// File: cmd/core-api/dashboard.html
+// File: internal/api/views/dashboard.html
 function renderResult(item) {
   cacheState.innerHTML = item.cache_hit ? '<strong>cache</strong> hit' : '<strong>cache</strong> fresh';
   const blocked = item.verdict === 'MALICIOUS';
@@ -459,7 +460,7 @@ function renderResult(item) {
 
 ### Metrics & Status Fetching
 [JS SNIPPET]
-// File: cmd/core-api/dashboard.html
+// File: internal/api/views/dashboard.html
 async function checkHealth() {
   try {
     const [hRes, sRes] = await Promise.all([fetch('/healthz'), fetch('/')]);
@@ -483,7 +484,7 @@ async function checkHealth() {
 
 ### Agent / System Action Trigger
 [JS SNIPPET]
-// File: cmd/core-api/dashboard.html
+// File: internal/api/views/dashboard.html
 async function triggerAgentTask(name) {
   if (!confirm('Manually trigger agent task "' + name + '"?')) return;
   try {
@@ -502,7 +503,7 @@ async function triggerAgentTask(name) {
 
 ### Loading / Error Toast Notification
 [JS SNIPPET]
-// File: cmd/core-api/dashboard.html
+// File: internal/api/views/dashboard.html
 let toastTimer;
 function showToast(msg, type) {
   toast.textContent = msg;
@@ -527,7 +528,7 @@ mux.HandleFunc("/dashboard/", api.dashboardHandler)
 [/GO SNIPPET]
 
 [GO SNIPPET]
-// File: cmd/core-api/dashboard.go
+// File: internal/api/handlers/dashboard.go
 func (a *app) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -557,7 +558,7 @@ mux.HandleFunc("/block", api.blockPageHandler)
 [/GO SNIPPET]
 
 [GO SNIPPET]
-// File: cmd/core-api/block.go
+// File: internal/api/handlers/block.go
 func (a *app) blockPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -765,10 +766,10 @@ The table below indicates the UX states supported by features in the current cod
 Keep these guidelines in mind during future redesign implementations:
 
 *   **Files Safest to Edit First**:
-    *   `cmd/core-api/assets/safe-zone.css`: Pure layout overrides stylesheet. Editing visual properties here has no impact on server functions or database logic.
-    *   `cmd/core-api/login.html`: The login page layout is isolated and styled using Tailwind CSS classes. Visually refactoring it will not break database sessions.
+    *   `internal/api/assets/safe-zone.css`: Pure layout overrides stylesheet. Editing visual properties here has no impact on server functions or database logic.
+    *   `internal/api/views/login.html`: The login page layout is isolated and styled using shared local CSS classes. Visually refactoring it will not break database sessions.
 *   **Highly Risky Files**:
-    *   `cmd/core-api/block.html`: Server-rendered template file. Deleting template parameters (such as `{{.Domain}}` or the conditional `{{if .ReportReceived}}`) will trigger compile/runtime errors, causing the server to crash (HTTP 500) when rendering.
+    *   `internal/api/views/block.html`: Server-rendered template file. Deleting template parameters (such as `{{.Domain}}` or the conditional `{{if .ReportReceived}}`) will trigger compile/runtime errors, causing the server to crash (HTTP 500) when rendering.
     *   `internal/serve/http.go`: Emergency panic recovery module. Edits require updating Go files and compiling.
     *   `cmd/core-api/main.go` & `dashboard.go`: Handles authentication tokens and routing configurations. Avoid editing these unless you are migrating API endpoints.
 *   **Keep DOM Selectors Intact**: Do not rename critical DOM element IDs (such as `domain-input`, `analyze-btn`, `result`, `recent`, `st-total`, etc.) to prevent JavaScript fetch and DOM paint operations from breaking.
@@ -779,11 +780,11 @@ Keep these guidelines in mind during future redesign implementations:
 ## 13. External Reviewer Summary
 
 ### 1. Frontend Architecture
-The Safe Zone codebase embeds all user interface files directly inside the Go backend executable using `go:embed`. Custom styles are managed globally inside `cmd/core-api/assets/safe-zone.css`, while template structures reside in `cmd/core-api/dashboard.html` and `cmd/core-api/block.html`.
+The Safe Zone codebase embeds all user interface files directly inside the Go backend executable using `go:embed`. Custom styles are managed globally inside `internal/api/assets/safe-zone.css`, while template structures reside in `internal/api/views/dashboard.html` and `internal/api/views/block.html`.
 
 ### 2. Redesign Focus
-*   Start by refactoring visual properties inside `cmd/core-api/assets/safe-zone.css`. Feel free to redefine visual colors, panel variables, fonts, active outline glows, and hover transition indicators.
-*   Next, modernize layouts inside `cmd/core-api/dashboard.html` by replacing emoji labels with clean typography, updating stats cards, and structuring results.
+*   Start by refactoring visual properties inside `internal/api/assets/safe-zone.css`. Feel free to redefine visual colors, panel variables, fonts, active outline glows, and hover transition indicators.
+*   Next, modernize layouts inside `internal/api/views/dashboard.html` by replacing emoji labels with clean typography, updating stats cards, and structuring results.
 *   Finally, refactor the false-positive form submission in `block.html` to submit asynchronously via JavaScript `fetch` calls, preventing full-page browser redirects.
 
 ### 3. Critical Constraints

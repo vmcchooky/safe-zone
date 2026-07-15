@@ -108,10 +108,10 @@ All APIs already exist from previous work:
 ## Chart.js Integration
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="/assets/chart.umd.min.js?v=__SAFE_ZONE_ASSET_REV__"></script>
 ```
 
-- Loaded from CDN. If CDN unavailable, chart simply doesn't render (graceful degradation).
+- Loaded from the embedded static asset. If the asset is unavailable, the chart simply doesn't render (graceful degradation).
 - One `<canvas>` element per chart. Chart instance stored in JS state.
 - Chart updated on tab switch and period change (`.data.datasets[0].data = [...]`, `.update()`).
 
@@ -178,7 +178,7 @@ function switchTab(tabName) {
 
 | File | Change |
 |---|---|
-| `cmd/core-api/dashboard.html` | Major rewrite: add tabs, telemetry, overrides, system |
+| `internal/api/views/dashboard.html` | Major rewrite: add tabs, telemetry, overrides, system |
 | `cmd/core-api/main.go` | No changes needed (all APIs already exist) |
 
 ## What This Design Excludes

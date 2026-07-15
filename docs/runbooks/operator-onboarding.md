@@ -8,7 +8,7 @@ Get a new operator from first login to first backup and first restore reference 
 
 ## 1. First login
 
-1. Open `/dashboard`.
+1. Open `/app/` (the primary React UI). `/dashboard` is the legacy compatibility UI.
 2. Sign in with the admin password for the target environment.
 3. Confirm `core-api`, Redis, and metrics cards load in the dashboard.
 4. If login fails, use [credential-rotation.md](D:/Quorix/services/safe-zone/docs/runbooks/credential-rotation.md).

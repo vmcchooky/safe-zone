@@ -23,6 +23,16 @@ tmp_test.js
 '@ + $tmp + '@'
 *tmp*.tar.gz
 *.tmp
+backups/
+logs/
+*.pid
+*.sqlite
+*.sqlite3
+
+# Browser test reports
+playwright-report/
+test-results/
+blob-report/
 
 # Scripts and IDEs
 *.py

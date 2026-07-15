@@ -266,8 +266,9 @@ WHOIS is cached by **registered domain** (not full domain) because `mail.example
 |---|---|---|
 | `SAFE_ZONE_ENRICH_ENABLED` | `true` | Enable/disable TLS+WHOIS enrichment |
 | `SAFE_ZONE_ENRICH_TIMEOUT_MS` | `3000` | Combined timeout for TLS+WHOIS (ms) |
-| `SAFE_ZONE_TLS_INSPECT_ENABLED` | `true` | Enable/disable TLS inspection |
-| `SAFE_ZONE_WHOIS_ENABLED` | `true` | Enable/disable WHOIS lookup |
+| `SAFE_ZONE_ENRICH_QUEUE_SIZE` | `256` | Maximum queued enrichment jobs |
+| `SAFE_ZONE_ENRICH_WORKERS` | `2` | Number of concurrent enrichment workers |
+| `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS` | `7` | WHOIS cache retention period |
 
 ## Files Changed
 

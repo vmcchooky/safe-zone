@@ -2,6 +2,8 @@
 
 This redesign brief outlines the visual, interaction, and technical guidelines for refactoring the user interfaces of the Safe Zone system. It provides a cohesive plan to transition the existing user interfaces into a premium, calm, and lightweight design language without introducing heavy frameworks or breaking backend API contracts.
 
+> **Current scope:** The primary React UI is now maintained under `ui/` and served at `/app/*`. The legacy template references in this brief are retained for compatibility work on `/dashboard`, `/block`, and their embedded assets under `internal/api/`.
+
 ---
 
 ## 1. Product Identity
@@ -32,15 +34,15 @@ The following table lists every user-facing surface identified in the codebase a
 
 | Surface | Source Files | Purpose | Main User Action | Data Displayed | Current Limitations |
 | --- | --- | --- | --- | --- | --- |
-| **Login Portal** | `cmd/core-api/login.html` | Authenticate administrator sessions | Enter identity name and password, submit to initiate session cookie | Form controls, Connection statuses, Credentials input | Styled using utility classes from Tailwind CDN; visually disconnected from the custom CSS elements in the primary dashboard shell. |
-| **Dashboard Shell** | `cmd/core-api/dashboard.html` | Primary control console navigation container | Swap views via tab selectors, monitor health pills, trigger logouts | Service status indicators (`core-api`, `cache`, `rate limit`), overview metrics (Total, Safe, Suspicious, Malicious, Cache hits), Tab selections | Relies on generic emojis as navigation buttons; has custom floating canvas bubble graphics that clash with a calm utility theme. |
-| **Domain Analyzer** | `cmd/core-api/dashboard.html` | Input target domains for live threat scoring | Enter domain name, click "Analyze" or hit Enter, trigger forced OSINT checks | Query input field, Submission button, OSINT trigger button | Interactive states lack visual indicators; uses hardcoded inline styles in form tags. |
-| **Risk Result Panel** | `cmd/core-api/dashboard.html` | Renders domain verdicts, scores, and whitelisting panels | Type whitelisting reason, click "Allow / whitelist domain" button | Uppercase verdict string (`SAFE`, `SUSPICIOUS`, `MALICIOUS`), score (e.g. 85/100), reasons list, evidence details cards, operator whitelisting review form | Result layouts are plain bullet points; whitelisting buttons have no loading states; contains mixed Vietnamese locales in review panels. |
-| **Telemetry Tab** | `cmd/core-api/dashboard.html` | Review verdict distribution trends and historic queries | Change statistical range (24h/7d/30d), click pagination page buttons | Dynamic doughnut chart, total counts metrics, tabular query history (Domain, Verdict, Score, Source, Analyzed At, action links) | Chart.js visual slice colors are hardcoded as HEX strings in JavaScript; pagination uses simple links; tabular listings have poor responsive wrapping on small devices. |
-| **Overrides Tab** | `cmd/core-api/dashboard.html` | Manage global allowed and blocked domain lists | Add domain override (domain, action, reason), delete existing overrides | Input fields, Action overrides filter selections, list table displaying domain, action badge, reason, updated time, deletion buttons | Overrides lists use unstyled tables; form items utilize inline margin blocks; tables lack responsive scaling on mobile. |
-| **Clients & Policies** | `cmd/core-api/dashboard.html` | Configure policy groups, client mappings, and group rules | Create groups, modify parameters, select override scopes, add IP mappings, delete items | Group card details grid (categories list, strict settings), mappings tables, group overrides tabular list, popup edit modal form | Modal toggling relies on raw class insertions; forms feature complex inline grid settings; group cards display unstructured category details. |
-| **System Health** | `cmd/core-api/dashboard.html` | Inspect operational performance and manual agent overrides | View endpoint response average latencies, review background task schedules, trigger manual agent runs | Service health status indicators, latency metrics, task list arrays (State, Interval, Runs/Errors, Last Run, Next Run, Last Error) | Latencies are listed as raw integers without units; task tables overflow on narrow viewports; error strings are trimmed with no tooltips. |
-| **Block Page Redirect** | `cmd/core-api/block.html` | landing page shown when domains are blocked | Read blocking reason, fill false-positive ticket form (contact details, note), click submit | Warning eyebrow, blocked destination, requested path, blocking category, reason text, Request ID, support email, false-positive inputs | Visually dated compared to main dashboard; forms perform full-page browser redirects on submit instead of seamless AJAX fetches. |
+| **Login Portal** | `internal/api/views/login.html` | Authenticate administrator sessions | Enter identity name and password, submit to initiate session cookie | Form controls, Connection statuses, Credentials input | Uses the shared embedded local CSS assets; visually disconnected from the custom CSS elements in the primary dashboard shell. |
+| **Dashboard Shell** | `internal/api/views/dashboard.html` | Primary control console navigation container | Swap views via tab selectors, monitor health pills, trigger logouts | Service status indicators (`core-api`, `cache`, `rate limit`), overview metrics (Total, Safe, Suspicious, Malicious, Cache hits), Tab selections | Relies on generic emojis as navigation buttons; has custom floating canvas bubble graphics that clash with a calm utility theme. |
+| **Domain Analyzer** | `internal/api/views/dashboard.html` | Input target domains for live threat scoring | Enter domain name, click "Analyze" or hit Enter, trigger forced OSINT checks | Query input field, Submission button, OSINT trigger button | Interactive states lack visual indicators; uses hardcoded inline styles in form tags. |
+| **Risk Result Panel** | `internal/api/views/dashboard.html` | Renders domain verdicts, scores, and whitelisting panels | Type whitelisting reason, click "Allow / whitelist domain" button | Uppercase verdict string (`SAFE`, `SUSPICIOUS`, `MALICIOUS`), score (e.g. 85/100), reasons list, evidence details cards, operator whitelisting review form | Result layouts are plain bullet points; whitelisting buttons have no loading states; contains mixed Vietnamese locales in review panels. |
+| **Telemetry Tab** | `internal/api/views/dashboard.html` | Review verdict distribution trends and historic queries | Change statistical range (24h/7d/30d), click pagination page buttons | Dynamic doughnut chart, total counts metrics, tabular query history (Domain, Verdict, Score, Source, Analyzed At, action links) | Chart.js visual slice colors are hardcoded as HEX strings in JavaScript; pagination uses simple links; tabular listings have poor responsive wrapping on small devices. |
+| **Overrides Tab** | `internal/api/views/dashboard.html` | Manage global allowed and blocked domain lists | Add domain override (domain, action, reason), delete existing overrides | Input fields, Action overrides filter selections, list table displaying domain, action badge, reason, updated time, deletion buttons | Overrides lists use unstyled tables; form items utilize inline margin blocks; tables lack responsive scaling on mobile. |
+| **Clients & Policies** | `internal/api/views/dashboard.html` | Configure policy groups, client mappings, and group rules | Create groups, modify parameters, select override scopes, add IP mappings, delete items | Group card details grid (categories list, strict settings), mappings tables, group overrides tabular list, popup edit modal form | Modal toggling relies on raw class insertions; forms feature complex inline grid settings; group cards display unstructured category details. |
+| **System Health** | `internal/api/views/dashboard.html` | Inspect operational performance and manual agent overrides | View endpoint response average latencies, review background task schedules, trigger manual agent runs | Service health status indicators, latency metrics, task list arrays (State, Interval, Runs/Errors, Last Run, Next Run, Last Error) | Latencies are listed as raw integers without units; task tables overflow on narrow viewports; error strings are trimmed with no tooltips. |
+| **Block Page Redirect** | `internal/api/views/block.html` | landing page shown when domains are blocked | Read blocking reason, fill false-positive ticket form (contact details, note), click submit | Warning eyebrow, blocked destination, requested path, blocking category, reason text, Request ID, support email, false-positive inputs | Visually dated compared to main dashboard; forms perform full-page browser redirects on submit instead of seamless AJAX fetches. |
 | **Panic Recovery Page** | `internal/serve/http.go` | Fallback display returned during critical panics | View crash dumps, click "Quay Lại Dashboard" link to return to portal | HTTP 500 header, system panic description, monospace Go stack trace box | HTML is embedded as a raw string literal inside Go source code; page is entirely in Vietnamese ("Hệ Thống Gặp Sự Cố"), clashing with the dashboard's English. |
 
 ---
@@ -187,15 +189,15 @@ The table below outlines the implementation status and files for each dashboard 
 
 | Area | Purpose | Current Status | Source Files | Notes |
 | --- | --- | --- | --- | --- |
-| **App Shell / Top Bar** | Renders header logo, summary stats, health badges, and logout controls. | Exists | `cmd/core-api/dashboard.html` | Redesign to replace emojis with clean typographic indicators. |
-| **Protection Overview** | Renders top statistics cards (Total, Safe, Suspicious, Malicious, Cache). | Exists | `cmd/core-api/dashboard.html` | Improve the typography and colors of stats cards. |
-| **Domain Analyzer** | Text input form for domain queries. Includes check and force OSINT triggers. | Exists | `cmd/core-api/dashboard.html` | Clean up form structures and remove inline styling. |
-| **Risk Result Panel** | Renders query results, threat levels, OSINT evidence, and whitelisting forms. | Exists | `cmd/core-api/dashboard.html` | Redesign whitelisting actions. Whitelist textarea must retain ID `#fp-review-reason`. |
-| **Threat Feed Status** | Shows active threat feed sync health. | Partially Exists | `cmd/core-api/main.go` <br> `cmd/core-api/dashboard.html` | Currently displayed as health badges in the top bar. Improve visibility on the dashboard. |
+| **App Shell / Top Bar** | Renders header logo, summary stats, health badges, and logout controls. | Exists | `internal/api/views/dashboard.html` | Redesign to replace emojis with clean typographic indicators. |
+| **Protection Overview** | Renders top statistics cards (Total, Safe, Suspicious, Malicious, Cache). | Exists | `internal/api/views/dashboard.html` | Improve the typography and colors of stats cards. |
+| **Domain Analyzer** | Text input form for domain queries. Includes check and force OSINT triggers. | Exists | `internal/api/views/dashboard.html` | Clean up form structures and remove inline styling. |
+| **Risk Result Panel** | Renders query results, threat levels, OSINT evidence, and whitelisting forms. | Exists | `internal/api/views/dashboard.html` | Redesign whitelisting actions. Whitelist textarea must retain ID `#fp-review-reason`. |
+| **Threat Feed Status** | Shows active threat feed sync health. | Partially Exists | `cmd/core-api/main.go` <br> `internal/api/views/dashboard.html` | Currently displayed as health badges in the top bar. Improve visibility on the dashboard. |
 | **DNS/Policy Status** | Shows active DoH server configuration settings. | Unknown from current code | `cmd/core-api/main.go` | The DoH resolver runs as a separate binary (`dns-resolver`), but its runtime statistics are not currently queried by the core-api dashboard. Keep as a future enhancement. |
-| **Agent/System Controls** | Displays active background tasks and manual trigger controls. | Exists | `cmd/core-api/dashboard.html` | Redesign latencies list and wrap task error strings with tooltips. |
-| **Recent Events / History** | Displays list of recent domain queries. | Exists | `cmd/core-api/dashboard.html` | Style recent item cards as clean rows with colored badges. |
-| **Block Page Redirect** | Warning landing page shown when domains are blocked. | Exists | `cmd/core-api/block.html` <br> `cmd/core-api/block.go` | Retain all standard Go template variables. Update layout grid. |
+| **Agent/System Controls** | Displays active background tasks and manual trigger controls. | Exists | `internal/api/views/dashboard.html` | Redesign latencies list and wrap task error strings with tooltips. |
+| **Recent Events / History** | Displays list of recent domain queries. | Exists | `internal/api/views/dashboard.html` | Style recent item cards as clean rows with colored badges. |
+| **Block Page Redirect** | Warning landing page shown when domains are blocked. | Exists | `internal/api/views/block.html` <br> `internal/api/handlers/block.go` | Retain all standard Go template variables. Update layout grid. |
 
 ---
 
@@ -426,15 +428,15 @@ To safely implement the redesign without breaking functionality, split the proje
 | Phase | Goal | Files Likely Touched | Acceptance Criteria | Manual Test Steps | What NOT to Touch |
 | --- | --- | --- | --- | --- | --- |
 | **Phase 0** | Inventory and brief | None | [docs/ui-inventory.md](file:///d:/Quorix/services/safe-zone/docs/ui-inventory.md) and [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) must be complete, accurate, and fully aligned with the codebase. | Verify that both document files exist and can be read clearly in markdown view. | Do not edit any codebase source files. |
-| **Phase 1** | Implement Design Tokens | `cmd/core-api/assets/safe-zone.css` | Define all `--sz-` visual tokens globally under `:root` in `safe-zone.css`. | Load `/dashboard` and check the browser console to verify that `safe-zone.css` loads successfully without syntax errors. | Do not rename existing DOM selectors or modify HTML templates. |
-| **Phase 2** | Base UI Primitives | `cmd/core-api/assets/safe-zone.css` | Implement base CSS classes (`.sz-card`, `.sz-btn`, `.sz-input`, `.sz-pill`, `.sz-skeleton`, `.sz-alert`). | Test hover and active click focus animations on dummy elements inside the style sheet. | Do not edit Go template files or Javascript logic. |
-| **Phase 3** | Redesign Dashboard Shell | `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css` | Apply design shell variables. Replace emojis in navigation tabs with clean typography. Apply smooth active highlights to selected tabs. | Load `/dashboard` in the browser, verify health badge colors, and click through tabs to confirm they swap views cleanly. | Do not modify the `data-tab="..."` attributes or the `switchTab()` function bindings. |
-| **Phase 4** | Redesign Domain Analyzer | `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css` | Modernize the query text input and submission button, removing inline style attributes. | Click the analyzer search box, verify outline glows, input a test domain, click "Analyze", and verify search executes. | Do not rename DOM IDs `domain-input`, `analyze-form`, `analyze-btn`, or `osint-btn`. |
-| **Phase 5** | Redesign Risk Results | `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css` | Modernize results rendering (verdict color states, score gauges, evidence lists, and whitelisting review panel layout). | Query a known malicious domain, type a whitelisting note in the panel, click whitelist, and verify the domain is allowed. | Do not rename whitelisting note textarea ID `#fp-review-reason` or modify `submitFalsePositiveReview()` Javascript calls. |
-| **Phase 6** | Redesign Telemetry & System Panels | `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css` | Modernize stats cards, paginated tables, Overrides lists, policy groups grids, latencies tables, and agent schedule listings. | Navigate through Telemetry and Overrides tabs, verify table grid alignments, trigger an agent task run, and check system status. | Do not change JSON query structures or trigger mappings endpoints paths. |
-| **Phase 7** | Redesign Block Page | `cmd/core-api/block.html`, `cmd/core-api/assets/safe-zone.css` | Style `/block` landing page cards and details tables. Implement AJAX submit for false-positive reports to prevent full-page reloads. | Visit `/block?domain=test.com`, enter a report note, submit the form, and verify that the page displays the success receipt without full-page reloads. | Do not touch Go template tokens (`{{.Domain}}`, etc.). |
-| **Phase 8** | Responsive, Access, Motion Polish | `cmd/core-api/assets/safe-zone.css`, HTML files | Apply responsive media queries, high-contrast states, keyboard tab indexes, and media query reduced motion triggers. | Resize browser viewports to mobile widths, navigate dashboard using Tab/Enter keys, and verify visual highlights. | Do not break routing contracts. |
-| **Phase 9** | Cleanup & Documentation | `cmd/core-api/assets/safe-zone.css`, `docs/walkthrough.md` | Remove unused or duplicated legacy CSS styles. Compile a final release walkthrough documenting the redesign. | Perform a full project build (`go build ./...`) to ensure all compiled template files are 100% correct. | Do not alter backend logic. |
+| **Phase 1** | Implement Design Tokens | `internal/api/assets/safe-zone.css` | Define all `--sz-` visual tokens globally under `:root` in `safe-zone.css`. | Load `/dashboard` and check the browser console to verify that `safe-zone.css` loads successfully without syntax errors. | Do not rename existing DOM selectors or modify HTML templates. |
+| **Phase 2** | Base UI Primitives | `internal/api/assets/safe-zone.css` | Implement base CSS classes (`.sz-card`, `.sz-btn`, `.sz-input`, `.sz-pill`, `.sz-skeleton`, `.sz-alert`). | Test hover and active click focus animations on dummy elements inside the style sheet. | Do not edit Go template files or Javascript logic. |
+| **Phase 3** | Redesign Dashboard Shell | `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css` | Apply design shell variables. Replace emojis in navigation tabs with clean typography. Apply smooth active highlights to selected tabs. | Load `/dashboard` in the browser, verify health badge colors, and click through tabs to confirm they swap views cleanly. | Do not modify the `data-tab="..."` attributes or the `switchTab()` function bindings. |
+| **Phase 4** | Redesign Domain Analyzer | `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css` | Modernize the query text input and submission button, removing inline style attributes. | Click the analyzer search box, verify outline glows, input a test domain, click "Analyze", and verify search executes. | Do not rename DOM IDs `domain-input`, `analyze-form`, `analyze-btn`, or `osint-btn`. |
+| **Phase 5** | Redesign Risk Results | `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css` | Modernize results rendering (verdict color states, score gauges, evidence lists, and whitelisting review panel layout). | Query a known malicious domain, type a whitelisting note in the panel, click whitelist, and verify the domain is allowed. | Do not rename whitelisting note textarea ID `#fp-review-reason` or modify `submitFalsePositiveReview()` Javascript calls. |
+| **Phase 6** | Redesign Telemetry & System Panels | `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css` | Modernize stats cards, paginated tables, Overrides lists, policy groups grids, latencies tables, and agent schedule listings. | Navigate through Telemetry and Overrides tabs, verify table grid alignments, trigger an agent task run, and check system status. | Do not change JSON query structures or trigger mappings endpoints paths. |
+| **Phase 7** | Redesign Block Page | `internal/api/views/block.html`, `internal/api/assets/safe-zone.css` | Style `/block` landing page cards and details tables. Implement AJAX submit for false-positive reports to prevent full-page reloads. | Visit `/block?domain=test.com`, enter a report note, submit the form, and verify that the page displays the success receipt without full-page reloads. | Do not touch Go template tokens (`{{.Domain}}`, etc.). |
+| **Phase 8** | Responsive, Access, Motion Polish | `internal/api/assets/safe-zone.css`, HTML files | Apply responsive media queries, high-contrast states, keyboard tab indexes, and media query reduced motion triggers. | Resize browser viewports to mobile widths, navigate dashboard using Tab/Enter keys, and verify visual highlights. | Do not break routing contracts. |
+| **Phase 9** | Cleanup & Documentation | `internal/api/assets/safe-zone.css`, `docs/qa/admin-dashboard-checklist.md` | Remove unused or duplicated legacy CSS styles. Compile a final release walkthrough documenting the redesign. | Perform a full project build (`go build ./...`) to ensure all compiled template files are 100% correct. | Do not alter backend logic. |
 
 ---
 
@@ -444,88 +446,88 @@ Below is a series of precise, step-by-step prompts to guide an AI coding agent t
 
 ### Prompt 1: Implement CSS Design Tokens
 *   **Task**: Define all `--sz-` visual tokens globally under `:root` in `safe-zone.css` according to Phase 1.
-*   **Input Files to Read First**: [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) (Section 8), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) (Section 8), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not modify any HTML template files, Go controllers, or JavaScript.
 *   **Acceptance Criteria**: All CSS variables must be declared in `:root` inside `safe-zone.css`.
 *   **Manual Test Steps**: Start the Go application, load `/dashboard` in the browser, and verify in developer tools that all variables are declared under `:root`.
 
 ### Prompt 2: Define Base UI Primitives/Classes
 *   **Task**: Implement base CSS classes (`.sz-card`, `.sz-btn`, `.sz-input`, `.sz-pill`, `.sz-skeleton`, `.sz-alert`) using the new tokens in `safe-zone.css` according to Phase 2.
-*   **Input Files to Read First**: [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) (Section 7 and 8), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) (Section 7 and 8), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not edit Go templates or JavaScript files.
 *   **Acceptance Criteria**: CSS classes for base components are declared in `safe-zone.css` using the `--sz-` variables.
 *   **Manual Test Steps**: Open `/dashboard` and check the stylesheet to ensure all baseline components compile cleanly.
 
 ### Prompt 3: Redesign Dashboard Shell & Header
 *   **Task**: Redesign the main dashboard container shell, header bar, and navigation tab controls according to Phase 3.
-*   **Input Files to Read First**: [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not rename the navigation tab button classes (`.tab-btn`), `data-tab="..."` variables, or the tab IDs (`tab-btn-analysis`, etc.) used by JavaScript to toggle views.
 *   **Acceptance Criteria**: The navigation buttons feature clean typography, visual hover indicators, and smooth transition animations.
 *   **Manual Test Steps**: Load `/dashboard` and verify that clicking through tabs switches views smoothly without console errors.
 
 ### Prompt 4: Redesign Domain Analyzer Toolbar
 *   **Task**: Redesign the domain query form input and search buttons, removing inline styles according to Phase 4.
-*   **Input Files to Read First**: [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not rename the form ID `#analyze-form`, input ID `#domain-input`, button ID `#analyze-btn`, or OSINT button ID `#osint-btn`.
 *   **Acceptance Criteria**: Input fields display a clean ice-blue outline glow on focus, and query controls scale cleanly on mobile viewports.
 *   **Manual Test Steps**: Focus on the domain search box, verify active outlines, type `test.com`, press Enter, and verify that domain analysis executes.
 
 ### Prompt 5: Redesign Analysis Risk Results Panel
 *   **Task**: Redesign the dynamic results output panel, styling risk verdicts (`SAFE`, `SUSPICIOUS`, `MALICIOUS`), score indicators, threat evidence lists, and false-positive review whitelisting modules according to Phase 5.
-*   **Input Files to Read First**: [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html) (functions `renderResult`, `renderEvidence`, and `renderFalsePositiveReviewPanel`), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/dashboard.html` (only the script block functions rendering HTML), `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html) (functions `renderResult`, `renderEvidence`, and `renderFalsePositiveReviewPanel`), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/views/dashboard.html` (only the script block functions rendering HTML), `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not rename the whitelisting notes textarea ID `#fp-review-reason` or modify `submitFalsePositiveReview()` function calls.
 *   **Acceptance Criteria**: Verdict panels load colored risk tags with soft container shadows. Whitelisting submissions show simple loading indicators.
 *   **Manual Test Steps**: Query `malicious-domain.com`, verify the layout of the risk details panel, type a note, click the whitelist button, and confirm the whitelisting completes successfully.
 
 ### Prompt 6: Redesign Telemetry History and Overrides Tables
 *   **Task**: Style the telemetry summary tiles, paginated logs table, and Overrides listings according to Phase 6.
-*   **Input Files to Read First**: [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not rename statistical metric IDs (`st-total`, `st-safe`, etc.) or the Chart.js canvas target `#verdict-chart`.
 *   **Acceptance Criteria**: All listing tables display clean dashed row borders. Telemetry status doughnut charts use the design tokens palette.
 *   **Manual Test Steps**: Navigate to the Telemetry tab, change range selectors between 24h, 7d, and 30d, and check if statistics and charts render correctly.
 
 ### Prompt 7: Redesign Policy Groups, Mappings, and System Controls
 *   **Task**: Style policy group cards, mapping input forms, group override controls, average latencies listings, and background agent scheduler lists according to Phase 6.
-*   **Input Files to Read First**: [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not rename mapping text input IDs or manual task trigger endpoints in JavaScript (`triggerAgentTask`).
 *   **Acceptance Criteria**: Policy groups display as a responsive card grid. Client mapping forms and overrides tables scale cleanly on mobile viewports. Average latencies display with appropriate units.
 *   **Manual Test Steps**: Navigate through "Clients & Policies" and "System" tabs, verify all grids and forms, click "Trigger" next to a background task, and verify execution completes.
 
 ### Prompt 8: Redesign Site Block Redirect Landing Page
 *   **Task**: Style the block warning landing page cards and details grids according to Phase 7. Implement an asynchronous AJAX fetch for false-positive submissions to prevent full-page redirects.
-*   **Input Files to Read First**: [cmd/core-api/block.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/block.html), [cmd/core-api/block.go](file:///d:/Quorix/services/safe-zone/cmd/core-api/block.go), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/block.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/views/block.html](file:///d:/Quorix/services/safe-zone/internal/api/views/block.html), [internal/api/handlers/block.go](file:///d:/Quorix/services/safe-zone/internal/api/handlers/block.go), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/views/block.html`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not modify Go template variables (`{{.Domain}}`, `{{.RequestedPath}}`, etc.) inside the HTML file. Form inputs must retain names `contact` and `note`.
 *   **Acceptance Criteria**: The block redirect displays a clean warning eyebrow. False-positive tickets submit asynchronously via JavaScript `fetch` and render a receipt state inline without reloading the page.
 *   **Manual Test Steps**: Visit `/block?domain=test.com`, enter a report, click submit, and verify that the page displays the success receipt without full-page reloads.
 
 ### Prompt 9: Implement Responsive Boundaries and Mobile Optimization
 *   **Task**: Modernize media queries in `safe-zone.css` to support mobile viewports down to 360px according to Phase 8.
-*   **Input Files to Read First**: [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css), HTML files
-*   **Files Allowed to Edit**: `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css), HTML files
+*   **Files Allowed to Edit**: `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not modify any Go or JavaScript logic.
 *   **Acceptance Criteria**: Tables support horizontal scrolling on mobile. Forms and cards wrap cleanly into a single-column layout on viewports <= 720px.
 *   **Manual Test Steps**: Open `/dashboard` in mobile responsive preview, resize the viewport down to 360px, and check if all tabs, grids, and tables scale fluidly.
 
 ### Prompt 10: Implement Accessibility Focus and Reduced-Motion Polish
 *   **Task**: Add high-visibility keyboard focus rings, semantic accessibility headers, and reduced-motion media query gates to disable heavy animations according to Phase 8.
-*   **Input Files to Read First**: [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`, `cmd/core-api/block.html`
+*   **Input Files to Read First**: [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`, `internal/api/views/block.html`
 *   **Hard Rules**: Do not touch backend endpoints.
 *   **Acceptance Criteria**: Keyboard navigation allows users to cycle focus through all interactive elements using Tab/Enter. Active focus indicators display a highly visible outline. System lasers and shockwave animations respect user reduced-motion browser settings.
 *   **Manual Test Steps**: Enable reduced-motion in system settings, trigger a domain analysis, and verify that visual lasers do not slide. Use keyboard navigation (`Tab` and `Enter` keys) to browse the dashboard.
 
 ### Prompt 11: Cleanup Duplicated and Obsolete CSS Styling
 *   **Task**: Audit, consolidate, and remove any legacy styling rules, hardcoded pixel declarations, or duplicated CSS classes according to Phase 9.
-*   **Input Files to Read First**: [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css)
-*   **Files Allowed to Edit**: `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read First**: [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Files Allowed to Edit**: `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Perform validation compiles (`go build ./...`) to ensure all modified styles load correctly.
 *   **Acceptance Criteria**: Legacy colors and inline definitions are removed. All classes inherit exclusively from the `--sz-` variables.
 *   **Manual Test Steps**: Verify all dashboard views to ensure visual regressions did not occur.
@@ -533,7 +535,7 @@ Below is a series of precise, step-by-step prompts to guide an AI coding agent t
 ### Prompt 12: Compile Redesign Walkthrough and Developer Guide
 *   **Task**: Create a detailed technical walkthrough document inside the `docs/` folder summarizing all design token structures, base component primitives, and implementation results.
 *   **Input Files to Read First**: All edited frontend files
-*   **Files Allowed to Edit**: `docs/walkthrough.md`
+*   **Files Allowed to Edit**: `docs/qa/admin-dashboard-checklist.md`
 *   **Hard Rules**: Create or update ONLY the walkthrough documentation file.
 *   **Acceptance Criteria**: Walkthrough document is complete, accurate, and lists all visual tokens, class styles, and manuals for future developers.
 *   **Manual Test Steps**: Verify that the document can be read cleanly.

@@ -70,8 +70,8 @@ graph TD
     1. Update the `/` (statusHandler) in `cmd/core-api/main.go` to return rate limiter metadata (e.g. Rate limit limits and status).
     2. Add a footer stamp to `dashboard.html` that queries `/v1/version` and renders the Git commit hash and build environment dynamically.
     3. Modify `dashboard.html` client-side script to fetch Rate Limiter status from the API and update the `#rl-status` pill dynamically (e.g., green `active` or grey `disabled`).
-*   **Input Files to Read:** [cmd/core-api/main.go](file:///d:/Quorix/services/safe-zone/cmd/core-api/main.go) (L322-361), [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html)
-*   **Files to Edit:** `cmd/core-api/main.go`, `cmd/core-api/dashboard.html`
+*   **Input Files to Read:** [cmd/core-api/main.go](file:///d:/Quorix/services/safe-zone/cmd/core-api/main.go) (L322-361), [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html)
+*   **Files to Edit:** `cmd/core-api/main.go`, `internal/api/views/dashboard.html`
 *   **Hard Rules:** Do not change rate limit middleware logic or breach `core-api` startup configurations.
 *   **Acceptance Criteria:** 
     *   `/v1/version` successfully populates a clean stamp in the dashboard sidebar or footer.
@@ -90,8 +90,8 @@ graph TD
     3. Build a sub-section or a new collapsible card inside the **Telemetry Tab** named **"User Reports Queue"**.
     4. Render submitted reports dynamically, showing: Domain, User Contact, Note, and Time.
     5. Add an **"Approve / Whitelist"** button that sends a payload to `/v1/overrides/review-false-positive` and a **"Dismiss"** button to archive the report.
-*   **Input Files to Read:** [internal/store/sqlite.go](file:///d:/Quorix/services/safe-zone/internal/store/sqlite.go), [cmd/core-api/main.go](file:///d:/Quorix/services/safe-zone/cmd/core-api/main.go), [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html)
-*   **Files to Edit:** `internal/store/sqlite.go`, `cmd/core-api/main.go`, `cmd/core-api/dashboard.html`
+*   **Input Files to Read:** [internal/store/sqlite.go](file:///d:/Quorix/services/safe-zone/internal/store/sqlite.go), [cmd/core-api/main.go](file:///d:/Quorix/services/safe-zone/cmd/core-api/main.go), [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html)
+*   **Files to Edit:** `internal/store/sqlite.go`, `cmd/core-api/main.go`, `internal/api/views/dashboard.html`
 *   **Hard Rules:** Keep the existing payload signature for `/v1/overrides/review-false-positive` intact.
 *   **Acceptance Criteria:**
     *   An admin can view the queue of false-positive requests submitted by blocked clients.
@@ -109,8 +109,8 @@ graph TD
     2. Query `GET /v1/brands` to display the active list of protected brands (e.g. Vietcombank, Government portals).
     3. Construct a clean inline form **"Add Protected Brand"** containing fields: Brand Key, Brand Name, Domain list (comma-separated), and Allowed Edit Distance (Levenshtein).
     4. Implement dynamic JavaScript binds for **Create**, **Edit**, and **Delete** actions targeting the `/v1/brands` endpoint.
-*   **Input Files to Read:** [internal/serve/brands.go](file:///d:/Quorix/services/safe-zone/internal/serve/brands.go), [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html)
-*   **Files to Edit:** `cmd/core-api/dashboard.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read:** [internal/serve/brands.go](file:///d:/Quorix/services/safe-zone/internal/serve/brands.go), [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html)
+*   **Files to Edit:** `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules:** Do not alter the `BrandManager` Go interface or SQL schema bindings.
 *   **Acceptance Criteria:**
     *   All brand records are visualised in a clean tabular view.
@@ -129,8 +129,8 @@ graph TD
        *   **AI Engine Settings:** Show the current AI Provider, active model, and Gemini Timeout. Provide a text field to update `SAFE_ZONE_GEMINI_API_KEY` (stored securely in SQLite config or `.env` snapshot) and a Test button to check API key validity.
        *   **Alert Notifications:** Provide a text input to set `SAFE_ZONE_AGENT_WEBHOOK_URL` dynamically and a **"Send Test Alert"** button to trigger a dummy Discord alert via `/v1/agent/trigger` (with a payload).
     3. Expose backend POST APIs on `/v1/settings` to persist these configurations dynamically in the database.
-*   **Input Files to Read:** [internal/agent/alert.go](file:///d:/Quorix/services/safe-zone/internal/agent/alert.go), [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html), [internal/risk/service.go](file:///d:/Quorix/services/safe-zone/internal/risk/service.go)
-*   **Files to Edit:** `cmd/core-api/dashboard.html`, `cmd/core-api/main.go`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read:** [internal/agent/alert.go](file:///d:/Quorix/services/safe-zone/internal/agent/alert.go), [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html), [internal/risk/service.go](file:///d:/Quorix/services/safe-zone/internal/risk/service.go)
+*   **Files to Edit:** `internal/api/views/dashboard.html`, `cmd/core-api/main.go`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules:** Secret configurations saved to SQLite must be encrypted or heavily masked when fetched.
 *   **Acceptance Criteria:**
     *   Webhooks and AI keys can be updated dynamically from the UI without restarting Docker containers.
@@ -149,8 +149,8 @@ graph TD
     3. Modify `dashboard.html` System Tab to render:
        *   **Tranco Whitelist Health Card:** Displays `Bloom Filter RAM: 1.14 MB`, `Domains Loaded: 1,000,000`, `Last Sync: X hours ago`.
        *   **Storage Disk Health Card:** Displays `SQLite Size: X MB`, `Disk Free: X GB`, and a slider to set `Telemetry Log Retention Days` (submitting to the `/v1/settings` configuration API).
-*   **Input Files to Read:** [internal/risk/bloom.go](file:///d:/Quorix/services/safe-zone/internal/risk/bloom.go), [internal/store/sqlite.go](file:///d:/Quorix/services/safe-zone/internal/store/sqlite.go), [cmd/core-api/dashboard.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/dashboard.html)
-*   **Files to Edit:** `internal/store/sqlite.go`, `cmd/core-api/main.go`, `cmd/core-api/dashboard.html`
+*   **Input Files to Read:** [internal/risk/bloom.go](file:///d:/Quorix/services/safe-zone/internal/risk/bloom.go), [internal/store/sqlite.go](file:///d:/Quorix/services/safe-zone/internal/store/sqlite.go), [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html)
+*   **Files to Edit:** `internal/store/sqlite.go`, `cmd/core-api/main.go`, `internal/api/views/dashboard.html`
 *   **Hard Rules:** Disk checks must degrade gracefully if OS permissions block reading system storage stats.
 *   **Acceptance Criteria:**
     *   System Tab displays disk consumption and Bloom filter performance data accurately.
@@ -167,8 +167,8 @@ graph TD
     1. Apply responsive media queries in `safe-zone.css` to align all 6 tabs perfectly on mobile viewports (`375px` to `768px`).
     2. Update `block.html` (the warning block landing page) to perform AJAX submissions when users click "Report False-Positive" and show a beautiful fading receipt instead of a full-page reload.
     3. Conduct the manual QA checks in [admin-dashboard-checklist.md](file:///d:/Quorix/services/safe-zone/docs/qa/admin-dashboard-checklist.md) and record the test suite signature.
-*   **Input Files to Read:** [cmd/core-api/block.html](file:///d:/Quorix/services/safe-zone/cmd/core-api/block.html), [cmd/core-api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/cmd/core-api/assets/safe-zone.css), [docs/qa/admin-dashboard-checklist.md](file:///d:/Quorix/services/safe-zone/docs/qa/admin-dashboard-checklist.md)
-*   **Files to Edit:** `cmd/core-api/block.html`, `cmd/core-api/assets/safe-zone.css`
+*   **Input Files to Read:** [internal/api/views/block.html](file:///d:/Quorix/services/safe-zone/internal/api/views/block.html), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css), [docs/qa/admin-dashboard-checklist.md](file:///d:/Quorix/services/safe-zone/docs/qa/admin-dashboard-checklist.md)
+*   **Files to Edit:** `internal/api/views/block.html`, `internal/api/assets/safe-zone.css`
 *   **Hard Rules:** Do not touch the Go-embedded template variables in `block.html`.
 *   **Acceptance Criteria:**
     *   All tabs render cleanly on Chrome mobile emulator without layout breaks.

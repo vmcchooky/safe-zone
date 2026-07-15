@@ -2,7 +2,7 @@
 
 Safe Zone is a zero-cost-first anti-phishing system whose default deployment target is a single budget VPS, with local-friendly Go services for development and validation.
 
-Legacy note: [docs/Safe_Zone_SRS_Zero_Cost_v1.0.md](docs/Safe_Zone_SRS_Zero_Cost_v1.0.md) is kept for historical reference only. The operator-facing production source of truth is [docs/production-completion-checklist.md](docs/production-completion-checklist.md), with deeper implementation detail kept under [docs/specs/](docs/specs/).
+The operator-facing production source of truth is [docs/production-completion-checklist.md](docs/production-completion-checklist.md). Historical design notes and implementation records remain under [docs/specs/](docs/specs/).
 
 ## Current build
 
@@ -245,7 +245,7 @@ pwsh ./scripts/safe-zone.ps1 feed-sync
 
 For Linux hosts, the equivalent shell helper supports `deploy`, `deploy-dev`, and the `SAFE_ZONE_STACK=production|dev` selector for status/log/backup helpers.
 
-The same actions are also available as VS Code tasks in [.vscode/tasks.json](.vscode/tasks.json).
+The same actions are also available as `mise` tasks defined in [mise.toml](mise.toml).
 
 For a Linux VPS, [ops/cron/safe-zone.cron.example](ops/cron/safe-zone.cron.example) provides a ready-made cron template for daily backup and prune jobs.
 

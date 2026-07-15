@@ -2,7 +2,7 @@
 
 Safe Zone is a zero-cost-first anti-phishing system whose default deployment target is a single budget VPS, with local-friendly Go services for development and validation.
 
-Legacy note: [docs/Safe_Zone_SRS_Zero_Cost_v1.0.md](docs/Safe_Zone_SRS_Zero_Cost_v1.0.md) is kept for historical reference only. The operator-facing production source of truth is [docs/production-completion-checklist.md](docs/production-completion-checklist.md), with deeper implementation detail kept under [docs/specs/](docs/specs/).
+The operator-facing production source of truth is [production-completion-checklist.md](production-completion-checklist.md). Historical design notes and implementation records remain under [specs/](specs/).
 
 ## Current build
 
@@ -18,6 +18,13 @@ Legacy note: [docs/Safe_Zone_SRS_Zero_Cost_v1.0.md](docs/Safe_Zone_SRS_Zero_Cost
 - `internal/risk`: shared analysis, cache, policy, and status service used by both binaries
 - `internal/serve`: graceful shutdown helper for local and container runs
 
+## Frontend workspaces
+
+- `ui/`: React source workspace for the primary operator UI, embedded and served by `core-api` at `/app/*`
+- `internal/api/views`: embedded HTML templates for the legacy compatibility dashboard, login, and block page
+- `internal/api/assets`: embedded CSS, JS, and font assets served at `/assets/*` by `core-api`
+- `internal/api/handlers`: HTTP handler logic only
+
 ## Run locally
 
 ```bash
@@ -30,7 +37,12 @@ Defaults:
 - `core-api` listens on `:8080`
 - `dns-resolver` listens on `:8081`
 - Redis is disabled unless `SAFE_ZONE_REDIS_ADDR` is set
-- Dashboard: <http://localhost:8080/dashboard>
+- Primary dashboard: <http://localhost:8080/app/>
+- Legacy compatibility dashboard: <http://localhost:8080/dashboard>
+
+`/app/*` is the production UI path. `/dashboard` remains available only during
+the post-release stability period and will be deprecated after the React UI
+passes its release gate and production smoke checks.
 
 Optional local Redis:
 
@@ -148,7 +160,7 @@ Operator visibility:
 
 Sensitive settings can be supplied either directly as `VAR=value` or indirectly through `VAR_FILE=./ops/secrets/name`.
 
-The shared [ops/secrets/README.md](</D:/Quorix/services/safe-zone/ops/secrets/README.md>) path works for:
+The shared [ops/secrets/README.md](../ops/secrets/README.md) path works for:
 
 - local `go run` from the repo root
 - Docker Compose services, which mount `./ops/secrets` into `/app/ops/secrets`
@@ -179,17 +191,25 @@ The dashboard System tab exposes `/v1/agent/status` and manual trigger buttons f
 
 HTTP responses now carry `X-Request-ID`, the main request pipeline emits structured JSON request logs for `core-api` and `dns-resolver`, and scheduled/background jobs emit a shared `run_id` for log correlation.
 
-The baseline JSON-metrics alert rules live in [ops/alerts/safe-zone-alert-rules.yaml](ops/alerts/safe-zone-alert-rules.yaml), and the operator checklist is in [docs/runbooks/alert-rules.md](docs/runbooks/alert-rules.md).
+The baseline JSON-metrics alert rules live in [ops/alerts/safe-zone-alert-rules.yaml](../ops/alerts/safe-zone-alert-rules.yaml), and the operator checklist is in [runbooks/alert-rules.md](runbooks/alert-rules.md).
 
 ## Security review
 
-Before major releases, use the formal pre-release security checklist at [docs/security/pre-release-security-checklist.md](docs/security/pre-release-security-checklist.md) together with the main [docs/runbooks/pre-release-checklist.md](docs/runbooks/pre-release-checklist.md).
+Before major releases, use the formal pre-release security checklist at [security/pre-release-security-checklist.md](security/pre-release-security-checklist.md) together with the main [runbooks/pre-release-checklist.md](runbooks/pre-release-checklist.md).
 
 ## Build
 
 ```bash
 go build ./...
 ```
+
+## CI release gate
+
+GitHub Actions runs `mise run ci` on every push and pull request. The gate
+includes Go lint/test/build, the React typecheck and embedded bundle build,
+isolated Playwright E2E, `gosec`, `govulncheck`, and Docker builds for every
+service. Playwright uses private test ports `15173` and `18080`, so it never
+attaches to the normal local development pair on `5173` and `8080`.
 
 ## Docker
 
@@ -225,9 +245,9 @@ pwsh ./scripts/safe-zone.ps1 feed-sync
 
 For Linux hosts, the equivalent shell helper supports `deploy`, `deploy-dev`, and the `SAFE_ZONE_STACK=production|dev` selector for status/log/backup helpers.
 
-The same actions are also available as VS Code tasks in [.vscode/tasks.json](.vscode/tasks.json).
+The same actions are also available as `mise` tasks defined in [mise.toml](../mise.toml).
 
-For a Linux VPS, [ops/cron/safe-zone.cron.example](ops/cron/safe-zone.cron.example) provides a ready-made cron template for daily backup and prune jobs.
+For a Linux VPS, [ops/cron/safe-zone.cron.example](../ops/cron/safe-zone.cron.example) provides a ready-made cron template for daily backup and prune jobs.
 
 ## Deployment Baseline
 
@@ -245,5 +265,5 @@ For a Linux VPS, [ops/cron/safe-zone.cron.example](ops/cron/safe-zone.cron.examp
 ## Notes
 
 This build is still local-first. DoT, Gemini, public TLS, DuckDNS, and production Caddy wiring can layer on top of the current Redis and DoH foundation.
-Roadmap decisions should follow [docs/Safe_Zone_OPEX_Estimate.md](docs/Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
-Cost-sensitive changes should follow [docs/specs/opex-cost-optimization/policy.md](docs/specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](.github/pull_request_template.md).
+Roadmap decisions should follow [Safe_Zone_OPEX_Estimate.md](Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
+Cost-sensitive changes should follow [specs/opex-cost-optimization/policy.md](specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](../.github/pull_request_template.md).

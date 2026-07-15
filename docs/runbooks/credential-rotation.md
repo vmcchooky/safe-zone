@@ -71,7 +71,7 @@ scripts/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
 
 Then verify the rotated capability specifically:
 
-- Admin password: log in to `/dashboard` with the new password.
+- Admin password: log in to `/app/` with the new password. Use `/dashboard` only for legacy compatibility checks.
 - Admin API key: call an authenticated endpoint with `Authorization: Bearer <new key>`.
 - Gemini key: trigger an analysis path that may use AI and confirm no provider auth error appears.
 - DuckDNS token: run `scripts/safe-zone.sh duckdns`.
