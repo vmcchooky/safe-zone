@@ -34,6 +34,11 @@ jobs:
           cache: true
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install UI dependencies and Playwright Chromium
+        run: |
+          npm ci --prefix ui
+          npm --prefix ui exec -- playwright install --with-deps chromium
+
       - name: Run CI task graph
         run: mise run ci
 

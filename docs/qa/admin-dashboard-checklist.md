@@ -2,6 +2,10 @@
 
 Run this checklist before each release candidate that changes dashboard UI, authentication, overrides, group policy, telemetry, or agent controls.
 
+The primary UI is `/app/*`. Run this checklist there; `/dashboard` is a legacy
+compatibility route that will be deprecated after the React UI is stable in
+production.
+
 ## Test setup
 
 - `core-api` is running locally or in staging.
@@ -17,7 +21,7 @@ Suggested sample domains:
 
 ## 1. Login and session
 
-- [ ] Open `/dashboard` while logged out and confirm the login form renders.
+- [ ] Open `/app/analysis` while logged out and confirm the login form renders.
 - [ ] Submit invalid credentials and confirm login is rejected.
 - [ ] Submit valid credentials and confirm the dashboard shell loads.
 - [ ] Refresh the page and confirm the session remains valid.

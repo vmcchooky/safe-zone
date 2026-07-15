@@ -15,6 +15,8 @@ Complete this checklist before every Safe Zone production release.
 - [ ] `scripts/release-preflight.sh` or `scripts/release-preflight.ps1` completed successfully.
 - [ ] `go test ./...` passed.
 - [ ] `go build ./...` passed.
+- [ ] `mise run ci` passed locally, including isolated React E2E on `/app/*`.
+- [ ] GitHub Actions passed for the exact release commit.
 - [ ] `gosec ./...` passed.
 - [ ] `govulncheck ./...` passed.
 - [ ] Docker builds succeeded for `core-api`, `dns-resolver`, `feed-sync`, and `feed-syncd`.
@@ -31,7 +33,8 @@ Complete this checklist before every Safe Zone production release.
 - [ ] Staging uses a staging-only hostname and staging-only secrets.
 - [ ] Staging deploy completed with the same edge mode intended for production.
 - [ ] `/healthz` and `/metrics` checks passed.
-- [ ] Dashboard auth works in staging.
+- [ ] Primary React dashboard auth works in staging at `/app/`.
+- [ ] Legacy `/dashboard` compatibility behavior is recorded while it remains supported.
 - [ ] `/v1/analyze` works in staging.
 - [ ] DoH smoke passed in staging.
 - [ ] DoT smoke passed in staging if the release exposes public DoT.

@@ -1,14 +1,29 @@
 # Safe Zone UI Workspace
 
-This directory is reserved for the standalone frontend workspace.
+`ui/` is the source workspace for the primary operator UI, embedded by
+`core-api` and served at `/app/`. It remains outside Go `internal/` packages
+because it is a Node.js/React workspace.
 
-Why it lives here:
+## UI routing policy
 
-- `ui/` is a better fit than `internal/` for Node.js and npm-based code.
-- Go `internal/` directories are reserved for private Go packages, not frontend toolchains.
+- Primary UI: `/app/*`
+- Legacy compatibility UI: `/dashboard`
 
-Current status:
+The legacy dashboard remains available during the post-release stability
+period. Deprecation begins only after the React UI has passed its release gate
+and production smoke checks.
 
-- `ui/src/` contains early React dashboard route prototypes.
-- The production dashboard currently served by `core-api` still lives under `internal/api/handlers`.
-- This workspace is not part of the current `go build ./...` pipeline yet.
+## Verification
+
+```sh
+npm run check
+npm run test:e2e
+```
+
+Playwright starts an isolated React/API pair by default on ports `15173` and
+`18080`; it never reuses servers on the normal development ports `5173` and
+`8080`. Override these only when necessary:
+
+```sh
+SAFE_ZONE_E2E_UI_PORT=15174 SAFE_ZONE_E2E_API_PORT=18081 npm run test:e2e
+```

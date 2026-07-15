@@ -20,6 +20,7 @@ func RedirectRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.RawQuery != "" {
 		target += "?" + r.URL.RawQuery
 	}
+	// #nosec G710 -- target always starts with the fixed relative /app/ path; the query cannot change its origin.
 	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
 }
 

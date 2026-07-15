@@ -87,3 +87,14 @@ func TestRedirectRoot(t *testing.T) {
 		t.Fatalf("unexpected redirect location %q", got)
 	}
 }
+
+func TestRedirectRootKeepsQueryWithinAppMount(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/app?next=https://attacker.example/landing", nil)
+	rec := httptest.NewRecorder()
+
+	RedirectRoot(rec, req)
+
+	if got := rec.Header().Get("Location"); got != "/app/?next=https://attacker.example/landing" {
+		t.Fatalf("unexpected redirect location %q", got)
+	}
+}

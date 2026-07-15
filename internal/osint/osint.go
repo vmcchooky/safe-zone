@@ -554,6 +554,7 @@ func cloneValidatedTransport(base http.RoundTripper, serverName, scheme string) 
 		transport = http.DefaultTransport.(*http.Transport).Clone()
 	}
 	transport.DisableKeepAlives = true
+	//nolint:staticcheck // Clear the legacy hook too so a cloned transport cannot bypass validated IP pinning.
 	transport.DialTLS = nil
 	transport.DialTLSContext = nil
 	if scheme == "https" {

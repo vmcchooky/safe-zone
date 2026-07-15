@@ -20,10 +20,10 @@ Legacy note: [docs/Safe_Zone_SRS_Zero_Cost_v1.0.md](docs/Safe_Zone_SRS_Zero_Cost
 
 ## Frontend workspaces
 
-- `internal/api/views`: embedded HTML templates for the current server-rendered dashboard, login, and block page
+- `ui/`: React source workspace for the primary operator UI, embedded and served by `core-api` at `/app/*`
+- `internal/api/views`: embedded HTML templates for the legacy compatibility dashboard, login, and block page
 - `internal/api/assets`: embedded CSS, JS, and font assets served at `/assets/*` by `core-api`
 - `internal/api/handlers`: HTTP handler logic only
-- `ui/`: the separate React SPA workspace for dashboard prototyping and future frontend iterations; it intentionally lives outside Go `internal/` packages
 
 ## Run locally
 
@@ -37,7 +37,12 @@ Defaults:
 - `core-api` listens on `:8080`
 - `dns-resolver` listens on `:8081`
 - Redis is disabled unless `SAFE_ZONE_REDIS_ADDR` is set
-- Dashboard: <http://localhost:8080/dashboard>
+- Primary dashboard: <http://localhost:8080/app/>
+- Legacy compatibility dashboard: <http://localhost:8080/dashboard>
+
+`/app/*` is the production UI path. `/dashboard` remains available only during
+the post-release stability period and will be deprecated after the React UI
+passes its release gate and production smoke checks.
 
 Optional local Redis:
 
@@ -197,6 +202,14 @@ Before major releases, use the formal pre-release security checklist at [docs/se
 ```bash
 go build ./...
 ```
+
+## CI release gate
+
+GitHub Actions runs `mise run ci` on every push and pull request. The gate
+includes Go lint/test/build, the React typecheck and embedded bundle build,
+isolated Playwright E2E, `gosec`, `govulncheck`, and Docker builds for every
+service. Playwright uses private test ports `15173` and `18080`, so it never
+attaches to the normal local development pair on `5173` and `8080`.
 
 ## Docker
 
