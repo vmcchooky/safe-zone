@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -80,6 +81,70 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 	}
 	if got := ts.Handler.Risk.GetAnalysisConfig().LongDomainLength; got != config.DefaultAnalysisConfig().LongDomainLength {
 		t.Fatalf("expected default config after reset, got %d", got)
+	}
+}
+
+func TestTestAIEndpointUsesSubmittedKeyWithoutSaving(t *testing.T) {
+	gemini := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Query().Get("key"); got != "submitted-test-key" {
+			t.Fatalf("expected submitted key, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"{\"verdict\":\"SAFE\",\"confidence\":0.95,\"reason\":\"test passed\"}"}]}}]}`))
+	}))
+	defer gemini.Close()
+	t.Setenv("SAFE_ZONE_GEMINI_BASE_URL", gemini.URL+"/v1beta")
+
+	ts := newHandlerTestServer(t)
+	req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings/test-ai", strings.NewReader(`{"gemini_api_key":"submitted-test-key"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	ts.addAdminBearer(req)
+
+	resp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected test to succeed, got %d: %s", resp.StatusCode, body)
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["status"] != "ok" {
+		t.Fatalf("expected successful test, got %v", payload)
+	}
+	if saved, err := ts.Store.GetSystemConfig(context.Background(), "gemini_api_key"); err != nil || saved != "" {
+		t.Fatalf("submitted key must not be persisted, got %q, err=%v", saved, err)
+	}
+}
+
+func TestTestAlertEndpointDoesNotFallBackWhenSubmittedURLIsInvalid(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	if err := ts.Store.SetSystemConfig(context.Background(), "agent_webhook_url", "https://hooks.example.test/saved"); err != nil {
+		t.Fatal(err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings/test-alert", strings.NewReader(`{"agent_webhook_url":"http://127.0.0.1:8080/test"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	ts.addAdminBearer(req)
+
+	resp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected submitted URL validation error, got %d: %s", resp.StatusCode, body)
 	}
 }
 

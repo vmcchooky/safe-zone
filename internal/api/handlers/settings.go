@@ -20,9 +20,11 @@ type settingsResponse struct {
 }
 
 type settingsRequest struct {
-	GeminiAPIKey           string `json:"gemini_api_key"`
-	AgentWebhookURL        string `json:"agent_webhook_url"`
-	TelemetryRetentionDays int    `json:"telemetry_retention_days"`
+	// Pointers distinguish an omitted field from an intentionally empty value.
+	// This lets the Gemini and webhook settings be saved independently.
+	GeminiAPIKey           *string `json:"gemini_api_key"`
+	AgentWebhookURL        *string `json:"agent_webhook_url"`
+	TelemetryRetentionDays *int    `json:"telemetry_retention_days"`
 }
 
 type settingsBundleResponse struct {
@@ -88,45 +90,47 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.GeminiAPIKey != "" {
-			if !strings.Contains(req.GeminiAPIKey, "*") {
-				if err := db.SetSystemConfig(r.Context(), "gemini_api_key", strings.TrimSpace(req.GeminiAPIKey)); err != nil {
-					httputil.WriteError(w, http.StatusInternalServerError, "failed to save gemini_api_key: "+err.Error())
+		if req.GeminiAPIKey != nil {
+			apiKey := strings.TrimSpace(*req.GeminiAPIKey)
+			if apiKey != "" {
+				if !strings.Contains(apiKey, "*") {
+					if err := db.SetSystemConfig(r.Context(), "gemini_api_key", apiKey); err != nil {
+						httputil.WriteError(w, http.StatusInternalServerError, "failed to save gemini_api_key: "+err.Error())
+						return
+					}
+				}
+			} else {
+				if err := db.SetSystemConfig(r.Context(), "gemini_api_key", ""); err != nil {
+					httputil.WriteError(w, http.StatusInternalServerError, "failed to clear gemini_api_key: "+err.Error())
 					return
 				}
-				if h.Risk != nil {
-					h.Risk.AIClient()
-				}
-			}
-		} else {
-			if err := db.SetSystemConfig(r.Context(), "gemini_api_key", ""); err != nil {
-				httputil.WriteError(w, http.StatusInternalServerError, "failed to clear gemini_api_key: "+err.Error())
-				return
 			}
 		}
 
-		if req.AgentWebhookURL != "" {
-			if !strings.Contains(req.AgentWebhookURL, "*") {
-				webhookURL := strings.TrimSpace(req.AgentWebhookURL)
-				if _, err := netguard.ValidateURL(webhookURL, false); err != nil {
-					httputil.WriteError(w, http.StatusBadRequest, "invalid agent_webhook_url: "+err.Error())
+		if req.AgentWebhookURL != nil {
+			webhookURL := strings.TrimSpace(*req.AgentWebhookURL)
+			if webhookURL != "" {
+				if !strings.Contains(webhookURL, "*") {
+					if _, err := netguard.ValidateURL(webhookURL, false); err != nil {
+						httputil.WriteError(w, http.StatusBadRequest, "invalid agent_webhook_url: "+err.Error())
+						return
+					}
+					if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", webhookURL); err != nil {
+						httputil.WriteError(w, http.StatusInternalServerError, "failed to save agent_webhook_url: "+err.Error())
+						return
+					}
+				}
+			} else {
+				if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", ""); err != nil {
+					httputil.WriteError(w, http.StatusInternalServerError, "failed to clear agent_webhook_url: "+err.Error())
 					return
 				}
-				if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", webhookURL); err != nil {
-					httputil.WriteError(w, http.StatusInternalServerError, "failed to save agent_webhook_url: "+err.Error())
-					return
-				}
-			}
-		} else {
-			if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", ""); err != nil {
-				httputil.WriteError(w, http.StatusInternalServerError, "failed to clear agent_webhook_url: "+err.Error())
-				return
 			}
 		}
 
-		if req.TelemetryRetentionDays > 0 {
-			db.UpdateRetentionDays(r.Context(), req.TelemetryRetentionDays)
-			if err := db.SetSystemConfig(r.Context(), "telemetry_retention_days", strconv.Itoa(req.TelemetryRetentionDays)); err != nil {
+		if req.TelemetryRetentionDays != nil && *req.TelemetryRetentionDays > 0 {
+			db.UpdateRetentionDays(r.Context(), *req.TelemetryRetentionDays)
+			if err := db.SetSystemConfig(r.Context(), "telemetry_retention_days", strconv.Itoa(*req.TelemetryRetentionDays)); err != nil {
 				httputil.WriteError(w, http.StatusInternalServerError, "failed to save telemetry_retention_days: "+err.Error())
 				return
 			}

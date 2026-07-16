@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"safe-zone/internal/ai"
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/config"
@@ -29,17 +32,79 @@ type testAlertPayload struct {
 	Events    []testAlertEvent `json:"events"`
 }
 
+type testAIRequest struct {
+	GeminiAPIKey string `json:"gemini_api_key"`
+}
+
+type testAlertRequest struct {
+	AgentWebhookURL string `json:"agent_webhook_url"`
+}
+
+func decodeOptionalTestRequest(w http.ResponseWriter, r *http.Request, target any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, 8192)
+	defer r.Body.Close()
+	if err := json.NewDecoder(r.Body).Decode(target); err != nil && !errors.Is(err, io.EOF) {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	return true
+}
+
+func (h *Handler) geminiKeyForTest(ctx context.Context, submitted string) string {
+	key := strings.TrimSpace(submitted)
+	if key != "" && !strings.Contains(key, "*") {
+		return key
+	}
+
+	if h != nil && h.Risk != nil {
+		if db := h.Risk.StoreDB(); db != nil && db.Enabled() {
+			if saved, err := db.GetSystemConfig(ctx, "gemini_api_key"); err == nil && strings.TrimSpace(saved) != "" {
+				return strings.TrimSpace(saved)
+			}
+		}
+	}
+	return config.SecretString("SAFE_ZONE_GEMINI_API_KEY", "")
+}
+
+func (h *Handler) webhookURLForTest(ctx context.Context, submitted string) string {
+	webhookURL := strings.TrimSpace(submitted)
+	if webhookURL != "" && !strings.Contains(webhookURL, "*") {
+		return webhookURL
+	}
+
+	if h != nil && h.Risk != nil {
+		if db := h.Risk.StoreDB(); db != nil && db.Enabled() {
+			if saved, err := db.GetSystemConfig(ctx, "agent_webhook_url"); err == nil && strings.TrimSpace(saved) != "" {
+				return strings.TrimSpace(saved)
+			}
+		}
+	}
+	return config.SecretString("SAFE_ZONE_AGENT_WEBHOOK_URL", "")
+}
+
 func (h *Handler) TestAIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 
-	aiClient := h.Risk.AIClient()
-	if aiClient == nil || !aiClient.Enabled() {
-		httputil.WriteError(w, http.StatusBadRequest, "AI client is not configured or disabled")
+	var req testAIRequest
+	if !decodeOptionalTestRequest(w, r, &req) {
 		return
 	}
+
+	apiKey := h.geminiKeyForTest(r.Context(), req.GeminiAPIKey)
+	if apiKey == "" {
+		httputil.WriteError(w, http.StatusBadRequest, "Gemini API key is not configured")
+		return
+	}
+	aiClient := ai.NewClient(ai.Config{
+		Provider:      "gemini",
+		GeminiBaseURL: config.String("SAFE_ZONE_GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta"),
+		GeminiAPIKey:  apiKey,
+		GeminiModel:   config.String("SAFE_ZONE_GEMINI_MODEL", "gemini-2.5-flash-lite"),
+		GeminiTimeout: config.DurationMillis("SAFE_ZONE_GEMINI_TIMEOUT_MS", 3*time.Second),
+	})
 
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
@@ -74,22 +139,18 @@ func (h *Handler) TestAlertHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	db := h.Risk.StoreDB()
-	if db == nil || !db.Enabled() {
-		httputil.WriteError(w, http.StatusServiceUnavailable, "database not configured")
+	var testReq testAlertRequest
+	if !decodeOptionalTestRequest(w, r, &testReq) {
 		return
 	}
 
-	webhookURL := ""
-	if customURL, err := db.GetSystemConfig(r.Context(), "agent_webhook_url"); err == nil && customURL != "" {
-		webhookURL = customURL
-	}
-	if webhookURL == "" {
-		webhookURL = config.SecretString("SAFE_ZONE_AGENT_WEBHOOK_URL", "")
-	}
-
+	webhookURL := h.webhookURLForTest(r.Context(), testReq.AgentWebhookURL)
 	if webhookURL == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "No webhook URL configured")
+		return
+	}
+	if _, err := netguard.ValidateURL(webhookURL, false); err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid agent_webhook_url: "+err.Error())
 		return
 	}
 

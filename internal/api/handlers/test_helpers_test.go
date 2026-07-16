@@ -73,6 +73,7 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	mux.HandleFunc("/v1/settings/guest-access", handler.RequireAdminFunc(handler.GuestAccessHandler))
 	mux.HandleFunc("/v1/settings", handler.RequireAdminFunc(handler.SettingsHandler))
 	mux.HandleFunc("/v1/settings/bundle", handler.RequireAdminFunc(handler.SettingsBundleHandler))
+	mux.HandleFunc("/v1/settings/test-ai", handler.RequireAdminFunc(handler.TestAIHandler))
 	mux.HandleFunc("/v1/settings/test-alert", handler.RequireAdminFunc(handler.TestAlertHandler))
 	mux.HandleFunc("/v1/config/analysis", handler.RequireAdminFunc(handler.AnalysisConfigHandler))
 	mux.HandleFunc("/v1/config/analysis/reset", handler.RequireAdminFunc(handler.AnalysisConfigResetHandler))

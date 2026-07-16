@@ -64,8 +64,8 @@ interface Toast {
 
 
 const coreSchema = z.object({
-  geminiKey: z.string().min(1, 'API key is required'),
-  webhookUrl: z.string().url('Must be a valid URL'),
+  geminiKey: z.string(),
+  webhookUrl: z.string().url('Must be a valid URL').or(z.literal('')),
   retentionDays: z.number().min(1, 'Min 1 day').max(90, 'Max 90 days')
 });
 
@@ -96,7 +96,7 @@ export function SettingsPage() {
   const [savingScoring, setSavingScoring] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const { confirm } = useDialog();
-  const { register: registerCore, handleSubmit: handleSubmitCore, formState: { errors: coreErrors }, reset: resetCore, watch: watchCore } = useForm<z.infer<typeof coreSchema>>({ resolver: zodResolver(coreSchema) });
+  const { register: registerCore, handleSubmit: handleSubmitCore, formState: { errors: coreErrors, dirtyFields: coreDirtyFields }, reset: resetCore, watch: watchCore } = useForm<z.infer<typeof coreSchema>>({ resolver: zodResolver(coreSchema) });
   const { register: registerGuest, handleSubmit: handleSubmitGuest, formState: { errors: guestErrors }, reset: resetGuest } = useForm<z.infer<typeof guestSchema>>({ resolver: zodResolver(guestSchema) });
   const { register: registerScoring, handleSubmit: handleSubmitScoring, formState: { errors: scoringErrors }, reset: resetScoring } = useForm<z.infer<typeof scoringSchema>>({ resolver: zodResolver(scoringSchema) });
   const geminiKeyValue = watchCore('geminiKey', '');
@@ -178,9 +178,11 @@ export function SettingsPage() {
   const handleSaveCore = async (data: z.infer<typeof coreSchema>) => {
     setSavingCore(true);
     try {
-      const payload = {
-        telemetry_retention_days: data.retentionDays, gemini_api_key: data.geminiKey.trim(), agent_webhook_url: data.webhookUrl.trim()
+      const payload: Record<string, string | number> = {
+        telemetry_retention_days: data.retentionDays
       };
+      if (coreDirtyFields.geminiKey) payload.gemini_api_key = data.geminiKey.trim();
+      if (coreDirtyFields.webhookUrl) payload.agent_webhook_url = data.webhookUrl.trim();
       const res = await fetch('/v1/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -269,13 +271,17 @@ export function SettingsPage() {
   const handleTestAi = async () => {
     setTestingAi(true);
     try {
-      const res = await fetch('/v1/settings/test-ai', { method: 'POST' });
+      const res = await fetch('/v1/settings/test-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gemini_api_key: geminiKeyValue.trim() })
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Connection failed');
       if (data.status === 'ok') {
         showToast('AI Client connected successfully', 'ok');
       } else {
-        throw new Error(data.message || 'Verification failed');
+        throw new Error(data.error || data.message || 'Verification failed');
       }
     } catch (err: any) {
       showToast(err.message, 'err');
@@ -287,7 +293,11 @@ export function SettingsPage() {
   const handleTestAlert = async () => {
     setTestingAlert(true);
     try {
-      const res = await fetch('/v1/settings/test-alert', { method: 'POST' });
+      const res = await fetch('/v1/settings/test-alert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agent_webhook_url: webhookUrlValue.trim() })
+      });
       const data = await res.json();
       if (!res.ok || data.status !== 'ok') {
         throw new Error(data.error || data.message || 'Delivery failed');
@@ -404,7 +414,7 @@ export function SettingsPage() {
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div>
                   <label className="block font-semibold text-slate-900 text-sm">Gemini API Key</label>
-                  <p className="text-xs text-slate-500 mt-0.5">Used by AI classifier node.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Used by AI classifier node. You can test a new key before saving.</p>
                 </div>
                 <div className="relative">
                   <input 
@@ -445,7 +455,7 @@ export function SettingsPage() {
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div>
                   <label className="block font-semibold text-slate-900 text-sm">Agent Webhook URL</label>
-                  <p className="text-xs text-slate-500 mt-0.5">Endpoint for instant alerts.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Endpoint for instant alerts. You can test a new URL before saving.</p>
                 </div>
                 <div className="relative">
                   <input 
