@@ -294,7 +294,7 @@ export function AnalysisPage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
-          className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[430px] flex flex-col"
+          className="lg:col-span-2 bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative h-[480px] flex flex-col"
         >
           
           <div className="flex justify-between items-start mb-6 z-10">
@@ -516,7 +516,7 @@ export function AnalysisPage() {
           initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
-          className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[430px]"
+          className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm flex flex-col h-[480px]"
         >
           <div className="flex justify-between items-start mb-6">
             <div>
