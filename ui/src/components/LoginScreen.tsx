@@ -40,7 +40,7 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50" data-testid="login-screen">
-      <div className="relative w-full max-w-md mt-4">
+      <div className="relative w-full max-w-md">
         <motion.div 
           initial={{ opacity: 0, y: 30, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}

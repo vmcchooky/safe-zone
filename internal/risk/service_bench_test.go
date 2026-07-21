@@ -21,8 +21,7 @@ func BenchmarkAnalyzeNoRedis(b *testing.B) {
 	ctx := context.Background()
 	client := ClientInfo{}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = service.Analyze(ctx, "secure-login-wallet-example.com", client)
 	}
 }
