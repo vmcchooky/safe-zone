@@ -74,7 +74,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/v1/config/analysis", h.RequireAdminFunc(h.AnalysisConfigHandler))
 	mux.HandleFunc("/v1/config/analysis/reset", h.RequireAdminFunc(h.AnalysisConfigResetHandler))
 
-	// Static Assets & Dashboard
+	// Static Assets & Operator UI
 	if assetsFS != nil {
 		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
 	}
@@ -82,8 +82,9 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 		mux.HandleFunc(apiapp.MountPath, apiapp.RedirectRoot)
 		mux.Handle(apiapp.MountPath+"/", apiapp.NewHandler(appFS))
 	}
-	mux.HandleFunc("/dashboard", h.DashboardHandler)
-	mux.HandleFunc("/dashboard/", h.DashboardHandler)
+	// Preserve existing dashboard bookmarks while making the React UI the only operator interface.
+	mux.HandleFunc("/dashboard", apiapp.RedirectLegacyDashboard)
+	mux.HandleFunc("/dashboard/", apiapp.RedirectLegacyDashboard)
 
 	return mux
 }

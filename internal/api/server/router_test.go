@@ -67,3 +67,20 @@ func TestNewRouterMountsReactAppAtAppPrefix(t *testing.T) {
 		t.Fatalf("unexpected app route body: %q", body)
 	}
 }
+
+func TestNewRouterRedirectsLegacyDashboardToReactApp(t *testing.T) {
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/dashboard?tab=telemetry", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected dashboard redirect 307, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/app/?tab=telemetry" {
+		t.Fatalf("unexpected redirect location %q", got)
+	}
+}

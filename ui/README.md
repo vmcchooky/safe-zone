@@ -7,11 +7,10 @@ because it is a Node.js/React workspace.
 ## UI routing policy
 
 - Primary UI: `/app/*`
-- Legacy compatibility UI: `/dashboard`
+- `/dashboard` redirects to `/app/`
 
-The legacy dashboard remains available during the post-release stability
-period. Deprecation begins only after the React UI has passed its release gate
-and production smoke checks.
+The React UI is the sole operator interface. The redirect keeps existing
+`/dashboard` bookmarks working without exposing the legacy template.
 
 ## Verification
 

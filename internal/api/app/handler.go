@@ -7,11 +7,29 @@ import (
 	"strings"
 )
 
-const MountPath = "/app"
+const (
+	MountPath           = "/app"
+	legacyDashboardPath = "/dashboard"
+)
 
 // RedirectRoot canonicalizes the mount root so relative asset resolution stays stable.
 func RedirectRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != MountPath {
+		http.NotFound(w, r)
+		return
+	}
+
+	target := MountPath + "/"
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	// #nosec G710 -- target always starts with the fixed relative /app/ path; the query cannot change its origin.
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+}
+
+// RedirectLegacyDashboard keeps existing dashboard bookmarks on the React UI.
+func RedirectLegacyDashboard(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != legacyDashboardPath && !strings.HasPrefix(r.URL.Path, legacyDashboardPath+"/") {
 		http.NotFound(w, r)
 		return
 	}

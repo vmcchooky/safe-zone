@@ -143,9 +143,6 @@ export function AppShell({
           <div className="shell-badge">
             <span className="hidden sm:inline">User </span><strong>{session.username}</strong>
           </div>
-          <a className="button-secondary shell-toolbar-button" href="/dashboard" title="Legacy Dashboard">
-            Legacy
-          </a>
           <button className="button-danger shell-toolbar-button" type="button" onClick={() => void logout()} title="Sign Out">
             <LogOut size={16} />
           </button>

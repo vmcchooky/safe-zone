@@ -47,11 +47,10 @@ Defaults:
 - `dns-resolver` listens on `:8081`
 - Redis is disabled unless `SAFE_ZONE_REDIS_ADDR` is set
 - Primary dashboard: <http://localhost:8080/app/>
-- Legacy compatibility dashboard: <http://localhost:8080/dashboard>
+- `/dashboard` redirects to the primary dashboard
 
-`/app/*` is the production UI path. `/dashboard` remains available only during
-the post-release stability period and will be deprecated after the React UI
-passes its release gate and production smoke checks.
+`/app/*` is the production UI path. Existing `/dashboard` bookmarks redirect
+to `/app/` so every operator reaches the React UI.
 
 Optional local Redis:
 

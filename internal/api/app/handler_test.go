@@ -98,3 +98,28 @@ func TestRedirectRootKeepsQueryWithinAppMount(t *testing.T) {
 		t.Fatalf("unexpected redirect location %q", got)
 	}
 }
+
+func TestRedirectLegacyDashboardToApp(t *testing.T) {
+	for _, requestPath := range []string{
+		"/dashboard",
+		"/dashboard/",
+		"/dashboard/legacy?tab=telemetry",
+	} {
+		req := httptest.NewRequest(http.MethodGet, requestPath, nil)
+		rec := httptest.NewRecorder()
+
+		RedirectLegacyDashboard(rec, req)
+
+		if rec.Code != http.StatusTemporaryRedirect {
+			t.Fatalf("%s: expected 307, got %d", requestPath, rec.Code)
+		}
+
+		want := "/app/"
+		if requestPath == "/dashboard/legacy?tab=telemetry" {
+			want += "?tab=telemetry"
+		}
+		if got := rec.Header().Get("Location"); got != want {
+			t.Fatalf("%s: unexpected redirect location %q, want %q", requestPath, got, want)
+		}
+	}
+}

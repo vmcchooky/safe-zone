@@ -47,7 +47,7 @@ if /i "%STACK%"=="production" goto start_prod
 echo Usage: start.bat [dev^|production]
 echo.
 echo   dev         Start local test stack on:
-echo               - Dashboard/API: http://127.0.0.1:8080/dashboard
+echo               - Operator UI:   http://127.0.0.1:8080/app/
 echo               - DNS resolver:  http://127.0.0.1:8081/healthz
 echo   production  Start production Compose stack.
 exit /b 2
@@ -69,7 +69,7 @@ if errorlevel 1 exit /b %ERRORLEVEL%
 echo.
 echo [OK] Safe Zone local stack is ready.
 echo.
-echo Dashboard:  http://127.0.0.1:8080/dashboard
+echo Operator UI: http://127.0.0.1:8080/app/
 echo Core API:   http://127.0.0.1:8080/healthz
 echo Resolver:   http://127.0.0.1:8081/healthz
 echo.

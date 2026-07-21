@@ -1,13 +1,17 @@
 import React, { Suspense, useEffect, useLayoutEffect, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
-import '@lottiefiles/dotlottie-wc';
+import { setWasmUrl } from '@lottiefiles/dotlottie-wc';
 
 import moodyDogLoader from './assets/moody-dog.lottie';
+import dotLottieWasm from '@lottiefiles/dotlottie-web/dotlottie-player.wasm?url';
 import { AppShell } from './components/AppShell';
 import { LoginScreen } from './components/LoginScreen';
 import { useAuth } from './auth/AuthProvider';
 import { useAntiInspect } from './hooks/useAntiInspect';
 import './app.css';
+
+// Keep the renderer local so Moody Dog works when the browser cannot reach a CDN.
+setWasmUrl(dotLottieWasm);
 
 // --- Global Loader Engine ---
 let loaderCount = 0;

@@ -31,10 +31,7 @@ body,
 
 body {
   margin: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.25), rgba(248, 250, 252, 0.25)),
-    url('/app-background.avif?v=1') center/cover no-repeat fixed;
-  background-color: #f3f4f6; /* Fallback */
+  background-color: #f8fafc;
   color: var(--ink);
   overflow-x: hidden;
   user-select: none;

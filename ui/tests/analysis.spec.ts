@@ -1,5 +1,27 @@
 import { test, expect } from '@playwright/test';
 
+test('keeps the plain login card elevated without Moody Dog', async ({ page }) => {
+  await page.goto('/app/');
+
+  await expect(page.getByTestId('login-moody-dog')).toHaveCount(0);
+  await expect(page.locator('body')).toHaveCSS('background-image', 'none');
+
+  const layout = await page.getByTestId('login-screen').evaluate((screen) => {
+    const card = screen.querySelector<HTMLElement>('[data-testid="login-card"]');
+    if (!card) {
+      throw new Error('Login card was not found');
+    }
+
+    const cardRect = card.getBoundingClientRect();
+    return {
+      cardHeight: cardRect.height,
+      offsetFromCentered: cardRect.top - (window.innerHeight - cardRect.height) / 2,
+    };
+  });
+  expect(layout.cardHeight).toBeLessThan(500);
+  expect(layout.offsetFromCentered).toBeLessThanOrEqual(12);
+});
+
 test('has title and can perform an analysis', async ({ page }) => {
   await page.goto('/app/analysis');
   await expect(page).toHaveTitle(/Safe Zone/i);

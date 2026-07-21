@@ -39,37 +39,23 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-slate-50/50">
-      {/* Background decorations */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
+    <div className="min-h-screen flex items-center justify-center p-4 bg-slate-50" data-testid="login-screen">
+      <div className="relative w-full max-w-md mt-4">
         <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1 }}
-          className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] rounded-full bg-sky-100/50 blur-[120px]" 
-        />
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 1, delay: 0.2 }}
-          className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] rounded-full bg-pink-100/50 blur-[120px]" 
-        />
-      </div>
-
-      <motion.div 
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ type: "spring", stiffness: 200, damping: 20 }}
-        className="w-full max-w-md bg-transparent border border-white/60 rounded-[32px] p-8 sm:p-10 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.05)]"
-      >
-        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 mb-6 rounded-full bg-[#e0f2fe] text-sky-600 text-xs font-bold tracking-widest uppercase shadow-[inset_0_0_0_1px_rgba(14,165,233,0.1)]">
+          initial={{ opacity: 0, y: 30, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: "spring", stiffness: 200, damping: 20 }}
+          className="bg-white/90 border border-slate-200 rounded-[32px] p-8 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.12)]"
+          data-testid="login-card"
+        >
+        <div className="inline-flex items-center gap-1.5 px-3 py-1.5 mb-5 rounded-full bg-[#e0f2fe] text-sky-600 text-xs font-bold tracking-widest uppercase shadow-[inset_0_0_0_1px_rgba(14,165,233,0.1)]">
           <Shield size={14} />
           Safe Zone DNS
         </div>
         
-        <h1 className="text-4xl font-semibold text-slate-900 mb-8 tracking-tight">Operator sign-in</h1>
+        <h1 className="text-4xl font-semibold text-slate-900 mb-6 tracking-tight">Operator sign-in</h1>
 
-        <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+        <form className="space-y-4" onSubmit={handleSubmit(onSubmit)}>
           <div className="space-y-2">
             <label htmlFor="auth-username" className="text-sm font-medium text-slate-600 pl-1">Username</label>
             <input
@@ -119,7 +105,8 @@ export function LoginScreen({ initialError }: { initialError: string | null }) {
             </motion.div>
           )}
         </AnimatePresence>
-      </motion.div>
+        </motion.div>
+      </div>
     </div>
   );
 }
