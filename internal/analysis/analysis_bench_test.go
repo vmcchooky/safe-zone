@@ -8,14 +8,14 @@ import (
 
 func BenchmarkAnalyzeSafeDomain(b *testing.B) {
 	analyzer := NewAnalyzer(config.DefaultAnalysisConfig())
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = analyzer.Analyze("example.com")
 	}
 }
 
 func BenchmarkAnalyzeSuspiciousDomain(b *testing.B) {
 	analyzer := NewAnalyzer(config.DefaultAnalysisConfig())
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = analyzer.Analyze("secure-login-wallet-example.com")
 	}
 }
