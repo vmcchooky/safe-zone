@@ -1,0 +1,50 @@
+=== DATASET ANALYSIS REPORT ===
+Total entries across files: 7508
+Total unique domains: 6456
+Duplicates/Overlaps: 1052
+
+--- Dataset Sizes ---
+ecommerce_and_social_media: 287
+tinnhiemmang: 5873
+trangvang: 273
+vietnam_gov_and_banks: 403
+vietnam_political_system: 512
+wallets_and_telecom: 160
+
+--- Category Distribution (Top 15) ---
+Unknown: 6788
+Sàn Thương mại điện tử: 208
+Ví điện tử & Cổng thanh toán: 127
+Mạng xã hội & Chat: 51
+Vận Tải Đường Hàng Không: 39
+Tổ chức & Nhà mạng Viễn thông: 33
+Nước - Thầu Cấp, Thoát Nước: 32
+Khuôn Mẫu - Linh Phụ Kiện Khuôn Mẫu: 31
+ánh Sáng - Đèn Sân Khấu Và Thiết Bị Sân Khấu (Máy Khói, Máy Phun Lửa,.): 29
+Đơn vị Vận chuyển & Logistics: 28
+Xuất Nhập Khẩu - Các Công Ty Xuất Nhập Khẩu: 28
+Vận Tải Đa Phương Thức: 28
+Dệt Kim - Sản Phẩm: 16
+Bếp Gas - Linh, Phụ Kiện Bếp Gas: 15
+An Toàn Sông Nước - Phao, áo phao,..: 14
+
+--- Overlap Breakdown ---
+tinnhiemmang & vietnam_gov_and_banks & vietnam_political_system: 275 domains
+tinnhiemmang & vietnam_political_system: 159 domains
+ecommerce_and_social_media & tinnhiemmang: 103 domains
+ecommerce_and_social_media & tinnhiemmang & wallets_and_telecom: 70 domains
+vietnam_gov_and_banks & vietnam_political_system: 49 domains
+tinnhiemmang & vietnam_gov_and_banks & wallets_and_telecom: 14 domains
+tinnhiemmang & vietnam_gov_and_banks: 4 domains
+vietnam_gov_and_banks & wallets_and_telecom: 4 domains
+ecommerce_and_social_media & tinnhiemmang & vietnam_gov_and_banks & vietnam_political_system & wallets_and_telecom: 2 domains
+ecommerce_and_social_media & tinnhiemmang & trangvang: 2 domains
+ecommerce_and_social_media & wallets_and_telecom: 2 domains
+tinnhiemmang & wallets_and_telecom: 1 domains
+
+--- Metadata Completeness ---
+Available fields: category_url, domain, category_type, detail_url, cert_level, website_url, category, type, org_type, certified_date, owner
+Missing fields count across all entries:
+  category_type: 7061 (94.0%)
+  owner: 273 (3.6%)
+  cert_level: 273 (3.6%)

@@ -1,0 +1,30 @@
+{
+  "source": "https://tinnhiemmang.vn/ & Master Registries of E-Wallets & Telecom Operators",
+  "scraped_at": "2026-07-25T15:45:21.872610+00:00",
+  "duration_seconds": 5.27,
+  "total_unique_domains": 175,
+  "category_breakdown": {
+    "Ví điện tử & Cổng thanh toán": 138,
+    "Tổ chức & Nhà mạng Viễn thông": 37
+  },
+  "top_tlds": {
+    "vn": 92,
+    "com": 30,
+    "com.vn": 26,
+    "gov.vn": 7,
+    "net": 4,
+    "momo.vn": 3,
+    "asia": 2,
+    "org": 2,
+    "pro": 1,
+    "5ky.vn": 1,
+    "fpt.vn": 1,
+    "vnpay.vn": 1,
+    "zalopay.vn": 1,
+    "mobifone.vn": 1,
+    "vnpt.vn": 1
+  },
+  "error_count": 0,
+  "total_domains": 175,
+  "last_updated": "2026-07-26T15:31:32.908287"
+}

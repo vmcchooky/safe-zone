@@ -1,0 +1,24 @@
+{
+  "source": "https://tinnhiemmang.vn/ & Official Government & Bank Registries",
+  "scraped_at": "2026-07-25T15:24:00.067156+00:00",
+  "duration_seconds": 9.84,
+  "total_unique_domains": 676,
+  "gov_domains_count": 599,
+  "bank_domains_count": 77,
+  "other_official_count": 0,
+  "top_tlds": {
+    "gov.vn": 466,
+    "edu.vn": 83,
+    "com.vn": 56,
+    "vn": 50,
+    "org.vn": 9,
+    "com": 7,
+    "varans.vn": 2,
+    "net": 1,
+    "vietinbank.vn": 1,
+    "edu": 1
+  },
+  "error_count": 0,
+  "total_domains": 676,
+  "last_updated": "2026-07-26T15:31:31.869961"
+}
