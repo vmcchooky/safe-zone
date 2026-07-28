@@ -39,6 +39,9 @@ blob-report/
 *.bak
 .idea/
 .vscode/
+*.bak
+.idea/
+.vscode/
 coverage.txt
 node_modules/
 ui/.vite/
@@ -58,3 +61,8 @@ ui/coverage/
 !internal/api/app/dist/
 internal/api/app/dist/*
 !internal/api/app/dist/.keep
+
+# Ignore datasets
+data/archive/
+data/whitelist/
+data/blacklist/
