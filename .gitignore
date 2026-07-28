@@ -36,6 +36,8 @@ blob-report/
 
 # Scripts and IDEs
 *.py
+*.pyc
+__pycache__/
 *.bak
 .idea/
 .vscode/
