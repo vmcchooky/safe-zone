@@ -38,6 +38,7 @@ blob-report/
 *.py
 *.pyc
 __pycache__/
+!scripts/build_domain_dataset.py
 *.bak
 .idea/
 .vscode/
@@ -68,3 +69,4 @@ internal/api/app/dist/*
 data/archive/
 data/whitelist/
 data/blacklist/
+ml/data/processed/
