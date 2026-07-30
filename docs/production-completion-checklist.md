@@ -1,8 +1,8 @@
 # Safe Zone Production Completion Checklist
 
-Date: 2026-05-21
+Date: 2026-07-30
 
-This file is the single operational checklist for moving Safe Zone from the current repository state to production-ready, and then to "perfect production". It intentionally does not merge detailed design/spec documents. Those remain in `docs/specs/` as technical references.
+This file is the single operational/release checklist for moving Safe Zone from the current repository state to production-ready, and then to "perfect production". For AI Engine, the only detailed technical source is `docs/specs/safe-zone-ai-plan.md`; all AI release evidence and completion status are tracked here.
 
 > **Project status:** Safe Zone remains an actively developed open-source, nonprofit project. This checklist tracks repository capabilities and release-readiness work; it is not a claim that the overall system is complete or production-ready for every environment.
 
@@ -29,26 +29,26 @@ These are already present and should be treated as the project foundation.
 - `[x]` Dockerfile and Docker Compose exist.
 - `[x]` Production edge foundation exists: Caddy, `production-edge` Compose profile, production Compose override, DuckDNS update script, production cron example.
 - `[x]` OpenAPI file exists at `docs/openapi/safe-zone.yaml`.
-- `[x]` Runbooks exist for production edge, Redis outage, AI provider outage, feed staleness, and certificate renewal.
+- `[x]` Runbooks exist for production edge, Redis outage, feed staleness, and certificate renewal; AI/ML/Agent incident response is consolidated in `docs/specs/safe-zone-ai-plan.md`.
 - `[x]` Local benchmarks exist for core analysis paths.
 - `[x]` CI/build validation exists through GitHub Actions.
 
 ## 1. Documentation Source Of Truth
 
-Goal: one operator-facing checklist, with detailed design documents kept separate.
+Goal: one operator-facing checklist and one canonical AI Engine technical document, without parallel plans that drift.
 
-- `[x]` Create this consolidated checklist as the main production completion file.
-- `[x]` Keep historical SRS documents as references only.
-- `[x]` Keep detailed design/spec docs in `docs/specs/`.
-- `[x]` Reconcile stale task files where checkboxes are still open even though code appears implemented.
-- `[x]` Add short Architecture Decision Records for important decisions: fail-open behavior, single-VPS baseline, Redis vs embedded DB, Caddy edge, AI provider strategy.
+- `[x]` Use this file as the main production completion/release checklist.
+- `[x]` Use `docs/specs/safe-zone-ai-plan.md` as the only AI Engine architecture, implementation and deployment guide.
+- `[x]` Consolidate the former Custom ML plan, local provider spec, Agent workflow spec, provider ADR and provider-outage runbook into those two files.
+- `[x]` Keep historical non-AI SRS/general specs as references only when they still add distinct context.
+- `[x]` Keep non-AI operational decisions in `docs/adr/` when they affect future maintainers or production risk.
 
-Steps:
+Rules:
 
-1. Use this file for roadmap tracking.
-2. Keep `docs/specs/` for technical implementation details.
-3. Mark old checklists as superseded or sync their checkboxes with code reality.
-4. Keep operational decisions in `docs/adr/` when they affect future maintainers or production risk.
+1. Use this file for status, release gates, environment evidence and completion tracking.
+2. Use `docs/specs/safe-zone-ai-plan.md` for every AI/ML/LLM/Agent contract and procedure.
+3. General README/deployment/privacy/threat-model/OPEX docs may summarize AI, but must link to the canonical AI plan and must not define conflicting defaults.
+4. Do not create another AI plan, AI task checklist, provider ADR or AI outage runbook; edit the canonical pair instead.
 
 ## 2. Public Edge And Network Safety
 
@@ -190,7 +190,7 @@ Goal: prove the system meets the target environment, not only local benchmarks.
 
 Benchmark procedure:
 
-1. Deploy the exact release candidate to the target VPS class with Redis enabled, SQLite persistence enabled, TLS/WHOIS enrichment enabled, and the intended AI mode explicitly configured (`SAFE_ZONE_AI_PROVIDER=none`, `gemini`, or `ollama`).
+1. Deploy the exact release candidate to the target VPS class with Redis enabled, SQLite persistence enabled, TLS/WHOIS enrichment enabled, and the intended profiles explicitly configured: LLM provider (`none`, `gemini`, `ollama`, or `hybrid`), Custom ML mode (`disabled`, `shadow`, or `enforce` when implemented), and Agent Engine on/off.
 2. Run the formal API benchmark from the same network segment as the production edge:
 
    ```sh
@@ -262,8 +262,8 @@ Steps:
 Goal: make the product operationally useful, not just technically deployable.
 
 - `[x]` Admin dashboard exists with analysis, telemetry, overrides, system status, agent panel, and client/group controls.
-- `[x]` Agent workflow exists for audit, feed sync, alerting, and whitelist update.
-- `[x]` Dashboard and agent task checklists in `docs/specs/` were reviewed; remaining open items are manual QA or environment smoke checks, not stale implementation tasks.
+- `[x]` Agent workflow exists for audit, feed sync, OSINT audit, alerting, and whitelist update.
+- `[x]` Agent architecture/tasks/config are consolidated in `docs/specs/safe-zone-ai-plan.md`; no separate Agent task checklist remains.
 - `[x]` Add manual QA checklist for dashboard workflows on desktop and mobile.
 - `[ ]` Add release notes or changelog process.
 - `[x]` Add operator onboarding guide: first login, first feed sync, first override, first backup, first restore.
@@ -277,6 +277,73 @@ Steps:
 2. Run manual UI tests for dashboard tabs, auth, overrides, group policy, telemetry, and agent trigger.
 3. Document the first-day operator workflow.
 4. Decide whether URL/path analysis belongs in v1 production or a later release.
+
+## 10A. AI Engine Completion And Release Gates
+
+Goal: release only the explicitly selected AI profile, while preserving deterministic fail-open behavior.
+
+### Release profile declaration
+
+Every staging/production evidence bundle must declare one profile:
+
+| Profile | Required configuration | Scope |
+|---|---|---|
+| Deterministic | `SAFE_ZONE_AI_PROVIDER=none`, `SAFE_ZONE_ML_MODE=disabled`, Agent optional/off | Base production MVP; no LLM/Custom ML dependency. |
+| LLM-assisted | Provider `gemini`, `ollama`, or `hybrid`; ML disabled unless separately declared | Optional ambiguous-domain refinement. |
+| Agent-assisted | `SAFE_ZONE_AGENT_ENABLED=true` plus explicit per-task settings | Background audit/feed/OSINT/alert/whitelist automation. |
+| Custom ML shadow | `SAFE_ZONE_ML_MODE=shadow` with approved bundle | Prediction/evidence only; no verdict change. |
+| Custom ML enforce | `SAFE_ZONE_ML_MODE=enforce` with approved bundle | Malicious-only promotion at calibrated policy threshold. |
+
+Profiles can be combined, but every enabled component adds its corresponding gates below.
+
+### Existing LLM provider gates
+
+- `[x]` Gemini/Ollama unified provider manager and `none|gemini|ollama|hybrid` routing exist.
+- `[x]` Provider timeout/error/invalid JSON paths preserve deterministic result.
+- `[x]` Hybrid tests prove Ollama-first and Gemini fallback behavior.
+- `[x]` Risk merge only promotes malicious and does not downgrade suspicious to safe.
+- `[!]` Record a real-environment provider smoke for the selected release mode.
+- `[!]` Record quota/terms/privacy approval for Gemini or local model/RAM/source approval for Ollama.
+- `[!]` Run AI outage drill and prove switching to `none`/approved fallback keeps analysis available.
+- `[ ]` Reconcile README/index Gemini-only summary with all four provider modes and canonical plan link.
+
+### Agent Engine gates
+
+- `[x]` Engine implements timeout, per-task single flight, panic recovery, status and admin trigger.
+- `[x]` Current task catalog is documented: `audit`, `feedsync`, `osint-audit`, `alert`, `whitelist_update`.
+- `[!]` Set `SAFE_ZONE_AGENT_WHITELIST_ENABLED=false` in first production environment until controlled import/backup/rollback drill passes.
+- `[ ]` Decide/fix whether admin manual trigger may execute a task disabled for scheduling; record expected API tests.
+- `[!]` Run live Agent audit smoke and record resulting reviewed/auto-block event and cache invalidation.
+- `[!]` Run controlled feed partial-failure/parser-drift drill.
+- `[!]` Run alert test for every enabled channel without leaking secrets.
+- `[!]` Run whitelist update on controlled fixture, measure memory/time, verify Bloom reload and restore prior DB.
+- `[!]` Verify Agent initial due-run behavior is safe for all tasks enabled in production.
+
+### Custom ML development gates
+
+- `[x]` Local dataset snapshot and revised end-to-end plan are documented.
+- `[ ]` Phase 0: canonicalization/feature contract and exact `leaves` compatibility spike pass.
+- `[ ]` Phase 1: source policy, conflict quarantine, ML-candidate cohort and group/source/temporal splits pass.
+- `[ ]` Phase 2: sparse training, baselines, LightGBM, calibration and candidate-cohort evaluation pass approved false-positive budget.
+- `[ ]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
+- `[ ]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache and metrics pass tests/race/build.
+- `[ ]` Phase 5: private artifact provisioning, read-only mounts for both services, shadow evidence, canary and rollback pass.
+- `[ ]` Product owner approves threshold/trade-off; security owner approves data/model storage, terms, retention and rollout scope.
+
+### AI/ML release evidence
+
+Archive with the release:
+
+- selected provider/ML/Agent modes with secrets redacted;
+- code/image Git SHA;
+- provider smoke/outage results when LLM enabled;
+- Agent status/task/drill results when Agent enabled;
+- model bundle revision/checksum/policy/report when Custom ML enabled;
+- Python–Go parity report and candidate-cohort metrics for ML release;
+- target VPS latency/RSS/load results for every selected profile;
+- rollback commands and last-known-good provider/model revision.
+
+An optional component that is disabled does not block base deterministic MVP. A component that is enabled without its gates/evidence blocks that release profile.
 
 ## 11. Production Release Process
 
@@ -333,10 +400,10 @@ Steps:
 3. Make operations real: structured logs, request IDs, alerts, offsite backup, restore drill.
 4. Prove performance: run cache-hit and cache-miss benchmarks on target VPS.
 5. Write threat model and close release blockers.
-6. Reconcile stale task files so docs match code.
+6. Declare the AI/ML/Agent release profile and close every enabled-component gate in section 10A.
 7. Run staging deployment and smoke tests.
 8. Release production MVP.
-9. Iterate toward perfect production: monitoring dashboards, DR drills, privacy docs, and HA decision.
+9. Iterate toward perfect production: Custom ML phases, monitoring dashboards, DR drills, privacy docs, and HA decision.
 
 ## Production MVP Exit Criteria
 
@@ -354,3 +421,4 @@ Safe Zone can be called production MVP when all of these are true:
 - `[ ]` Performance target is proven on the target VPS.
 - `[~]` Threat model draft exists and release-blocking risks are identified; blocker closure is still required.
 - `[~]` Staging deploy and production smoke tests are scripted; pass records from the target environment are still needed.
+- `[~]` AI release profile is explicit. Deterministic/LLM/Agent/Custom ML components are enabled only when their section 10A gates and evidence are complete.

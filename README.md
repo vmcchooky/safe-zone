@@ -119,18 +119,11 @@ If you start the Docker dev stack, DoT is also exposed on loopback at:
 tls://127.0.0.1:1853
 ```
 
-## Local AI
+## AI Engine
 
-Safe Zone can optionally refine ambiguous risk results using Gemini 2.5 Flash Lite.
+Safe Zone keeps deterministic analysis available and can optionally refine ambiguous results through `none`, `gemini`, `ollama`, or Ollama-first `hybrid` provider modes. The Custom Domain ML classifier is a separate, planned local scoring layer with `disabled`, `shadow`, and controlled `enforce` rollout modes.
 
-Defaults:
-
-- `SAFE_ZONE_GEMINI_BASE_URL`: `https://generativelanguage.googleapis.com/v1beta`
-- `SAFE_ZONE_GEMINI_API_KEY`: empty, so AI is disabled unless explicitly configured
-- `SAFE_ZONE_GEMINI_MODEL`: `gemini-2.5-flash-lite`
-- `SAFE_ZONE_GEMINI_TIMEOUT_MS`: `3000`
-
-The AI path is fail-open: if Gemini is unavailable or returns invalid JSON, analysis continues with lexical and threat-feed results. OSINT warning-page checks use deterministic attacker/victim context rules first and ask the configured AI provider only when the role is unclear.
+AI/ML/provider failures remain fail-open unless an operator explicitly makes a validated model bundle a startup requirement. For the complete architecture, configuration matrix, data/ML lifecycle, Agent workflow, deployment procedure and incident response, see [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md). Release status and required evidence are tracked only in [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
 
 ## Dynamic Analysis Configuration
 
@@ -183,17 +176,9 @@ In local mode, missing admin secrets still fall back to generated temporary valu
 
 ## Agent workflow
 
-`core-api` can optionally start the internal agent engine for audit, multi-source feed sync, webhook alerts, and whitelist refresh tasks.
+`core-api` can optionally start the internal Agent Engine for audit, multi-source feed sync, OSINT audit, multi-channel alerts and whitelist refresh. The dashboard exposes authenticated status and admin-only triggers.
 
-Enable it through `.env`:
-
-```env
-SAFE_ZONE_AGENT_ENABLED=true
-SAFE_ZONE_AGENT_FEED_PRESET=production-free
-SAFE_ZONE_AGENT_WEBHOOK_URL=
-```
-
-The dashboard System tab exposes `/v1/agent/status` and manual trigger buttons for registered tasks.
+Do not enable Agent production schedules from a minimal example alone: due tasks run immediately at startup, and whitelist refresh currently defaults enabled when the Agent Engine is enabled. Follow the per-task configuration, smoke drills and rollback procedure in [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md).
 
 ## Logging and alerts
 

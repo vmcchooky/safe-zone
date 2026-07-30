@@ -2,7 +2,7 @@
 
 Hệ thống Safe Zone hiện đã hoàn thành hai cấu phần cốt lõi nâng cao:
 1. **SQLite Integration (Telemetry & Local Overrides)** — Lưu trữ dữ liệu lâu dài và quản lý domain tùy chỉnh.
-2. **AI Agent Workflow (Autonomous Engine & Tasks)** — Hệ thống agent tự động tuần tra, đồng bộ tri thức bảo mật (threat feeds), làm giàu thông tin (WHOIS + TLS) kết hợp với AI phân tích rủi ro, và cảnh báo qua Webhooks.
+2. **AI Engine & Agent Workflow** — Kiến trúc, provider, task catalog, cấu hình và vận hành đã được hợp nhất tại [`../safe-zone-ai-plan.md`](../safe-zone-ai-plan.md).
 
 ---
 
@@ -29,33 +29,9 @@ Safe Zone giờ đây có khả năng **lưu trữ dữ liệu lâu dài** (pers
 
 ---
 
-## 2. AI Agent Workflow (Autonomous Engine & Tasks)
+## 2. AI Engine & Agent Workflow
 
-Hệ thống điều phối tác vụ tự động (Agent Engine) giúp Safe Zone vận hành độc lập, tự động phân tích rủi ro chuyên sâu và tương tác với các hệ thống bên ngoài.
-
-### Các thành phần chính đã phát triển:
-- **Engine điều phối (`internal/agent/engine.go`)**:
-  - Trực tiếp lập lịch, kích hoạt tác vụ theo chu kỳ hoặc xử lý tín hiệu kích hoạt thủ công (`Trigger`).
-  - Theo dõi trạng thái chi tiết của từng task (số lần chạy thành công, số lần lỗi, thời gian chạy gần nhất, lỗi chi tiết).
-  - Tự động phục hồi và chống tắc nghẽn (mỗi task đều có cấu hình Timeout riêng và chạy trong một context độc lập).
-  
-- **Tác vụ tuần tra & làm giàu thông tin (`internal/agent/audit.go` - `AuditTask`)**:
-  - Định kỳ quét các truy vấn đáng ngờ hoặc chưa phân loại từ telemetry.
-  - Tự động phân tích sâu: Thu thập thông tin đăng ký tên miền (**WHOIS**), kiểm tra cấu hình chứng chỉ số (**TLS Certificate**).
-  - Gửi dữ liệu thu thập được đến **AI Service** (Gemini) để đánh giá và chấm điểm rủi ro tự động.
-  - Nếu AI xác định domain là nguy hiểm (`MALICIOUS`) với độ tin cậy cao, Agent tự động thêm vào danh sách cấm cục bộ (`Local Override Block`).
- 
-- **Tác vụ đồng bộ dữ liệu đe dọa (`internal/agent/feedsync.go` - `FeedSyncTask`)**:
-  - Tự động tải danh sách IP/domain độc hại (threat intelligence feeds) từ các nguồn từ xa (HTTP/HTTPS) hoặc các tập tin cấu hình cục bộ.
-  - Phân tích cú pháp, lọc trùng lặp và đồng bộ trực tiếp vào Redis Threat Cache để hệ thống DNS chặn tức thời.
-
-- **Tác vụ cảnh báo bất đồng bộ (`internal/agent/alert.go` - `AlertTask`)**:
-  - Phát hiện các sự kiện bảo mật nghiêm trọng (ví dụ: phát hiện mã độc, domain bị block bởi AI hoặc do admin chặn).
-  - Tự động định dạng tin nhắn đẹp mắt (Rich Block Format dành cho Discord / Slack) và đẩy cảnh báo tức thời qua Webhook.
-
-### API Endpoints mới của Agent:
-- `GET /v1/agent/status` — Trả về trạng thái chi tiết của Agent Engine và các Task đang quản lý (Enabled, State, Interval, Last Run, Next Run, Error, Run/Error Count).
-- `POST /v1/agent/trigger` — Kích hoạt khẩn cấp một tác vụ thủ công bằng tên tác vụ (`{"task": "telemetry_audit"}`).
+Toàn bộ kiến trúc deterministic/ML/LLM, task catalog thực tế, API auth, cấu hình, smoke test và incident response nằm tại [`../safe-zone-ai-plan.md`](../safe-zone-ai-plan.md). Walkthrough này không định nghĩa lại default hoặc contract AI/Agent để tránh drift.
 
 ---
 
@@ -100,19 +76,8 @@ Các cấu hình mới được bổ sung vào hệ thống thông qua tập tin
 SAFE_ZONE_SQLITE_PATH=./data/safe-zone.db
 SAFE_ZONE_TELEMETRY_RETENTION_DAYS=30
 
-# --- AI Agent Workflow ---
-SAFE_ZONE_AGENT_ENABLED=true                # Bật/tắt toàn bộ hệ thống Agent
-SAFE_ZONE_AGENT_AUDIT_INTERVAL_SECONDS=3600 # Tần suất chạy tác vụ tuần tra làm giàu thông tin
-SAFE_ZONE_AGENT_AUDIT_TIMEOUT_SECONDS=300
-SAFE_ZONE_AGENT_AUDIT_MAX_PER_CYCLE=10      # Số lượng domain tối đa phân tích mỗi chu kỳ
-
-SAFE_ZONE_AGENT_FEED_INTERVAL_SECONDS=3600  # Tần suất đồng bộ threat feeds
-SAFE_ZONE_AGENT_FEED_TIMEOUT_SECONDS=300
-SAFE_ZONE_AGENT_FEED_SOURCES=https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
-
-SAFE_ZONE_AGENT_ALERT_INTERVAL_SECONDS=60   # Tần suất quét và gửi cảnh báo
-SAFE_ZONE_AGENT_ALERT_TIMEOUT_SECONDS=30
-SAFE_ZONE_AGENT_WEBHOOK_URL=https://discord.com/api/webhooks/...  # Địa chỉ nhận thông báo
+# AI/ML/Agent variables are intentionally not duplicated here.
+# See docs/specs/safe-zone-ai-plan.md before enabling any task.
 
 # --- Whitelist Auto-Update & Optimization ---
 SAFE_ZONE_AGENT_WHITELIST_ENABLED=true         # Bật/tắt tác vụ cập nhật Whitelist
