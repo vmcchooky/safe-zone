@@ -13,3 +13,10 @@
 ## 3. Animations & Interactions
 - **Micro-interactions**: Ensure interactive elements (buttons, rows, dropdowns) have snappy hover states and transitions.
 - **Data Rendering**: Use layout animations (like Framer Motion or Tailwind transitions) to ensure data appears smoothly (fade-in, slide-in) without jarring layout shifts (CLS).
+
+## 4. Scripts Organization & Naming Conventions
+- **Directory Structure**: The `scripts` directory must be categorized logically. Subdirectories should be named in lowercase, using plural nouns (e.g., `scrapers`, `verifiers`, `ops`, `generators`, `data_processing`). 
+- **File Naming**:
+  - Python Scripts: Use `snake_case` (e.g., `scrape_vietnam_blacklist.py`).
+  - Shell/PowerShell Scripts: Use `kebab-case` (e.g., `safe-zone.sh`, `ui.ps1`).
+- **Location**: Scripts must be placed in their respective subdirectories based on their function. Do not place new scripts directly in the root of the `scripts/` folder.
