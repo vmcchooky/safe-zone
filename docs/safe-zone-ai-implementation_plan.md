@@ -1,26 +1,44 @@
 # Custom Domain Threat Detection AI Engine cho Safe Zone
 
+> **Revision 2** — Cập nhật theo review của GumLoop (Claude Opus 5), đã xác minh lại toàn bộ codebase.
+
 ## Bối cảnh & Mục tiêu
 
-Safe Zone hiện dùng **Gemini API / Ollama** như một lớp AI bổ sung (secondary refinement) để đánh giá các domain có kết quả phân tích mơ hồ (`SUSPICIOUS`). Tuy nhiên, cách tiếp cận này có hạn chế:
+Safe Zone hiện dùng **Gemini API / Ollama** như một lớp AI bổ sung (secondary refinement) để đánh giá các domain có kết quả phân tích mơ hồ (`SUSPICIOUS`). Cách tiếp cận này có hạn chế:
 
 - **Latency cao** (300ms – 2000ms mỗi request qua API).
 - **Rate-limit** (Gemini Free Tier: 15 req/phút).
 - **Không chuyên biệt** cho bài toán phát hiện domain độc hại.
 - **Phụ thuộc bên ngoài** (Internet, API Key, nhà cung cấp).
 
-### Mục tiêu mới
+### Mục tiêu
 
-Huấn luyện một **Custom ML Model chuyên biệt cho phân tích Domain** sử dụng **CatBoost** kết hợp **Feature Engineering + Character N-gram Embedding**, export sang **ONNX** và nhúng trực tiếp vào Go backend.
+Huấn luyện một **Custom ML Model chuyên biệt cho phân tích Domain** sử dụng **LightGBM** kết hợp **Feature Engineering + Character N-gram Embedding**, và tích hợp trực tiếp vào Go backend qua **`github.com/dmitryikh/leaves`** (Pure Go, không cần CGO).
 
 | Chỉ tiêu | Gemini API (hiện tại) | Custom ML Model (mục tiêu) |
 | :--- | :--- | :--- |
 | Latency | 300ms – 2,000ms | **< 3ms** |
 | Throughput | 15 req/phút (free) | **> 10,000 req/giây** |
 | Chi phí API | Tốn tiền khi vượt quota | **0đ** |
-| Kích thước model | N/A (cloud) | **~5 – 20 MB** trên RAM |
+| Kích thước model | N/A (cloud) | **~1 – 10 MB** trên disk |
 | Offline | ❌ Cần Internet | ✅ 100% Offline |
-| Chuyên biệt domain | ❌ Model đa dụng | ✅ Train riêng cho domain detection |
+| CGO | N/A | ✅ **CGO_ENABLED=0** compatible |
+| Docker Alpine | N/A | ✅ Tương thích hoàn toàn |
+
+---
+
+## Các thay đổi so với Plan v1 (Theo review GumLoop)
+
+> [!IMPORTANT]
+> **5 lỗi chặn (blocker) đã được khắc phục:**
+
+| # | Lỗi Plan v1 | Khắc phục Plan v2 |
+| :--- | :--- | :--- |
+| 1 | **CatBoost + `cat_features` không export được ONNX** (CatBoost issue #863) | Chuyển sang **LightGBM** — hỗ trợ export text/JSON format tốt, và `leaves` Go lib đọc native |
+| 2 | **`onnxruntime_go` cần CGO + glibc**, trong khi Dockerfile dùng `CGO_ENABLED=0` + Alpine (musl) | Dùng **`github.com/dmitryikh/leaves`** — Pure Go, đọc LightGBM model text format, không cần CGO |
+| 3 | **Viết lại data pipeline từ đầu** khi repo đã có `scripts/build_domain_dataset.py` | **Tái sử dụng** script có sẵn (314 dòng, hỗ trợ 10+ data sources, auto-balance 1:1, dedup, provenance tracking) |
+| 4 | **Nhét ML Model vào `internal/ai/` + interface `ai.Provider`** (thiết kế cho LLM text-prompting) | Đặt ML Model vào **`internal/analysis/`** — đóng vai trò Advanced Heuristic Classifier, gọi **trước** LLM |
+| 5 | **Chưa verify Docker build** với CGO_ENABLED=0 | Thêm Docker build verification vào Verification Plan |
 
 ---
 
@@ -30,139 +48,193 @@ Huấn luyện một **Custom ML Model chuyên biệt cho phân tích Domain** s
 graph TD
     A["DNS Query / Domain Check Request"] --> B["Cache Lookup (Redis)"]
     B -->|Cache Hit| C["Trả kết quả từ Cache"]
-    B -->|Cache Miss| D["Threat Feed Lookup"]
-    D --> E["Lexical Analysis (Heuristics)"]
-    E -->|SAFE or MALICIOUS| F["Trả kết quả deterministic"]
-    E -->|SUSPICIOUS| G["🆕 Tầng 1: Custom ML Model (ONNX)\nCatBoost - Inference < 3ms"]
-    G -->|High Confidence ≥ 0.85| H["Trả kết quả từ ML Model"]
-    G -->|Low Confidence < 0.85| I["Tầng 2: Gemini / Ollama (LLM)\nDeep Reasoning - 300ms+"]
-    I --> J["Trả kết quả kèm giải thích chi tiết"]
+    B -->|Cache Miss| D["Whitelist / Override Check"]
+    D -->|Match| C
+    D -->|No Match| E["Adblock Trie + Threat Feed Lookup"]
+    E -->|Matched Threat| F["VerdictMalicious (score 100)"]
+    E -->|No Match| G["Heuristic Analysis (Lexical + Brand Spoofing + DGA Entropy)"]
+    G -->|SAFE or MALICIOUS| H["Trả kết quả deterministic"]
+    G -->|SUSPICIOUS| I["🆕 Tầng 1: Custom ML Classifier\nLightGBM via leaves (< 3ms)"]
+    I -->|High Confidence ≥ 0.85| J["Trả kết quả từ ML Model"]
+    I -->|Low Confidence < 0.85| K["Tầng 2: Gemini / Ollama (LLM)\nDeep Reasoning (300ms+)"]
+    K --> L["Trả kết quả kèm giải thích"]
 ```
 
-### Vị trí tích hợp trong codebase hiện tại
+### Vị trí tích hợp trong codebase (mapping chính xác vào pipeline hiện tại)
 
-Dựa trên luồng xử lý hiện tại trong [service.go](file:///d:/Quorix/services/safe-zone/internal/risk/service.go):
+Pipeline hiện tại trong [service.go](file:///d:/Quorix/services/safe-zone/internal/risk/service.go) method `analyze()`:
 
 ```
-Cache → Threat Feed → Lexical Analysis → [AI Refinement] → OSINT → Cache Save
+1. Domain Normalization
+2. Client Group & Admin Overrides  →  early return nếu match
+3. Local Whitelist Check            →  early return nếu match
+4. Adblock Trie Matching            →  early return nếu match
+5. Threat Feed Match                →  early return nếu match
+6. Heuristic & Brand Analysis       →  Lexical rules + Brand spoofing + DGA entropy
+7. 🆕 ML Classifier (chèn VÀO ĐÂY) →  Chỉ khi verdict == SUSPICIOUS
+8. AI Refinement (Gemini/Ollama)    →  Chỉ khi ML confidence < threshold
+9. OSINT Correlation
+10. Redis Cache Save
 ```
 
-Custom ML Model sẽ được chèn vào **trước** bước gọi Gemini/Ollama trong hàm `refineWithAI()`. Nếu ML Model trả về kết quả với confidence cao (≥ 0.85), sẽ **bỏ qua** việc gọi LLM API, tiết kiệm latency và chi phí.
+> [!NOTE]
+> ML Classifier được chèn **giữa bước 6 và bước 8** (thay thế vai trò "first responder" của Gemini/Ollama cho domain SUSPICIOUS). Gemini/Ollama vẫn được giữ lại làm "deep investigation" khi ML model không chắc chắn.
 
 ---
 
 ## PHẦN 1: Hướng phát triển thống nhất
 
-### 1.1. Thuật toán: CatBoost Classifier
+### 1.1. Thuật toán: LightGBM Classifier
 
-**Lý do chọn CatBoost thay vì các lựa chọn khác:**
+**Lý do chọn LightGBM (thay vì CatBoost/XGBoost):**
 
-| Thuật toán | Phù hợp? | Lý do |
-| :--- | :--- | :--- |
-| **CatBoost** | ✅ **CHỌN** | Xử lý Categorical Features (TLD, Registrar) tự nhiên; Tốc độ inference cực nhanh; Export ONNX dễ dàng; Accuracy thường cao hơn XGBoost trên dữ liệu có mixed features |
-| XGBoost / LightGBM | ✅ Tốt | Nhanh, phổ biến, nhưng cần One-Hot Encoding thủ công cho Categorical |
-| TabPFN | ❌ | Không scale được > 10,000 mẫu |
-| TabNet / TabFM | ❌ | Chậm hơn 10-50x so với CatBoost, accuracy không vượt trội |
-| GPT / Gemini | ❌ (cho Tầng 1) | Latency 500ms+, chi phí cao, hallucination |
-
-### 1.2. Chiến lược Vector hóa: Kết hợp Feature Engineering + Character Embedding
-
-Sử dụng phương pháp **Early Fusion (Concatenation)**:
-
-```
-Final Vector = [Handcrafted Features (18-22 chiều)] + [Char N-gram TF-IDF (64-128 chiều)]
-             = Vector tổng cộng ~90-150 chiều
-```
-
-#### Nhóm A: Handcrafted Features (18-22 chiều)
-
-| # | Feature | Mô tả | Phát hiện |
+| Tiêu chí | LightGBM | CatBoost | XGBoost |
 | :--- | :--- | :--- | :--- |
-| 1 | `domain_length` | Độ dài toàn bộ domain string | Phishing domain thường dài bất thường |
-| 2 | `subdomain_depth` | Số lượng subdomain (đếm dấu `.`) | Subdomain sâu = nghi vấn |
-| 3 | `domain_name_length` | Độ dài phần domain chính (không có TLD) | — |
-| 4 | `num_hyphens` | Số lượng dấu `-` | `vietcombank-login-verify.com` |
-| 5 | `num_digits` | Số lượng chữ số | `v1etc0mbank.com` |
-| 6 | `digit_ratio` | Tỷ lệ chữ số / tổng ký tự | DGA domains có digit ratio cao |
-| 7 | `vowel_ratio` | Tỷ lệ nguyên âm / phụ âm | Chuỗi ngẫu nhiên có vowel ratio bất thường |
-| 8 | `shannon_entropy` | Entropy Shannon của chuỗi domain | DGA detection (entropy > 4.0 = nghi vấn) |
-| 9 | `has_punycode` | Domain chứa `xn--` (IDN homograph attack) | `xn--vietcmbank.com` |
-| 10 | `has_ip_pattern` | Domain chứa pattern IP address | `192-168-1-1.malware.com` |
-| 11 | `num_special_chars` | Số ký tự đặc biệt (ngoài chữ cái, số, `.`, `-`) | — |
-| 12 | `max_consonant_seq` | Chuỗi phụ âm liên tiếp dài nhất | Chuỗi ngẫu nhiên = DGA |
-| 13 | `tld_risk_score` | Điểm rủi ro của TLD (`.xyz`=8, `.top`=7, `.vn`=1, `.com`=2) | TLD giá rẻ hay bị lạm dụng |
-| 14 | `brand_similarity_max` | Điểm Levenshtein cao nhất so với danh sách thương hiệu | Typosquatting detection |
-| 15 | `brand_similarity_brand` | Index của thương hiệu bị nhái nhiều nhất (categorical) | Biết domain đang nhái thương hiệu nào |
-| 16 | `homoglyph_score` | Điểm tương đồng ký tự thị giác (o→0, l→1, a→@) | Visual spoofing |
-| 17 | `num_tokens` | Số "từ" tách bằng `-` hoặc `.` | `login-verify-account-update.com` |
-| 18 | `contains_phishing_keywords` | Chứa từ khóa phishing (`login`, `verify`, `secure`, `update`, `bank`) | Keyword-based phishing |
-| 19 | `is_free_hosting` | Domain thuộc free hosting/dynamic DNS (`*.duckdns.org`, `*.ngrok.io`) | Free hosting abuse |
-| 20 | `whois_age_days` | Tuổi domain (ngày) từ WHOIS (nếu có, nếu không = -1) | Domain mới = rủi ro cao |
+| **Go inference thuần (Pure Go)** | ✅ `dmitryikh/leaves` đọc text/JSON format | ⚠️ `leaves` hỗ trợ hạn chế, cần convert | ✅ `leaves` đọc binary format |
+| **CGO_ENABLED=0** | ✅ | ⚠️ | ✅ |
+| **Tốc độ training** | Rất nhanh (histogram-based) | Nhanh | Nhanh |
+| **Categorical Features native** | ✅ (nhưng ta sẽ encode thủ công để đảm bảo tương thích `leaves`) | ✅ (nhưng ONNX export lỗi khi dùng) | ❌ Cần OHE |
+| **Accuracy** | Rất cao | Rất cao | Rất cao |
+| **Export format** | Text / JSON (nhẹ, dễ đọc) | CBM binary | Binary |
 
-#### Nhóm B: Character N-gram TF-IDF (64-128 chiều)
+> [!TIP]
+> **Tại sao không dùng CatBoost?** Mặc dù CatBoost xử lý categorical features tốt hơn, nhưng:
+> 1. CatBoost ONNX export bị lỗi khi có `cat_features` (issue #863).
+> 2. `dmitryikh/leaves` hỗ trợ LightGBM hoàn chỉnh nhất (text + JSON format).
+> 3. Nếu encode categorical thành numerical trước khi train, LightGBM và CatBoost cho accuracy tương đương.
 
-- Chia domain thành các cụm **2-gram và 3-gram ký tự** (ví dụ: `"vie"`, `"iet"`, `"etc"`, `"om"`).
-- Dùng `TfidfVectorizer(analyzer='char', ngram_range=(2,3), max_features=128)` từ scikit-learn.
-- Kết quả: Vector 128 chiều biểu diễn "dấu vân tay ký tự" của domain.
-- **Lợi ích**: Máy tự học được các pattern ẩn mà Feature Engineering thủ công không bao phủ hết (ví dụ: các cụm ký tự phổ biến trong domain DGA Botnet).
+### 1.2. Chiến lược Vector hóa: Feature Engineering + Character N-gram TF-IDF (Early Fusion)
 
-### 1.3. Vai trò của Gemini / Ollama sau khi có Custom Model
+```
+Final Vector = [Handcrafted Features (20 chiều, ALL numerical)]
+             + [Char N-gram TF-IDF (128 chiều)]
+             = Vector tổng cộng ~148 chiều (100% float)
+```
 
-Gemini / Ollama **KHÔNG bị loại bỏ**, mà chuyển vai trò:
+> [!IMPORTANT]
+> **Thay đổi quan trọng so với Plan v1:** Tất cả features đều phải là **numerical (float/int)**. Không dùng `cat_features` native của bất kỳ thư viện nào để đảm bảo `leaves` Go lib đọc được model.
 
-| Vai trò | Trước (hiện tại) | Sau khi có Custom Model |
-| :--- | :--- | :--- |
-| **Tầng 1 (Real-time Filter)** | Gemini/Ollama xử lý mọi domain SUSPICIOUS | 🆕 **Custom ML Model** xử lý (< 3ms) |
-| **Tầng 2 (Deep Investigation)** | Không có | Gemini/Ollama chỉ xử lý khi ML Model **không chắc chắn** (confidence < 0.85) |
-| **Tầng 3 (SOC Dashboard Explain)** | Không có | Gemini/Ollama sinh **báo cáo giải thích chi tiết** bằng tiếng Việt khi SOC Analyst bấm "Phân tích chi tiết" |
+#### Nhóm A: Handcrafted Features (20 chiều — 100% numerical)
+
+| # | Feature | Kiểu | Mô tả | Encoding |
+| :--- | :--- | :--- | :--- | :--- |
+| 1 | `domain_length` | int | Độ dài toàn bộ FQDN | Giữ nguyên |
+| 2 | `domain_name_length` | int | Độ dài phần domain chính | Giữ nguyên |
+| 3 | `subdomain_depth` | int | Số lượng subdomain | Giữ nguyên |
+| 4 | `num_hyphens` | int | Số lượng dấu `-` | Giữ nguyên |
+| 5 | `num_digits` | int | Số lượng chữ số | Giữ nguyên |
+| 6 | `num_dots` | int | Số lượng dấu `.` | Giữ nguyên |
+| 7 | `digit_ratio` | float | Tỷ lệ chữ số / tổng ký tự | Giữ nguyên |
+| 8 | `vowel_ratio` | float | Tỷ lệ nguyên âm / phụ âm | Giữ nguyên |
+| 9 | `shannon_entropy` | float | Entropy Shannon | Giữ nguyên |
+| 10 | `max_consonant_seq` | int | Chuỗi phụ âm liên tiếp dài nhất | Giữ nguyên |
+| 11 | `has_punycode` | int (0/1) | Chứa `xn--` | Binary flag |
+| 12 | `has_ip_pattern` | int (0/1) | Chứa pattern IP | Binary flag |
+| 13 | `num_special_chars` | int | Số ký tự đặc biệt | Giữ nguyên |
+| 14 | `num_tokens` | int | Số "từ" tách bằng `-` hoặc `.` | Giữ nguyên |
+| 15 | `tld_risk_score` | int | Điểm rủi ro TLD (ordinal: 0-9) | **Giữ nguyên dạng số** — đây vốn là biến ordinal, không cần encode |
+| 16 | `brand_similarity_max` | float | Điểm Levenshtein cao nhất so với brand list | Giữ nguyên |
+| 17 | `brand_weighted_distance` | float | Weighted Levenshtein (QWERTY keyboard adjacency) | **🆕 Thay thế** `brand_similarity_brand_idx` — dùng giá trị distance thực thay vì index categorical |
+| 18 | `homoglyph_score` | float | Điểm tương đồng ký tự thị giác | Giữ nguyên |
+| 19 | `phishing_keyword_count` | int | Số từ khóa phishing | Giữ nguyên |
+| 20 | `is_free_hosting` | int (0/1) | Thuộc free hosting / dynamic DNS | Binary flag |
+
+> [!NOTE]
+> **Thay đổi #17**: `brand_similarity_brand_idx` (categorical — index thương hiệu bị nhái) đã được thay bằng `brand_weighted_distance` (numerical — khoảng cách có trọng số QWERTY keyboard). Điều này:
+> - Loại bỏ hoàn toàn Categorical Feature.
+> - Tận dụng logic `WeightedLevenshteinDistance` đã có sẵn trong [brand.go](file:///d:/Quorix/services/safe-zone/internal/analysis/brand.go).
+> - Cung cấp thông tin phong phú hơn cho model (khoảng cách thực vs chỉ index).
+
+#### Nhóm B: Character N-gram TF-IDF (128 chiều)
+
+Giữ nguyên so với Plan v1:
+- `TfidfVectorizer(analyzer='char', ngram_range=(2,3), max_features=128)`.
+- TF-IDF vocabulary sẽ được export sang JSON để Go re-implement khi inference.
+
+### 1.3. Vai trò phân tầng sau khi có Custom Model
+
+| Tầng | Component | Vị trí code | Vai trò | Latency |
+| :--- | :--- | :--- | :--- | :--- |
+| **Heuristic** | Lexical + Brand + DGA | `internal/analysis/` | Chấm điểm rule-based, phân loại SAFE/SUSPICIOUS/MALICIOUS | < 1ms |
+| **🆕 ML Classifier** | LightGBM via `leaves` | `internal/analysis/ml_classifier.go` | Xử lý domain SUSPICIOUS — phân loại nhanh với confidence cao | < 3ms |
+| **LLM Refinement** | Gemini / Ollama | `internal/ai/` | Fallback khi ML confidence thấp, hoặc sinh giải thích chi tiết | 300ms+ |
 
 ---
 
 ## PHẦN 2: Chuẩn bị chi tiết
 
-### 2.1. Datasets (Dữ liệu huấn luyện)
-
-#### Dữ liệu Benign (Tên miền sạch) — Mục tiêu: 50,000 - 100,000 mẫu
-
-| Nguồn | URL | Mô tả | Định dạng |
-| :--- | :--- | :--- | :--- |
-| **Tranco Top 1M** | [tranco-list.eu](https://tranco-list.eu/) | Top 1 triệu domain phổ biến nhất thế giới (tổng hợp từ nhiều nguồn) | CSV (`rank,domain`) |
-| **Cisco Umbrella Top 1M** | [s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip](http://s3-us-west-1.amazonaws.com/umbrella-static/top-1m.csv.zip) | Top 1 triệu domain từ Cisco DNS resolver | CSV |
-| **Danh sách VN chính thống** | Tự tổng hợp | Các domain `.gov.vn`, `.edu.vn`, ngân hàng, báo chí, telco VN | Manual |
-
-#### Dữ liệu Malicious (Tên miền độc hại) — Mục tiêu: 50,000 - 100,000 mẫu
-
-| Nguồn | URL | Mô tả | Định dạng |
-| :--- | :--- | :--- | :--- |
-| **PhishTank** | [phishtank.org/developer_info.php](https://phishtank.org/developer_info.php) | Database phishing URLs được xác minh bởi cộng đồng | JSON / CSV |
-| **URLhaus (abuse.ch)** | [urlhaus.abuse.ch/downloads/csv_recent](https://urlhaus.abuse.ch/downloads/csv_recent/) | Danh sách URLs phát tán malware | CSV |
-| **OpenPhish** | [openphish.com/feed.txt](https://openphish.com/feed.txt) | Feed phishing URLs cập nhật liên tục | Text (1 URL/dòng) |
-| **DGArchive / Bambenek** | [osint.bambenekconsulting.com/feeds](https://osint.bambenekconsulting.com/feeds/) | DGA domain feeds (Botnet C2) | Text |
-| **Safe Zone Internal Feeds** | `data/` directory trong project | Các threat feed đã tích hợp sẵn | Có sẵn |
+### 2.1. Datasets — Sử dụng Pipeline có sẵn
 
 > [!IMPORTANT]
-> **Cân bằng dữ liệu**: Tỷ lệ Benign : Malicious nên là **1:1** hoặc **60:40**. Nếu lệch quá (ví dụ 95% Benign, 5% Malicious), model sẽ thiên lệch (biased) và bỏ sót domain độc hại. Nếu dữ liệu Malicious ít hơn, dùng kỹ thuật **SMOTE** hoặc **class_weight='balanced'** trong CatBoost.
+> **KHÔNG cần viết script tải dữ liệu mới.** Repo đã có sẵn [scripts/build_domain_dataset.py](file:///d:/Quorix/services/safe-zone/scripts/build_domain_dataset.py) (314 dòng) với đầy đủ tính năng.
 
-> [!TIP]
-> **Dữ liệu đặc thù Việt Nam**: Bạn nên bổ sung thêm các domain giả mạo thương hiệu VN (Vietcombank, Techcombank, Shopee, MoMo, VTV, VNPT, EVN...) thu thập từ các nguồn cảnh báo của NCSC Vietnam và kinh nghiệm thực tế. Đây là lợi thế cạnh tranh lớn mà các model AI chung không có.
+#### Tính năng của `build_domain_dataset.py` (đã xác minh):
 
-### 2.2. Danh sách Thương hiệu Việt Nam (Brand List)
+| Tính năng | Chi tiết |
+| :--- | :--- |
+| **Whitelist Sources** | Tranco Top 100K, Cisco Umbrella Top 1M, Vietnam domains (`.gov.vn`, `.edu.vn`, ngân hàng, báo chí) |
+| **Blacklist Sources** | PhishTank, OpenPhish, Phishing Army, URLhaus, HaGeZi TIF, Tempest Phishing, StevenBlack, VN scraped domains |
+| **Normalization** | RFC-1035 FQDN chuẩn, loại bỏ schemes/paths/ports, xử lý BOM, IP filter, domain length validation (4-253 chars) |
+| **Deduplication** | Cross-label: Blacklist ưu tiên hơn Whitelist khi trùng |
+| **Balance** | Tự cân bằng 1:1 (deterministic seed=42) |
+| **Output** | `domain_dataset.csv`, `domain_dataset_lite.csv` (max 300K), `domain_dataset_provenance.csv` (kèm source attribution) |
 
-File [internal/analysis/brand.go](file:///d:/Quorix/services/safe-zone/internal/analysis/brand.go) đã có sẵn danh sách trusted brands và logic Levenshtein/Homoglyph. Bạn cần **export danh sách này ra Python** để dùng làm Feature Engineering thống nhất giữa Training và Inference.
+#### Cách sử dụng:
+
+```bash
+# Bước 1: Đặt raw data files vào đúng thư mục
+# data/whitelist/general/  → Tranco CSV, Umbrella CSV
+# data/whitelist/vietnam/  → vietnam_domains.txt, vietnam_websites.csv
+# data/blacklist/vietnam/  → raw_scraped_domains.json
+# data/blacklist/feeds/    → PhishTank CSV, OpenPhish txt, URLhaus CSV, etc.
+
+# Bước 2: Chạy script
+python scripts/build_domain_dataset.py
+
+# Bước 3: Kết quả output
+# ml/data/processed/domain_dataset.csv        ← Dataset chính (đầu vào cho Phase 2)
+# ml/data/processed/domain_dataset_lite.csv   ← Phiên bản nhẹ (max 300K)
+# ml/data/processed/cleaning_report.json      ← Báo cáo chi tiết quá trình xử lý
+```
+
+### 2.2. Danh sách Thương hiệu (Brand List)
+
+Sử dụng trực tiếp `DefaultTrustedBrands` đã có trong [brand.go](file:///d:/Quorix/services/safe-zone/internal/analysis/brand.go):
+
+- **Global**: Google, Binance, PayPal, Facebook, Apple, Microsoft, Amazon, Netflix, Instagram, Twitter, MetaMask, Coinbase, TrustWallet, Yahoo, LinkedIn.
+- **VN Government**: Chinhphu, Bo Cong An, BHXH, VNEID, VTV.
+- **VN Banks**: Vietcombank, Techcombank, BIDV, Vietinbank, MBBank, Agribank, VPBank, ACB, Sacombank, TPBank, VIB, HDBank, SHB, SCB.
+- **VN E-Commerce/Wallets**: MoMo, ZaloPay, VNPay, Shopee, Tiki, Lazada.
+
+**Export danh sách sang Python** để Feature Engineering nhất quán:
+
+```python
+# Sync từ internal/analysis/brand.go DefaultTrustedBrands
+VN_BRANDS = [
+    "google", "binance", "paypal", "facebook", "apple", "microsoft",
+    "amazon", "netflix", "instagram", "twitter", "metamask", "coinbase",
+    "trustwallet", "yahoo", "linkedin",
+    "chinhphu", "bocongan", "bhxh", "vneid", "vtv",
+    "vietcombank", "techcombank", "bidv", "vietinbank", "mbbank",
+    "agribank", "vpbank", "acb", "sacombank", "tpbank", "vib",
+    "hdbank", "shb", "scb",
+    "momo", "zalopay", "vnpay", "shopee", "tiki", "lazada",
+]
+```
 
 ### 2.3. Môi trường & Công cụ
 
 #### Python (Training & Export)
 
-```
+```bash
 # Tạo virtual environment
 python -m venv .venv
-source .venv/bin/activate   # Linux/Mac
-.venv\Scripts\activate      # Windows
+.venv\Scripts\activate   # Windows
 
 # Cài đặt thư viện
-pip install pandas numpy scikit-learn catboost onnx skl2onnx onnxmltools
+pip install pandas numpy scikit-learn lightgbm
 pip install tldextract python-Levenshtein matplotlib seaborn jupyter
+pip install joblib
 ```
 
 | Thư viện | Phiên bản khuyến nghị | Mục đích |
@@ -170,30 +242,34 @@ pip install tldextract python-Levenshtein matplotlib seaborn jupyter
 | `pandas` | >= 2.0 | Đọc/xử lý dataset CSV |
 | `numpy` | >= 1.24 | Tính toán số học |
 | `scikit-learn` | >= 1.3 | TF-IDF Vectorizer, train/test split, metrics |
-| `catboost` | >= 1.2 | Thuật toán CatBoost Classifier |
+| **`lightgbm`** | >= 4.0 | 🆕 **Thay CatBoost** — Thuật toán LightGBM Classifier |
 | `tldextract` | >= 5.0 | Tách subdomain / domain / TLD chính xác |
 | `python-Levenshtein` | >= 0.21 | Tính khoảng cách tương đồng thương hiệu |
-| `onnx` | >= 1.14 | Định dạng model chuẩn |
-| `onnxmltools` | >= 1.12 | Export CatBoost → ONNX |
 | `matplotlib` / `seaborn` | — | Vẽ biểu đồ đánh giá model |
-| `jupyter` | — | Notebook tương tác (tùy chọn) |
+| `joblib` | — | Serialize TF-IDF vectorizer |
 
 #### Go (Inference trong Safe Zone)
 
 | Dependency | Mục đích |
 | :--- | :--- |
-| `github.com/yalue/onnxruntime_go` | Load và chạy inference model ONNX trong Go |
-| ONNX Runtime shared library | File `.dll` (Windows) / `.so` (Linux) cần đặt cùng binary |
+| **`github.com/dmitryikh/leaves`** | 🆕 **Thay `onnxruntime_go`** — Pure Go, đọc LightGBM model text format, **CGO_ENABLED=0** compatible |
+
+> [!IMPORTANT]
+> **`leaves` KHÔNG cần CGO, KHÔNG cần shared library.** Hoạt động hoàn hảo với Dockerfile hiện tại:
+> ```dockerfile
+> RUN CGO_ENABLED=0 GOOS=linux go build -trimpath ...
+> ```
+> trên base image `alpine:3.20`.
 
 #### Phần cứng
 
 | Bước | Yêu cầu tối thiểu | Khuyến nghị |
 | :--- | :--- | :--- |
 | Training (Python) | CPU 4 cores, 8GB RAM | Google Colab (miễn phí) hoặc máy local |
-| Inference (Go) | CPU 1 core, 512MB RAM | Đã đủ — model ONNX chỉ chiếm ~5-20MB |
+| Inference (Go) | CPU 1 core, 512MB RAM | Đã đủ — model LightGBM text file chỉ nặng ~1-10MB |
 
 > [!NOTE]
-> **Không cần GPU!** CatBoost train trên CPU với 100,000 mẫu chỉ mất **1-5 phút**. Inference ONNX mất **< 1ms** trên CPU.
+> **Không cần GPU!** LightGBM train trên CPU với 100,000 mẫu chỉ mất **30 giây – 2 phút**. Inference qua `leaves` mất **< 1ms** trên CPU.
 
 ---
 
@@ -201,58 +277,63 @@ pip install tldextract python-Levenshtein matplotlib seaborn jupyter
 
 ### Phase 1: Thu thập & Chuẩn bị Dữ liệu
 
-> **Thời gian ước tính: 1-2 ngày**
+> **Thời gian ước tính: 0.5-1 ngày** (giảm nhờ tái sử dụng script có sẵn)
 
-#### Bước 1.1: Tải Datasets
+#### Bước 1.1: Chuẩn bị Raw Data
 
-```bash
-# Tạo thư mục làm việc
-mkdir -p ml/data/raw ml/data/processed ml/models ml/notebooks
+Tải các file dữ liệu nguồn và đặt vào đúng thư mục theo cấu trúc mà `build_domain_dataset.py` yêu cầu:
 
-# Tải Tranco Top 1M (Benign)
-curl -L "https://tranco-list.eu/download/ZQ946/full" -o ml/data/raw/tranco_top1m.csv
-
-# Tải PhishTank (Malicious) — cần đăng ký API Key miễn phí
-curl -L "http://data.phishtank.com/data/online-valid.csv" -o ml/data/raw/phishtank.csv
-
-# Tải URLhaus (Malicious)
-curl -L "https://urlhaus.abuse.ch/downloads/csv_recent/" -o ml/data/raw/urlhaus.csv
+```
+data/
+├── whitelist/
+│   ├── general/
+│   │   ├── tranco_46ZYX.csv          # Tải từ tranco-list.eu
+│   │   └── top-1m.csv                # Tải từ Cisco Umbrella
+│   └── vietnam/
+│       ├── vietnam_domains.txt        # Danh sách domain VN chính thống
+│       └── vietnam_websites.csv       # CSV domain VN
+├── blacklist/
+│   ├── vietnam/
+│   │   └── raw_scraped_domains.json   # Domain độc hại VN thu thập được
+│   └── feeds/
+│       ├── verified_online.csv        # PhishTank
+│       ├── openphish.txt              # OpenPhish
+│       ├── phishing_army.txt          # Phishing Army
+│       ├── urlhaus.csv                # URLhaus (abuse.ch)
+│       ├── hagezi_tif.txt             # HaGeZi Threat Intel Feed
+│       ├── tempest_phishing.txt       # Tempest
+│       └── stevenblack_hosts.txt      # StevenBlack hosts
 ```
 
-#### Bước 1.2: Làm sạch & Gán nhãn (Labeling)
+#### Bước 1.2: Chạy Dataset Builder
+
+```bash
+cd d:\Quorix\services\safe-zone
+python scripts/build_domain_dataset.py
+```
+
+Output (đã xác minh):
+- `ml/data/processed/domain_dataset.csv` — Dataset chính (balanced 1:1).
+- `ml/data/processed/domain_dataset_provenance.csv` — Kèm source attribution.
+- `ml/data/processed/cleaning_report.json` — Báo cáo xử lý.
+
+#### Bước 1.3: Kiểm tra chất lượng Dataset
 
 ```python
-# ml/notebooks/01_prepare_data.py
-
 import pandas as pd
-from urllib.parse import urlparse
-import tldextract
+import json
 
-# --- Load Benign ---
-tranco = pd.read_csv("ml/data/raw/tranco_top1m.csv", header=None, names=["rank", "domain"])
-benign = tranco["domain"].head(50000).to_frame()  # Lấy top 50K
-benign["label"] = 0  # 0 = SAFE
+df = pd.read_csv("ml/data/processed/domain_dataset.csv")
+report = json.load(open("ml/data/processed/cleaning_report.json"))
 
-# --- Load Malicious (PhishTank) ---
-phish = pd.read_csv("ml/data/raw/phishtank.csv")
-phish["domain"] = phish["url"].apply(lambda u: tldextract.extract(u).fqdn)
-malicious_phish = phish[["domain"]].drop_duplicates().head(30000)
-malicious_phish["label"] = 1  # 1 = MALICIOUS
+print(f"Total samples:    {len(df)}")
+print(f"Benign (label=0): {(df.label == 0).sum()}")
+print(f"Malicious (label=1): {(df.label == 1).sum()}")
+print(f"Balance ratio:    {(df.label == 0).sum() / (df.label == 1).sum():.2f}")
+print(f"Duplicates:       {df.domain.duplicated().sum()}")
 
-# --- Load Malicious (URLhaus) ---
-urlhaus = pd.read_csv("ml/data/raw/urlhaus.csv", comment="#", 
-                       names=["id","dateadded","url","url_status","last_online",
-                              "threat","tags","urlhaus_link","reporter"])
-urlhaus["domain"] = urlhaus["url"].apply(lambda u: tldextract.extract(str(u)).fqdn)
-malicious_urlhaus = urlhaus[["domain"]].drop_duplicates().head(20000)
-malicious_urlhaus["label"] = 1
-
-# --- Gộp & Shuffle ---
-dataset = pd.concat([benign, malicious_phish, malicious_urlhaus], ignore_index=True)
-dataset = dataset.drop_duplicates(subset="domain").sample(frac=1, random_state=42).reset_index(drop=True)
-dataset.to_csv("ml/data/processed/domain_dataset.csv", index=False)
-
-print(f"Total: {len(dataset)} | Benign: {(dataset.label==0).sum()} | Malicious: {(dataset.label==1).sum()}")
+# Verify: ratio should be ~1.0 (balanced by script)
+assert 0.8 <= (df.label == 0).sum() / max((df.label == 1).sum(), 1) <= 1.2, "Dataset is not balanced!"
 ```
 
 ---
@@ -261,7 +342,7 @@ print(f"Total: {len(dataset)} | Benign: {(dataset.label==0).sum()} | Malicious: 
 
 > **Thời gian ước tính: 1-2 ngày**
 
-#### Bước 2.1: Viết Feature Extractor
+#### Bước 2.1: Feature Extractor (Python)
 
 ```python
 # ml/feature_extractor.py
@@ -271,16 +352,19 @@ import re
 import tldextract
 import Levenshtein
 
-# Danh sách thương hiệu VN (sync từ internal/analysis/brand.go)
+# --- Sync từ internal/analysis/brand.go ---
 VN_BRANDS = [
-    "vietcombank", "techcombank", "mbbank", "tpbank", "vpbank", "bidv",
-    "agribank", "sacombank", "acb", "hdbank", "vietinbank", "shinhanbank",
-    "shopee", "lazada", "tiki", "sendo", "momo", "zalopay", "vnpay",
-    "viettel", "vnpt", "mobifone", "fpt", "vtv", "vnexpress",
-    "facebook", "google", "microsoft", "apple", "amazon", "paypal"
+    "google", "binance", "paypal", "facebook", "apple", "microsoft",
+    "amazon", "netflix", "instagram", "twitter", "metamask", "coinbase",
+    "trustwallet", "yahoo", "linkedin",
+    "chinhphu", "bocongan", "bhxh", "vneid", "vtv",
+    "vietcombank", "techcombank", "bidv", "vietinbank", "mbbank",
+    "agribank", "vpbank", "acb", "sacombank", "tpbank", "vib",
+    "hdbank", "shb", "scb",
+    "momo", "zalopay", "vnpay", "shopee", "tiki", "lazada",
 ]
 
-# TLD risk scores (higher = more risky)
+# --- TLD Risk Scores (ordinal, NOT categorical) ---
 TLD_RISK = {
     "xyz": 8, "top": 8, "tk": 9, "ml": 9, "ga": 9, "cf": 9, "gq": 9,
     "icu": 7, "buzz": 7, "click": 7, "link": 6, "info": 5, "online": 6,
@@ -291,25 +375,58 @@ TLD_RISK = {
 PHISHING_KEYWORDS = [
     "login", "signin", "verify", "secure", "update", "confirm",
     "account", "banking", "password", "credential", "wallet",
-    "suspend", "locked", "urgent", "alert", "notification"
+    "suspend", "locked", "urgent", "alert", "notification",
+    "dichvucong", "vneid", "nganhang", "xacthuc",  # VN-specific
 ]
 
 FREE_HOSTING = [
     "duckdns.org", "ngrok.io", "ngrok-free.app", "herokuapp.com",
     "000webhostapp.com", "weebly.com", "blogspot.com", "wordpress.com",
-    "netlify.app", "vercel.app", "pages.dev", "workers.dev"
+    "netlify.app", "vercel.app", "pages.dev", "workers.dev",
 ]
+
+# --- QWERTY Keyboard Adjacency (sync từ brand.go keyboardAdjacency) ---
+KEYBOARD_ADJ = {
+    'q': 'wa', 'w': 'qeas', 'e': 'wrds', 'r': 'etdf', 't': 'ryfg',
+    'y': 'tugh', 'u': 'yijh', 'i': 'uojk', 'o': 'ipkl', 'p': 'ol',
+    'a': 'qwsz', 's': 'awedxz', 'd': 'serfcx', 'f': 'drtgvc',
+    'g': 'ftyhbv', 'h': 'gyujnb', 'j': 'huiknm', 'k': 'jiolm',
+    'l': 'kop', 'z': 'asx', 'x': 'zsdc', 'c': 'xdfv',
+    'v': 'cfgb', 'b': 'vghn', 'n': 'bhjm', 'm': 'njk',
+}
+
+
+def weighted_levenshtein(s1: str, s2: str) -> float:
+    """Weighted Levenshtein with QWERTY adjacency (substitution cost 0.5 for adjacent keys)."""
+    len1, len2 = len(s1), len(s2)
+    dp = [[0.0] * (len2 + 1) for _ in range(len1 + 1)]
+    for i in range(len1 + 1):
+        dp[i][0] = float(i)
+    for j in range(len2 + 1):
+        dp[0][j] = float(j)
+    for i in range(1, len1 + 1):
+        for j in range(1, len2 + 1):
+            if s1[i - 1] == s2[j - 1]:
+                cost = 0.0
+            else:
+                adj = KEYBOARD_ADJ.get(s1[i - 1].lower(), "")
+                cost = 0.5 if s2[j - 1].lower() in adj else 1.0
+            dp[i][j] = min(
+                dp[i - 1][j] + 1.0,       # deletion
+                dp[i][j - 1] + 1.0,       # insertion
+                dp[i - 1][j - 1] + cost,  # substitution
+            )
+    return dp[len1][len2]
 
 
 def extract_features(domain_str: str) -> dict:
-    """Trích xuất Feature Vector từ 1 chuỗi domain."""
+    """Trích xuất Feature Vector (100% numerical) từ 1 chuỗi domain."""
     ext = tldextract.extract(domain_str)
     subdomain = ext.subdomain or ""
     domain_name = ext.domain or ""
     tld = ext.suffix or ""
     fqdn = ext.fqdn
 
-    # --- Lexical Features ---
     length = len(fqdn)
     domain_name_len = len(domain_name)
     subdomain_depth = len(subdomain.split(".")) if subdomain else 0
@@ -317,7 +434,7 @@ def extract_features(domain_str: str) -> dict:
     num_digits = sum(c.isdigit() for c in fqdn)
     num_dots = fqdn.count(".")
     digit_ratio = num_digits / max(length, 1)
-    
+
     # Vowel ratio
     vowels = sum(1 for c in domain_name.lower() if c in "aeiou")
     consonants = sum(1 for c in domain_name.lower() if c.isalpha() and c not in "aeiou")
@@ -338,28 +455,29 @@ def extract_features(domain_str: str) -> dict:
     has_punycode = 1 if "xn--" in fqdn else 0
     has_ip_pattern = 1 if re.search(r"\d{1,3}[.\-]\d{1,3}[.\-]\d{1,3}[.\-]\d{1,3}", fqdn) else 0
     num_special = sum(1 for c in fqdn if not c.isalnum() and c not in ".-")
-
-    # Token count (words separated by - or .)
     num_tokens = len(re.split(r"[-.]", fqdn))
 
-    # --- TLD Risk ---
-    tld_risk = TLD_RISK.get(tld.lower(), 3)  # default = 3 (unknown)
+    # TLD Risk (ordinal integer — NOT categorical)
+    tld_risk = TLD_RISK.get(tld.lower(), 3)
 
-    # --- Brand Similarity (Levenshtein) ---
-    brand_scores = [(Levenshtein.ratio(domain_name.lower(), brand), i) 
-                    for i, brand in enumerate(VN_BRANDS)]
-    best_score, best_brand_idx = max(brand_scores, key=lambda x: x[0])
-    
-    # --- Homoglyph Score (simplified) ---
+    # Brand Similarity — ALL NUMERICAL (no brand index)
+    brand_lev_scores = [Levenshtein.ratio(domain_name.lower(), brand) for brand in VN_BRANDS]
+    brand_similarity_max = max(brand_lev_scores) if brand_lev_scores else 0.0
+
+    # 🆕 Weighted Levenshtein (QWERTY keyboard adjacency) — replaces brand_idx
+    brand_weighted_dists = [weighted_levenshtein(domain_name.lower(), brand) for brand in VN_BRANDS]
+    brand_weighted_distance = min(brand_weighted_dists) if brand_weighted_dists else 99.0
+
+    # Homoglyph Score
     homoglyph_map = {"0": "o", "1": "l", "3": "e", "5": "s", "@": "a", "!": "i"}
     decoded = "".join(homoglyph_map.get(c, c) for c in domain_name.lower())
     homoglyph_scores = [Levenshtein.ratio(decoded, brand) for brand in VN_BRANDS]
     homoglyph_score = max(homoglyph_scores) if homoglyph_scores else 0.0
 
-    # --- Phishing Keywords ---
+    # Phishing Keywords
     keyword_count = sum(1 for kw in PHISHING_KEYWORDS if kw in fqdn.lower())
 
-    # --- Free Hosting ---
+    # Free Hosting
     is_free_hosting = 1 if any(fqdn.endswith(fh) for fh in FREE_HOSTING) else 0
 
     return {
@@ -378,8 +496,8 @@ def extract_features(domain_str: str) -> dict:
         "num_special_chars": num_special,
         "num_tokens": num_tokens,
         "tld_risk_score": tld_risk,
-        "brand_similarity_max": round(best_score, 4),
-        "brand_similarity_brand_idx": best_brand_idx,
+        "brand_similarity_max": round(brand_similarity_max, 4),
+        "brand_weighted_distance": round(brand_weighted_distance, 4),
         "homoglyph_score": round(homoglyph_score, 4),
         "phishing_keyword_count": keyword_count,
         "is_free_hosting": is_free_hosting,
@@ -392,17 +510,23 @@ def extract_features(domain_str: str) -> dict:
 # ml/notebooks/02_feature_engineering.py
 
 import pandas as pd
+import numpy as np
+import json
 from sklearn.feature_extraction.text import TfidfVectorizer
 from feature_extractor import extract_features
-import numpy as np
+import joblib
 
-# Load dataset
+# Load dataset (output from build_domain_dataset.py)
 df = pd.read_csv("ml/data/processed/domain_dataset.csv")
 
-# --- Nhóm A: Handcrafted Features ---
+# --- Nhóm A: Handcrafted Features (ALL numerical) ---
 print("Extracting handcrafted features...")
 features_list = df["domain"].apply(extract_features).tolist()
 features_df = pd.DataFrame(features_list)
+
+# VERIFY: No categorical columns
+assert features_df.select_dtypes(include=["object", "category"]).empty, \
+    "ERROR: Found non-numerical columns! All features must be numerical."
 
 # --- Nhóm B: Character N-gram TF-IDF Embedding ---
 print("Computing character n-gram TF-IDF...")
@@ -418,37 +542,50 @@ X = pd.concat([features_df, tfidf_df], axis=1)
 y = df["label"]
 
 print(f"Final feature vector shape: {X.shape}")  # Expected: (~100K, ~148)
+print(f"All numerical: {X.select_dtypes(include=[np.number]).shape == X.shape}")
 
-# Save
+# Save features
 X.to_csv("ml/data/processed/features_X.csv", index=False)
 y.to_csv("ml/data/processed/labels_y.csv", index=False)
 
-# QUAN TRỌNG: Lưu TF-IDF Vectorizer để dùng lúc inference
-import joblib
+# Save TF-IDF Vectorizer (Python joblib for re-training)
 joblib.dump(tfidf, "ml/models/tfidf_vectorizer.joblib")
+
+# 🆕 Export TF-IDF vocabulary as JSON (for Go inference re-implementation)
+tfidf_vocab = {
+    "vocabulary": {k: int(v) for k, v in tfidf.vocabulary_.items()},
+    "idf": tfidf.idf_.tolist(),
+    "max_features": 128,
+    "ngram_range": [2, 3],
+    "analyzer": "char",
+}
+with open("ml/models/tfidf_vocab.json", "w") as f:
+    json.dump(tfidf_vocab, f, indent=2)
+
+print("Saved: features_X.csv, labels_y.csv, tfidf_vectorizer.joblib, tfidf_vocab.json")
 ```
 
 ---
 
-### Phase 3: Training CatBoost Model
+### Phase 3: Training LightGBM Model
 
 > **Thời gian ước tính: 1 ngày**
 
 #### Bước 3.1: Train & Evaluate
 
 ```python
-# ml/notebooks/03_train_catboost.py
+# ml/notebooks/03_train_lightgbm.py
 
 import pandas as pd
 import numpy as np
-from catboost import CatBoostClassifier, Pool
-from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.metrics import (classification_report, confusion_matrix, 
-                             roc_auc_score, precision_recall_curve, f1_score)
+import lightgbm as lgb
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import (classification_report, confusion_matrix,
+                             roc_auc_score, f1_score)
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# Load features
+# Load features (ALL numerical — verified in Phase 2)
 X = pd.read_csv("ml/data/processed/features_X.csv")
 y = pd.read_csv("ml/data/processed/labels_y.csv").values.ravel()
 
@@ -457,38 +594,51 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# Categorical feature indices (brand_similarity_brand_idx, tld_risk_score)
-cat_features = ["brand_similarity_brand_idx", "tld_risk_score"]
+# LightGBM Dataset
+train_data = lgb.Dataset(X_train, label=y_train)
+valid_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
 
-# CatBoost Training
-model = CatBoostClassifier(
-    iterations=1000,
-    learning_rate=0.05,
-    depth=8,
-    l2_leaf_reg=3,
-    auto_class_weights="Balanced",      # Tự cân bằng nếu data lệch
-    eval_metric="F1",
-    random_seed=42,
-    verbose=100,
-    early_stopping_rounds=50,
-)
+# LightGBM Parameters
+params = {
+    "objective": "binary",
+    "metric": ["binary_logloss", "auc"],
+    "boosting_type": "gbdt",
+    "num_leaves": 63,            # 2^6 - 1
+    "learning_rate": 0.05,
+    "feature_fraction": 0.8,
+    "bagging_fraction": 0.8,
+    "bagging_freq": 5,
+    "max_depth": 8,
+    "min_child_samples": 20,
+    "is_unbalance": True,        # Auto-handle class imbalance
+    "verbose": -1,
+    "seed": 42,
+}
 
-model.fit(
-    X_train, y_train,
-    eval_set=(X_test, y_test),
-    cat_features=cat_features,
-    plot=True
+# Train with early stopping
+callbacks = [
+    lgb.early_stopping(stopping_rounds=50),
+    lgb.log_evaluation(period=100),
+]
+
+model = lgb.train(
+    params,
+    train_data,
+    num_boost_round=1000,
+    valid_sets=[valid_data],
+    callbacks=callbacks,
 )
 
 # --- Evaluation ---
-y_pred = model.predict(X_test)
-y_prob = model.predict_proba(X_test)[:, 1]
+y_prob = model.predict(X_test)
+y_pred = (y_prob >= 0.5).astype(int)
 
-print("\n" + "="*60)
+print("\n" + "=" * 60)
 print("CLASSIFICATION REPORT")
-print("="*60)
+print("=" * 60)
 print(classification_report(y_test, y_pred, target_names=["SAFE", "MALICIOUS"]))
 print(f"ROC-AUC Score: {roc_auc_score(y_test, y_prob):.4f}")
+print(f"F1-Score:      {f1_score(y_test, y_pred):.4f}")
 
 # Confusion Matrix
 cm = confusion_matrix(y_test, y_pred)
@@ -496,120 +646,122 @@ plt.figure(figsize=(8, 6))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=["SAFE", "MALICIOUS"],
             yticklabels=["SAFE", "MALICIOUS"])
-plt.title("Confusion Matrix - Domain Threat Detection")
+plt.title("Confusion Matrix - Domain Threat Detection (LightGBM)")
 plt.ylabel("Actual")
 plt.xlabel("Predicted")
 plt.savefig("ml/models/confusion_matrix.png", dpi=150, bbox_inches="tight")
 plt.show()
 
 # Feature Importance
-importance = model.get_feature_importance(prettified=True)
+importance = pd.DataFrame({
+    "feature": X.columns,
+    "importance": model.feature_importance(importance_type="gain")
+}).sort_values("importance", ascending=False)
 print("\nTop 15 Most Important Features:")
-print(importance.head(15))
+print(importance.head(15).to_string(index=False))
 
-# Save CatBoost native model
-model.save_model("ml/models/domain_threat_catboost.cbm")
+# 🆕 Save LightGBM model as TEXT FORMAT (required by leaves Go lib)
+model.save_model("ml/models/domain_threat_lgbm.txt")
+
+# Also save as JSON (backup/debugging)
+model.save_model("ml/models/domain_threat_lgbm.json")
+
+print(f"\nModel saved: domain_threat_lgbm.txt")
+import os
+size_kb = os.path.getsize("ml/models/domain_threat_lgbm.txt") / 1024
+print(f"Model size: {size_kb:.1f} KB")
 ```
 
 > [!IMPORTANT]
-> **Mục tiêu chất lượng tối thiểu**:
+> **Mục tiêu chất lượng tối thiểu:**
 > - **Precision ≥ 97%** (Hạn chế tối đa False Positive — không chặn nhầm domain sạch).
 > - **Recall ≥ 95%** (Không bỏ sót quá nhiều domain độc hại).
 > - **F1-Score ≥ 96%**.
 > - **ROC-AUC ≥ 0.99**.
-> 
+>
 > Nếu chưa đạt, cần quay lại bổ sung dữ liệu hoặc tinh chỉnh hyperparameters.
 
 ---
 
-### Phase 4: Export Model sang ONNX
+### Phase 4: Verify Model & Export cho Go
 
 > **Thời gian ước tính: 0.5 ngày**
 
-#### Bước 4.1: Convert CatBoost → ONNX
+#### Bước 4.1: Verify Model bằng Python
 
 ```python
-# ml/notebooks/04_export_onnx.py
+# ml/notebooks/04_verify_model.py
 
-from catboost import CatBoostClassifier
-import onnxmltools
-from onnxmltools.convert.common.data_types import FloatTensorType
-
-# Load trained model
-model = CatBoostClassifier()
-model.load_model("ml/models/domain_threat_catboost.cbm")
-
-# Export to ONNX
-num_features = 148  # 20 handcrafted + 128 n-gram TF-IDF
-onnx_model = onnxmltools.convert_catboost(
-    model,
-    initial_types=[("features", FloatTensorType([None, num_features]))],
-    target_opset=13
-)
-
-# Save ONNX file
-import onnx
-onnx.save_model(onnx_model, "ml/models/domain_threat_model.onnx")
-
-# Verify file size
-import os
-size_mb = os.path.getsize("ml/models/domain_threat_model.onnx") / (1024 * 1024)
-print(f"Model ONNX size: {size_mb:.2f} MB")  # Expected: 5-20 MB
-```
-
-#### Bước 4.2: Verify ONNX Inference (Python)
-
-```python
-# ml/notebooks/05_verify_onnx.py
-
-import onnxruntime as ort
+import lightgbm as lgb
 import numpy as np
+import json
 import joblib
 from feature_extractor import extract_features
 
-# Load ONNX session
-session = ort.InferenceSession("ml/models/domain_threat_model.onnx")
+# Load model
+model = lgb.Booster(model_file="ml/models/domain_threat_lgbm.txt")
 tfidf = joblib.load("ml/models/tfidf_vectorizer.joblib")
 
+
 def predict_domain(domain: str) -> dict:
-    # Extract handcrafted features
+    """Full inference pipeline: domain string → prediction."""
+    # Extract handcrafted features (20 values, ALL numerical)
     feats = extract_features(domain)
-    handcrafted = np.array(list(feats.values()), dtype=np.float32)
-    
-    # Extract TF-IDF features
-    ngram = tfidf.transform([domain]).toarray().astype(np.float32).flatten()
-    
-    # Concatenate
+    handcrafted = np.array(list(feats.values()), dtype=np.float64)
+
+    # Extract TF-IDF features (128 values)
+    ngram = tfidf.transform([domain]).toarray().astype(np.float64).flatten()
+
+    # Concatenate → 148 values
     full_vector = np.concatenate([handcrafted, ngram]).reshape(1, -1)
-    
-    # ONNX Inference
-    input_name = session.get_inputs()[0].name
-    result = session.run(None, {input_name: full_vector})
-    
-    label = int(result[0][0])
-    probabilities = result[1][0]  # [prob_safe, prob_malicious]
-    
+
+    # LightGBM Inference
+    prob_malicious = model.predict(full_vector)[0]
+    label = 1 if prob_malicious >= 0.5 else 0
+
     return {
         "domain": domain,
         "verdict": "MALICIOUS" if label == 1 else "SAFE",
-        "confidence": float(max(probabilities)),
-        "prob_safe": float(probabilities[0]),
-        "prob_malicious": float(probabilities[1]),
+        "confidence": round(max(prob_malicious, 1 - prob_malicious), 4),
+        "prob_malicious": round(prob_malicious, 4),
     }
 
-# Test
+
+# Test with known domains
 test_domains = [
-    "google.com",                          # Safe
-    "vietcombank.com.vn",                  # Safe (real brand)
-    "vietcombank-login-secure.xyz",        # Malicious (phishing)
-    "asdkjhasd7823hkasd.top",             # Malicious (DGA)
-    "shopee-khuyenmai-50percent.tk",       # Malicious (brand spoof)
-    "facebook.com",                        # Safe
+    ("google.com", "SAFE"),
+    ("vietcombank.com.vn", "SAFE"),
+    ("facebook.com", "SAFE"),
+    ("vnexpress.net", "SAFE"),
+    ("vietcombank-login-secure.xyz", "MALICIOUS"),
+    ("asdkjhasd7823hkasd.top", "MALICIOUS"),
+    ("shopee-khuyenmai-50percent.tk", "MALICIOUS"),
+    ("techc0mbank-xacthuc.click", "MALICIOUS"),
 ]
 
-for d in test_domains:
-    r = predict_domain(d)
-    print(f"  {r['verdict']:10s} (conf: {r['confidence']:.3f}) | {d}")
+print("=" * 70)
+print(f"{'Domain':45s} {'Expected':12s} {'Predicted':12s} {'Conf':6s} {'✓':2s}")
+print("=" * 70)
+passed = 0
+for domain, expected in test_domains:
+    r = predict_domain(domain)
+    ok = "✅" if r["verdict"] == expected else "❌"
+    if r["verdict"] == expected:
+        passed += 1
+    print(f"{domain:45s} {expected:12s} {r['verdict']:12s} {r['confidence']:.3f}  {ok}")
+
+print(f"\nPassed: {passed}/{len(test_domains)}")
+```
+
+#### Bước 4.2: Kiểm tra model text file đọc được bởi `leaves`
+
+```python
+# Verify model file structure is compatible with dmitryikh/leaves
+with open("ml/models/domain_threat_lgbm.txt", "r") as f:
+    first_line = f.readline().strip()
+    assert first_line.startswith("tree"), \
+        f"Model text file may not be in standard LightGBM text format. First line: {first_line}"
+    print(f"✅ Model text file starts with '{first_line}' — compatible with leaves Go lib")
 ```
 
 ---
@@ -618,119 +770,263 @@ for d in test_domains:
 
 > **Thời gian ước tính: 2-3 ngày**
 
-#### Bước 5.1: Cấu trúc thư mục mới
+#### Bước 5.1: Cấu trúc thư mục (đúng theo ADR-0006)
 
 ```
 internal/
 ├── ai/
-│   ├── provider.go          # Interface Provider (giữ nguyên)
-│   ├── client.go            # Unified Client (sửa để thêm ML provider)
-│   ├── ollama.go            # Ollama provider (giữ nguyên)
-│   ├── context.go           # Prompt engineering (giữ nguyên)
-│   └── 🆕 mlmodel.go        # Custom ML Model provider (ONNX inference)
+│   ├── provider.go          # Interface Provider (GIỮA NGUYÊN)
+│   ├── client.go            # Unified Client (GIỮA NGUYÊN — LLM dispatch)
+│   ├── ollama.go            # Ollama provider (GIỮA NGUYÊN)
+│   └── context.go           # Prompt engineering (GIỮA NGUYÊN)
 ├── analysis/
-│   ├── analysis.go          # Giữ nguyên
-│   ├── brand.go             # Giữ nguyên
-│   └── 🆕 features.go       # Feature extraction logic (Go port)
+│   ├── analysis.go          # Heuristic scoring (GIỮA NGUYÊN)
+│   ├── brand.go             # Brand spoofing (GIỮA NGUYÊN)
+│   ├── 🆕 features.go       # Feature extraction logic (Go port từ Python)
+│   └── 🆕 ml_classifier.go  # LightGBM classifier via leaves (Advanced Heuristic)
 ├── risk/
-│   └── service.go           # Sửa refineWithAI() để gọi ML trước LLM
+│   ├── service.go           # SỬA: Chèn ML classifier giữa Heuristic và AI Refinement
+│   └── env.go               # SỬA: Thêm env vars cho ML model
 ml/
 ├── models/
-│   ├── domain_threat_model.onnx   # Trained model file
-│   └── tfidf_vectorizer.joblib    # TF-IDF vocab (export sang JSON cho Go)
-├── data/                          # Datasets
-├── notebooks/                     # Training scripts
-└── feature_extractor.py           # Python feature extractor (reference)
+│   ├── domain_threat_lgbm.txt   # 🆕 Trained LightGBM model (text format)
+│   └── tfidf_vocab.json         # 🆕 TF-IDF vocabulary (JSON cho Go)
+├── data/                        # Datasets (gitignored)
+├── notebooks/                   # Training scripts
+└── feature_extractor.py         # Python feature extractor (reference)
 ```
 
-#### Bước 5.2: Tạo file mới — `internal/ai/mlmodel.go`
+> [!NOTE]
+> **Khác biệt quan trọng so với Plan v1:** ML Classifier đặt trong `internal/analysis/` (cùng layer với Heuristic Analysis) thay vì `internal/ai/` (layer cho LLM text-prompting). Điều này:
+> - Đúng nguyên tắc separation of concerns: ML Classifier là **Scoring Engine**, không phải **Generative AI**.
+> - Không phá vỡ interface `ai.Provider` (vốn thiết kế cho `Refine` bằng text prompt).
+> - Giữ nguyên hoàn toàn ADR-0005 (`none`, `gemini`, `ollama`, `hybrid`).
 
-File này implement interface `ai.Provider`, load file ONNX và chạy inference:
-
-```go
-// internal/ai/mlmodel.go
-package ai
-
-// MLModelClient implements Provider using a locally-loaded ONNX model
-// for ultra-fast domain threat classification (< 3ms inference).
-type MLModelClient struct {
-    session     *onnxruntime.Session
-    tfidfVocab  map[string]int      // n-gram → index mapping
-    maxFeatures int                  // 128 (TF-IDF dimensions)
-    enabled     bool
-    threshold   float64             // confidence threshold (default 0.85)
-}
-```
-
-#### Bước 5.3: Tạo file mới — `internal/analysis/features.go`
-
-Port logic `feature_extractor.py` sang Go thuần (không dependency Python):
+#### Bước 5.2: Tạo `internal/analysis/features.go` — Feature Extraction (Go port)
 
 ```go
 // internal/analysis/features.go
 package analysis
 
-// ExtractFeatureVector computes the full feature vector for a domain string.
-// Returns a float32 slice ready for ONNX model input.
-func ExtractFeatureVector(domain string, tfidfVocab map[string]int, maxFeatures int) []float32 {
-    // 1. Handcrafted features (20 values)
-    // 2. Character n-gram TF-IDF (128 values)
-    // 3. Concatenate → return []float32 (148 values)
+import (
+    "math"
+    "strings"
+    "unicode"
+)
+
+// FeatureVector holds the numerical feature vector for ML classification.
+// All fields are float64 for direct use with leaves inference.
+type FeatureVector struct {
+    DomainLength        float64
+    DomainNameLength    float64
+    SubdomainDepth      float64
+    NumHyphens          float64
+    NumDigits           float64
+    NumDots             float64
+    DigitRatio          float64
+    VowelRatio          float64
+    ShannonEntropy      float64
+    MaxConsonantSeq     float64
+    HasPunycode         float64
+    HasIPPattern        float64
+    NumSpecialChars     float64
+    NumTokens           float64
+    TLDRiskScore        float64
+    BrandSimilarityMax  float64
+    BrandWeightedDist   float64
+    HomoglyphScore      float64
+    PhishingKeywordCount float64
+    IsFreeHosting       float64
+}
+
+// ToSlice returns the feature vector as a float64 slice (20 values)
+// in the exact same order as the Python feature_extractor.
+func (fv *FeatureVector) ToSlice() []float64 {
+    return []float64{
+        fv.DomainLength, fv.DomainNameLength, fv.SubdomainDepth,
+        fv.NumHyphens, fv.NumDigits, fv.NumDots,
+        fv.DigitRatio, fv.VowelRatio, fv.ShannonEntropy,
+        fv.MaxConsonantSeq, fv.HasPunycode, fv.HasIPPattern,
+        fv.NumSpecialChars, fv.NumTokens, fv.TLDRiskScore,
+        fv.BrandSimilarityMax, fv.BrandWeightedDist,
+        fv.HomoglyphScore, fv.PhishingKeywordCount, fv.IsFreeHosting,
+    }
+}
+
+// ExtractFeatures computes the full handcrafted feature vector for a domain.
+// Uses the same logic as Python feature_extractor.py to ensure
+// training ↔ inference consistency.
+func ExtractFeatures(fqdn string, brands []TrustedBrand) *FeatureVector {
+    // Implementation: port from Python extract_features()
+    // Uses existing functions in analysis.go (ShannonEntropy)
+    // and brand.go (LevenshteinDistance, WeightedLevenshteinDistance, ToSkeleton)
+    // ...
 }
 ```
 
-#### Bước 5.4: Cập nhật `internal/ai/client.go`
-
-Thêm `mlmodel` vào `Config`, `Client` struct và logic dispatch trong `Refine()`:
+#### Bước 5.3: Tạo `internal/analysis/ml_classifier.go` — LightGBM Inference
 
 ```go
-// Trong Config struct, thêm:
-MLModelPath       string  // Path to .onnx file
-MLModelThreshold  float64 // Confidence threshold (default 0.85)
+// internal/analysis/ml_classifier.go
+package analysis
 
-// Trong Client struct, thêm:
-mlmodel *MLModelClient
+import (
+    "encoding/json"
+    "os"
+    "sync"
 
-// Trong Refine(), flow mới:
-// 1. Gọi mlmodel.Refine() trước
-// 2. Nếu confidence >= threshold → trả kết quả ngay
-// 3. Nếu confidence < threshold → fallback sang gemini/ollama
+    "github.com/dmitryikh/leaves"
+)
+
+// MLClassifier wraps a LightGBM model loaded via leaves for fast
+// domain threat classification. It acts as an advanced heuristic
+// scoring engine, NOT a generative AI provider.
+type MLClassifier struct {
+    mu          sync.RWMutex
+    model       *leaves.Ensemble
+    tfidfVocab  map[string]int
+    tfidfIDF    []float64
+    maxFeatures int
+    threshold   float64  // confidence threshold (default 0.85)
+    enabled     bool
+}
+
+// NewMLClassifier loads a LightGBM text model and TF-IDF vocabulary.
+func NewMLClassifier(modelPath, tfidfPath string, threshold float64) (*MLClassifier, error) {
+    // Load LightGBM model via leaves (pure Go, no CGO)
+    model, err := leaves.LGEnsembleFromFile(modelPath, true)
+    if err != nil {
+        return nil, err
+    }
+
+    // Load TF-IDF vocabulary from JSON
+    data, err := os.ReadFile(tfidfPath)
+    if err != nil {
+        return nil, err
+    }
+    var vocab struct {
+        Vocabulary  map[string]int `json:"vocabulary"`
+        IDF         []float64      `json:"idf"`
+        MaxFeatures int            `json:"max_features"`
+    }
+    if err := json.Unmarshal(data, &vocab); err != nil {
+        return nil, err
+    }
+
+    return &MLClassifier{
+        model:       model,
+        tfidfVocab:  vocab.Vocabulary,
+        tfidfIDF:    vocab.IDF,
+        maxFeatures: vocab.MaxFeatures,
+        threshold:   threshold,
+        enabled:     true,
+    }, nil
+}
+
+// Classify runs the ML model on a domain and returns a verdict with confidence.
+// Returns (verdict, confidence, reasons, error).
+func (c *MLClassifier) Classify(fqdn string, brands []TrustedBrand) (Verdict, float64, []string, error) {
+    // 1. Extract handcrafted features (20 values)
+    fv := ExtractFeatures(fqdn, brands)
+    handcrafted := fv.ToSlice()
+
+    // 2. Compute TF-IDF features (128 values)
+    tfidf := c.computeTFIDF(fqdn)
+
+    // 3. Concatenate → 148 values
+    features := append(handcrafted, tfidf...)
+
+    // 4. LightGBM inference via leaves
+    predictions := model.PredictSingle(features, 0)
+    probMalicious := predictions // For binary classification, this is P(malicious)
+
+    // 5. Map to verdict
+    confidence := math.Max(probMalicious, 1-probMalicious)
+    if probMalicious >= 0.5 {
+        return VerdictMalicious, confidence,
+            []string{"ml_classifier: domain classified as malicious"}, nil
+    }
+    return VerdictSafe, confidence,
+        []string{"ml_classifier: domain classified as safe"}, nil
+}
+
+// Enabled returns true if the ML classifier is loaded and ready.
+func (c *MLClassifier) Enabled() bool {
+    return c != nil && c.enabled
+}
 ```
 
-#### Bước 5.5: Cập nhật Environment Variables
+#### Bước 5.4: Cập nhật `internal/risk/service.go` — Pipeline Integration
+
+```go
+// Trong Service struct, thêm:
+mlClassifier *analysis.MLClassifier
+
+// Trong NewServiceFromEnv(), thêm initialization:
+if mlModelPath != "" {
+    clf, err := analysis.NewMLClassifier(mlModelPath, mlTFIDFPath, mlThreshold)
+    if err != nil {
+        logjson.Warn("ml_classifier_load_failed", "error", err.Error())
+        // Fail-open: continue without ML classifier
+    } else {
+        s.mlClassifier = clf
+        logjson.Info("ml_classifier_loaded", "model", mlModelPath)
+    }
+}
+
+// Trong analyze(), CHÈN giữa bước Heuristic Analysis và AI Refinement:
+// Step 6: Heuristic & Brand Analysis (existing)
+result := s.analyzeLexical(normalized)
+
+// Step 7 (🆕): ML Classifier — only for SUSPICIOUS verdicts
+if result.Verdict == analysis.VerdictSuspicious && s.mlClassifier.Enabled() {
+    mlVerdict, mlConf, mlReasons, err := s.mlClassifier.Classify(
+        result.Domain, s.brandStore.ListBrands(),
+    )
+    if err == nil && mlConf >= s.mlClassifier.Threshold() {
+        // ML classifier is confident — use its verdict directly
+        result.Verdict = mlVerdict
+        result.Confidence = mlConf
+        result.Reasons = append(result.Reasons, mlReasons...)
+        // SKIP LLM refinement (Step 8) — fast path!
+    }
+    // If ML confidence < threshold, fall through to Step 8 (LLM)
+}
+
+// Step 8: AI Refinement — Gemini/Ollama (existing, only if ML didn't resolve)
+if result.Verdict == analysis.VerdictSuspicious {
+    result = s.refineWithAI(ctx, result)
+}
+```
+
+#### Bước 5.5: Cập nhật `internal/risk/env.go`
+
+```go
+// Thêm env vars mới:
+mlModelPath  := config.String("SAFE_ZONE_ML_MODEL_PATH", "")
+mlTFIDFPath  := config.String("SAFE_ZONE_ML_TFIDF_PATH", "")
+mlThreshold  := config.Float64("SAFE_ZONE_ML_THRESHOLD", 0.85)
+```
+
+#### Bước 5.6: Cập nhật `.env.example`
 
 ```env
-# .env.example — thêm mới:
-
-# Custom ML Model Settings (ONNX-based Domain Classifier)
-SAFE_ZONE_ML_MODEL_PATH=./ml/models/domain_threat_model.onnx
-SAFE_ZONE_ML_MODEL_TFIDF_PATH=./ml/models/tfidf_vocab.json
-SAFE_ZONE_ML_MODEL_THRESHOLD=0.85
+# --- Custom ML Classifier (LightGBM-based Domain Threat Detection) ---
+# Path to trained LightGBM model file (text format, loaded by leaves Go lib)
+# Leave empty to disable ML classifier (system falls back to Gemini/Ollama)
+SAFE_ZONE_ML_MODEL_PATH=
+# Path to TF-IDF vocabulary JSON (exported from Python training pipeline)
+SAFE_ZONE_ML_TFIDF_PATH=
+# Minimum confidence threshold for ML classifier to override verdict (0.0-1.0)
+# If ML confidence < threshold, system falls through to Gemini/Ollama for deep analysis
+SAFE_ZONE_ML_THRESHOLD=0.85
 ```
 
-#### Bước 5.6: Cập nhật flow trong `internal/risk/service.go`
+#### Bước 5.7: Cập nhật `go.mod`
 
-```go
-// refineWithAI — flow mới:
-func (s *Service) refineWithAI(ctx context.Context, result analysis.Result) analysis.Result {
-    // Bước 1: Thử ML Model trước (< 3ms)
-    if s.ai.MLModelEnabled() {
-        mlResult, err := s.ai.MLModelRefine(ctx, result.Domain, result)
-        if err == nil && mlResult.Confidence >= s.mlThreshold {
-            return mlResult  // Fast path — không cần gọi LLM
-        }
-    }
-
-    // Bước 2: Fallback sang Gemini/Ollama (300ms+)
-    if s.ai.Enabled() {
-        aiResult, err := s.ai.Refine(ctx, result.Domain, result)
-        if err == nil {
-            return mergeResults(result, aiResult)
-        }
-    }
-
-    return result  // Fail-open: trả kết quả heuristic gốc
-}
+```bash
+cd d:\Quorix\services\safe-zone
+go get github.com/dmitryikh/leaves
 ```
 
 ---
@@ -741,40 +1037,55 @@ func (s *Service) refineWithAI(ctx context.Context, result analysis.Result) anal
 
 ```bash
 # Python — Verify model quality
-cd ml && python -m pytest tests/ -v
+cd ml && python notebooks/04_verify_model.py
 
-# Go — Unit tests cho feature extraction & ML provider
-cd d:\Quorix\services\safe-zone
-go test ./internal/analysis/ -run TestExtractFeatureVector -v
-go test ./internal/ai/ -run TestMLModel -v
+# Go — Unit tests for feature extraction
+go test ./internal/analysis/ -run TestExtractFeatures -v
 
-# Go — Integration test toàn bộ pipeline
-go test ./internal/risk/ -run TestRefineWithMLModel -v
+# Go — Unit tests for ML classifier
+go test ./internal/analysis/ -run TestMLClassifier -v
+
+# Go — Integration test: full pipeline with ML classifier
+go test ./internal/risk/ -run TestAnalyzeWithMLClassifier -v
 
 # Go — Benchmark inference latency
-go test ./internal/ai/ -bench BenchmarkMLModelRefine -benchmem
+go test ./internal/analysis/ -bench BenchmarkMLClassify -benchmem
 ```
 
-### Manual Verification
+### Docker Build Verification
 
-- [ ] Chạy `predict_domain()` Python trên 100 domain đã biết (50 safe, 50 malicious) — xác nhận Precision ≥ 97%, Recall ≥ 95%.
-- [ ] So sánh kết quả Go inference vs Python inference trên cùng 100 domain — kết quả phải giống nhau 100%.
-- [ ] Benchmark Go inference: latency **< 5ms** per domain trên VPS 1 core.
-- [ ] Chạy full Safe Zone pipeline với `SAFE_ZONE_AI_PROVIDER=hybrid` + ML model enabled, xác nhận Gemini chỉ bị gọi khi ML model confidence < threshold.
-- [ ] Kiểm tra fail-open: tắt/xóa file `.onnx` → hệ thống phải fallback sang Gemini/Ollama mà không crash.
+```bash
+# 🆕 CRITICAL: Verify CGO_ENABLED=0 build still works with leaves dependency
+docker build --target build -t safe-zone-build-test .
+# Must succeed without CGO errors
+
+# Full image build
+docker build -t safe-zone:ml-test .
+docker run --rm safe-zone:ml-test /service --version
+```
+
+### Manual Verification Checklist
+
+- [ ] **Python model quality**: Run `predict_domain()` trên 100 domain đã biết (50 safe, 50 malicious) — Precision ≥ 97%, Recall ≥ 95%.
+- [ ] **Go ↔ Python consistency**: So sánh kết quả Go inference vs Python inference trên cùng 100 domain — kết quả phải giống nhau 100%.
+- [ ] **Go inference latency**: Benchmark **< 5ms** per domain trên VPS 1 core.
+- [ ] **Docker build**: `CGO_ENABLED=0` + Alpine base image build thành công, không có CGO errors.
+- [ ] **Fail-open**: Xóa file `domain_threat_lgbm.txt` → hệ thống phải fallback sang Gemini/Ollama bình thường.
+- [ ] **Pipeline flow**: Với ML model enabled, Gemini chỉ bị gọi khi ML confidence < threshold.
+- [ ] **Regression test**: Toàn bộ existing tests (`go test ./...`) vẫn pass.
 
 ---
 
 ## Tổng kết Timeline
 
-| Phase | Công việc | Thời gian |
-| :--- | :--- | :--- |
-| **Phase 1** | Thu thập & chuẩn bị dữ liệu | 1-2 ngày |
-| **Phase 2** | Feature Engineering & Vectorization | 1-2 ngày |
-| **Phase 3** | Training CatBoost & Evaluation | 1 ngày |
-| **Phase 4** | Export ONNX & Verify | 0.5 ngày |
-| **Phase 5** | Tích hợp vào Go Backend | 2-3 ngày |
-| **Tổng** | | **~6-8 ngày làm việc** |
+| Phase | Công việc | Thời gian | Thay đổi so với v1 |
+| :--- | :--- | :--- | :--- |
+| **Phase 1** | Thu thập & chuẩn bị dữ liệu | **0.5-1 ngày** | ⬇️ Giảm nhờ tái sử dụng `build_domain_dataset.py` |
+| **Phase 2** | Feature Engineering & Vectorization | 1-2 ngày | ✏️ Encode categorical → numerical |
+| **Phase 3** | Training **LightGBM** & Evaluation | 1 ngày | 🔄 CatBoost → LightGBM |
+| **Phase 4** | Verify Model & Export cho Go | 0.5 ngày | 🔄 ONNX → LightGBM text format |
+| **Phase 5** | Tích hợp vào Go Backend (`leaves`) | 2-3 ngày | 🔄 `onnxruntime_go` → `leaves`, đặt vào `internal/analysis/` |
+| **Tổng** | | **~5-7 ngày làm việc** | ⬇️ Giảm ~1 ngày |
 
 > [!TIP]
-> **Quick Win**: Phase 1-4 (Python) có thể chạy hoàn toàn trên **Google Colab miễn phí** mà không cần setup môi trường local. Chỉ cần upload datasets và chạy notebook.
+> **Quick Win**: Phase 1-4 (Python) có thể chạy hoàn toàn trên **Google Colab miễn phí**. Chỉ cần upload datasets từ `data/` lên Colab và chạy notebook.
