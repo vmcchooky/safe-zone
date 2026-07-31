@@ -70,3 +70,4 @@ data/archive/
 data/whitelist/
 data/blacklist/
 ml/data/processed/
+ml/data/derived/
