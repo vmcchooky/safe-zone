@@ -20,3 +20,7 @@
   - Python Scripts: Use `snake_case` (e.g., `scrape_vietnam_blacklist.py`).
   - Shell/PowerShell Scripts: Use `kebab-case` (e.g., `safe-zone.sh`, `ui.ps1`).
 - **Location**: Scripts must be placed in their respective subdirectories based on their function. Do not place new scripts directly in the root of the `scripts/` folder.
+
+## 5. AI Engine Development Documentation
+- **Mandatory Logging**: Bất kể khi thực hiện bất kỳ thao tác nào để phát triển AI engine, đều phải cập nhật tiến trình, phương pháp và thay đổi vào `D:\Quorix\services\safe-zone\docs\research\ml\method.md`.
+- **Quality of Information**: Thông tin phải rõ ràng, minh bạch, không dài dòng. Mọi thông tin thêm vào đều phải có giá trị.
