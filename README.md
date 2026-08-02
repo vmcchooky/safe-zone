@@ -220,13 +220,13 @@ The runtime image includes an internal HTTP healthcheck, and the optional `feed-
 Use the PowerShell helper for day-to-day deployment and storage maintenance:
 
 ```powershell
-pwsh ./scripts/safe-zone.ps1 deploy
-pwsh ./scripts/safe-zone.ps1 deploy-dev
-pwsh ./scripts/safe-zone.ps1 status
-pwsh ./scripts/safe-zone.ps1 backup
-pwsh ./scripts/safe-zone.ps1 restore
-pwsh ./scripts/safe-zone.ps1 prune
-pwsh ./scripts/safe-zone.ps1 feed-sync
+pwsh ./scripts/ops/safe-zone.ps1 deploy
+pwsh ./scripts/ops/safe-zone.ps1 deploy-dev
+pwsh ./scripts/ops/safe-zone.ps1 status
+pwsh ./scripts/ops/safe-zone.ps1 backup
+pwsh ./scripts/ops/safe-zone.ps1 restore
+pwsh ./scripts/ops/safe-zone.ps1 prune
+pwsh ./scripts/ops/safe-zone.ps1 feed-sync
 ```
 
 - `deploy` builds and starts the Compose stack, then waits for the health endpoints.

@@ -19,7 +19,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Extracting and deploying on VPS..." -ForegroundColor Cyan
-ssh $TargetHost "sudo tar -xzf /tmp/deploy.tar.gz -C /opt/safe-zone && cd /opt/safe-zone && sudo chmod +x ./scripts/*.sh && ./scripts/safe-zone.sh deploy"
+ssh $TargetHost "sudo tar -xzf /tmp/deploy.tar.gz -C /opt/safe-zone && cd /opt/safe-zone && sudo chmod +x ./scripts/*/*.sh && ./scripts/ops/safe-zone.sh deploy"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Deployment on VPS failed!" -ForegroundColor Red
