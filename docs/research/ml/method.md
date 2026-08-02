@@ -393,7 +393,7 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–3
 
 | Ngày | Mô tả | Tác giả |
 |---|---|---|
-| 2026-07-28 | Khởi tạo — Data Preflight & Scraping | Gemini |
-| 2026-07-31 | Phase 0 hoàn thành — Snapshots, Parity, Ablation, Contract v1 | Gemini |
-| 2026-08-01 | Phase 1, 2, 3 hoàn thành — Training, Calibration, Verification | Gemini |
-| 2026-08-02 | Cải tiến cấu trúc: thêm Abstract, sơ đồ, Version History. Di chuyển feature-extraction plan vào `docs/research/ml/` | Claude Opus 4 |
+| 2026-07-28 | Khởi tạo — Data Preflight & Scraping | Gemini 3.6|
+| 2026-07-31 | Phase 0 hoàn thành — Snapshots, Parity, Ablation, Contract v1 | Gemini 3.6 |
+| 2026-08-01 | Phase 1, 2, 3 hoàn thành — Training, Calibration, Verification | Gemini 3.6 |
+| 2026-08-02 | Cải tiến cấu trúc: thêm Abstract, sơ đồ, Version History. Di chuyển feature-extraction plan vào `docs/research/ml/` | Claude Opus 4.6 |
