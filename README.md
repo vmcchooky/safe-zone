@@ -1,5 +1,7 @@
 # Safe Zone
 
+🌐 **Language / Ngôn ngữ:** [English](README.md) | [Tiếng Việt](README.vi.md)
+
 Safe Zone is an open-source, nonprofit project developing a DNS-level anti-phishing system for protecting users and organizations from phishing and impersonation websites in Vietnam.
 
 The project is currently in active development. This repository describes an evolving implementation intended to become a useful community-serving tool; it does not claim complete coverage or production readiness for every deployment scenario. The public project direction is summarized on the [Safe Zone project page](https://www.quorix.io.vn/projects/safe-zone/).

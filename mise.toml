@@ -1,17 +1,7 @@
 [tools]
 go = "1.26.5"
 node = "24"
-"go:github.com/golangci/golangci-lint/cmd/golangci-lint" = "v1.64.5"
-
-[tasks.default]
-description = "Run the default repository verification suite"
-depends = ["check"]
-run = "echo Safe Zone default checks passed."
-
-[tasks.check]
-description = "Run the standard local verification suite"
-depends = ["go:lint", "go:test", "go:build"]
-run = "echo Safe Zone checks passed."
+golangci-lint = "1.64.5"
 
 [tasks.default]
 description = "Run the default repository verification suite"

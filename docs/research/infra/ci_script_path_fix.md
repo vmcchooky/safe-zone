@@ -18,6 +18,7 @@ Khôi phục khả năng thực thi của tiến trình CI (`mise run ci`) và �
 | Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
 |---|---|---|---|
 | Chuẩn hóa đường dẫn trong `mise.toml` | Cập nhật cấu hình `mise.toml` trỏ tới `scripts/ops/` | Di chuyển file script ra lại root `scripts/` | Tuân thủ quy định AGENTS.md Section 4 (scripts phân loại theo thư mục con `scrapers`, `verifiers`, `ops`, ...), giữ cấu trúc dự án sạch sẽ và gọn gàng. |
+| Đổi backend `golangci-lint` | Dùng `golangci-lint = "1.64.5"` trong `[tools]` | Dùng `"go:github.com/golangci/golangci-lint/cmd/golangci-lint"` | Cấu hình `go:` ép `mise` chạy `go install` vốn bị khuyến cáo không sử dụng bởi golangci-lint và gây lỗi exit code 1 khi `mise install` trong CI. Dùng backend bản ngữ (`golangci-lint = "1.64.5"`) giúp `mise` tải trực tiếp binary phát hành từ GitHub Releases một cách ổn định. |
 
 ### Cách thức Thực hiện (Implementation Details)
 
@@ -25,8 +26,8 @@ Khôi phục khả năng thực thi của tiến trình CI (`mise run ci`) và �
 - **Chiến lược:**
   1. Phân tích nguyên nhân lỗi thông qua kiểm tra cấu trúc thư mục `scripts/` và kiểm tra file `mise.toml`.
   2. Phát hiện bất đồng bộ giữa cấu hình `mise.toml` (gọi `./scripts/ui.sh`, `./scripts/ui.ps1`, `./scripts/safe-zone.sh`, `./scripts/safe-zone.ps1`) và vị trí thực tế của script tại `scripts/ops/`.
-  3. Tiến hành cập nhật tất cả các đường dẫn trong `mise.toml`, `deploy.ps1`, và `README.md` trỏ chính xác về thư mục `scripts/ops/`.
-  4. Kiểm tra trạng thái làm việc để đảm bảo toàn bộ mã nguồn ở trạng thái sẵn sàng.
+  3. Cập nhật tất cả các đường dẫn trong `mise.toml`, `deploy.ps1`, và `README.md` trỏ chính xác về thư mục `scripts/ops/`.
+  4. Sửa cấu hình linter từ `"go:github.com/golangci/golangci-lint/cmd/golangci-lint"` thành `golangci-lint = "1.64.5"` để `jdx/mise-action@v4` tải binary trực tiếp thay vì biên dịch qua `go install`.
 
 ### Số liệu (Metrics & Results)
 
@@ -47,4 +48,4 @@ Khôi phục khả năng thực thi của tiến trình CI (`mise run ci`) và �
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
-| 2026-08-02 | Khởi tạo tài liệu và khắc phục lỗi đường dẫn script trong CI | Antigravity AI Agent |
+| 2026-08-02 | Khởi tạo tài liệu, khắc phục đường dẫn script và sửa backend golangci-lint trong `mise.toml` | Antigravity AI Agent |

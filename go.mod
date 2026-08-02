@@ -4,6 +4,7 @@ go 1.26.5
 
 require (
 	github.com/alicebob/miniredis/v2 v2.38.0
+	github.com/dmitryikh/leaves v0.0.0-20230708180554-25d19a787328
 	github.com/miekg/dns v1.1.72
 	github.com/redis/go-redis/v9 v9.19.0
 	golang.org/x/crypto v0.53.0
@@ -14,7 +15,6 @@ require (
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/dmitryikh/leaves v0.0.0-20230708180554-25d19a787328 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
