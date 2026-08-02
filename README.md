@@ -260,3 +260,8 @@ For a Linux VPS, [ops/cron/safe-zone.cron.example](ops/cron/safe-zone.cron.examp
 This project remains in active development. DoT, Gemini, public TLS, DuckDNS, and production Caddy wiring are available as optional capabilities, while real-environment validation and release hardening continue.
 Roadmap decisions should follow [docs/deployment/Safe_Zone_OPEX_Estimate.md](docs/deployment/Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
 Cost-sensitive changes should follow [docs/specs/opex-cost-optimization/policy.md](docs/specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](.github/pull_request_template.md).
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
