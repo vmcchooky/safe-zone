@@ -1,0 +1,33 @@
+{
+  "punycode_score": 35,
+  "long_domain_length": 24,
+  "long_domain_score": 15,
+  "hyphen_count_threshold": 3,
+  "hyphen_score": 10,
+  "digit_ratio_threshold": 0.25,
+  "digit_ratio_score": 10,
+  "mixed_script_score": 25,
+  "keywords": [
+    "login",
+    "secure",
+    "verify",
+    "account",
+    "update",
+    "support",
+    "wallet",
+    "dichvucong",
+    "congan",
+    "vneid",
+    "phatnguoi",
+    "xulyphat",
+    "nganhang",
+    "xacthuc",
+    "cungcap"
+  ],
+  "keyword_base_score": 15,
+  "keyword_match_score": 10,
+  "keyword_multiple_bonus": 10,
+  "brand_spoofing_score": 50,
+  "entropy_threshold": 3.0,
+  "entropy_score": 35
+}

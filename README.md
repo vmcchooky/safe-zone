@@ -104,7 +104,7 @@ Active and Phishing.Database Active to the minimal global preset. These are
 global feeds selected as a broader baseline for Vietnamese deployments, not
 Vietnam-specific feeds. General ad/tracker hosts lists are intentionally
 excluded because every threat-feed match is treated as malicious. See
-`docs/threat-intelligence-sources.md` for the source policy, additive-sync
+`docs/research/security/threat-intelligence-sources.md` for the source policy, additive-sync
 retention limitation, and planned API/DNSBL/STIX/TAXII connectors.
 
 The DoH endpoint accepts standard DNS wire-format GET or POST requests at:
@@ -258,5 +258,5 @@ For a Linux VPS, [ops/cron/safe-zone.cron.example](ops/cron/safe-zone.cron.examp
 ## Notes
 
 This project remains in active development. DoT, Gemini, public TLS, DuckDNS, and production Caddy wiring are available as optional capabilities, while real-environment validation and release hardening continue.
-Roadmap decisions should follow [docs/Safe_Zone_OPEX_Estimate.md](docs/Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
+Roadmap decisions should follow [docs/deployment/Safe_Zone_OPEX_Estimate.md](docs/deployment/Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
 Cost-sensitive changes should follow [docs/specs/opex-cost-optimization/policy.md](docs/specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](.github/pull_request_template.md).

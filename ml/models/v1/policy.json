@@ -1,0 +1,9 @@
+{
+  "policy_version": "1.0.0",
+  "operating_mode": "enforce_v1",
+  "block_threshold": 0.85,
+  "action_on_block": "PROMOTE_SUSPICIOUS_TO_MALICIOUS",
+  "action_on_pass": "ABSTAIN_KEEP_SUSPICIOUS",
+  "allow_threshold_enabled": false,
+  "created_at": "2026-08-01T13:57:28Z"
+}

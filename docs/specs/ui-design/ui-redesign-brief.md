@@ -30,7 +30,7 @@ This redesign brief outlines the visual, interaction, and technical guidelines f
 
 ## 2. Current User-Facing Surfaces
 
-The following table lists every user-facing surface identified in the codebase and documented inside [docs/ui-inventory.md](file:///d:/Quorix/services/safe-zone/docs/ui-inventory.md):
+The following table lists every user-facing surface identified in the codebase and documented inside [docs/specs/ui-design/ui-inventory.md](file:///d:/Quorix/services/safe-zone/docs/specs/ui-design/ui-inventory.md):
 
 | Surface | Source Files | Purpose | Main User Action | Data Displayed | Current Limitations |
 | --- | --- | --- | --- | --- | --- |
@@ -427,7 +427,7 @@ To safely implement the redesign without breaking functionality, split the proje
 
 | Phase | Goal | Files Likely Touched | Acceptance Criteria | Manual Test Steps | What NOT to Touch |
 | --- | --- | --- | --- | --- | --- |
-| **Phase 0** | Inventory and brief | None | [docs/ui-inventory.md](file:///d:/Quorix/services/safe-zone/docs/ui-inventory.md) and [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) must be complete, accurate, and fully aligned with the codebase. | Verify that both document files exist and can be read clearly in markdown view. | Do not edit any codebase source files. |
+| **Phase 0** | Inventory and brief | None | [docs/specs/ui-design/ui-inventory.md](file:///d:/Quorix/services/safe-zone/docs/specs/ui-design/ui-inventory.md) and [docs/specs/ui-design/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/specs/ui-design/ui-redesign-brief.md) must be complete, accurate, and fully aligned with the codebase. | Verify that both document files exist and can be read clearly in markdown view. | Do not edit any codebase source files. |
 | **Phase 1** | Implement Design Tokens | `internal/api/assets/safe-zone.css` | Define all `--sz-` visual tokens globally under `:root` in `safe-zone.css`. | Load `/dashboard` and check the browser console to verify that `safe-zone.css` loads successfully without syntax errors. | Do not rename existing DOM selectors or modify HTML templates. |
 | **Phase 2** | Base UI Primitives | `internal/api/assets/safe-zone.css` | Implement base CSS classes (`.sz-card`, `.sz-btn`, `.sz-input`, `.sz-pill`, `.sz-skeleton`, `.sz-alert`). | Test hover and active click focus animations on dummy elements inside the style sheet. | Do not edit Go template files or Javascript logic. |
 | **Phase 3** | Redesign Dashboard Shell | `internal/api/views/dashboard.html`, `internal/api/assets/safe-zone.css` | Apply design shell variables. Replace emojis in navigation tabs with clean typography. Apply smooth active highlights to selected tabs. | Load `/dashboard` in the browser, verify health badge colors, and click through tabs to confirm they swap views cleanly. | Do not modify the `data-tab="..."` attributes or the `switchTab()` function bindings. |
@@ -446,7 +446,7 @@ Below is a series of precise, step-by-step prompts to guide an AI coding agent t
 
 ### Prompt 1: Implement CSS Design Tokens
 *   **Task**: Define all `--sz-` visual tokens globally under `:root` in `safe-zone.css` according to Phase 1.
-*   **Input Files to Read First**: [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) (Section 8), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Input Files to Read First**: [docs/specs/ui-design/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/specs/ui-design/ui-redesign-brief.md) (Section 8), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
 *   **Files Allowed to Edit**: `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not modify any HTML template files, Go controllers, or JavaScript.
 *   **Acceptance Criteria**: All CSS variables must be declared in `:root` inside `safe-zone.css`.
@@ -454,7 +454,7 @@ Below is a series of precise, step-by-step prompts to guide an AI coding agent t
 
 ### Prompt 2: Define Base UI Primitives/Classes
 *   **Task**: Implement base CSS classes (`.sz-card`, `.sz-btn`, `.sz-input`, `.sz-pill`, `.sz-skeleton`, `.sz-alert`) using the new tokens in `safe-zone.css` according to Phase 2.
-*   **Input Files to Read First**: [docs/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/ui-redesign-brief.md) (Section 7 and 8), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
+*   **Input Files to Read First**: [docs/specs/ui-design/ui-redesign-brief.md](file:///d:/Quorix/services/safe-zone/docs/specs/ui-design/ui-redesign-brief.md) (Section 7 and 8), [internal/api/assets/safe-zone.css](file:///d:/Quorix/services/safe-zone/internal/api/assets/safe-zone.css)
 *   **Files Allowed to Edit**: `internal/api/assets/safe-zone.css`
 *   **Hard Rules**: Do not edit Go templates or JavaScript files.
 *   **Acceptance Criteria**: CSS classes for base components are declared in `safe-zone.css` using the `--sz-` variables.

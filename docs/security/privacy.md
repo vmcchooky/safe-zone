@@ -64,7 +64,7 @@ Hệ thống Safe Zone **CHỈ** thu thập dữ liệu từ các nguồn mở, 
 - Không truy cập các hệ thống yêu cầu xác thực trái phép
 
 ### 3.2 Danh mục Nguồn Dữ liệu Công khai
-Dữ liệu được thu thập từ các nguồn chính sau (chi tiết kỹ thuật đầy đủ tại [resource.md](resource.md)):
+Dữ liệu được thu thập từ các nguồn chính sau (chi tiết kỹ thuật đầy đủ tại [resource.md](../research/ml/resource.md)):
 
 | Loại Nguồn | Ví dụ Cụ thể | Tính chất |
 | :--- | :--- | :--- |
@@ -252,9 +252,9 @@ Mọi thay đổi quan trọng sẽ được thông báo qua:
 
 | Tài liệu | Đường dẫn |
 | :--- | :--- |
-| Tuyên bố Nguồn dữ liệu & Phương pháp thu thập (Chi tiết kỹ thuật) | [resource.md](resource.md) |
-| Chính sách Nguồn Threat Intelligence | [threat-intelligence-sources.md](threat-intelligence-sources.md) |
-| Quy trình Kiểm tra Bảo mật Trước Phát hành | [security/pre-release-security-checklist.md](security/pre-release-security-checklist.md) |
+| Tuyên bố Nguồn dữ liệu & Phương pháp thu thập (Chi tiết kỹ thuật) | [resource.md](../research/ml/resource.md) |
+| Chính sách Nguồn Threat Intelligence | [threat-intelligence-sources.md](../research/security/threat-intelligence-sources.md) |
+| Quy trình Kiểm tra Bảo mật Trước Phát hành | [pre-release-security-checklist.md](pre-release-security-checklist.md) |
 | Luật An ninh mạng 2018 | [Luật số 24/2018/QH14](https://thuvienphapluat.vn/van-ban/Cong-nghe-thong-tin/Luat-an-ninh-mang-2018-351416.aspx) |
 | Nghị định 13/2023/NĐ-CP về Bảo vệ Dữ liệu Cá nhân | [Nghị định 13/2023/NĐ-CP](https://thuvienphapluat.vn/van-ban/Cong-nghe-thong-tin/Nghi-dinh-13-2023-ND-CP-bao-ve-du-lieu-ca-nhan-465185.aspx) |
 | Luật An toàn Thông tin Mạng 2015 | [Luật số 86/2015/QH13](https://thuvienphapluat.vn/van-ban/Cong-nghe-thong-tin/Luat-an-toan-thong-tin-mang-2015-298365.aspx) |

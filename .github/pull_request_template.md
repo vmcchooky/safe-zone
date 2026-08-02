@@ -32,6 +32,6 @@ Describe the change in 2-4 sentences.
 
 ## Reviewer Checklist
 
-- [ ] This PR is aligned with [Safe_Zone_OPEX_Estimate.md](../docs/Safe_Zone_OPEX_Estimate.md).
+- [ ] This PR is aligned with [Safe_Zone_OPEX_Estimate.md](../docs/deployment/Safe_Zone_OPEX_Estimate.md).
 - [ ] The change stays within the approved budget profile.
 - [ ] The PR does not expand monthly OPEX without explicit approval.

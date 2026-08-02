@@ -1,0 +1,130 @@
+{
+  "model_name": "safe-zone-domain-threat-lgbm",
+  "model_version": "1.0.0",
+  "generated_at": "2026-08-01T11:24:15Z",
+  "test_evaluation": {
+    "total_test_samples": 287347,
+    "roc_auc": 0.9568974764537305,
+    "pr_auc": 0.9494775234106809,
+    "brier_score": 0.08419278772139328,
+    "ece": 0.02129060228062918
+  },
+  "candidate_cohort_evaluation": {
+    "candidate_samples": 24081,
+    "candidate_roc_auc": 0.9559861523700106,
+    "candidate_pr_auc": 0.9742252192010568
+  },
+  "threshold_sweeps": {
+    "0.5": {
+      "threshold": 0.5,
+      "precision": 0.828930209774471,
+      "recall": 0.9315875613747954,
+      "f1": 0.877265864995604,
+      "fpr": 0.16898912553048187,
+      "confusion_matrix": {
+        "tn": 127084,
+        "fp": 25843,
+        "fn": 9196,
+        "tp": 125224
+      }
+    },
+    "0.7": {
+      "threshold": 0.7,
+      "precision": 0.9011915092450438,
+      "recall": 0.8034965034965035,
+      "f1": 0.8495445750153382,
+      "fpr": 0.07743563922655908,
+      "confusion_matrix": {
+        "tn": 141085,
+        "fp": 11842,
+        "fn": 26414,
+        "tp": 108006
+      }
+    },
+    "0.8": {
+      "threshold": 0.8,
+      "precision": 0.9436079878490097,
+      "recall": 0.6886400833209344,
+      "f1": 0.7962102021770264,
+      "fpr": 0.03617412229364337,
+      "confusion_matrix": {
+        "tn": 147395,
+        "fp": 5532,
+        "fn": 41853,
+        "tp": 92567
+      }
+    },
+    "0.85": {
+      "threshold": 0.85,
+      "precision": 0.961896071795701,
+      "recall": 0.6195506621038536,
+      "f1": 0.7536685686360571,
+      "fpr": 0.021572384209459415,
+      "confusion_matrix": {
+        "tn": 149628,
+        "fp": 3299,
+        "fn": 51140,
+        "tp": 83280
+      }
+    },
+    "0.9": {
+      "threshold": 0.9,
+      "precision": 0.9775017105139592,
+      "recall": 0.5420473143877399,
+      "f1": 0.6973808259036461,
+      "fpr": 0.010966016465372368,
+      "confusion_matrix": {
+        "tn": 151250,
+        "fp": 1677,
+        "fn": 61558,
+        "tp": 72862
+      }
+    },
+    "0.95": {
+      "threshold": 0.95,
+      "precision": 0.9877366393030659,
+      "recall": 0.4386103258443684,
+      "f1": 0.6074699912420792,
+      "fpr": 0.004786597526924611,
+      "confusion_matrix": {
+        "tn": 152195,
+        "fp": 732,
+        "fn": 75462,
+        "tp": 58958
+      }
+    }
+  },
+  "recommended_block_threshold": 0.85,
+  "hard_cases_audit": {
+    "hard_cases_total": 21643,
+    "safe_vn_benign_count": 44840,
+    "safe_vn_false_positives_at_0_85": 0,
+    "safe_vn_fpr_at_0_85": 0.0,
+    "gov_edu_vn_benign_count": 5247,
+    "gov_edu_vn_false_positives_at_0_85": 0,
+    "gov_edu_vn_fpr_at_0_85": 0.0
+  },
+  "calibration": {
+    "calibration_version": "1.0.0",
+    "method": "platt_sigmoid",
+    "fitted_on_partition": "calibration",
+    "num_samples": 281226,
+    "parameters": {
+      "A": -1.0977005266998439,
+      "B": 0.0020583963303205024,
+      "slope_w": 1.0977005266998439,
+      "intercept_c": -0.0020583963303205024,
+      "formula": "P(malicious|raw_margin) = 1.0 / (1.0 + exp(A * raw_margin + B))",
+      "clip_eps": 1e-15
+    },
+    "metrics": {
+      "uncalibrated_brier_score": 0.08338052050203755,
+      "uncalibrated_ece": 0.011885359457229688,
+      "calibrated_brier_score": 0.08330462108095997,
+      "calibrated_ece": 0.008846936109331507,
+      "brier_improvement_pct": 0.09,
+      "ece_improvement_pct": 25.56
+    },
+    "timestamp": "2026-08-01T11:23:56Z"
+  }
+}

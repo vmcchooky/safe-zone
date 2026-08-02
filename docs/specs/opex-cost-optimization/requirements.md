@@ -2,7 +2,7 @@
 
 ## Goal
 
-Keep Safe Zone aligned to [Safe_Zone_OPEX_Estimate.md](../../Safe_Zone_OPEX_Estimate.md) as the governing roadmap, with the primary objective of minimizing monthly operating cost while preserving the current core anti-phishing behavior.
+Keep Safe Zone aligned to [Safe_Zone_OPEX_Estimate.md](../../deployment/Safe_Zone_OPEX_Estimate.md) as the governing roadmap, with the primary objective of minimizing monthly operating cost while preserving the current core anti-phishing behavior.
 
 ## Milestones
 

@@ -1,0 +1,11 @@
+{
+  "snapshot_version": 1,
+  "source_url": "https://raw.githubusercontent.com/publicsuffix/list/master/public_suffix_list.dat",
+  "retrieved_at": "2026-07-31T14:32:04.613075+00:00",
+  "bytes": 332766,
+  "sha256": "fe6adc7fb8014f57d28d69b18d0aa3e581efb432544922e12131a5d4a87bd954",
+  "sections": [
+    "ICANN DOMAINS",
+    "PRIVATE DOMAINS"
+  ]
+}

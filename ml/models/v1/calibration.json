@@ -1,0 +1,23 @@
+{
+  "calibration_version": "1.0.0",
+  "method": "platt_sigmoid",
+  "fitted_on_partition": "calibration",
+  "num_samples": 281226,
+  "parameters": {
+    "A": -1.0977005266998439,
+    "B": 0.0020583963303205024,
+    "slope_w": 1.0977005266998439,
+    "intercept_c": -0.0020583963303205024,
+    "formula": "P(malicious|raw_margin) = 1.0 / (1.0 + exp(A * raw_margin + B))",
+    "clip_eps": 1e-15
+  },
+  "metrics": {
+    "uncalibrated_brier_score": 0.08338052050203755,
+    "uncalibrated_ece": 0.011885359457229688,
+    "calibrated_brier_score": 0.08330462108095997,
+    "calibrated_ece": 0.008846936109331507,
+    "brier_improvement_pct": 0.09,
+    "ece_improvement_pct": 25.56
+  },
+  "timestamp": "2026-08-01T11:23:56Z"
+}
