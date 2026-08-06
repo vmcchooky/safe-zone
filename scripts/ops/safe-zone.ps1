@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $BackupsRoot = Join-Path $RepoRoot 'backups'
 $TmpRoot = Join-Path $RepoRoot 'tmp'
 $SqliteContainerPath = '/app/data/safe-zone.db'

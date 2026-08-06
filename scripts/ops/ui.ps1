@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $UiRoot = Join-Path $RepoRoot 'ui'
 $BackendBundleRoot = Join-Path $RepoRoot 'internal\api\app\dist'
 $UiLockfile = Join-Path $UiRoot 'package-lock.json'

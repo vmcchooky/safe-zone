@@ -2,7 +2,7 @@
 set -eu
 
 compose="${SAFE_ZONE_COMPOSE:-docker compose}"
-project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 backup_dir="${SAFE_ZONE_BACKUP_DIR:-${project_dir}/backups}"
 stack="${SAFE_ZONE_STACK:-production}"
 tmp_dir="${project_dir}/tmp"

@@ -2,7 +2,7 @@
 set -eu
 
 command_name="${1:-dev}"
-project_root="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+project_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 ui_root="${project_root}/ui"
 backend_bundle_root="${project_root}/internal/api/app/dist"
 ui_lockfile="${ui_root}/package-lock.json"

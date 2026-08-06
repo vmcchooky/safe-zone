@@ -165,3 +165,8 @@ Sử dụng Conventional Commits:
 ### 8.3. Scope thường dùng
 
 `api`, `dns`, `ml`, `ui`, `feeds`, `analysis`, `config`, `cache`, `store`, `ops`, `docs`, `scripts`
+
+### 8.4. Quy tắc Push & Kiểm tra CI
+
+Khi người dùng yêu cầu push code lên GitHub/remote repository, AI agent **PHẢI** luôn kiểm tra tiến trình CI local (`mise run ci` hoặc tương đương) và tự động khắc phục mọi lỗi (nếu có) trước khi hoàn tất công việc.
+

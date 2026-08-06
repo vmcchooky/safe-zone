@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 domain="${SAFE_ZONE_DUCKDNS_DOMAIN:-}"
 token="${SAFE_ZONE_DUCKDNS_TOKEN:-}"
 token_file="${SAFE_ZONE_DUCKDNS_TOKEN_FILE:-}"

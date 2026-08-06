@@ -19,28 +19,28 @@ Khôi phục khả năng thực thi của tiến trình CI (`mise run ci`) và �
 |---|---|---|---|
 | Chuẩn hóa đường dẫn trong `mise.toml` | Cập nhật cấu hình `mise.toml` trỏ tới `scripts/ops/` | Di chuyển file script ra lại root `scripts/` | Tuân thủ quy định AGENTS.md Section 4 (scripts phân loại theo thư mục con `scrapers`, `verifiers`, `ops`, ...), giữ cấu trúc dự án sạch sẽ và gọn gàng. |
 | Đổi backend `golangci-lint` | Dùng `golangci-lint = "1.64.5"` trong `[tools]` | Dùng `"go:github.com/golangci/golangci-lint/cmd/golangci-lint"` | Cấu hình `go:` ép `mise` chạy `go install` vốn bị khuyến cáo không sử dụng bởi golangci-lint và gây lỗi exit code 1 khi `mise install` trong CI. Dùng backend bản ngữ (`golangci-lint = "1.64.5"`) giúp `mise` tải trực tiếp binary phát hành từ GitHub Releases một cách ổn định. |
+| Điều chỉnh độ sâu thư mục gốc trong scripts | Đổi `dirname $0/..` thành `dirname $0/../..` và `Split-Path -Parent $PSScriptRoot` thành 2 lần `Split-Path` | Giữ nguyên 1 cấp `..` | Do các script được chuyển vào thư mục con cấp 2 (`scripts/ops/`), lùi 1 cấp làm `project_root` nhận nhầm thành `scripts/` thay vì repository root, dẫn đến lỗi `ui workspace not found: .../scripts/ui`. |
 
 ### Cách thức Thực hiện (Implementation Details)
 
 - **Mô hình AI Agent:** Gemini 3.6 Flash.
 - **Chiến lược:**
-  1. Phân tích nguyên nhân lỗi thông qua kiểm tra cấu trúc thư mục `scripts/` và kiểm tra file `mise.toml`.
-  2. Phát hiện bất đồng bộ giữa cấu hình `mise.toml` (gọi `./scripts/ui.sh`, `./scripts/ui.ps1`, `./scripts/safe-zone.sh`, `./scripts/safe-zone.ps1`) và vị trí thực tế của script tại `scripts/ops/`.
-  3. Cập nhật tất cả các đường dẫn trong `mise.toml`, `deploy.ps1`, và `README.md` trỏ chính xác về thư mục `scripts/ops/`.
-  4. Sửa cấu hình linter từ `"go:github.com/golangci/golangci-lint/cmd/golangci-lint"` thành `golangci-lint = "1.64.5"` để `jdx/mise-action@v4` tải binary trực tiếp thay vì biên dịch qua `go install`.
+  1. Phân tích lỗi `ui workspace not found: /home/runner/work/safe-zone/safe-zone/scripts/ui` khi chạy `sh ./scripts/ops/ui.sh bundle`.
+  2. Phát hiện biến `project_root` / `RepoRoot` trong các script Shell và PowerShell thuộc `scripts/ops/` chỉ lùi 1 cấp thư mục (`/..`), khiến đường dẫn bị dừng ở `scripts/` thay vì dự án gốc.
+  3. Tiến hành cập nhật tất cả các script trong `scripts/ops/` (`ui.sh`, `ui.ps1`, `safe-zone.sh`, `safe-zone.ps1`, `release-preflight.sh`, `release-preflight.ps1`, `duckdns-update.sh`, `export-dot-cert.sh`) lùi 2 cấp thư mục (`/../..`) về đúng thư mục gốc repo.
+  4. Bổ sung quy tắc vào `.agents/AGENTS.md` (mục 8.4) yêu cầu AI Agent luôn kiểm tra CI local trước khi push code theo yêu cầu của người dùng.
 
 ### Số liệu (Metrics & Results)
 
-- **Số lượng task được khắc phục:** 15 tasks trong `mise.toml` (`ui:install`, `ui:dev`, `ui:build`, `ui:bundle`, `ui:preview`, `ui:typecheck`, `ui:check`, `ops:deploy`, `ops:deploy-dev`, `ops:status`, `ops:logs`, `ops:backup`, `ops:restore`, `ops:prune`, `ops:feed-sync`).
-- **Tập tin ảnh hưởng:** 3 tập tin ([mise.toml](file:///d:/Quorix/services/safe-zone/mise.toml), [deploy.ps1](file:///d:/Quorix/services/safe-zone/deploy.ps1), [README.md](file:///d:/Quorix/services/safe-zone/README.md)).
+- **Số lượng task và script được khắc phục:** 15 tasks trong `mise.toml` và 8 tập tin script trong `scripts/ops/`.
+- **Tập tin ảnh hưởng:** [`mise.toml`](file:///d:/Quorix/services/safe-zone/mise.toml), [`deploy.ps1`](file:///d:/Quorix/services/safe-zone/deploy.ps1), [`README.md`](file:///d:/Quorix/services/safe-zone/README.md), [`.agents/AGENTS.md`](file:///d:/Quorix/services/safe-zone/.agents/AGENTS.md), các script thuộc [`scripts/ops/`](file:///d:/Quorix/services/safe-zone/scripts/ops/).
 - **Tỷ lệ vượt qua kiểm tra cấu hình:** 100%.
 
 ### Liên kết Artifacts
 
 - Cấu hình Task Manager: [mise.toml](file:///d:/Quorix/services/safe-zone/mise.toml)
-- Script triển khai VPS: [deploy.ps1](file:///d:/Quorix/services/safe-zone/deploy.ps1)
-- Tài liệu Hướng dẫn: [README.md](file:///d:/Quorix/services/safe-zone/README.md)
 - Thư mục chứa scripts thực tế: [scripts/ops/](file:///d:/Quorix/services/safe-zone/scripts/ops/)
+- Hướng dẫn AI Agent: [.agents/AGENTS.md](file:///d:/Quorix/services/safe-zone/.agents/AGENTS.md)
 
 ---
 
@@ -48,4 +48,5 @@ Khôi phục khả năng thực thi của tiến trình CI (`mise run ci`) và �
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-06 | Khắc phục độ sâu thư mục gốc trong scripts/ops/ và thêm quy tắc kiểm tra CI vào AGENTS.md | Antigravity AI Agent |
 | 2026-08-02 | Khởi tạo tài liệu, khắc phục đường dẫn script và sửa backend golangci-lint trong `mise.toml` | Antigravity AI Agent |

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -eu
 
-project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 cert_src="${1:-${SAFE_ZONE_DOT_CERT_SOURCE:-}}"
 key_src="${2:-${SAFE_ZONE_DOT_KEY_SOURCE:-}}"
 target_dir="${SAFE_ZONE_DOT_CERT_TARGET_DIR:-${project_dir}/ops/certs/dot}"
