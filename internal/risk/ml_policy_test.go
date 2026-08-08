@@ -87,6 +87,27 @@ func TestMLShadowDoesNotChangeVerdict(t *testing.T) {
 	}
 }
 
+func TestMLShadowRecordsWouldPassAndProbabilityBucket(t *testing.T) {
+	fake := &fakeMLClassifier{decision: analysis.MLDecision{
+		Probability: 0.12,
+		Action:      analysis.MLActionAbstain,
+	}}
+	service := newMLPolicyTestService(fake, analysis.MLModeShadow)
+	defer service.Close()
+
+	result := service.Analyze(nil, "login-security-example.com", ClientInfo{}).Result
+	if result.Verdict != analysis.VerdictSuspicious {
+		t.Fatalf("shadow mode changed verdict to %s", result.Verdict)
+	}
+	status := service.MLStatus()
+	if status.State != "ready" || status.ShadowWouldPass != 1 || status.ShadowWouldBlock != 0 {
+		t.Fatalf("unexpected shadow status: %+v", status)
+	}
+	if status.ProbabilityHistogram["0_10_0_19"] != 1 {
+		t.Fatalf("expected probability histogram sample, got %+v", status.ProbabilityHistogram)
+	}
+}
+
 func TestMLDisabledPreservesFlowAndDoesNotCallClassifier(t *testing.T) {
 	fake := &fakeMLClassifier{decision: analysis.MLDecision{
 		Probability: 0.99,
@@ -116,6 +137,18 @@ func TestMLRuntimeConfigValidation(t *testing.T) {
 		t.Setenv("SAFE_ZONE_ML_BUNDLE_DIR", "")
 		if _, _, err := loadMLFromEnv(); err == nil {
 			t.Fatal("expected missing bundle error")
+		}
+	})
+	t.Run("optional shadow keeps requested mode when bundle is unavailable", func(t *testing.T) {
+		t.Setenv("SAFE_ZONE_ML_MODE", "shadow")
+		t.Setenv("SAFE_ZONE_ML_BUNDLE_DIR", "missing")
+		t.Setenv("SAFE_ZONE_ML_REQUIRED", "false")
+		mode, classifier, err := loadMLFromEnv()
+		if err != nil {
+			t.Fatalf("optional shadow bundle should fail open: %v", err)
+		}
+		if mode != analysis.MLModeShadow || classifier != nil {
+			t.Fatalf("expected degraded shadow mode, got mode=%q classifier=%v", mode, classifier)
 		}
 	})
 	t.Run("rejects threshold outside range", func(t *testing.T) {

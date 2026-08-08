@@ -1069,6 +1069,7 @@ Dùng một bundle directory để tránh trộn model/manifest/calibration từ
 SAFE_ZONE_ML_MODE=disabled
 
 # Empty path means no classifier bundle.
+SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
 SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
 
 # false: bundle error disables ML and preserves service behavior.
@@ -1190,17 +1191,17 @@ Các điểm sau đã được kiểm chứng trong commit `5233d58`:
 | Feature/runtime parity | 29 golden cases; handcrafted và TF-IDF vector parity trong dung sai; bundle có 534 features. |
 | Classifier | LightGBM text model qua `leaves`, Platt calibration, immutable loader và deterministic revision. |
 | Policy | `disabled`, `shadow`, `enforce`; enforce chỉ promote lexical `SUSPICIOUS`; abstain/error tiếp tục LLM/fail-open. |
-| Cache/telemetry | Cache entry mang `ModelRevision`; status và metrics expose mode, model version, revision, counters và latency histogram. |
+| Cache/telemetry | Cache entry mang `ModelRevision`; status và metrics expose mode, model version, revision, state, counters, probability histogram và latency histogram. |
 | Validation | `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests và `go vet ./...` pass. |
 | Artifact provenance | `python -B ml/src/validate_artifacts.py` đạt 41/41; 15/15 raw/processed hashes khớp; bundle `SHA256SUMS` khớp. |
 
-Phase 4 không tự bật ML trong production. `docker-compose.yml` chỉ truyền các biến ML với default an toàn; chưa thêm model mount hoặc private artifact fetch.
+Phase 4 không tự bật ML trong production. Phase 5 đã bổ sung read-only model mount, checksum-gated versioned provisioner, rollback helper và shadow evidence fields; private artifact activation và operational rollout evidence vẫn là gate vận hành.
 
 ---
 
 ## 8. Phase 5 — Packaging, deployment và controlled rollout
 
-> **Trạng thái:** Chưa triển khai. Đây là bước kế tiếp sau Phase 4.
+> **Trạng thái:** Đã triển khai phần provisioning/shadow plumbing; private artifact activation, operational evidence, canary và rollback drill vẫn mở.
 
 ### 8.1 Quyết định artifact delivery
 
@@ -1225,11 +1226,11 @@ Baked-in image chỉ là phương án release khác, cần quyết định/appro
 ### 8.2 Repository/deployment changes
 
 - Ignore `deploy/model-bundle/` trong Git nếu chứa private artifact.
-- Không thêm model bundle vào `.dockerignore` nếu chọn baked-in build; nếu dùng mount thì build context không cần bundle.
+- Với phương án mount đang chọn, loại `deploy/model-bundle/`, training data, virtualenv và `ml/models/` khỏi Docker build context; baked-in image sẽ là một quyết định release khác và phải đổi rule này có chủ đích.
 - Thêm read-only mount cho cả `core-api` và `dns-resolver`.
-- Truyền cùng `SAFE_ZONE_ML_MODE`, `SAFE_ZONE_ML_BUNDLE_DIR`, `SAFE_ZONE_ML_REQUIRED`.
-- Pre-deploy script xác minh checksum/signature trước `docker compose up`.
-- Runbook mô tả fetch, activate symlink/directory, rollback và cleanup retention.
+- Truyền cùng `SAFE_ZONE_ML_MODE`, `SAFE_ZONE_ML_BUNDLE_DIR`, `SAFE_ZONE_ML_REQUIRED`; host path dùng `SAFE_ZONE_ML_BUNDLE_HOST_DIR`.
+- `scripts/ops/ml-bundle.sh` và `.ps1` xác minh checksum trước khi copy/activate version immutable; deploy helper chặn shadow/enforce nếu `current` thiếu hoặc sai checksum.
+- Runbook mô tả provision, activate symlink/junction, rollback và cleanup retention.
 
 Ví dụ mount:
 
@@ -1241,7 +1242,7 @@ volumes:
 ### 8.3 Startup/readiness
 
 - `disabled`: readiness không phụ thuộc model.
-- `shadow/enforce`, `required=false`: readiness vẫn pass nếu model lỗi nhưng status phải báo disabled/degraded.
+- `shadow/enforce`, `required=false`: readiness vẫn pass nếu model lỗi nhưng status phải báo `degraded` (không đổi requested mode thành `disabled`).
 - `shadow/enforce`, `required=true`: service không ready/start nếu bundle invalid.
 - `/metrics` hoặc status endpoint phải cho biết version/revision đang active.
 
@@ -1255,7 +1256,7 @@ volumes:
 #### Stage 1 — Shadow
 
 - Bật `shadow` trên phạm vi/cụm được chọn.
-- Thu `would_block`, abstain, errors, latency.
+- Thu `would_block`, `would_pass`, abstain, errors, probability histogram và latency histogram.
 - So sánh với human overrides, strong feeds, LLM và kết quả enrichment xuất hiện sau đó.
 - Không dùng self-generated ML verdict làm ground truth cho chính model.
 
@@ -1531,8 +1532,8 @@ Custom Domain ML chỉ được coi là hoàn thành khi:
 - [x] Shadow mode không đổi verdict.
 - [x] Enforce v1 chỉ promote `SUSPICIOUS → MALICIOUS` tại threshold.
 - [x] Result, telemetry và cache revision nhất quán.
-- [ ] Bundle được provision read-only cho cả `core-api` và `dns-resolver`.
-- [~] Metrics/status và kill switch đã có; rollback runbook/production drill còn ở Phase 5.
+- [~] Provisioner/checksum validation và read-only mount cho cả `core-api` và `dns-resolver` đã có; approved private bundle activation còn mở.
+- [~] Metrics/status, degraded state và kill switch đã có; operational shadow evidence và rollback drill còn mở.
 - [~] `go test -race`, `go test ./...`, `go vet ./...` pass; production Docker verification còn ở Phase 5.
 - [ ] Product owner phê duyệt threshold/false-positive budget.
 - [ ] Security owner phê duyệt data/model storage, access, retention và rollout scope.

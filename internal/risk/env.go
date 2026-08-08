@@ -163,8 +163,8 @@ func loadMLFromEnv() (analysis.MLMode, analysis.DomainClassifier, error) {
 		if required || mode == analysis.MLModeEnforce {
 			return analysis.MLModeDisabled, nil, fmt.Errorf("ML bundle is required for mode %s", mode)
 		}
-		logjson.Warn("ML bundle not configured; ML disabled", map[string]any{"service": "risk", "mode": mode})
-		return analysis.MLModeDisabled, nil, nil
+		logjson.Warn("ML bundle not configured; requested ML mode is unavailable", map[string]any{"service": "risk", "mode": mode})
+		return mode, nil, nil
 	}
 
 	classifier, err := analysis.NewBundleClassifierWithThreshold(bundleDir, thresholdOverride)
@@ -172,12 +172,12 @@ func loadMLFromEnv() (analysis.MLMode, analysis.DomainClassifier, error) {
 		if required || mode == analysis.MLModeEnforce {
 			return analysis.MLModeDisabled, nil, fmt.Errorf("ML bundle load failed: %w", err)
 		}
-		logjson.Warn("ML bundle load failed; ML disabled", map[string]any{
+		logjson.Warn("ML bundle load failed; requested ML mode is unavailable", map[string]any{
 			"service":     "risk",
 			"mode":        mode,
 			"error_class": "bundle_load",
 		})
-		return analysis.MLModeDisabled, nil, nil
+		return mode, nil, nil
 	}
 	logjson.Info("ML classifier loaded", map[string]any{
 		"service":          "risk",

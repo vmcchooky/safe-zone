@@ -132,3 +132,18 @@ run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/ops/s
 description = "Run the feed sync helper through the standardized ops entrypoint"
 run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/ops/safe-zone.sh feed-sync"
 run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/ops/safe-zone.ps1 feed-sync"
+
+[tasks."ops:ml-provision"]
+description = "Validate and activate a versioned ML bundle through the Phase 5 provisioning helper"
+run = "sh ./scripts/ops/ml-bundle.sh provision"
+run_windows = "pwsh -NoProfile -File scripts/ops/ml-bundle.ps1 provision"
+
+[tasks."ops:ml-validate"]
+description = "Validate the active ML bundle without changing deployment state"
+run = "sh ./scripts/ops/ml-bundle.sh validate"
+run_windows = "pwsh -NoProfile -File scripts/ops/ml-bundle.ps1 validate"
+
+[tasks."ops:ml-rollback"]
+description = "Activate a previously provisioned ML bundle version"
+run = "sh ./scripts/ops/ml-bundle.sh rollback"
+run_windows = "pwsh -NoProfile -File scripts/ops/ml-bundle.ps1 rollback"

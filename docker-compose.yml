@@ -94,6 +94,7 @@ services:
     volumes:
       - app-data:/app/data
       - ./ops/secrets:/app/ops/secrets:ro
+      - ${SAFE_ZONE_ML_BUNDLE_HOST_DIR:-./deploy/model-bundle/current}:/app/models/safe-zone/current:ro
     depends_on:
       - redis
     restart: unless-stopped
@@ -153,6 +154,7 @@ services:
     volumes:
       - app-data:/app/data
       - ./ops/secrets:/app/ops/secrets:ro
+      - ${SAFE_ZONE_ML_BUNDLE_HOST_DIR:-./deploy/model-bundle/current}:/app/models/safe-zone/current:ro
     depends_on:
       - redis
     restart: unless-stopped

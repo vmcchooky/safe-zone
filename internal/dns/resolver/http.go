@@ -44,6 +44,7 @@ func (r *Resolver) StatusHandler(w http.ResponseWriter, req *http.Request) {
 		"upstream_doh_resolvers": r.Upstreams.Status(),
 		"redis":                  r.Risk.CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
+		"ml":                     r.Risk.MLStatus(),
 		"endpoints": []string{
 			"/",
 			"/healthz",
@@ -71,6 +72,7 @@ func (r *Resolver) MetricsHandler(w http.ResponseWriter, req *http.Request) {
 		"status":                 "ok",
 		"metrics":                r.Metrics.Snapshot(),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
+		"ml":                     r.Risk.MLStatus(),
 		"upstream_doh": map[string]any{
 			"failures_total": upstreamFailures,
 		},

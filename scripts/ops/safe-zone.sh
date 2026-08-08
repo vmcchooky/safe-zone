@@ -618,6 +618,19 @@ resolve_feed_sources() {
   return 1
 }
 
+validate_ml_rollout_bundle() {
+  mode="$(env_value SAFE_ZONE_ML_MODE || true)"
+  case "$(printf '%s' "$mode" | tr '[:upper:]' '[:lower:]')" in
+    shadow|enforce)
+      bundle_host_dir="$(env_value SAFE_ZONE_ML_BUNDLE_HOST_DIR || true)"
+      if [ -z "$bundle_host_dir" ]; then
+        bundle_host_dir="./deploy/model-bundle/current"
+      fi
+      sh "${project_dir}/scripts/ops/ml-bundle.sh" validate "$bundle_host_dir"
+      ;;
+  esac
+}
+
 cmd="${1:-help}"
 backup_path_override="${2:-${SAFE_ZONE_SCRIPT_BACKUP_PATH:-}}"
 keep_count="${SAFE_ZONE_SCRIPT_KEEP:-7}"
@@ -652,6 +665,7 @@ esac
 case "$cmd" in
   deploy)
     set_build_metadata_env
+    validate_ml_rollout_bundle
     if is_true "$feed_sync_enabled"; then
       compose_stack production --profile production-edge --profile feed-sync up -d --build
     else

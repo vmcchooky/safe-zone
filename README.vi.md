@@ -122,12 +122,13 @@ Cấu hình runtime Custom ML:
 
 ```env
 SAFE_ZONE_ML_MODE=disabled
+SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
 SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
 SAFE_ZONE_ML_REQUIRED=false
 SAFE_ZONE_ML_BLOCK_THRESHOLD=
 ```
 
-Bundle v1 gồm 534 features, suy luận LightGBM bằng `leaves`, Platt calibration, policy metadata và kiểm tra SHA-256. `shadow` chỉ ghi prediction/telemetry; `enforce` chỉ được promote kết quả lexical `SUSPICIOUS` khi xác suất calibrated đạt threshold đã phê duyệt. Bundle lỗi vẫn fail-open, trừ khi đặt `SAFE_ZONE_ML_REQUIRED=true`.
+Bundle v1 gồm 534 features, suy luận LightGBM bằng `leaves`, Platt calibration, policy metadata và kiểm tra SHA-256. Dùng `mise run ops:ml-provision` để provision bundle đã được phê duyệt; Compose mount bản `current` ở chế độ read-only cho cả hai service. `shadow` ghi aggregate prediction evidence nhưng không đổi verdict; `enforce` chỉ được promote kết quả lexical `SUSPICIOUS` khi xác suất calibrated đạt threshold đã phê duyệt. Bundle lỗi vẫn fail-open, trừ khi đặt `SAFE_ZONE_ML_REQUIRED=true`.
 
 ## Cấu hình Phân tích Động (Dynamic Analysis Configuration)
 

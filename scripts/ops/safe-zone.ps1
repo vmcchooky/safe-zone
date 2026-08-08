@@ -284,6 +284,18 @@ function Get-FlagEnabled {
   }
 }
 
+function Assert-MLRolloutBundle {
+  $mode = (Get-DotEnvValue -Name 'SAFE_ZONE_ML_MODE')
+  if (-not $mode) { $mode = 'disabled' }
+  if ($mode.Trim().ToLowerInvariant() -notin @('shadow', 'enforce')) { return }
+
+  $hostPath = Get-DotEnvValue -Name 'SAFE_ZONE_ML_BUNDLE_HOST_DIR'
+  if (-not $hostPath) { $hostPath = './deploy/model-bundle/current' }
+  $bundlePath = if ([IO.Path]::IsPathRooted($hostPath)) { $hostPath } else { Join-Path $RepoRoot $hostPath }
+  & pwsh -NoProfile -File (Join-Path $RepoRoot 'scripts/ops/ml-bundle.ps1') validate -BundleRoot (Split-Path -Parent $bundlePath)
+  if ($LASTEXITCODE -ne 0) { throw 'ML rollout bundle validation failed' }
+}
+
 function Resolve-SqliteRuntimePath {
   $configured = Get-DotEnvValue -Name 'SAFE_ZONE_SQLITE_PATH'
   if (-not $configured) {
@@ -821,6 +833,7 @@ switch ($Command) {
   'deploy' {
     Write-Section 'Deploying Safe Zone'
     Set-BuildMetadataEnv
+    Assert-MLRolloutBundle
     $composeArgs = @('up', '-d', '--build')
     if ($FeedSync) {
       $composeArgs = @('--profile', 'feed-sync') + $composeArgs

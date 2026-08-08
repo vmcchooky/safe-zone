@@ -3,6 +3,12 @@
 .vscode
 backups
 data
+deploy/model-bundle
+ml/.venv
+ml/data
+ml/models
+ml/src/__pycache__
+ml/tests/__pycache__
 logs
 tmp
 node_modules

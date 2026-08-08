@@ -327,10 +327,10 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 - `[x]` Phase 2: sparse training, LightGBM, Platt calibration and candidate-cohort evaluation artifacts are present; product/security approval of the selected threshold remains open.
 - `[x]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
 - `[x]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache, telemetry, tests, race and static verification pass.
-- `[ ]` Phase 5: private artifact provisioning, read-only mounts for both services, shadow evidence, canary and rollback pass.
+- `[~]` Phase 5: provisioning/validation tooling, read-only mounts for both services, and shadow evidence plumbing are implemented; approved private artifact activation, operational shadow evidence, canary and rollback pass remain open.
 - `[ ]` Product owner approves threshold/trade-off; security owner approves data/model storage, terms, retention and rollout scope.
 
-Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until Phase 5 is complete.
+Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Phase 5 now has a checksum-gated versioned provisioner, read-only Compose mounts, and shadow evidence status fields; the default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until operational gates are complete.
 
 ### AI/ML release evidence
 

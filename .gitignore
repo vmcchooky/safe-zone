@@ -29,6 +29,10 @@ logs/
 *.sqlite
 *.sqlite3
 
+# Private ML release bundles are provisioned outside the repository.
+deploy/model-bundle/*
+!deploy/model-bundle/README.md
+
 # Browser test reports
 playwright-report/
 test-results/

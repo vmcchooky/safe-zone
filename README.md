@@ -131,12 +131,13 @@ Custom ML runtime configuration:
 
 ```env
 SAFE_ZONE_ML_MODE=disabled
+SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
 SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
 SAFE_ZONE_ML_REQUIRED=false
 SAFE_ZONE_ML_BLOCK_THRESHOLD=
 ```
 
-The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. `shadow` records predictions without changing verdicts; `enforce` may promote only lexical `SUSPICIOUS` results at the approved calibrated threshold. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
+The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. Provision the approved bundle with `mise run ops:ml-provision`; Compose mounts the active `current` release read-only into both services. `shadow` records aggregate prediction evidence without changing verdicts; `enforce` may promote only lexical `SUSPICIOUS` results at the approved calibrated threshold. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
 
 ## Dynamic Analysis Configuration
 

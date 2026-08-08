@@ -17,6 +17,7 @@ The bundle at `ml/models/v1/` contains the LightGBM text model, `feature_manifes
 
 ```env
 SAFE_ZONE_ML_MODE=disabled
+SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
 SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
 SAFE_ZONE_ML_REQUIRED=false
 SAFE_ZONE_ML_BLOCK_THRESHOLD=
@@ -25,10 +26,31 @@ SAFE_ZONE_ML_BLOCK_THRESHOLD=
 | Mode | Behavior |
 |---|---|
 | `disabled` | Do not load or call the classifier; preserve the previous risk flow. |
-| `shadow` | Classify lexical `SUSPICIOUS` candidates and expose telemetry, but never change the verdict. |
+| `shadow` | Classify lexical `SUSPICIOUS` candidates and expose aggregate prediction evidence, but never change the verdict. |
 | `enforce` | Promote only calibrated high-risk `SUSPICIOUS` candidates to `MALICIOUS`; abstentions continue to the existing LLM path. |
 
-`SAFE_ZONE_ML_REQUIRED=true` converts bundle loading errors into a startup failure. Otherwise, missing or invalid bundles disable ML and keep the deterministic analyzer available. Threshold overrides must be in `(0,1)` and are included in the model-aware cache revision.
+`SAFE_ZONE_ML_REQUIRED=true` converts bundle loading errors into a startup failure. Otherwise, a missing or invalid bundle keeps the requested `shadow` mode visible as `degraded` and keeps the deterministic analyzer available. Threshold overrides must be in `(0,1)` and are included in the model-aware cache revision.
+
+## Phase 5 provisioning and shadow
+
+The host-side release root is `deploy/model-bundle/`; versioned bundles are
+ignored by Git. The provisioner validates all five runtime files against
+`SHA256SUMS` before activating `current` and makes the release files
+read-only:
+
+```powershell
+$env:SAFE_ZONE_ML_BUNDLE_SOURCE = 'C:\secure-artifacts\safe-zone-domain-v1'
+$env:SAFE_ZONE_ML_BUNDLE_VERSION = 'v1'
+mise run ops:ml-provision
+mise run ops:ml-validate
+```
+
+For a controlled shadow run, set `SAFE_ZONE_ML_MODE=shadow` and preferably
+`SAFE_ZONE_ML_REQUIRED=true`. The `/v1/status` and `/metrics` responses from
+`core-api`, plus `/` and `/metrics` from `dns-resolver`, expose the same model
+version/revision, readiness state, would-pass/would-block counts, probability
+histogram, abstains/errors, and latency histogram. No shadow metric changes a
+verdict.
 
 ## Reproducibility and validation
 
