@@ -365,7 +365,7 @@ LLM/ML/Agent degradation không được làm deterministic analysis ngừng ho�
 | Hybrid Ollama→Gemini fallback | Implemented. |
 | OSINT domain-role provider fallback | Implemented. |
 | Agent Engine + audit/feed/OSINT/alert/whitelist tasks | Implemented; cần real-environment smoke/evidence và safety decisions nêu trên. |
-| Custom LightGBM Domain ML | Phase 0–4 runtime đã implemented; production rollout vẫn chờ Phase 5 private artifact provisioning và evidence. |
+| Custom LightGBM Domain ML | Phase 0–4 runtime đã implemented; private artifact provisioning, staging activation, shadow plumbing và rollback mechanics đã được kiểm chứng; production rollout vẫn chờ human-labelled evidence, canary và approval. |
 
 ---
 
@@ -1195,13 +1195,13 @@ Các điểm sau đã được kiểm chứng trong commit `5233d58`:
 | Validation | `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests và `go vet ./...` pass. |
 | Artifact provenance | `python -B ml/src/validate_artifacts.py` đạt 41/41; 15/15 raw/processed hashes khớp; bundle `SHA256SUMS` khớp. |
 
-Phase 4 không tự bật ML trong production. Phase 5 đã bổ sung read-only model mount, checksum-gated versioned provisioner, rollback helper và shadow evidence fields; private artifact activation và operational rollout evidence vẫn là gate vận hành.
+Phase 4 không tự bật ML trong production. Phase 5 đã bổ sung read-only model mount, checksum-gated versioned provisioner, rollback helper và shadow evidence fields; private artifact activation và staging replay evidence đã được kiểm chứng. Human-labelled review, canary và product/security approval vẫn là các gate vận hành.
 
 ---
 
 ## 8. Phase 5 — Packaging, deployment và controlled rollout
 
-> **Trạng thái 2026-08-08:** Đã triển khai provisioning/shadow plumbing và đã activate private artifact ở staging; representative operational evidence, canary và rollback drill vẫn mở.
+> **Trạng thái 2026-08-08:** Đã triển khai provisioning/shadow plumbing, activate private artifact ở staging, hoàn tất golden-vector shadow observation và kiểm chứng rollback mechanics bằng policy-only drill; human-labelled operational evidence, canary và product/security approval vẫn mở.
 
 ### 8.1 Quyết định artifact delivery
 
@@ -1260,7 +1260,7 @@ volumes:
 - So sánh với human overrides, strong feeds, LLM và kết quả enrichment xuất hiện sau đó.
 - Không dùng self-generated ML verdict làm ground truth cho chính model.
 
-Staging smoke hiện đã xác nhận cả hai service dùng cùng immutable revision, mount read-only và báo `ml_state=ready`; các request synthetic tạo được shadow telemetry không có ML error. Evidence này chưa đủ để đóng gate vì chưa có human labels/false-positive review, rollback drill hoặc product/security approval.
+Staging observation hiện đã replay 29 golden cases qua mỗi service trong 3 vòng (87 request/service): toàn bộ HTTP 200, parity failure bằng 0, ML error bằng 0 và enforce promotion bằng 0. Cả hai service dùng cùng immutable revision, mount read-only và báo `ml_state=ready`; replay được cô lập bằng cách tắt provider/enrichment/OSINT bên ngoài trong thời gian quan sát. Evidence này vẫn chưa đủ để đóng gate vì chưa có traffic đại diện/human labels và false-positive review, canary enforce hoặc product/security approval. Rollback mechanics đã được kiểm chứng riêng bằng cách activate `v2-policy-drill` rồi khôi phục v1; đây không phải một model v2 mới và không thay thế model-quality review.
 
 #### Stage 2 — Canary enforce
 
@@ -1534,8 +1534,8 @@ Custom Domain ML chỉ được coi là hoàn thành khi:
 - [x] Shadow mode không đổi verdict.
 - [x] Enforce v1 chỉ promote `SUSPICIOUS → MALICIOUS` tại threshold.
 - [x] Result, telemetry và cache revision nhất quán.
-- [~] Provisioner/checksum validation và read-only mount cho cả `core-api` và `dns-resolver` đã có; approved private bundle activation còn mở.
-- [~] Metrics/status, degraded state và kill switch đã có; operational shadow evidence và rollback drill còn mở.
+- [~] Provisioner/checksum validation, validated private bundle activation và read-only mount cho cả `core-api` và `dns-resolver` đã pass; production approval và rollout scope còn mở.
+- [~] Metrics/status, degraded state và kill switch đã có; golden-vector shadow observation và rollback mechanics đã pass, còn human-labelled operational evidence và canary.
 - [~] `go test -race`, `go test ./...`, `go vet ./...` pass; production Docker verification còn ở Phase 5.
 - [ ] Product owner phê duyệt threshold/false-positive budget.
 - [ ] Security owner phê duyệt data/model storage, access, retention và rollout scope.

@@ -114,7 +114,7 @@ tls://127.0.0.1:1853
 
 ## Động cơ AI (AI Engine)
 
-Safe Zone duy trì cơ chế phân tích deterministic sẵn có và hỗ trợ tinh chỉnh các kết quả nghi ngờ thông qua các provider: `none`, `gemini`, `ollama`, hoặc chế độ ưu tiên Ollama `hybrid`. Bộ phân loại ML tên miền tùy chỉnh (Custom Domain ML) đã được tích hợp thành lớp chấm điểm local độc lập với các chế độ `disabled`, `shadow`, và `enforce`; mặc định vẫn là `disabled` cho tới khi hoàn tất provisioning artifact và evidence rollout của Phase 5.
+Safe Zone duy trì cơ chế phân tích deterministic sẵn có và hỗ trợ tinh chỉnh các kết quả nghi ngờ thông qua các provider: `none`, `gemini`, `ollama`, hoặc chế độ ưu tiên Ollama `hybrid`. Bộ phân loại ML tên miền tùy chỉnh (Custom Domain ML) đã được tích hợp thành lớp chấm điểm local độc lập với các chế độ `disabled`, `shadow`, và `enforce`; provisioning artifact, shadow observation ở staging và rollback mechanics của Phase 5 đã được kiểm chứng, nhưng mặc định vẫn là `disabled` cho tới khi có evidence với human label, canary và phê duyệt product/security.
 
 Các sự cố từ AI/ML/provider luôn tuân thủ nguyên tắc **fail-open** ngoại trừ trường hợp người vận hành yêu cầu bắt buộc bundle mô hình khi khởi động. Chi tiết kiến trúc, cấu hình, vòng đời dữ liệu và quy trình vận hành được mô tả tại [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md). Trạng thái phát hành được theo dõi tại [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
 

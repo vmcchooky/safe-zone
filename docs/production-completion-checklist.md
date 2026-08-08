@@ -327,10 +327,10 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 - `[x]` Phase 2: sparse training, LightGBM, Platt calibration and candidate-cohort evaluation artifacts are present; product/security approval of the selected threshold remains open.
 - `[x]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
 - `[x]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache, telemetry, tests, race and static verification pass.
-- `[~]` Phase 5: provisioning/validation tooling, validated private artifact activation, read-only mounts for both services, and shadow evidence plumbing are implemented; representative operational evidence, canary and rollback pass remain open.
+- `[~]` Phase 5: provisioning/validation tooling, validated private artifact activation, read-only mounts for both services, shadow evidence plumbing, a staging golden-vector observation window, and rollback mechanics verification are complete; human-labelled operational evidence, canary, and owner approvals remain open.
 - `[ ]` Product owner approves threshold/trade-off; security owner approves data/model storage, terms, retention and rollout scope.
 
-Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Phase 5 now has a checksum-gated versioned provisioner, validated private artifact activation, read-only Compose mounts, and shadow evidence status fields. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until operational gates are complete.
+Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Phase 5 now has a checksum-gated versioned provisioner, validated private artifact activation, read-only Compose mounts, shadow evidence status fields, a clean staging golden-vector observation window, and a policy-only rollback mechanics drill. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until human-labelled evidence, canary, and approval gates are complete.
 
 ### AI/ML release evidence
 
@@ -353,8 +353,10 @@ The 2026-08-08 staging smoke used the validated private bundle outside the repos
 - both `core-api` and `dns-resolver` were healthy with `SAFE_ZONE_ML_MODE=shadow` and `ml_state=ready`;
 - both services reported model version `1.0.0`, block threshold `0.85`, and the same immutable revision `4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca`;
 - the active bundle mount was read-only in both containers and the canonical SHA-256 validation passed for all five hashed runtime files;
-- controlled synthetic staging requests produced shadow telemetry with no ML errors or enforce promotions; this is plumbing/health evidence only, not a human-labelled false-positive or production approval dataset;
-- no canary enforce or rollback drill has been run yet, and the default production profile remains `disabled`.
+- three rounds of the 29-case golden fixture were replayed through each service (87 requests per service); all responses were HTTP 200 with zero parity failures, zero ML errors, and zero enforce promotions;
+- the replay ran with external provider/enrichment/OSINT calls disabled to isolate the ML shadow path; both services remained `shadow`/`ready` on model `1.0.0`, threshold `0.85`, with the same immutable revision and non-zero `would_block`/`would_pass` telemetry;
+- the `v2-policy-drill` release was activated and rolled back to v1; both services returned to the v1 revision/threshold and the post-rollback cache check observed a revision-invalidated miss. This validates rollback mechanics only, not a new model quality release;
+- this is golden-vector/synthetic evidence, not representative production traffic or a human-labelled false-positive review. Canary enforce and product/security approval remain open, and the default production profile remains `disabled`.
 
 An optional component that is disabled does not block base deterministic MVP. A component that is enabled without its gates/evidence blocks that release profile.
 

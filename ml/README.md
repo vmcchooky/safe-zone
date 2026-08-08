@@ -4,7 +4,7 @@ The `ml/` package contains the reproducible training artifacts, feature contract
 
 ## Current status
 
-Phase 0–4 implementation evidence is present in the repository. The v1 runtime bundle is loaded by Go through `leaves` and is safe to deploy in `disabled`, `shadow`, or `enforce` mode. Production remains `disabled` by default until Phase 5 private artifact provisioning, read-only mounts, shadow evidence, canary approval, and rollback drills are complete.
+Phase 0–4 implementation evidence is present in the repository. The v1 runtime bundle is loaded by Go through `leaves` and is safe to deploy in `disabled`, `shadow`, or `enforce` mode. Private artifact provisioning, read-only mounts, staging shadow observation, and rollback mechanics have been validated; production remains `disabled` by default until human-labelled evidence, canary approval, and product/security rollout gates are complete.
 
 The v1 contract contains 534 ordered features:
 

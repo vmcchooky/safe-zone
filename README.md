@@ -123,7 +123,7 @@ tls://127.0.0.1:1853
 
 ## AI Engine
 
-Safe Zone keeps deterministic analysis available and can optionally refine ambiguous results through `none`, `gemini`, `ollama`, or Ollama-first `hybrid` provider modes. The Custom Domain ML classifier is implemented as a separate local scoring layer with `disabled`, `shadow`, and controlled `enforce` rollout modes; it remains `disabled` by default until Phase 5 artifact provisioning and rollout evidence are complete.
+Safe Zone keeps deterministic analysis available and can optionally refine ambiguous results through `none`, `gemini`, `ollama`, or Ollama-first `hybrid` provider modes. The Custom Domain ML classifier is implemented as a separate local scoring layer with `disabled`, `shadow`, and controlled `enforce` rollout modes; it remains `disabled` by default until human-labelled rollout evidence, canary approval, and product/security gates are complete. Phase 5 provisioning, staging shadow observation, and rollback mechanics have been validated.
 
 AI/ML/provider failures remain fail-open unless an operator explicitly makes a validated model bundle a startup requirement. For the complete architecture, configuration matrix, data/ML lifecycle, Agent workflow, deployment procedure and incident response, see [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md). Release status and required evidence are tracked only in [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
 
