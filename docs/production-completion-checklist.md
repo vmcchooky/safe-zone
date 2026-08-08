@@ -1,6 +1,6 @@
 # Safe Zone Production Completion Checklist
 
-Date: 2026-07-30
+Date: 2026-08-08
 
 This file is the single operational/release checklist for moving Safe Zone from the current repository state to production-ready, and then to "perfect production". For AI Engine, the only detailed technical source is `docs/specs/safe-zone-ai-plan.md`; all AI release evidence and completion status are tracked here.
 
@@ -305,7 +305,7 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 - `[!]` Record a real-environment provider smoke for the selected release mode.
 - `[!]` Record quota/terms/privacy approval for Gemini or local model/RAM/source approval for Ollama.
 - `[!]` Run AI outage drill and prove switching to `none`/approved fallback keeps analysis available.
-- `[ ]` Reconcile README/index Gemini-only summary with all four provider modes and canonical plan link.
+- `[x]` Reconcile README/index AI summary with all four provider modes, Custom ML modes, and the canonical plan link.
 
 ### Agent Engine gates
 
@@ -322,13 +322,15 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 ### Custom ML development gates
 
 - `[x]` Local dataset snapshot and revised end-to-end plan are documented.
-- `[ ]` Phase 0: canonicalization/feature contract and exact `leaves` compatibility spike pass.
-- `[ ]` Phase 1: source policy, conflict quarantine, ML-candidate cohort and group/source/temporal splits pass.
-- `[ ]` Phase 2: sparse training, baselines, LightGBM, calibration and candidate-cohort evaluation pass approved false-positive budget.
-- `[ ]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
-- `[ ]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache and metrics pass tests/race/build.
+- `[x]` Phase 0: canonicalization/feature contract and exact `leaves` compatibility spike pass.
+- `[~]` Phase 1: candidate cohort, conflict quarantine and group-disjoint split artifacts pass; source/legal approval and any additional holdout evidence remain release gates.
+- `[x]` Phase 2: sparse training, LightGBM, Platt calibration and candidate-cohort evaluation artifacts are present; product/security approval of the selected threshold remains open.
+- `[x]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
+- `[x]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache, telemetry, tests, race and static verification pass.
 - `[ ]` Phase 5: private artifact provisioning, read-only mounts for both services, shadow evidence, canary and rollback pass.
 - `[ ]` Product owner approves threshold/trade-off; security owner approves data/model storage, terms, retention and rollout scope.
+
+Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until Phase 5 is complete.
 
 ### AI/ML release evidence
 
@@ -339,6 +341,7 @@ Archive with the release:
 - provider smoke/outage results when LLM enabled;
 - Agent status/task/drill results when Agent enabled;
 - model bundle revision/checksum/policy/report when Custom ML enabled;
+- artifact validation result, data-manifest linkage and raw/processed provenance checksum result;
 - Python–Go parity report and candidate-cohort metrics for ML release;
 - target VPS latency/RSS/load results for every selected profile;
 - rollback commands and last-known-good provider/model revision.

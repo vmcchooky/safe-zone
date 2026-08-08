@@ -7,7 +7,7 @@
 
 ## 1. Tóm tắt (Abstract / Executive Summary)
 
-Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy được thiết kế đa lớp, sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển tuân thủ nghiêm ngặt chuẩn mực về dữ liệu, với các giai đoạn từ xử lý dữ liệu tiền huấn luyện, trích xuất đặc trưng, huấn luyện mô hình, cho đến hiệu chỉnh và kiểm chứng độc lập. Đặc biệt, hệ thống đạt parity trong giới hạn floating-point precision giữa môi trường huấn luyện Python và môi trường suy luận Go (thông qua thư viện `leaves`). Kết quả cuối cùng đạt ngưỡng hiệu năng cao (ROC-AUC 0.9569) với tỷ lệ dương tính giả (FPR) bằng 0.000000 trên các tên miền an toàn của Việt Nam, sẵn sàng tích hợp vào lõi DNS resolver.
+Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Hệ thống đã đạt parity trong giới hạn floating-point precision giữa Python và Go qua thư viện `leaves`; runtime production vẫn giữ mặc định `SAFE_ZONE_ML_MODE=disabled` cho tới khi hoàn tất Phase 5 rollout. Kết quả test đạt ROC-AUC 0.9569 và FPR = 0.000000 trên các tập tên miền an toàn Việt Nam được audit.
 
 ## 2. Sơ đồ Tổng quan Pipeline
 
@@ -42,13 +42,19 @@ flowchart TB
         E3 --> E4["3/3 Consensus PASS"]
     end
 
-    DP --> P0 --> P1 --> P2 --> P3
+    subgraph P4["8. Phase 4: Go Runtime"]
+        F1["Immutable Loader<br>534 Features"] --> F2["disabled / shadow / enforce"]
+        F2 --> F3["Revisioned Cache<br>Telemetry"]
+    end
+
+    DP --> P0 --> P1 --> P2 --> P3 --> P4
 
     style DP fill:#D1ECF1,stroke:#17A2B8
     style P0 fill:#E8DAEF,stroke:#8E44AD
     style P1 fill:#D4EDDA,stroke:#28A745
     style P2 fill:#FFF3CD,stroke:#FFC107
     style P3 fill:#F8D7DA,stroke:#DC3545
+    style P4 fill:#E8DAEF,stroke:#8E44AD
 ```
 
 ```mermaid
@@ -58,14 +64,14 @@ flowchart LR
     C --> D[TF-IDF Features Extraction]
     D --> E[LightGBM Inference]
     E --> F[Probability Calibration]
-    F --> G{Threshold Check}
-    G -- >= 0.85 --> H[Block]
-    G -- < 0.85 --> I[Allow]
+    F --> G{"Mode and Threshold?"}
+    G -- "enforce + >= 0.85" --> H[MALICIOUS]
+    G -- "disabled / shadow / abstain" --> I[Keep SUSPICIOUS]
 ```
 
 ## 3. Chuẩn bị Dữ liệu (Data Preflight)
 
-*Artifacts liên quan:* [ml/data/derived/](file:///d:/Quorix/services/safe-zone/ml/data/derived/)
+*Artifacts liên quan:* [ml/data/derived/](../../../ml/data/derived/)
 
 ### Mục tiêu
 Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đại diện cao cho bài toán phân loại nhị phân tên miền (safe vs. malicious), đảm bảo không rò rỉ nhãn và có thể tái lập 100%.
@@ -94,7 +100,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 
 ## 4. Phase 0: Foundations
 
-*Artifacts liên quan:* [ml/contracts/](file:///d:/Quorix/services/safe-zone/ml/contracts/)
+*Artifacts liên quan:* [ml/contracts/](../../../ml/contracts/)
 
 ### 4.1. Phase 0A — Đảm bảo Dữ liệu & Đóng băng Snapshot (Gate G0)
 
@@ -174,7 +180,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 
 ## 5. Phase 1: Feature Extraction
 
-*Artifacts liên quan:* [ml/data/derived/](file:///d:/Quorix/services/safe-zone/ml/data/derived/)
+*Artifacts liên quan:* [ml/data/derived/](../../../ml/data/derived/)
 
 ### Mục tiêu
 1. Xây dựng candidate cohort (tập hợp tên miền nghi vấn cần ML scoring).
@@ -210,13 +216,13 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
   - Val: (273,808 × 534), nnz=8,379,996, density=0.0573.
   - Cal: (281,226 × 534), nnz=8,767,131, density=0.0584.
   - Test: (287,347 × 534), nnz=8,802,895, density=0.0574.
-- **Artifact validation:** 40/40 checks PASSED (0 null, 0 NaN/Inf, kích thước khớp contract v1).
+- **Artifact validation:** 41/41 checks PASSED (0 null, 0 NaN/Inf, kích thước khớp contract v1 và data-manifest linkage).
 
 ---
 
 ## 6. Phase 2: Training & Evaluation
 
-*Artifacts liên quan:* [ml/models/v1/](file:///d:/Quorix/services/safe-zone/ml/models/v1/)
+*Artifacts liên quan:* [ml/models/v1/](../../../ml/models/v1/)
 
 ### Mục tiêu
 1. Huấn luyện mô hình LightGBM GBDT trên toàn bộ feature matrix và so sánh với 4 baselines.
@@ -278,10 +284,10 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 #### Immutable Model Bundle (`ml/models/v1/`)
 | File | SHA-256 |
 |---|---|
-| `domain_threat_lgbm.txt` (3.6 MB, 1,000 trees) | `5d5a4388d8b06410...` |
-| `feature_manifest.v1.json` | `d926912e5d0a3b79...` |
+| `domain_threat_lgbm.txt` (3.6 MB, 1,000 trees) | `0ecd12fa3c28f227...` |
+| `feature_manifest.v1.json` | `5846984a25f247bd...` |
 | `calibration.json` | `f0f48c2846278fbe...` |
-| `policy.json` | `23f5213deebb4f84...` |
+| `policy.json` | `da31752bbed6fe61...` |
 | `model_report.json` | `402541fe9d1ec329...` |
 
 #### Kết quả Bỏ phiếu Đồng thuận (Multi-Subagent Consensus)
@@ -295,19 +301,19 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 #### Test Suite
 - 22/22 Pytest PASSED.
 - Go Leaves Parity PASSED (sai số $< 2.22 \times 10^{-16}$).
-- 40/40 Artifact Validation Checks PASSED.
+- 41/41 Artifact Validation Checks PASSED.
 
 ---
 
 ## 7. Phase 3: Verification
 
-*Artifacts liên quan:* [ml/tests/](file:///d:/Quorix/services/safe-zone/ml/tests/)
+*Artifacts liên quan:* [ml/tests/](../../../ml/tests/)
 
 ### Mục tiêu
 1. Thực thi và thẩm định 100% các bộ kiểm thử unit test trong cả môi trường Go và Python cho Phase 3.
 2. Kiểm chứng tính chính xác (Golden Parity) giữa Python training pipeline và Go inference engine trên 29 golden test cases.
 3. Xác minh tính năng Rejection Gates (loại bỏ mô hình/dữ liệu không hợp lệ) và Thread-Safety khi thực thi đồng thời 20 goroutines.
-4. Đảm bảo 100% (40/40) các kiểm tra tính hợp lệ của artifacts (Parquet, CSR matrices, JSON manifests, SHA-256 checksums) trôi chảy.
+4. Đảm bảo 100% (41/41) các kiểm tra tính hợp lệ của artifacts (Parquet, CSR matrices, JSON manifests, SHA-256 checksums và data-manifest linkage) trôi chảy.
 
 ### Phương pháp & Lý do
 
@@ -332,7 +338,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
   - `MalformedModelRejection`: **PASS** (Bắt đúng lỗi `only version=v3 is supported`).
   - `WrongFeatureCountRejection`: **PASS** (Bắt đúng lỗi `100 vs required 534`).
 - `TestPhase3ModelBundleAndParity`:
-  - Model Bundle loading: **PASS** (Revision: `1b9e184df01bbc30412f078084fc9190b55966c71a7dd462206a557218c74db1`, 534 features, threshold 0.85).
+  - Model Bundle loading: **PASS** (Revision: `daf4c6e2d4dd7c6acfb614522070b1f97e89ba72bad3ef07d773ebe58c910822`, 534 features, threshold 0.85).
   - Parity verification 29 Golden Test Cases: **PASS** (Max raw diff: `0.000000e+00`, Max calibrated diff: `3.469447e-18`, tolerance $< 10^{-17}$).
   - `RejectionGate_MissingFile`: **PASS** (Từ chối chính xác khi thiếu bundle directory).
   - `RejectionGate_FeatureCountMismatch`: **PASS** (Từ chối chính xác khi lệch số lượng đặc trưng `got 100, expected 534`).
@@ -345,8 +351,8 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 - `test_model_pipeline.py`: 3/3 PASSED (Platt sigmoid formula parity, ECE calculation, evaluation metrics).
 - `test_splits.py`: 2/2 PASSED (Determinism, group-disjoint property).
 
-#### 3. Python Artifact Validation Suite (`python -u -B ml/src/validate_artifacts.py`) — 40/40 PASSED (28.77s)
-- **Manifests & Checksums (16 checks):** Valid JSON (data, split, feature, capacity report) & SHA-256 match trên tất cả 12 Parquet files.
+#### 3. Python Artifact Validation Suite (`python -u -B ml/src/validate_artifacts.py`) — 41/41 PASSED
+- **Manifests & Checksums (17 checks):** Valid JSON (data, split, feature, capacity report), data-manifest linkage & SHA-256 match trên tất cả 12 Parquet files.
 - **Parquet Partitions & Group-Disjoint Assertions (12 checks):**
   - Partition rows: Train (1,929,709), Val (273,808), Cal (281,226), Test (287,347).
   - Candidate files: Train candidates (178,255), Val (26,357), Cal (22,971), Test (24,081), Conflicts excluded (0), Hard cases (21,643).
@@ -356,11 +362,62 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
   - X_train, X_val, X_cal, X_test: Đúng 534 cột, số dòng khớp Parquet, 0 NaN, 0 Inf.
 
 #### Vote Đánh giá
-[VOTE: PASS] - Phase 3 Verification completed with 100% compliance across all test suites, zero diffs on Golden Parity, clean rejection gates, thread-safety verified, and 40/40 artifact checks passed.
+[VOTE: PASS] - Phase 3 Verification completed with 100% compliance across all test suites, zero diffs on Golden Parity, clean rejection gates, thread-safety verified, and 41/41 artifact checks passed.
 
 ---
 
-## 8. Phụ lục: Rà soát Kế hoạch Feature Extraction (2026-07-31)
+## 8. Phase 4: Go Runtime Integration
+
+> **Trạng thái:** Đã hoàn thành phần tích hợp runtime trong commit `5233d58`. Production vẫn giữ `SAFE_ZONE_ML_MODE=disabled` cho tới Phase 5.
+
+### Mục tiêu (Objectives)
+
+1. Đưa feature contract 534 chiều và model bundle v1 vào Go runtime mà không dùng CGO.
+2. Giữ classifier immutable/thread-safe, có parity với Python và revision bất biến để cache không dùng nhầm model.
+3. Bổ sung policy `disabled`, `shadow`, `enforce` nhưng giữ fail-open và không hạ `SUSPICIOUS` xuống `SAFE`.
+4. Expose trạng thái/telemetry đủ để quan sát shadow rollout trước khi bật enforce.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| **Inference runtime** | Pure Go `leaves` đọc LightGBM text model | CGO/Python sidecar/ONNX Runtime | Không thêm process hoặc native runtime vào `core-api`/`dns-resolver`; phù hợp build `CGO_ENABLED=0` và rollback bằng bundle. |
+| **Probability** | Platt sigmoid trên raw margin với `A`, `B` trong calibration artifact | Raw LightGBM probability, isotonic lookup | Giữ calibration nhỏ, monotonic và tái tạo được trong Go; raw score không được coi là production probability. |
+| **Rollout** | `disabled → shadow → enforce` với promote-only | Bật enforce ngay, hoặc cho ML hạ về SAFE | Shadow cung cấp evidence không đổi verdict; promote-only bảo toàn safety invariant của deterministic/LLM pipeline. |
+| **Cache isolation** | Revision gồm model, feature manifest, calibration, policy và threshold override | Chỉ dùng analysis/config revision | Bundle/threshold thay đổi phải tạo cache miss để không tái sử dụng kết quả từ model cũ. |
+| **Failure handling** | Startup fail chỉ khi `SAFE_ZONE_ML_REQUIRED=true`; prediction error abstain | Crash request hoặc tự chọn vector fallback | Fail-open giữ availability và tránh suy luận trên feature contract không xác định. |
+
+### Cách thức Thực hiện (Implementation Details)
+
+- **Mã nguồn:** `internal/analysis/features.go` canonicalize domain, tạo 22 handcrafted features và 512 TF-IDF features; `internal/analysis/ml_classifier.go` xác minh bundle, nạp `leaves`, áp dụng calibration và threshold.
+- **Risk integration:** `internal/risk/service.go` chỉ gọi ML với lexical `SUSPICIOUS`; `internal/risk/ml.go` merge verdict, cache revision, counters và latency histogram; `internal/risk/env.go` validate environment contract.
+- **API/Compose:** status và metrics trả metadata ML không nhạy cảm; `docker-compose.yml` truyền cấu hình cho cả `core-api` và `dns-resolver` với default `disabled`.
+- **Artifact provenance:** `ml/data/data_manifest.json` được commit; validator kiểm hash liên kết với `split_manifest`; pipeline từ chối tạo split khi manifest bị thiếu.
+- **AI agent:** Codex (GPT-5) thực hiện code/spec review tuần tự, sửa bằng patch nhỏ và chạy verification tại local workspace. Không dùng subagent hoặc bỏ phiếu đa agent cho Phase 4; human-in-the-loop là người dùng phê duyệt phương án, commit và push.
+
+### Số liệu (Metrics & Results)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| Feature contract | 534 features, gồm 22 handcrafted + 512 TF-IDF; `idf_by_index` được lưu trong manifest. |
+| Golden parity | 29 cases; feature/raw/calibrated action parity đạt dung sai đã định nghĩa. |
+| Concurrency | Race test cho `internal/analysis` và `internal/risk` pass; classifier dùng immutable state. |
+| Go verification | `go test ./...`, CGO-disabled tests và `go vet ./...` pass. |
+| Artifact validation | 41/41 checks pass; 15/15 raw/processed provenance hashes match. |
+| Bundle integrity | Toàn bộ entries trong `ml/models/v1/SHA256SUMS` match; revision hiện tại `daf4c6e2d4dd7c6a...`. |
+| Runtime policy | `disabled`, `shadow`, `enforce` và cache invalidation theo model revision được kiểm thử bằng unit tests. |
+
+### Liên kết Artifacts
+
+- Runtime: `internal/analysis/features.go`, `internal/analysis/ml_classifier.go`, `internal/risk/ml.go`.
+- Tests: `internal/analysis/features_test.go`, `internal/analysis/ml_classifier_test.go`, `internal/risk/ml_policy_test.go`.
+- Bundle: `ml/models/v1/`, `ml/tests/fixtures/golden_vectors.v1.json`.
+- Provenance: `ml/data/data_manifest.json`, `ml/src/validate_artifacts.py`, `ml/src/make_splits.py`.
+- Deployment contract: `docs/specs/safe-zone-ai-plan.md`, `docs/production-completion-checklist.md`.
+
+---
+
+## 9. Phụ lục: Rà soát Kế hoạch Feature Extraction (2026-07-31)
 
 > Tài liệu rà soát đầy đủ: [feature-extraction-review.md](feature-extraction-review.md)
 
@@ -385,11 +442,11 @@ Thực hiện code review + spec review đối chiếu hai kế hoạch đề xu
 7. **Leakage prevention:** Split trước mọi learned transform. Final test không dùng để chọn feature, vocabulary, hyperparameter, calibration hay threshold.
 
 ### Trạng thái
-Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–3. Tài liệu rà soát đầy đủ (378 dòng) được lưu tại [feature-extraction-review.md](feature-extraction-review.md).
+Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4. Tài liệu rà soát đầy đủ (378 dòng) được lưu tại [feature-extraction-review.md](feature-extraction-review.md); runtime policy, cache revision và telemetry được mô tả ở Phase 4 phía trên.
 
 ---
 
-## 9. Lịch sử Thay đổi (Version History)
+## 10. Lịch sử Thay đổi (Version History)
 
 | Ngày | Mô tả | Tác giả |
 |---|---|---|
@@ -397,3 +454,4 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–3
 | 2026-07-31 | Phase 0 hoàn thành — Snapshots, Parity, Ablation, Contract v1 | Gemini 3.6 |
 | 2026-08-01 | Phase 1, 2, 3 hoàn thành — Training, Calibration, Verification | Gemini 3.6 |
 | 2026-08-02 | Cải tiến cấu trúc: thêm Abstract, sơ đồ, Version History. Di chuyển feature-extraction plan vào `docs/research/ml/` | Claude Opus 4.6 |
+| 2026-08-08 | Phase 4 hoàn thành — Go runtime, policy, model-aware cache, telemetry, provenance validator | Codex GPT-5 |

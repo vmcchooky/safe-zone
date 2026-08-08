@@ -1,6 +1,6 @@
 # Safe Zone AI Engine — Kế hoạch, thiết kế và hướng dẫn triển khai chuẩn
 
-> **Revision 5 — 2026-07-30**  
+> **Revision 6 — 2026-08-08**
 > Đây là **tài liệu kỹ thuật duy nhất** cho toàn bộ Safe Zone AI Engine: deterministic analysis, Custom Domain ML, Gemini/Ollama refinement, OSINT-assisted classification và autonomous Agent workflow. Tài liệu đi cùng `docs/production-completion-checklist.md`, là checklist release/vận hành duy nhất.
 
 ## 0. Trạng thái và phạm vi tài liệu
@@ -14,7 +14,7 @@ Chỉ có hai tài liệu chuẩn cho AI Engine:
 
 Các kế hoạch/spec/ADR/runbook AI chuyên biệt trước đây đã được hợp nhất vào hai tài liệu này và phải được xóa để tránh drift. General README, deployment, privacy, threat model và OPEX docs chỉ được tóm tắt/ngữ cảnh hóa AI rồi liên kết về tài liệu này; chúng không được định nghĩa contract AI khác.
 
-Raw data, processed data, provenance chi tiết và model bundle không được đưa lên GitHub nếu chưa có phê duyệt bảo mật riêng.
+Raw data, processed data và provenance domain-level không được đưa lên GitHub. Bundle v1 hiện được track để phục vụ Phase 3–4 parity/reproducibility; production delivery vẫn phải chuyển sang private artifact provisioning và read-only mount trong Phase 5 sau khi có security approval.
 
 ### 0.2 Thuật ngữ
 
@@ -128,7 +128,7 @@ flowchart TD
 
 Custom ML và LLM là hai lớp khác nhau:
 
-- Custom ML là classifier local, deterministic theo model bundle và chưa được triển khai ở baseline hiện tại.
+- Custom ML là classifier local, deterministic theo model bundle; runtime đã tích hợp nhưng baseline production vẫn `SAFE_ZONE_ML_MODE=disabled`.
 - Gemini/Ollama đã được triển khai trong `internal/ai` và được `internal/risk` dùng để refine domain `SUSPICIOUS`.
 - `ai.Provider` chỉ dành cho provider có contract `Refine(ctx, domain, current)`; không ép Custom ML vào interface này.
 
@@ -365,13 +365,13 @@ LLM/ML/Agent degradation không được làm deterministic analysis ngừng ho�
 | Hybrid Ollama→Gemini fallback | Implemented. |
 | OSINT domain-role provider fallback | Implemented. |
 | Agent Engine + audit/feed/OSINT/alert/whitelist tasks | Implemented; cần real-environment smoke/evidence và safety decisions nêu trên. |
-| Custom LightGBM Domain ML | Planned trong các phase tiếp theo; chưa được coi là implemented chỉ vì dataset đã build. |
+| Custom LightGBM Domain ML | Phase 0–4 runtime đã implemented; production rollout vẫn chờ Phase 5 private artifact provisioning và evidence. |
 
 ---
 
 ## 2. Trạng thái dữ liệu local và quản trị dữ liệu
 
-### 2.1 Snapshot đã ghi nhận ngày 2026-07-30
+### 2.1 Snapshot đã ghi nhận ngày 2026-08-08
 
 Pipeline `scripts/build_domain_dataset.py` đã tạo snapshot local trong `ml/data/processed/`. Các số dưới đây là dữ liệu của snapshot, không phải hằng số cho lần build sau:
 
@@ -490,6 +490,8 @@ Tạo `ml/data/data_manifest.json` chỉ chứa metadata không nhạy cảm:
 ```
 
 Manifest không chứa domain, URL indicator, `impersonated_org`, credentials hoặc nội dung raw.
+
+Manifest hiện đã được khôi phục tại `ml/data/data_manifest.json`. Digest của file được liên kết trong `ml/data/derived/split_manifest.json`; validator kiểm tra liên kết này trước khi chấp nhận các checksum partition. Các file raw/processed vẫn không thuộc Git commit policy.
 
 ### 2.6 Data security
 
@@ -985,7 +987,9 @@ Khi load:
 
 ## 7. Phase 4 — Tích hợp Go và Safe Zone runtime
 
-### 7.1 Files dự kiến
+> **Trạng thái 2026-08-08:** Đã triển khai và kiểm thử. ML vẫn mặc định `disabled`; provisioning và rollout production thuộc Phase 5.
+
+### 7.1 Files đã triển khai
 
 ```text
 internal/analysis/
@@ -999,7 +1003,8 @@ internal/analysis/
 internal/risk/
 ├── env.go
 ├── service.go
-└── service_test.go
+├── ml.go
+└── ml_policy_test.go
 
 ml/
 ├── configs/
@@ -1008,7 +1013,7 @@ ml/
 └── tests/
 ```
 
-Các fixture model trong Git phải nhỏ, synthetic và không chứa production domains.
+Các fixture model trong Git phải nhỏ, synthetic và không chứa production domains. Runtime bundle v1 hiện nằm tại `ml/models/v1/` và được xác minh bằng `SHA256SUMS`.
 
 ### 7.2 Interface đề xuất
 
@@ -1176,9 +1181,26 @@ Không log domain trên mỗi prediction ở info level. Domain-level telemetry 
 - Cả API và DNS resolver dùng cùng policy.
 - Race/concurrency tests pass.
 
+### 7.11 Phase 4 implementation evidence
+
+Các điểm sau đã được kiểm chứng trong commit `5233d58`:
+
+| Hạng mục | Evidence |
+|---|---|
+| Feature/runtime parity | 29 golden cases; handcrafted và TF-IDF vector parity trong dung sai; bundle có 534 features. |
+| Classifier | LightGBM text model qua `leaves`, Platt calibration, immutable loader và deterministic revision. |
+| Policy | `disabled`, `shadow`, `enforce`; enforce chỉ promote lexical `SUSPICIOUS`; abstain/error tiếp tục LLM/fail-open. |
+| Cache/telemetry | Cache entry mang `ModelRevision`; status và metrics expose mode, model version, revision, counters và latency histogram. |
+| Validation | `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests và `go vet ./...` pass. |
+| Artifact provenance | `python -B ml/src/validate_artifacts.py` đạt 41/41; 15/15 raw/processed hashes khớp; bundle `SHA256SUMS` khớp. |
+
+Phase 4 không tự bật ML trong production. `docker-compose.yml` chỉ truyền các biến ML với default an toàn; chưa thêm model mount hoặc private artifact fetch.
+
 ---
 
 ## 8. Phase 5 — Packaging, deployment và controlled rollout
+
+> **Trạng thái:** Chưa triển khai. Đây là bước kế tiếp sau Phase 4.
 
 ### 8.1 Quyết định artifact delivery
 
@@ -1496,21 +1518,21 @@ Timeline không phải release commitment. Dataset full, source review và parit
 Custom Domain ML chỉ được coi là hoàn thành khi:
 
 - [ ] Data/label/source policy được versioned và review.
-- [ ] Snapshot manifest/checksum tái lập được.
-- [ ] Conflicts bị loại khỏi binary trainable set hoặc có resolution rõ ràng.
-- [ ] Candidate cohort phản ánh lexical `SUSPICIOUS` production path.
-- [ ] Group/source/temporal leakage gates pass.
-- [ ] TF-IDF fit chỉ trên train.
+- [x] Snapshot manifest/checksum tái lập được.
+- [x] Conflicts bị loại khỏi binary trainable set hoặc có resolution rõ ràng.
+- [x] Candidate cohort phản ánh lexical `SUSPICIOUS` production path.
+- [~] Group-disjoint gate pass; source/temporal holdout evidence và source/legal review còn mở.
+- [x] TF-IDF fit chỉ trên train.
 - [ ] Calibration và false-positive operating point được phê duyệt.
-- [ ] Bundle immutable có đầy đủ model/contract/calibration/policy/report/checksum.
-- [ ] Python–Go canonicalization, feature và probability parity pass.
-- [ ] `leaves` + `CGO_ENABLED=0` + Alpine pass với exact release model format.
-- [ ] Disabled mode giữ behavior hiện hữu.
-- [ ] Shadow mode không đổi verdict.
-- [ ] Enforce v1 chỉ promote `SUSPICIOUS → MALICIOUS` tại threshold.
-- [ ] Result, telemetry và cache revision nhất quán.
+- [x] Bundle immutable có đầy đủ model/contract/calibration/policy/report/checksum.
+- [x] Python–Go canonicalization, feature và probability parity pass.
+- [~] `leaves` + `CGO_ENABLED=0` pass với exact release model format; Alpine image verification còn ở Phase 5.
+- [x] Disabled mode giữ behavior hiện hữu.
+- [x] Shadow mode không đổi verdict.
+- [x] Enforce v1 chỉ promote `SUSPICIOUS → MALICIOUS` tại threshold.
+- [x] Result, telemetry và cache revision nhất quán.
 - [ ] Bundle được provision read-only cho cả `core-api` và `dns-resolver`.
-- [ ] Metrics/status, kill switch và rollback runbook hoạt động.
-- [ ] `go test -race`, `go test ./...`, `go build ./...` và production Docker verification pass.
+- [~] Metrics/status và kill switch đã có; rollback runbook/production drill còn ở Phase 5.
+- [~] `go test -race`, `go test ./...`, `go vet ./...` pass; production Docker verification còn ở Phase 5.
 - [ ] Product owner phê duyệt threshold/false-positive budget.
 - [ ] Security owner phê duyệt data/model storage, access, retention và rollout scope.

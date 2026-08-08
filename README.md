@@ -123,9 +123,20 @@ tls://127.0.0.1:1853
 
 ## AI Engine
 
-Safe Zone keeps deterministic analysis available and can optionally refine ambiguous results through `none`, `gemini`, `ollama`, or Ollama-first `hybrid` provider modes. The Custom Domain ML classifier is a separate, planned local scoring layer with `disabled`, `shadow`, and controlled `enforce` rollout modes.
+Safe Zone keeps deterministic analysis available and can optionally refine ambiguous results through `none`, `gemini`, `ollama`, or Ollama-first `hybrid` provider modes. The Custom Domain ML classifier is implemented as a separate local scoring layer with `disabled`, `shadow`, and controlled `enforce` rollout modes; it remains `disabled` by default until Phase 5 artifact provisioning and rollout evidence are complete.
 
 AI/ML/provider failures remain fail-open unless an operator explicitly makes a validated model bundle a startup requirement. For the complete architecture, configuration matrix, data/ML lifecycle, Agent workflow, deployment procedure and incident response, see [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md). Release status and required evidence are tracked only in [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
+
+Custom ML runtime configuration:
+
+```env
+SAFE_ZONE_ML_MODE=disabled
+SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
+SAFE_ZONE_ML_REQUIRED=false
+SAFE_ZONE_ML_BLOCK_THRESHOLD=
+```
+
+The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. `shadow` records predictions without changing verdicts; `enforce` may promote only lexical `SUSPICIOUS` results at the approved calibrated threshold. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
 
 ## Dynamic Analysis Configuration
 
@@ -163,7 +174,7 @@ Operator visibility:
 
 Sensitive settings can be supplied either directly as `VAR=value` or indirectly through `VAR_FILE=./ops/secrets/name`.
 
-The shared [ops/secrets/README.md](</D:/Quorix/services/safe-zone/ops/secrets/README.md>) path works for:
+The shared [ops/secrets/README.md](ops/secrets/README.md) path works for:
 
 - local `go run` from the repo root
 - Docker Compose services, which mount `./ops/secrets` into `/app/ops/secrets`

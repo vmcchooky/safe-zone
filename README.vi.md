@@ -114,9 +114,20 @@ tls://127.0.0.1:1853
 
 ## Động cơ AI (AI Engine)
 
-Safe Zone duy trì cơ chế phân tích quy tắc định tính (deterministic) sẵn có và hỗ trợ tinh chỉnh các kết quả nghi ngờ thông qua các provider: `none`, `gemini`, `ollama`, hoặc chế độ ưu tiên Ollama `hybrid`. Bộ phân loại ML tên miền tùy chỉnh (Custom Domain ML) là lớp chấm điểm nội bộ độc lập được lập kế hoạch với các chế độ triển khai `disabled`, `shadow`, và `enforce`.
+Safe Zone duy trì cơ chế phân tích deterministic sẵn có và hỗ trợ tinh chỉnh các kết quả nghi ngờ thông qua các provider: `none`, `gemini`, `ollama`, hoặc chế độ ưu tiên Ollama `hybrid`. Bộ phân loại ML tên miền tùy chỉnh (Custom Domain ML) đã được tích hợp thành lớp chấm điểm local độc lập với các chế độ `disabled`, `shadow`, và `enforce`; mặc định vẫn là `disabled` cho tới khi hoàn tất provisioning artifact và evidence rollout của Phase 5.
 
 Các sự cố từ AI/ML/provider luôn tuân thủ nguyên tắc **fail-open** ngoại trừ trường hợp người vận hành yêu cầu bắt buộc bundle mô hình khi khởi động. Chi tiết kiến trúc, cấu hình, vòng đời dữ liệu và quy trình vận hành được mô tả tại [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md). Trạng thái phát hành được theo dõi tại [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
+
+Cấu hình runtime Custom ML:
+
+```env
+SAFE_ZONE_ML_MODE=disabled
+SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
+SAFE_ZONE_ML_REQUIRED=false
+SAFE_ZONE_ML_BLOCK_THRESHOLD=
+```
+
+Bundle v1 gồm 534 features, suy luận LightGBM bằng `leaves`, Platt calibration, policy metadata và kiểm tra SHA-256. `shadow` chỉ ghi prediction/telemetry; `enforce` chỉ được promote kết quả lexical `SUSPICIOUS` khi xác suất calibrated đạt threshold đã phê duyệt. Bundle lỗi vẫn fail-open, trừ khi đặt `SAFE_ZONE_ML_REQUIRED=true`.
 
 ## Cấu hình Phân tích Động (Dynamic Analysis Configuration)
 

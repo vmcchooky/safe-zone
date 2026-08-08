@@ -1,8 +1,8 @@
 # Kế hoạch trích xuất đặc trưng Domain ML — bản rà soát
 
-> Trạng thái: **đã triển khai** — toàn bộ quyết định kỹ thuật trong tài liệu này đã được implement trong Phases 0–3.
+> Trạng thái: **đã triển khai** — toàn bộ quyết định kỹ thuật trong tài liệu này đã được implement trong Phases 0–4; provisioning/rollout production tiếp tục ở Phase 5.
 > Ngày rà soát: 2026-07-31.
-> Phạm vi: chuẩn bị contract, trích xuất handcrafted features + character TF-IDF, tạo dữ liệu trainable không leakage, và chứng minh Python–Go/`leaves` compatibility trước khi chạy full dataset.
+> Phạm vi: chuẩn bị contract, trích xuất handcrafted features + character TF-IDF, tạo dữ liệu trainable không leakage, chứng minh Python–Go/`leaves` compatibility và tích hợp runtime Go trước controlled rollout.
 > Kết quả thực hiện: xem [method.md](method.md).
 
 ## 1. Kết luận rà soát hai bản Gemini
@@ -42,7 +42,7 @@ Bản Gemini thứ hai đi đúng hướng hơn bản đầu vì đã bổ sung 
    - `domain_dataset.csv`: `2,772,091` file rows;
    - `domain_dataset_lite.csv`: `300,001` file rows;
    - con số này bao gồm header, tương ứng `2,772,090` và `300,000` data rows trong spec.
-2. `ml/data/processed/` và `ml/data/derived/` hiện trống trong workspace, dù manifest tham chiếu các artifact processed. Phải restore/rebuild và verify checksum trước mọi run.
+2. Tại thời điểm review ngày 2026-07-31, `ml/data/processed/` và `ml/data/derived/` chưa được restore trong workspace; hiện trạng sau Phase 4 phải được xác nhận bằng `ml/src/validate_artifacts.py` trước mọi run.
 3. Mọi raw source trong manifest đang có `terms_review_id: "pending-review"`; release/training gate chưa thể coi là pass.
 4. `.gitignore` đang ignore toàn bộ `*.py`, chỉ exception một đường dẫn cũ. Trong khi Python scripts thực tế nằm dưới `scripts/data_processing/`.
 5. Repo chưa có `pyproject.toml`, lockfile hoặc requirements lock; `mise.toml` cũng chưa pin Python.
