@@ -53,7 +53,7 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 65536)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var req groupRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")
@@ -72,7 +72,7 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPut:
 		r.Body = http.MaxBytesReader(w, r.Body, 65536)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		id := r.URL.Query().Get("id")
 		if id == "" {
 			httputil.WriteError(w, http.StatusBadRequest, "id is required")

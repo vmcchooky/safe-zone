@@ -471,7 +471,7 @@ func WeightedLevenshteinDistance(s1, s2 string) float64 {
 		lastkey := float64(x - 1)
 		for y := 1; y <= len1; y++ {
 			oldkey := dp[y]
-			var incr float64 = 1.0
+			incr := 1.0
 			if r1[y-1] == r2[x-1] {
 				incr = 0.0
 			} else {

@@ -96,7 +96,7 @@ func BrandHandler(manager BrandManager) http.HandlerFunc {
 
 func decodeBrandRequest(w http.ResponseWriter, r *http.Request) (analysis.Brand, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, 32768)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	var brand analysis.Brand
 	if err := json.NewDecoder(r.Body).Decode(&brand); err != nil {
 		writeServeError(w, http.StatusBadRequest, "invalid JSON body")

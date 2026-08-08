@@ -36,7 +36,7 @@ func (h *Handler) MappingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 10240)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var req mappingRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")

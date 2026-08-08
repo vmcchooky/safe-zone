@@ -20,7 +20,7 @@ func (h *Handler) AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Limit request body size to 4KB to prevent JSON memory exhaustion DoS attacks
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req loginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

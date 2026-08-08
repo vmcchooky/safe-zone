@@ -148,7 +148,7 @@ func (o *OllamaClient) generateText(ctx context.Context, prompt string) (string,
 	if err != nil {
 		return "", fmt.Errorf("calling local ollama failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("ollama returned HTTP %d", resp.StatusCode)

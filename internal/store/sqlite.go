@@ -561,7 +561,7 @@ func (d *DB) QueryRecentFiltered(ctx context.Context, filter TelemetryFilter, li
 	if err != nil {
 		return nil, fmt.Errorf("query recent: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var entries []TelemetryEntry
 	for rows.Next() {
@@ -684,7 +684,7 @@ func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 	if err != nil {
 		return Stats{}, fmt.Errorf("query trend: %w", err)
 	}
-	defer trendRows.Close()
+	defer func() { _ = trendRows.Close() }()
 
 	// Map to hold hourly counts
 	hourlyMap := make(map[string]TrendPoint)
@@ -825,7 +825,7 @@ func (d *DB) ListOverrides(ctx context.Context, action string) ([]Override, erro
 	if err != nil {
 		return nil, fmt.Errorf("list overrides: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var overrides []Override
 	for rows.Next() {
@@ -936,7 +936,7 @@ func (d *DB) QueryAgentEvents(ctx context.Context, since time.Time, eventTypes [
 	if err != nil {
 		return nil, fmt.Errorf("query agent events: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var events []AgentEvent
 	for rows.Next() {
@@ -974,7 +974,7 @@ func (d *DB) QuerySuspiciousDomains(ctx context.Context, since time.Time, minOcc
 	if err != nil {
 		return nil, fmt.Errorf("query suspicious domains: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []DomainCount
 	for rows.Next() {
@@ -1009,7 +1009,7 @@ func (d *DB) QueryRecentAllowedOrSuspiciousDomains(ctx context.Context, since ti
 	if err != nil {
 		return nil, fmt.Errorf("query osint candidate domains: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []DomainCount
 	for rows.Next() {
@@ -1048,7 +1048,7 @@ func (d *DB) ReplaceOSINTEvidence(ctx context.Context, domain string, evidence [
 	if err != nil {
 		return fmt.Errorf("prepare osint evidence insert: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, item := range evidence {
 		termsJSON, _ := json.Marshal(item.MatchedTerms)
@@ -1090,7 +1090,7 @@ func (d *DB) ListOSINTEvidence(ctx context.Context, domain string, now time.Time
 	if err != nil {
 		return nil, fmt.Errorf("list osint evidence: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []OSINTEvidence
 	for rows.Next() {
@@ -1209,7 +1209,7 @@ func (d *DB) StreamWhitelist(ctx context.Context, fn func(string) error) error {
 	if err != nil {
 		return fmt.Errorf("query whitelist domains: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	for rows.Next() {
 		var domain string
@@ -1237,7 +1237,7 @@ func (d *DB) GetWhitelist(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query whitelist domains: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var domains []string
 	for rows.Next() {
@@ -1436,7 +1436,7 @@ func (d *DB) ListGroups(ctx context.Context) ([]ClientGroup, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list groups: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var groups []ClientGroup
 	for rows.Next() {
@@ -1483,11 +1483,12 @@ func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, group
 	}
 
 	// Validate IP or CIDR formats
-	if mappingType == "ip" {
+	switch mappingType {
+	case "ip":
 		if net.ParseIP(value) == nil {
 			return 0, fmt.Errorf("invalid IP address format: %s", value)
 		}
-	} else if mappingType == "cidr" {
+	case "cidr":
 		if _, ipNet, err := net.ParseCIDR(value); err != nil {
 			return 0, fmt.Errorf("invalid CIDR format %q: %w", value, err)
 		} else {
@@ -1549,7 +1550,7 @@ func (d *DB) ListMappings(ctx context.Context) ([]ClientMapping, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list mappings: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var mappings []ClientMapping
 	for rows.Next() {
@@ -1625,7 +1626,7 @@ func (d *DB) ListGroupOverrides(ctx context.Context, groupID int64) ([]GroupOver
 	if err != nil {
 		return nil, fmt.Errorf("list group overrides: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var overrides []GroupOverride
 	for rows.Next() {
@@ -1757,7 +1758,7 @@ func (d *DB) loadCIDRCache() error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var cache []cidrMapping
 	for rows.Next() {
@@ -1843,7 +1844,7 @@ func (d *DB) ListBlockReportsFiltered(ctx context.Context, filter BlockReportFil
 	if err != nil {
 		return nil, fmt.Errorf("list block reports: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var reports []BlockReport
 	for rows.Next() {

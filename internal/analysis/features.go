@@ -101,7 +101,7 @@ type FeatureExtractor struct {
 }
 
 func NewFeatureExtractor(manifestPath string) (*FeatureExtractor, error) {
-	data, err := os.ReadFile(manifestPath)
+	data, err := os.ReadFile(manifestPath) // #nosec G304 -- the loader supplies the validated bundle manifest path.
 	if err != nil {
 		return nil, fmt.Errorf("read feature manifest: %w", err)
 	}
@@ -419,8 +419,9 @@ func (e *FeatureExtractor) extractTFIDF(features []float64, ascii string) {
 		return
 	}
 	norm = math.Sqrt(norm)
-	for i, value := range values {
-		features[handcraftedFeatureCount+i] = value / norm
+	tfidfFeatures := features[handcraftedFeatureCount:]
+	for i := 0; i < len(values) && i < len(tfidfFeatures); i++ {
+		tfidfFeatures[i] = values[i] / norm
 	}
 }
 

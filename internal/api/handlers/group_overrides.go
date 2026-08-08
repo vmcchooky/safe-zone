@@ -47,7 +47,7 @@ func (h *Handler) GroupOverridesHandler(w http.ResponseWriter, r *http.Request) 
 
 	case http.MethodPost, http.MethodPut:
 		r.Body = http.MaxBytesReader(w, r.Body, 10240)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var req groupOverrideRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")

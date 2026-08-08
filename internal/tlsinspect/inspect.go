@@ -74,7 +74,7 @@ func Inspect(ctx context.Context, domain string) Result {
 		// No TLS or unreachable — minor signal only (don't penalise)
 		return Result{HasTLS: false, Reasons: []string{}}
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	tlsConn, ok := conn.(*tls.Conn)
 	if !ok {

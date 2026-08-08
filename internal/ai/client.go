@@ -320,7 +320,7 @@ func (g *GeminiClient) generateText(ctx context.Context, prompt string) (string,
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("gemini returned HTTP %d", resp.StatusCode)

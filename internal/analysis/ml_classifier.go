@@ -303,11 +303,11 @@ func readAndVerifyBundleChecksums(paths map[string]string) (bundleChecksums, err
 }
 
 func hashFile(path string) (string, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- paths come from the fixed, validated bundle file set.
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	h := sha256.New()
 	if _, err := io.Copy(h, f); err != nil {
 		return "", err

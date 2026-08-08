@@ -160,8 +160,8 @@ EVIDENCE_DIR=$EvidenceDir
 
 Invoke-AndCapture -Label 'go-test' -Script { go test ./... }
 Invoke-AndCapture -Label 'go-build' -Script { go build ./... }
-Invoke-AndCapture -Label 'gosec' -Script { go run github.com/securego/gosec/v2/cmd/gosec@latest ./... }
-Invoke-AndCapture -Label 'govulncheck' -Script { go run golang.org/x/vuln/cmd/govulncheck@latest ./... }
+Invoke-AndCapture -Label 'gosec' -Script { go run github.com/securego/gosec/v2/cmd/gosec@v2.28.0 ./... }
+Invoke-AndCapture -Label 'govulncheck' -Script { go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./... }
 
 Build-Binary -Service 'core-api'
 Build-Binary -Service 'dns-resolver'

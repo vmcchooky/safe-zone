@@ -83,7 +83,7 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 8192)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var req settingsRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")

@@ -102,7 +102,7 @@ func readDNSMessage(w http.ResponseWriter, r *http.Request) ([]byte, error) {
 		}
 		return base64.RawURLEncoding.DecodeString(encoded)
 	case http.MethodPost:
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		return io.ReadAll(http.MaxBytesReader(w, r.Body, 65535))
 	default:
 		return nil, errors.New("method not allowed")

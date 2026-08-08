@@ -154,7 +154,7 @@ func (h *Handler) LogsExportHandler(w http.ResponseWriter, r *http.Request) {
 		events, err := db.QueryAgentEvents(r.Context(), time.Now().Add(-7*24*time.Hour), []string{}, 1000)
 		if err == nil {
 			for _, ev := range events {
-				_, _ = w.Write([]byte(fmt.Sprintf("[%s] %s: %s - %s (Domain: %s)\n", ev.CreatedAt, ev.TaskName, ev.EventType, ev.Details, ev.Domain)))
+				_, _ = fmt.Fprintf(w, "[%s] %s: %s - %s (Domain: %s)\n", ev.CreatedAt, ev.TaskName, ev.EventType, ev.Details, ev.Domain)
 			}
 		} else {
 			_, _ = w.Write([]byte("Error fetching events: " + err.Error() + "\n"))

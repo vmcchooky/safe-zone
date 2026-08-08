@@ -200,7 +200,7 @@ func (d *DB) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list brands: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var brands []analysis.Brand
 	for rows.Next() {

@@ -137,7 +137,7 @@ func (h *Handler) GuestAccessHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 8192)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 
 		var req guestAccessRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -176,7 +176,7 @@ func (h *Handler) GuestAccessHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPut:
 		r.Body = http.MaxBytesReader(w, r.Body, 8192)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 
 		cfg, err := h.loadGuestAccessConfig(r.Context())
 		if err != nil {

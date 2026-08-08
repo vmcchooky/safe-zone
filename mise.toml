@@ -1,7 +1,7 @@
 [tools]
-go = "1.24.0"
+go = "1.25.12"
 node = "24"
-golangci-lint = "1.64.5"
+golangci-lint = "2.12.2"
 
 [tasks.default]
 description = "Run the default repository verification suite"
@@ -89,8 +89,8 @@ run = "golangci-lint run"
 [tasks."go:security"]
 description = "Run the Go security scans used in CI"
 run = [
-  "go run github.com/securego/gosec/v2/cmd/gosec@latest ./...",
-  "go run golang.org/x/vuln/cmd/govulncheck@latest ./...",
+  "go run github.com/securego/gosec/v2/cmd/gosec@v2.28.0 ./...",
+  "go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...",
 ]
 
 [tasks."ops:deploy"]

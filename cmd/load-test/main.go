@@ -394,7 +394,7 @@ func doRequest(client *http.Client, req *http.Request) (int, []byte, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	_, _ = io.Copy(io.Discard, resp.Body)

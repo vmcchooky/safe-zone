@@ -31,7 +31,7 @@ func DoDoH(ctx context.Context, client *http.Client, upstreamURL string, wire []
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("upstream returned HTTP %d", resp.StatusCode)

@@ -80,7 +80,7 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 4096)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req updateReportStatusRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

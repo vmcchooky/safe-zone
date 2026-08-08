@@ -151,7 +151,7 @@ func (t *WhitelistUpdateTask) downloadAndParse(ctx context.Context) ([]string, e
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("http error: status code %d", resp.StatusCode)
@@ -197,7 +197,7 @@ func (t *WhitelistUpdateTask) downloadAndParse(ctx context.Context) ([]string, e
 	if err != nil {
 		return nil, fmt.Errorf("open file inside zip: %w", err)
 	}
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 
 	return t.parseCSV(rc)
 }

@@ -1420,7 +1420,7 @@ func syncPath(path string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	return f.Sync()
 }
 
@@ -1429,7 +1429,7 @@ func (s *Service) loadAdblockSourceCache(source string, trie *domaintrie.Trie) b
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	if err := s.parseAdblockSource(f, trie); err != nil {
 		logjson.Warn("error reading adblock source cache", map[string]any{"source": source, "error": err.Error()})
@@ -1620,7 +1620,7 @@ func (s *Service) loadAdblockCache(trie *domaintrie.Trie) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
@@ -2299,11 +2299,11 @@ func (s *Service) recordTelemetry(a Analysis, client ClientInfo) {
 		return
 	}
 	s.store.RecordAnalysis(store.TelemetryEntry{
-		Domain:     a.Result.Domain,
-		Verdict:    string(a.Result.Verdict),
-		Score:      a.Result.Score,
-		Confidence: a.Result.Confidence,
-		Reasons:    a.Result.Reasons,
+		Domain:     a.Domain,
+		Verdict:    string(a.Verdict),
+		Score:      a.Score,
+		Confidence: a.Confidence,
+		Reasons:    a.Reasons,
 		CacheHit:   a.CacheHit,
 		Source:     inferSource(a),
 		AnalyzedAt: a.AnalyzedAt,
@@ -2316,7 +2316,7 @@ func inferSource(a Analysis) string {
 	if a.CacheHit {
 		return "cache"
 	}
-	for _, r := range a.Result.Reasons {
+	for _, r := range a.Reasons {
 		if strings.HasPrefix(r, "admin override") {
 			return "override"
 		}

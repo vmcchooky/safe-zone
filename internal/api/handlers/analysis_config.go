@@ -13,7 +13,7 @@ func (h *Handler) AnalysisConfigHandler(w http.ResponseWriter, r *http.Request) 
 		httputil.WriteJSON(w, http.StatusOK, h.Risk.GetAnalysisConfig())
 	case http.MethodPut:
 		r.Body = http.MaxBytesReader(w, r.Body, 32768)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		cfg := h.Risk.GetAnalysisConfig()
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()

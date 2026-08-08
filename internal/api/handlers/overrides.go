@@ -40,7 +40,7 @@ func (h *Handler) OverridesHandler(w http.ResponseWriter, r *http.Request) {
 
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 10240)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var req overrideRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")
@@ -80,7 +80,7 @@ func (h *Handler) ReviewFalsePositiveHandler(w http.ResponseWriter, r *http.Requ
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 12288)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 
 	var req falsePositiveReviewRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

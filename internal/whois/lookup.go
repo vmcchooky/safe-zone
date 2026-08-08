@@ -152,7 +152,7 @@ func query(ctx context.Context, server, domain string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("whois dial %s: %w", server, err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	deadline, _ := ctx.Deadline()
 	_ = conn.SetDeadline(deadline)

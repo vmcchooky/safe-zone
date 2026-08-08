@@ -20,7 +20,7 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		domain = r.URL.Query().Get("domain")
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 4096)
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var req analyzeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")

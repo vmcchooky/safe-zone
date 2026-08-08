@@ -42,7 +42,7 @@ type testAlertRequest struct {
 
 func decodeOptionalTestRequest(w http.ResponseWriter, r *http.Request, target any) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, 8192)
-	defer r.Body.Close()
+	defer func() { _ = r.Body.Close() }()
 	if err := json.NewDecoder(r.Body).Decode(target); err != nil && !errors.Is(err, io.EOF) {
 		httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")
 		return false
@@ -212,7 +212,7 @@ func (h *Handler) TestAlertHandler(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		httputil.WriteJSON(w, http.StatusOK, map[string]any{

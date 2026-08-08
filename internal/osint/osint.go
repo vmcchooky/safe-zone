@@ -363,7 +363,7 @@ func (s *Service) fetchSource(ctx context.Context, domain, source string) (Evide
 	if err != nil {
 		return Evidence{}, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return Evidence{}, fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}

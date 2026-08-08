@@ -285,7 +285,7 @@ func (t *AlertTask) sendWebhook(ctx context.Context, webhookURL string, payload 
 	if err != nil {
 		return fmt.Errorf("http post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
@@ -346,7 +346,7 @@ func (t *AlertTask) sendTelegram(ctx context.Context, criticalEvents []SpoofResu
 	if err != nil {
 		return fmt.Errorf("telegram http post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("telegram returned HTTP %d", resp.StatusCode)
@@ -397,7 +397,7 @@ func (t *AlertTask) sendSlack(ctx context.Context, criticalEvents []SpoofResult)
 	if err != nil {
 		return fmt.Errorf("slack http post: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("slack returned HTTP %d", resp.StatusCode)
@@ -497,7 +497,8 @@ func sendSMTP(ctx context.Context, addr, host string, port int, auth smtp.Auth, 
 		conn net.Conn
 		err  error
 	)
-	if port == 465 {
+	switch port {
+	case 465:
 		rawConn, dialErr := dialer.DialContext(ctx, "tcp", addr)
 		if dialErr != nil {
 			return dialErr
@@ -512,22 +513,22 @@ func sendSMTP(ctx context.Context, addr, host string, port int, auth smtp.Auth, 
 			return err
 		}
 		conn = tlsConn
-	} else if port == 587 {
+	case 587:
 		conn, err = dialer.DialContext(ctx, "tcp", addr)
 		if err != nil {
 			return err
 		}
-	} else {
+	default:
 		return fmt.Errorf("unsupported smtp port %d: use 465 implicit TLS or 587 STARTTLS", port)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	_ = setConnDeadline(ctx, conn)
 
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	if port == 587 {
 		if ok, _ := client.Extension("STARTTLS"); !ok {
