@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -308,11 +309,13 @@ func hashFile(path string) (string, error) {
 		return "", err
 	}
 	defer func() { _ = f.Close() }()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	data, err := io.ReadAll(f)
+	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	canonical := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	hash := sha256.Sum256(canonical)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 var _ DomainClassifier = (*BundleClassifier)(nil)

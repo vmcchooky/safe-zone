@@ -284,11 +284,11 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 #### Immutable Model Bundle (`ml/models/v1/`)
 | File | SHA-256 |
 |---|---|
-| `domain_threat_lgbm.txt` (3.6 MB, 1,000 trees) | `0ecd12fa3c28f227...` |
-| `feature_manifest.v1.json` | `5846984a25f247bd...` |
-| `calibration.json` | `f0f48c2846278fbe...` |
-| `policy.json` | `da31752bbed6fe61...` |
-| `model_report.json` | `402541fe9d1ec329...` |
+| `domain_threat_lgbm.txt` (3.6 MB, 1,000 trees) | `4ced615dd0567ef6...` |
+| `feature_manifest.v1.json` | `542eb7e756d7adcb...` |
+| `calibration.json` | `9b407b717a6628ea...` |
+| `policy.json` | `f4c620c08e0ff50b...` |
+| `model_report.json` | `ceb7f2d84a02ccb0...` |
 
 #### Kết quả Bỏ phiếu Đồng thuận (Multi-Subagent Consensus)
 | Subagent | Vai trò | Vote |
@@ -338,7 +338,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
   - `MalformedModelRejection`: **PASS** (Bắt đúng lỗi `only version=v3 is supported`).
   - `WrongFeatureCountRejection`: **PASS** (Bắt đúng lỗi `100 vs required 534`).
 - `TestPhase3ModelBundleAndParity`:
-  - Model Bundle loading: **PASS** (Revision: `daf4c6e2d4dd7c6acfb614522070b1f97e89ba72bad3ef07d773ebe58c910822`, 534 features, threshold 0.85).
+  - Model Bundle loading: **PASS** (Revision: `4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca`, 534 features, threshold 0.85).
   - Parity verification 29 Golden Test Cases: **PASS** (Max raw diff: `0.000000e+00`, Max calibrated diff: `3.469447e-18`, tolerance $< 10^{-17}$).
   - `RejectionGate_MissingFile`: **PASS** (Từ chối chính xác khi thiếu bundle directory).
   - `RejectionGate_FeatureCountMismatch`: **PASS** (Từ chối chính xác khi lệch số lượng đặc trưng `got 100, expected 534`).
@@ -404,7 +404,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 | Concurrency | Race test cho `internal/analysis` và `internal/risk` pass; classifier dùng immutable state. |
 | Go verification | `go test ./...`, CGO-disabled tests và `go vet ./...` pass. |
 | Artifact validation | 41/41 checks pass; 15/15 raw/processed provenance hashes match. |
-| Bundle integrity | Toàn bộ entries trong `ml/models/v1/SHA256SUMS` match; revision hiện tại `daf4c6e2d4dd7c6a...`. |
+| Bundle integrity | Toàn bộ entries trong `ml/models/v1/SHA256SUMS` match theo canonical LF text hash; revision hiện tại `4632f9ea69124591...`. |
 | Runtime policy | `disabled`, `shadow`, `enforce` và cache invalidation theo model revision được kiểm thử bằng unit tests. |
 
 ### Liên kết Artifacts

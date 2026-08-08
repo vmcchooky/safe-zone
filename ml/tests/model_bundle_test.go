@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -80,11 +81,13 @@ func computeFileSHA256(path string) (string, error) {
 	}
 	defer f.Close()
 
-	hasher := sha256.New()
-	if _, err := io.Copy(hasher, f); err != nil {
+	data, err := io.ReadAll(f)
+	if err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+	canonical := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+	hash := sha256.Sum256(canonical)
+	return hex.EncodeToString(hash[:]), nil
 }
 
 func LoadModelBundle(bundleDir string) (*ModelBundleLoader, error) {

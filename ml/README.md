@@ -47,7 +47,7 @@ The current local evidence is:
 - data provenance: 15/15 raw/processed file hashes matched;
 - Go unit/integration tests: passed;
 - Go race tests for analysis and risk: passed;
-- model bundle `SHA256SUMS`: all entries matched.
+- model bundle `SHA256SUMS`: all entries matched using canonical LF text hashing, so Windows CRLF and Linux LF checkouts produce the same bundle revision.
 
 ## Artifact layout
 

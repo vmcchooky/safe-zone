@@ -1,6 +1,6 @@
 {
   "fixture_version": "1.0.0",
-  "bundle_revision": "daf4c6e2d4dd7c6acfb614522070b1f97e89ba72bad3ef07d773ebe58c910822",
+  "bundle_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
   "total_feature_count": 534,
   "num_cases": 29,
   "calibration": {
@@ -14,10 +14,10 @@
     "action_on_pass": "ABSTAIN_KEEP_SUSPICIOUS"
   },
   "bundle_hashes": {
-    "model": "0ecd12fa3c28f2275441bc6ddbad64eb0bceb123b3f6faac35d4c877188c6b9e",
-    "manifest": "5846984a25f247bd3d3213c31f7d150f56741bd46c116fc45bb6ad2f496c0cef",
-    "calibration": "f0f48c2846278fbea3ad2cf1847b5dbdce11b74946fff0794fb35ccf7e5fb8d3",
-    "policy": "da31752bbed6fe61bac447b2d18702a216818d36bcc0026686f1db8b74b0422d"
+    "model": "4ced615dd0567ef6de23fb0dbd9125732f40c79d436638e96b1c81c40dfb4f4b",
+    "manifest": "542eb7e756d7adcbf2260ee827a85c17a2852553db8ee997f66484038e1f1db8",
+    "calibration": "9b407b717a6628ea4f996ef47f36e74884e229cecf85c6153de1d6a622f4bbc5",
+    "policy": "f4c620c08e0ff50b783ce46356170388d208d7741fd2cb99232978fbc8bad3d0"
   },
   "test_cases": [
     {
