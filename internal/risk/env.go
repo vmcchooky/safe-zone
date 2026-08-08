@@ -1,10 +1,15 @@
 package risk
 
 import (
+	"fmt"
+	"math"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"safe-zone/internal/ai"
+	"safe-zone/internal/analysis"
 	"safe-zone/internal/cache"
 	"safe-zone/internal/config"
 	"safe-zone/internal/logjson"
@@ -17,6 +22,19 @@ func NewServiceFromEnv() *Service {
 }
 
 func NewServiceFromEnvForRole(nodeRole string) *Service {
+	service, err := NewServiceFromEnvForRoleE(nodeRole)
+	if err != nil {
+		// The existing constructor has no error return and is used directly by
+		// both service binaries. A required/enforce bundle failure must still
+		// fail startup instead of silently serving without ML.
+		panic(err)
+	}
+	return service
+}
+
+// NewServiceFromEnvForRoleE is the error-returning constructor used by tests
+// and by callers that want explicit startup error handling.
+func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	readSecret := func(key string) string {
 		value, err := config.SecretStringE(key)
 		if err != nil {
@@ -78,6 +96,11 @@ func NewServiceFromEnvForRole(nodeRole string) *Service {
 		RoleClassifier: aiClient,
 	})
 
+	mlMode, mlClassifier, err := loadMLFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	return NewService(Options{
 		Redis:                    redisCache,
 		RedisTimeout:             config.DurationMillis("SAFE_ZONE_REDIS_TIMEOUT_MS", 250*time.Millisecond),
@@ -111,5 +134,56 @@ func NewServiceFromEnvForRole(nodeRole string) *Service {
 		EnrichWorkers:            config.Int("SAFE_ZONE_ENRICH_WORKERS", 2),
 		WhoisCacheTTL:            time.Duration(whoisCacheDays) * 24 * time.Hour,
 		OSINT:                    osintService,
+		MLClassifier:             mlClassifier,
+		MLMode:                   mlMode,
+	}), nil
+}
+
+func loadMLFromEnv() (analysis.MLMode, analysis.DomainClassifier, error) {
+	rawMode := strings.ToLower(strings.TrimSpace(config.String("SAFE_ZONE_ML_MODE", string(analysis.MLModeDisabled))))
+	mode := analysis.MLMode(rawMode)
+	if mode != analysis.MLModeDisabled && mode != analysis.MLModeShadow && mode != analysis.MLModeEnforce {
+		return analysis.MLModeDisabled, nil, fmt.Errorf("invalid SAFE_ZONE_ML_MODE %q", rawMode)
+	}
+	if mode == analysis.MLModeDisabled {
+		return mode, nil, nil
+	}
+
+	bundleDir := strings.TrimSpace(config.String("SAFE_ZONE_ML_BUNDLE_DIR", ""))
+	required := config.Bool("SAFE_ZONE_ML_REQUIRED", false)
+	var thresholdOverride *float64
+	if rawThreshold, ok := os.LookupEnv("SAFE_ZONE_ML_BLOCK_THRESHOLD"); ok && strings.TrimSpace(rawThreshold) != "" {
+		value, err := strconv.ParseFloat(strings.TrimSpace(rawThreshold), 64)
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || value <= 0 || value >= 1 {
+			return analysis.MLModeDisabled, nil, fmt.Errorf("invalid SAFE_ZONE_ML_BLOCK_THRESHOLD")
+		}
+		thresholdOverride = &value
+	}
+	if bundleDir == "" {
+		if required || mode == analysis.MLModeEnforce {
+			return analysis.MLModeDisabled, nil, fmt.Errorf("ML bundle is required for mode %s", mode)
+		}
+		logjson.Warn("ML bundle not configured; ML disabled", map[string]any{"service": "risk", "mode": mode})
+		return analysis.MLModeDisabled, nil, nil
+	}
+
+	classifier, err := analysis.NewBundleClassifierWithThreshold(bundleDir, thresholdOverride)
+	if err != nil {
+		if required || mode == analysis.MLModeEnforce {
+			return analysis.MLModeDisabled, nil, fmt.Errorf("ML bundle load failed: %w", err)
+		}
+		logjson.Warn("ML bundle load failed; ML disabled", map[string]any{
+			"service":     "risk",
+			"mode":        mode,
+			"error_class": "bundle_load",
+		})
+		return analysis.MLModeDisabled, nil, nil
+	}
+	logjson.Info("ML classifier loaded", map[string]any{
+		"service":          "risk",
+		"ml_mode":          mode,
+		"ml_model_version": classifier.ModelVersion(),
+		"ml_revision":      classifier.Revision(),
 	})
+	return mode, classifier, nil
 }

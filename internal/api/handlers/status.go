@@ -23,6 +23,7 @@ type statusResponse struct {
 	DeploymentTier string                           `json:"deployment_tier,omitempty"`
 	Redis          *risk.CacheStatus                `json:"redis,omitempty"`
 	AnalysisConfig *risk.AnalysisConfigReloadStatus `json:"analysis_config_reload,omitempty"`
+	ML             *risk.MLStatus                   `json:"ml,omitempty"`
 	FeedSync       *feed.StatusSummary              `json:"feed_sync,omitempty"`
 	Adblock        *risk.AdblockStatus              `json:"adblock,omitempty"`
 	Endpoints      []string                         `json:"endpoints,omitempty"`
@@ -54,6 +55,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	analysisConfigStatus := h.Risk.AnalysisConfigReloadStatus()
 	feedStatus := h.FeedStatus(r.Context())
 	adblockStatus := h.Risk.AdblockStatus()
+	mlStatus := h.Risk.MLStatus()
 	httputil.WriteJSON(w, http.StatusOK, statusResponse{
 		Service:        "core-api",
 		Status:         "ok",
@@ -63,6 +65,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		AnalysisConfig: &analysisConfigStatus,
 		FeedSync:       &feedStatus,
 		Adblock:        &adblockStatus,
+		ML:             &mlStatus,
 		Endpoints: []string{
 			"/",
 			"/v1/status",
@@ -102,6 +105,7 @@ func (h *Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		"feed_sync":              h.FeedStatus(r.Context()),
 		"adblock":                h.Risk.AdblockStatus(),
 		"analysis_config_reload": h.Risk.AnalysisConfigReloadStatus(),
+		"ml":                     h.Risk.MLStatus(),
 		"time":                   time.Now().UTC().Format(time.RFC3339Nano),
 	})
 }

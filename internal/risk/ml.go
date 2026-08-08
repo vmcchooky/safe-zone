@@ -1,0 +1,188 @@
+package risk
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"sync/atomic"
+	"time"
+
+	"safe-zone/internal/analysis"
+	"safe-zone/internal/correlation"
+	"safe-zone/internal/logjson"
+)
+
+const mlClassifierReason = "ml_classifier_high_risk"
+
+var mlLatencyBuckets = [...]int64{100, 250, 500, 1000, 2000, 5000, 10000, 50000}
+
+type mlTelemetry struct {
+	predictionAttempts atomic.Int64
+	shadowWouldBlock   atomic.Int64
+	enforcePromotions  atomic.Int64
+	abstains           atomic.Int64
+	errors             atomic.Int64
+	skips              atomic.Int64
+	fallbacks          atomic.Int64
+	latencyCount       atomic.Int64
+	latencyTotalMicros atomic.Int64
+	latencyBuckets     [len(mlLatencyBuckets) + 1]atomic.Int64
+}
+
+type MLStatus struct {
+	Mode               analysis.MLMode  `json:"ml_mode"`
+	Enabled            bool             `json:"ml_enabled"`
+	ModelVersion       string           `json:"ml_model_version,omitempty"`
+	Revision           string           `json:"ml_revision,omitempty"`
+	BlockThreshold     float64          `json:"ml_block_threshold,omitempty"`
+	PredictionAttempts int64            `json:"prediction_attempts"`
+	ShadowWouldBlock   int64            `json:"shadow_would_block"`
+	EnforcePromotions  int64            `json:"enforce_promotions"`
+	Abstains           int64            `json:"abstains"`
+	Errors             int64            `json:"errors"`
+	Skips              int64            `json:"skips"`
+	LLMFallbacks       int64            `json:"llm_fallbacks_after_ml"`
+	LatencyP95Micros   int64            `json:"latency_p95_us"`
+	LatencyCount       int64            `json:"latency_count"`
+	LatencyHistogram   map[string]int64 `json:"latency_histogram_us"`
+}
+
+func (t *mlTelemetry) observeLatency(duration time.Duration) {
+	if t == nil {
+		return
+	}
+	micros := duration.Microseconds()
+	t.latencyCount.Add(1)
+	t.latencyTotalMicros.Add(micros)
+	for i, upper := range mlLatencyBuckets {
+		if micros <= upper {
+			t.latencyBuckets[i].Add(1)
+			return
+		}
+	}
+	t.latencyBuckets[len(mlLatencyBuckets)].Add(1)
+}
+
+func (t *mlTelemetry) latencyP95() int64 {
+	if t == nil {
+		return 0
+	}
+	total := t.latencyCount.Load()
+	if total == 0 {
+		return 0
+	}
+	target := (total*95 + 99) / 100
+	var cumulative int64
+	for i, upper := range mlLatencyBuckets {
+		cumulative += t.latencyBuckets[i].Load()
+		if cumulative >= target {
+			return upper
+		}
+	}
+	return -1
+}
+
+func (s *Service) MLStatus() MLStatus {
+	if s == nil {
+		return MLStatus{Mode: analysis.MLModeDisabled}
+	}
+	status := MLStatus{
+		Mode:               s.mlMode,
+		Enabled:            s.mlClassifier != nil && s.mlClassifier.Enabled(),
+		PredictionAttempts: s.mlTelemetry.predictionAttempts.Load(),
+		ShadowWouldBlock:   s.mlTelemetry.shadowWouldBlock.Load(),
+		EnforcePromotions:  s.mlTelemetry.enforcePromotions.Load(),
+		Abstains:           s.mlTelemetry.abstains.Load(),
+		Errors:             s.mlTelemetry.errors.Load(),
+		Skips:              s.mlTelemetry.skips.Load(),
+		LLMFallbacks:       s.mlTelemetry.fallbacks.Load(),
+		LatencyP95Micros:   s.mlTelemetry.latencyP95(),
+		LatencyCount:       s.mlTelemetry.latencyCount.Load(),
+		LatencyHistogram:   make(map[string]int64, len(mlLatencyBuckets)+1),
+	}
+	if metadata, ok := s.mlClassifier.(analysis.ClassifierMetadata); ok {
+		status.ModelVersion = metadata.ModelVersion()
+		status.BlockThreshold = metadata.BlockThreshold()
+	}
+	if s.mlClassifier != nil {
+		status.Revision = s.mlClassifier.Revision()
+	}
+	for i, upper := range mlLatencyBuckets {
+		status.LatencyHistogram[fmt.Sprintf("le_%dus", upper)] = s.mlTelemetry.latencyBuckets[i].Load()
+	}
+	status.LatencyHistogram["gt_50000us"] = s.mlTelemetry.latencyBuckets[len(mlLatencyBuckets)].Load()
+	return status
+}
+
+func (s *Service) currentModelRevision() string {
+	if s == nil || s.mlClassifier == nil || !s.mlClassifier.Enabled() {
+		return ""
+	}
+	return s.mlClassifier.Revision()
+}
+
+func (s *Service) classifyML(ctx context.Context, current analysis.Result) (analysis.Result, bool) {
+	if s == nil || s.mlMode == analysis.MLModeDisabled || s.mlClassifier == nil || !s.mlClassifier.Enabled() {
+		if s != nil {
+			s.mlTelemetry.skips.Add(1)
+		}
+		return current, false
+	}
+	if current.Verdict != analysis.VerdictSuspicious {
+		s.mlTelemetry.skips.Add(1)
+		return current, false
+	}
+
+	s.mlTelemetry.predictionAttempts.Add(1)
+	started := time.Now()
+	decision, err := classifyWithRecovery(s.mlClassifier, current.Domain)
+	s.mlTelemetry.observeLatency(time.Since(started))
+	if err != nil {
+		s.mlTelemetry.errors.Add(1)
+		return current, false
+	}
+	switch decision.Action {
+	case analysis.MLActionPromoteMalicious:
+		if s.mlMode == analysis.MLModeShadow {
+			s.mlTelemetry.shadowWouldBlock.Add(1)
+			return current, false
+		}
+		s.mlTelemetry.enforcePromotions.Add(1)
+		current.Verdict = analysis.VerdictMalicious
+		current.Confidence = decision.Probability
+		current.Score = int(math.Round(decision.Probability * 100))
+		if current.Score < 70 {
+			current.Score = 70
+		}
+		if current.Score > 100 {
+			current.Score = 100
+		}
+		if current.Category != "phishing" && current.Category != "malware" {
+			current.Category = "malware"
+		}
+		current.Reasons = append(current.Reasons, mlClassifierReason)
+		if decision.ModelVersion != "" {
+			current.Reasons = append(current.Reasons, "ml_classifier_model_version:"+decision.ModelVersion)
+		}
+		return current, true
+	case analysis.MLActionAbstain:
+		s.mlTelemetry.abstains.Add(1)
+		return current, false
+	default:
+		s.mlTelemetry.errors.Add(1)
+		return current, false
+	}
+}
+
+func classifyWithRecovery(classifier analysis.DomainClassifier, domain string) (decision analysis.MLDecision, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("ML classifier panic: %v", recovered)
+			logjson.Warn("ML classifier prediction failed", correlation.Fields(context.Background(), map[string]any{
+				"service":     "risk",
+				"error_class": "panic",
+			}))
+		}
+	}()
+	return classifier.Classify(domain)
+}

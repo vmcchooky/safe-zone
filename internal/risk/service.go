@@ -92,6 +92,9 @@ type Options struct {
 	OSINT *osint.Service
 	// Enrichment worker pool size. Defaults to 1 if not set.
 	EnrichWorkers int
+	// Immutable model bundle classifier and merge policy.
+	MLClassifier analysis.DomainClassifier
+	MLMode       analysis.MLMode
 }
 
 type adblockSourceMeta struct {
@@ -144,6 +147,9 @@ type Service struct {
 	whoisCacheTTL     time.Duration
 	osint             *osint.Service
 	adblockDataRoot   string
+	mlClassifier      analysis.DomainClassifier
+	mlMode            analysis.MLMode
+	mlTelemetry       mlTelemetry
 
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
 	adblockEnabled    atomic.Bool
@@ -198,6 +204,7 @@ type analysisCacheEntry struct {
 	BrandRevision    string          `json:"brand_revision,omitempty"`
 	AnalysisRevision string          `json:"analysis_revision,omitempty"`
 	ConfigRevision   string          `json:"config_revision,omitempty"`
+	ModelRevision    string          `json:"model_revision,omitempty"`
 	OSINTCheckedAt   string          `json:"osint_checked_at,omitempty"`
 	EnrichedAt       string          `json:"enriched_at,omitempty"`
 }
@@ -208,6 +215,7 @@ type enrichmentJob struct {
 	FeedRevision   string
 	BrandRevision  string
 	ConfigRevision string
+	ModelRevision  string
 }
 
 type enrichmentSignals struct {
@@ -285,6 +293,13 @@ func NewService(options Options) *Service {
 	if !aiClient.Enabled() && !aiShared {
 		aiClient = nil
 	}
+	mlMode := options.MLMode
+	if mlMode != analysis.MLModeShadow && mlMode != analysis.MLModeEnforce {
+		mlMode = analysis.MLModeDisabled
+	}
+	if options.MLClassifier == nil || !options.MLClassifier.Enabled() {
+		mlMode = analysis.MLModeDisabled
+	}
 
 	wl := NewWhitelist(options.Store)
 	if options.WhitelistPath != "" {
@@ -340,6 +355,8 @@ func NewService(options Options) *Service {
 		whoisCacheTTL:    configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
 		osint:            options.OSINT,
 		adblockDataRoot:  adblockDataRoot,
+		mlClassifier:     options.MLClassifier,
+		mlMode:           mlMode,
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -987,6 +1004,14 @@ func (s *Service) CacheStatus(ctx context.Context) CacheStatus {
 
 const negativeCacheTTL = 2 * time.Minute
 
+func analysisCacheKey(domain, modelRevision string) string {
+	base := fmt.Sprintf("safe-zone:analysis:%s", domain)
+	if modelRevision == "" {
+		return base
+	}
+	return base + ":model:" + modelRevision
+}
+
 func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLookupMode, forceOSINT bool) (analysis.Result, bool, []osint.Evidence) {
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {
@@ -994,7 +1019,8 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	}
 
 	// 1. Check Cache
-	cacheKey := fmt.Sprintf("safe-zone:analysis:%s", normalized)
+	modelRevision := s.currentModelRevision()
+	cacheKey := analysisCacheKey(normalized, modelRevision)
 	currentRevision := s.currentFeedRevision(ctx)
 	currentBrandRevision := s.currentBrandRevision(ctx)
 	currentConfigRevision := s.currentConfigRevision()
@@ -1006,6 +1032,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		if err == nil && found && entry.Result.Domain != "" {
 			if entry.AnalysisRevision == analysisAlgorithmRevision &&
 				entry.ConfigRevision == currentConfigRevision &&
+				entry.ModelRevision == modelRevision &&
 				(currentRevision == "" || entry.FeedRevision == currentRevision) &&
 				(currentBrandRevision == "" || entry.BrandRevision == currentBrandRevision) {
 				cached = entry.Result
@@ -1030,6 +1057,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 				FeedRevision:   cachedEntry.FeedRevision,
 				BrandRevision:  cachedEntry.BrandRevision,
 				ConfigRevision: cachedEntry.ConfigRevision,
+				ModelRevision:  cachedEntry.ModelRevision,
 			})
 		}
 		report := s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
@@ -1050,14 +1078,22 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		// 3. Lexical Analysis
 		result = s.analyzeLexical(normalized)
 	}
-	// 4. AI Refinement
+	// 4. ML refinement/promotion, followed by the existing AI refinement unless
+	// ML enforce mode already promoted this suspicious result.
 	aiContributed := false
+	mlPromoted := false
 	if result.Verdict == analysis.VerdictSuspicious {
-		refined := s.refineWithAI(ctx, result)
-		if refined.Verdict != result.Verdict || len(refined.Reasons) > len(result.Reasons) {
-			aiContributed = true
+		result, mlPromoted = s.classifyML(ctx, result)
+		if !mlPromoted {
+			refined := s.refineWithAI(ctx, result)
+			if refined.Verdict != result.Verdict || len(refined.Reasons) > len(result.Reasons) {
+				aiContributed = true
+			}
+			result = refined
+			if s.mlMode != analysis.MLModeDisabled && s.mlClassifier != nil && s.mlClassifier.Enabled() {
+				s.mlTelemetry.fallbacks.Add(1)
+			}
 		}
-		result = refined
 	}
 	if shouldEnqueueEnrichment(result) {
 		s.enqueueEnrichment(ctx, enrichmentJob{
@@ -1066,6 +1102,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			FeedRevision:   currentRevision,
 			BrandRevision:  currentBrandRevision,
 			ConfigRevision: currentConfigRevision,
+			ModelRevision:  modelRevision,
 		})
 	}
 	// 5. OSINT public-warning evidence. API/dashboard can fetch on demand;
@@ -1086,6 +1123,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			BrandRevision:    currentBrandRevision,
 			AnalysisRevision: analysisAlgorithmRevision,
 			ConfigRevision:   currentConfigRevision,
+			ModelRevision:    modelRevision,
 		}, ttl)
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
@@ -1742,7 +1780,8 @@ func (s *Service) applyOSINT(ctx context.Context, domain string, result analysis
 		return updated
 	}
 
-	cacheKey := fmt.Sprintf("safe-zone:analysis:%s", domain)
+	modelRevision := s.currentModelRevision()
+	cacheKey := analysisCacheKey(domain, modelRevision)
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           updated,
@@ -1750,6 +1789,7 @@ func (s *Service) applyOSINT(ctx context.Context, domain string, result analysis
 			BrandRevision:    s.currentBrandRevision(ctx),
 			AnalysisRevision: analysisAlgorithmRevision,
 			ConfigRevision:   s.currentConfigRevision(),
+			ModelRevision:    modelRevision,
 			OSINTCheckedAt:   report.CheckedAt,
 		}, s.ttlFor(updated.Verdict))
 	})
@@ -1858,6 +1898,9 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	if current := s.currentConfigRevision(); current != job.ConfigRevision {
 		return
 	}
+	if current := s.currentModelRevision(); current != job.ModelRevision {
+		return
+	}
 
 	enrichCtx, cancel := context.WithTimeout(s.lifecycleCtx, s.enrichTimeout)
 	defer cancel()
@@ -1866,7 +1909,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	enriched := job.Result
 	applyEnrichmentSignals(&enriched, signals)
 
-	cacheKey := fmt.Sprintf("safe-zone:analysis:%s", job.Domain)
+	cacheKey := analysisCacheKey(job.Domain, job.ModelRevision)
 	err := s.withRedis(s.lifecycleCtx, func(redisCtx context.Context) error {
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           enriched,
@@ -1874,6 +1917,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 			BrandRevision:    job.BrandRevision,
 			AnalysisRevision: analysisAlgorithmRevision,
 			ConfigRevision:   job.ConfigRevision,
+			ModelRevision:    job.ModelRevision,
 			EnrichedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 		}, s.ttlFor(enriched.Verdict))
 	})
@@ -2247,7 +2291,6 @@ func (s *Service) bumpBrandRevision(ctx context.Context) {
 }
 
 // --- Local Overrides ---
-
 
 // --- Telemetry ---
 

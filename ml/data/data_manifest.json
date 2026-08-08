@@ -1,0 +1,135 @@
+{
+  "manifest_version": 1,
+  "pipeline_git_sha": "fff9186afc6fb85cc3960b8273d250f81091f4fa",
+  "generated_at": "2026-07-30T15:37:32.780252+00:00",
+  "random_state": 42,
+  "raw_sources": [
+    {
+      "logical_name": "tranco_46ZYX.csv",
+      "path": "data/whitelist/general/tranco_46ZYX.csv",
+      "sha256": "37774d450ac5a60a4ed9ead6d0efda27db238a574fe88d50ee34d2015e3aa199",
+      "bytes": 22698834,
+      "retrieved_at": "2026-07-28T14:50:55.246996+00:00",
+      "trust_tier": "weak-safe",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "top-1m.csv",
+      "path": "data/whitelist/general/top-1m.csv",
+      "sha256": "15bc13d2c0bff7c6ed49b91462ef1d33196fd0a71231ee3c6a845048fb0458f0",
+      "bytes": 34471895,
+      "retrieved_at": "2026-07-28T14:51:14.793049+00:00",
+      "trust_tier": "weak-safe",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "vietnam_domains.txt",
+      "path": "data/whitelist/vietnam/vietnam_domains.txt",
+      "sha256": "5d8b902dc64e9d78fc91224abfdd47a8830aaec1ab17c4b0e96e83c37c0c1807",
+      "bytes": 16904908,
+      "retrieved_at": "2026-07-28T02:42:20.416645+00:00",
+      "trust_tier": "strong-safe",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "vietnam_websites.csv",
+      "path": "data/whitelist/vietnam/vietnam_websites.csv",
+      "sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
+      "bytes": 73929378,
+      "retrieved_at": "2026-07-28T02:42:17.429800+00:00",
+      "trust_tier": "strong-safe",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "hagezi_tif.txt",
+      "path": "data/blacklist/general/hagezi_tif.txt",
+      "sha256": "b6a807dc0b227c2ec2dde15455b70eded71f9fb57c67fb6d568cb7e0679552b1",
+      "bytes": 44273072,
+      "retrieved_at": "2026-07-28T15:09:30.071953+00:00",
+      "trust_tier": "weak-malicious",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "tempest_phishing.txt",
+      "path": "data/blacklist/general/tempest_phishing.txt",
+      "sha256": "7c8e2cfc520758e6f8ca7cc8ed6128e14849caf51b73ae19f3fda7a607271647",
+      "bytes": 24533740,
+      "retrieved_at": "2026-07-28T15:09:34.761637+00:00",
+      "trust_tier": "weak-malicious",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "verified_online.csv",
+      "path": "data/blacklist/general/verified_online.csv",
+      "sha256": "84a3c504ca13f21d2c6f2c908fcedc958568f27eb5b25e81248a443b57f4ccb4",
+      "bytes": 12815773,
+      "retrieved_at": "2026-07-28T14:52:40.937835+00:00",
+      "trust_tier": "strong-malicious",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "phishing_army.txt",
+      "path": "data/blacklist/general/phishing_army.txt",
+      "sha256": "13f510cc92206580448a821439090bf94c72c3e3869bd37913543437c9b9804c",
+      "bytes": 3194533,
+      "retrieved_at": "2026-07-28T15:09:38.730645+00:00",
+      "trust_tier": "specialist-community-malicious",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "urlhaus.csv",
+      "path": "data/blacklist/general/urlhaus.csv",
+      "sha256": "935874623d8d5dced3dc7210c9c7dac32f89d21a19e889a85686d6c198e55846",
+      "bytes": 2968167,
+      "retrieved_at": "2026-07-28T14:57:36.587823+00:00",
+      "trust_tier": "strong-malicious",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "stevenblack_hosts.txt",
+      "path": "data/blacklist/general/stevenblack_hosts.txt",
+      "sha256": "09107a972a0f72600fa0f04036b23951d7cbfcfbbe5239369084476afc548eab",
+      "bytes": 2902962,
+      "retrieved_at": "2026-07-28T15:09:36.089026+00:00",
+      "trust_tier": "unwanted-ad-tracker",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "openphish.txt",
+      "path": "data/blacklist/general/openphish.txt",
+      "sha256": "c0cf9d58cf0fc39812bf7b140c8bdc5ffff4e6993ca18df1585d7c27ae840ca9",
+      "bytes": 14696,
+      "retrieved_at": "2026-07-28T14:57:37.488401+00:00",
+      "trust_tier": "specialist-community-malicious",
+      "terms_review_id": "pending-review"
+    },
+    {
+      "logical_name": "raw_scraped_domains.json",
+      "path": "data/blacklist/vietnam/raw_scraped_domains.json",
+      "sha256": "60b9e9fd2113090138e7512b0ce1ff7cb16222f055e3917c304f56b3726ee3ca",
+      "bytes": 37018992,
+      "retrieved_at": "2026-07-28T16:46:49.697013+00:00",
+      "trust_tier": "strong-malicious",
+      "terms_review_id": "pending-review"
+    }
+  ],
+  "processed": [
+    {
+      "path": "ml/data/processed/domain_dataset.csv",
+      "sha256": "ce6f51c1ba15840608e40dd646f43b86851c5f1e0b30b93b7cdbec10158928d7",
+      "rows": 2772091
+    },
+    {
+      "path": "ml/data/processed/domain_dataset_lite.csv",
+      "sha256": "b60056a47958e53393c347d69aa657e71c865c86c120f624bf798d2cc8bd1b0d",
+      "rows": 300001
+    },
+    {
+      "path": "ml/data/processed/domain_dataset_provenance.csv",
+      "sha256": "20a65ca5ddd6ac2423727155958e2a172d68c91dc0835c10dc79cbd15c67ac2a",
+      "rows": 2772091
+    }
+  ],
+  "cleaning_report_sha256": "1b1762f0b6f49b1c75c53168bc14ab0cbd921fb2d71c0f3ec568e2f1ef89c48a",
+  "label_policy_version": 1
+}
