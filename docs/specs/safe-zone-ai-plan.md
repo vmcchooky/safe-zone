@@ -1201,7 +1201,7 @@ Phase 4 không tự bật ML trong production. Phase 5 đã bổ sung read-only 
 
 ## 8. Phase 5 — Packaging, deployment và controlled rollout
 
-> **Trạng thái:** Đã triển khai phần provisioning/shadow plumbing; private artifact activation, operational evidence, canary và rollback drill vẫn mở.
+> **Trạng thái 2026-08-08:** Đã triển khai provisioning/shadow plumbing và đã activate private artifact ở staging; representative operational evidence, canary và rollback drill vẫn mở.
 
 ### 8.1 Quyết định artifact delivery
 
@@ -1259,6 +1259,8 @@ volumes:
 - Thu `would_block`, `would_pass`, abstain, errors, probability histogram và latency histogram.
 - So sánh với human overrides, strong feeds, LLM và kết quả enrichment xuất hiện sau đó.
 - Không dùng self-generated ML verdict làm ground truth cho chính model.
+
+Staging smoke hiện đã xác nhận cả hai service dùng cùng immutable revision, mount read-only và báo `ml_state=ready`; các request synthetic tạo được shadow telemetry không có ML error. Evidence này chưa đủ để đóng gate vì chưa có human labels/false-positive review, rollback drill hoặc product/security approval.
 
 #### Stage 2 — Canary enforce
 

@@ -327,10 +327,10 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 - `[x]` Phase 2: sparse training, LightGBM, Platt calibration and candidate-cohort evaluation artifacts are present; product/security approval of the selected threshold remains open.
 - `[x]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
 - `[x]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache, telemetry, tests, race and static verification pass.
-- `[~]` Phase 5: provisioning/validation tooling, read-only mounts for both services, and shadow evidence plumbing are implemented; approved private artifact activation, operational shadow evidence, canary and rollback pass remain open.
+- `[~]` Phase 5: provisioning/validation tooling, validated private artifact activation, read-only mounts for both services, and shadow evidence plumbing are implemented; representative operational evidence, canary and rollback pass remain open.
 - `[ ]` Product owner approves threshold/trade-off; security owner approves data/model storage, terms, retention and rollout scope.
 
-Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Phase 5 now has a checksum-gated versioned provisioner, read-only Compose mounts, and shadow evidence status fields; the default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until operational gates are complete.
+Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Phase 5 now has a checksum-gated versioned provisioner, validated private artifact activation, read-only Compose mounts, and shadow evidence status fields. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until operational gates are complete.
 
 ### AI/ML release evidence
 
@@ -345,6 +345,16 @@ Archive with the release:
 - Python–Go parity report and candidate-cohort metrics for ML release;
 - target VPS latency/RSS/load results for every selected profile;
 - rollback commands and last-known-good provider/model revision.
+
+### Current Phase 5 staging evidence
+
+The 2026-08-08 staging smoke used the validated private bundle outside the repository:
+
+- both `core-api` and `dns-resolver` were healthy with `SAFE_ZONE_ML_MODE=shadow` and `ml_state=ready`;
+- both services reported model version `1.0.0`, block threshold `0.85`, and the same immutable revision `4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca`;
+- the active bundle mount was read-only in both containers and the canonical SHA-256 validation passed for all five hashed runtime files;
+- controlled synthetic staging requests produced shadow telemetry with no ML errors or enforce promotions; this is plumbing/health evidence only, not a human-labelled false-positive or production approval dataset;
+- no canary enforce or rollback drill has been run yet, and the default production profile remains `disabled`.
 
 An optional component that is disabled does not block base deterministic MVP. A component that is enabled without its gates/evidence blocks that release profile.
 
