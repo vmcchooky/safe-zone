@@ -43,6 +43,11 @@ blob-report/
 *.pyc
 __pycache__/
 !scripts/build_domain_dataset.py
+!ml/src/replay_labels.py
+!ml/src/regenerate_labels.py
+!ml/src/validate_labels.py
+!ml/src/report_fp.py
+!ml/tests/test_replay_tools.py
 *.bak
 .idea/
 .vscode/

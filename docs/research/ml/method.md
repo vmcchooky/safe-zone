@@ -7,7 +7,7 @@
 
 ## 1. Tóm tắt (Abstract / Executive Summary)
 
-Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Hệ thống đã đạt parity trong giới hạn floating-point precision giữa Python và Go qua thư viện `leaves`; runtime production vẫn giữ mặc định `SAFE_ZONE_ML_MODE=disabled` cho tới khi hoàn tất Phase 5 rollout. Kết quả test đạt ROC-AUC 0.9569 và FPR = 0.000000 trên các tập tên miền an toàn Việt Nam được audit.
+Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã có replay tooling, validator và reporter, nhưng adjudication đang `blocked` vì chưa có bằng chứng ủy quyền: queue có 0/137 human labels và 0/35 double-label. Runtime production vẫn giữ mặc định `SAFE_ZONE_ML_MODE=disabled` cho tới khi các gate human review và Product/Security hoàn tất.
 
 ## 2. Sơ đồ Tổng quan Pipeline
 
@@ -47,7 +47,13 @@ flowchart TB
         F2 --> F3["Revisioned Cache<br>Telemetry"]
     end
 
-    DP --> P0 --> P1 --> P2 --> P3 --> P4
+    subgraph P5["10. Phase 5: Replay Review"]
+        G1["21-column Queue"] --> G2["Validator / Reporter"]
+        G2 --> G3["0/137 Labels<br>0/35 Double-label"]
+        G3 --> G4["BLOCKED"]
+    end
+
+    DP --> P0 --> P1 --> P2 --> P3 --> P4 --> P5
 
     style DP fill:#D1ECF1,stroke:#17A2B8
     style P0 fill:#E8DAEF,stroke:#8E44AD
@@ -319,7 +325,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 
 | Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
 |---|---|---|---|
-| **Golden Parity Testing** | Đối soát trực tiếp giá trị raw margin & calibrated probability giữa Python và Go trên 29 golden cases | Đánh giá theo xác suất tương đối | Đảm bảo tính nhất quán 100% giữa việc huấn luyện trên Python và việc phục vụ suy luận trong sản xuất bằng Go runtime qua `leaves`. Sai số tối đa phải nằm trong giới hạn floating-point precision ($< 10^{-17}$). |
+| **Golden Parity Testing** | Đối soát trực tiếp giá trị raw margin & calibrated probability giữa Python và Go trên 29 golden cases | Đánh giá theo xác suất tương đối | Đo sai số cực đại giữa pipeline Python và Go runtime qua `leaves`, sau đó so với tolerance floating-point đã định nghĩa ($< 10^{-17}$). |
 | **Thread-Safety Verification** | Chạy đồng thời 20 goroutines thực hiện 2,000 truy vấn ngẫu nhiên song song trên singleton model instance | Chạy kiểm thử đơn luồng (single thread) | Trong môi trường SOC thực tế, Go service xử lý hàng nghìn truy vấn đồng thời. Cần đảm bảo model bundle không bị race condition hay data corruption khi gọi song song. |
 | **Rejection Gates Testing** | Kiểm thử bắt buộc kích hoạt lỗi khi thiếu file bundle hoặc sai số lượng đặc trưng (100 vs 534) | Chỉ kiểm thử trường hợp thành công (happy path) | Đảm bảo Go service không bao giờ crash im lặng hoặc phục vụ suy luận sai khi gặp file artifact lỗi hoặc nạp sai schema đặc trưng. |
 
@@ -362,7 +368,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
   - X_train, X_val, X_cal, X_test: Đúng 534 cột, số dòng khớp Parquet, 0 NaN, 0 Inf.
 
 #### Vote Đánh giá
-[VOTE: PASS] - Phase 3 Verification completed with 100% compliance across all test suites, zero diffs on Golden Parity, clean rejection gates, thread-safety verified, and 41/41 artifact checks passed.
+[VOTE: PASS] - Phase 3 Verification: max raw diff = `0.000000e+00`, max calibrated diff = `3.469447e-18`; cả hai nằm trong tolerance đã định nghĩa. Rejection gates, thread-safety và 41/41 artifact checks đều pass.
 
 ---
 
@@ -446,7 +452,105 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
 
 ---
 
-## 10. Lịch sử Thay đổi (Version History)
+## 10. Phase 5 — Replay label tooling và review
+
+> **Trạng thái:** `blocked`. Tooling đã có validator, reporter và test; adjudication
+> chưa có bằng chứng ủy quyền. Queue hiện ghi nhận `0/137` human labels và
+> `0/35` double-label, vì vậy Phase 5 chưa hoàn tất và không có FPR/recall human
+> ground truth để báo cáo.
+
+### Mục tiêu (Objectives)
+
+1. Chuẩn hóa queue replay human-label theo rubric trước khi tính FPR/recall.
+2. Tách dữ liệu replay offline, staging shadow telemetry và human ground truth;
+   source membership hoặc model output không được dùng thay cho human label.
+3. Giữ approval packet ở trạng thái `blocked` khi queue còn pending, thiếu
+   critical-benign/double-label evidence, thiếu deterministic evidence hoặc
+   chưa có bằng chứng ủy quyền adjudication.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Phương án thay thế | Lý do |
+|---|---|---|---|
+| Queue schema | Canonical CSV 21 cột, gồm case/model context, review fields và review-gate fields | Chỉ giữ 17 cột bắt buộc hoặc cho phép header tùy ý | Header cố định giúp regenerate không làm mất field, validator kiểm tra đúng contract và không sinh dữ liệu review. |
+| Đọc queue | `csv` của Python standard library với schema strict | `pandas` permissive parsing | Không biến ô trống thành nhãn hợp lệ và không thêm package ngoài cho queue replay. |
+| Human evidence | Bắt buộc reviewer, timestamp có timezone, evidence refs/notes và outcome nhất quán | Chỉ kiểm tra `human_label` không rỗng | Ngăn nhãn không thể audit và ngăn dùng prediction làm evidence duy nhất. |
+| Binary metrics | Chỉ dùng `benign`/`malicious`; loại `compromised`, `shared_hosting`, `unknown` khỏi FPR/recall | Ép mọi label vào binary | Giữ đúng rubric và không làm sai denominator hoặc phân loại outcome. |
+| Approval gate | `blocked` cho tới khi validation, coverage, critical strata, agreement, deterministic evidence và owner decisions hoàn tất | Cho phép review/rollout khi mới có số FPR | FPR partial hoặc thiếu gate không đủ làm cơ sở cho canary. |
+| Evidence storage | Packet có domain lưu private; summary/approval cập nhật qua temporary file rồi replace | Sửa trực tiếp packet đang được đọc | Giảm nguy cơ packet ở trạng thái dở dang và giữ dữ liệu nhạy cảm ngoài Git. |
+
+### Cách thức Thực hiện (Implementation Details)
+
+- `ml/src/regenerate_labels.py` cố định `QUEUE_COLUMNS` theo 21 cột, theo thứ tự:
+  `case_id`, `domain`, `traffic_stratum`, `source_ref`, `source_trust_tier`,
+  `model_revision`, `model_threshold`, `shadow_would_block`,
+  `shadow_probability`, `human_label`, `label_confidence`, `evidence_type`,
+  `reviewer_id`, `reviewed_at`, `evidence_refs`, `review_outcome`,
+  `review_notes`, `critical_benign_stratum`, `deterministic_would_block`,
+  `second_human_label`, `second_reviewer_id`.
+- `ml/src/replay_labels.py` thực hiện CSV parsing, allowed-value checks,
+  timestamp/evidence/outcome validation, duplicate `case_id` detection và
+  xác định pending rows. `ml/src/validate_labels.py` là CLI wrapper: lỗi
+  schema/rubric trả exit `1`; queue còn pending trả exit `2`; `--allow-pending`
+  chỉ phục vụ quan sát.
+- `ml/src/report_fp.py` dùng cùng validator, chỉ tính metrics khi validation
+  hoàn tất, cập nhật status vào `review-summary.json` và block có marker trong
+  `approval-packet.md`. Khi queue còn pending, reporter không có
+  `--allow-pending` trả exit `2`; đây là expected gate, không phải lỗi tooling.
+  Có `--allow-pending` chỉ cho phép quan sát/cập nhật trạng thái pending, không
+  tạo human labels, không tạo FPR/recall và không mở approval.
+- Không có human label, reviewer ID, evidence reference hoặc authorization
+  evidence nào được suy diễn từ model output, source membership hay AI agent.
+  AI agent: Junie (GPT-5.6 Luna) thực hiện review tài liệu và đối chiếu code;
+  test suite là kiểm soát chất lượng kỹ thuật, còn adjudication vẫn cần
+  human-in-the-loop và Product/Security authorization.
+
+### Số liệu cụ thể (Metrics & Results)
+
+| Kiểm tra | Kết quả | Evidence truy nguyên |
+|---|---|---|
+| Replay tooling tests | **7 passed** | `python -m pytest ml/tests/test_replay_tools.py -q`; `ml/tests/test_replay_tools.py` |
+| Python syntax compilation | **PASS** | `python -m py_compile` cho các module replay, gồm `regenerate_labels.py` |
+| Queue normalization | **137/137 cases, 21 columns** | `ml/src/regenerate_labels.py`; private run `run-20260808` và mirror `tmp/phase5-representative-replay/run-20260808` |
+| Go test suite | **PASS** | `go test ./...` |
+| Go race verification | **PASS** | `go test -race ./internal/analysis ./internal/risk` |
+| Go build | **PASS** | `go build ./...` |
+| Go static analysis | **PASS** | `go vet ./...` |
+| Current label queue | `0/137` labels; `137` cases còn pending | Replay verification history; expected total `137` trong `ml/src/regenerate_labels.py` |
+| Double-label | `0/35` cases; target `35` chưa đạt | `ml/src/report_fp.py` — `_double_label_target`, `_reviewer_agreement` |
+| Validator với queue pending | Exit `2`; **expected gate** | `ml/src/validate_labels.py`, `ml/src/replay_labels.py` |
+| Reporter không có `--allow-pending` | Exit `2`; **expected gate**, không tính metrics | `ml/src/report_fp.py::main`; `test_report_marks_pending_queue_and_preserves_canary_block` |
+| FPR/recall human ground truth | **Không báo cáo** | Queue chưa có human labels; reporter không tạo metrics khi pending |
+| Adjudication/approval | **`blocked`**; chưa có authorization evidence | Phase 5 review status |
+
+Production vẫn giữ `SAFE_ZONE_ML_MODE=disabled`. Không sử dụng các số liệu
+shadow hoặc model output để thay thế human ground truth, và không ghi nhận
+reviewer ID, evidence reference hay approval decision khi chưa có bằng chứng
+truy nguyên tương ứng.
+
+### Giới hạn và bước còn lại
+
+- Cần adjudication bởi reviewer được ủy quyền cho toàn bộ 137 cases; sau đó
+  mới có thể đánh giá critical-benign strata, deterministic action và target
+  35 double-label. Không được điền các giá trị này bằng AI agent hoặc model
+  prediction.
+- Phải chạy lại validator và reporter sau khi adjudication hoàn tất, resolve
+  disagreement và kiểm tra các review gates; chỉ khi đó FPR/recall mới có thể
+  được tính và diễn giải.
+- Runtime `latency_histogram_us` hiện có bucket cuối `50,000us`; không được
+  tuyên bố SLO p95 `200ms` từ field hiện tại nếu chưa bổ sung telemetry.
+
+### Liên kết Artifacts
+
+- Queue contract/regeneration: `ml/src/regenerate_labels.py`.
+- Validator core và CLI: `ml/src/replay_labels.py`, `ml/src/validate_labels.py`.
+- Reporter: `ml/src/report_fp.py`.
+- Tests: `ml/tests/test_replay_tools.py`.
+- Runbook tham chiếu: `docs/runbooks/ml-shadow-representative-replay.md`.
+
+---
+
+## 11. Lịch sử Thay đổi (Version History)
 
 | Ngày | Mô tả | Tác giả |
 |---|---|---|
@@ -455,3 +559,4 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
 | 2026-08-01 | Phase 1, 2, 3 hoàn thành — Training, Calibration, Verification | Gemini 3.6 |
 | 2026-08-02 | Cải tiến cấu trúc: thêm Abstract, sơ đồ, Version History. Di chuyển feature-extraction plan vào `docs/research/ml/` | Claude Opus 4.6 |
 | 2026-08-08 | Phase 4 hoàn thành — Go runtime, policy, model-aware cache, telemetry, provenance validator | Codex GPT-5 |
+| 2026-08-09 | Cập nhật Phase 5 replay tooling review: schema 21 cột, 5/5 tooling tests pass, queue `0/137` labels và `0/35` double-label; validator/reporter pending exit `2` là expected gate, adjudication `blocked` do thiếu authorization evidence | Junie GPT-5.6 Luna |
