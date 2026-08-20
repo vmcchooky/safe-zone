@@ -52,7 +52,7 @@ func TestMLEnforcePromotesSuspiciousAndSkipsAI(t *testing.T) {
 	service := newMLPolicyTestService(fake, analysis.MLModeEnforce)
 	defer service.Close()
 
-	result := service.Analyze(nil, "login-security-example.com", ClientInfo{}).Result
+	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictMalicious {
 		t.Fatalf("expected ML promotion, got %s", result.Verdict)
 	}
@@ -78,7 +78,7 @@ func TestMLShadowDoesNotChangeVerdict(t *testing.T) {
 	service := newMLPolicyTestService(fake, analysis.MLModeShadow)
 	defer service.Close()
 
-	result := service.Analyze(nil, "login-security-example.com", ClientInfo{}).Result
+	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("shadow mode changed verdict to %s", result.Verdict)
 	}
@@ -95,7 +95,7 @@ func TestMLShadowRecordsWouldPassAndProbabilityBucket(t *testing.T) {
 	service := newMLPolicyTestService(fake, analysis.MLModeShadow)
 	defer service.Close()
 
-	result := service.Analyze(nil, "login-security-example.com", ClientInfo{}).Result
+	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("shadow mode changed verdict to %s", result.Verdict)
 	}
@@ -116,7 +116,7 @@ func TestMLDisabledPreservesFlowAndDoesNotCallClassifier(t *testing.T) {
 	service := newMLPolicyTestService(fake, analysis.MLModeDisabled)
 	defer service.Close()
 
-	result := service.Analyze(nil, "login-security-example.com", ClientInfo{}).Result
+	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("disabled mode changed verdict to %s", result.Verdict)
 	}
