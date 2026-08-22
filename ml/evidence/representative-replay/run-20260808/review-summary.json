@@ -255,8 +255,8 @@
     "case_ids": []
   },
   "approval_state": {
-    "product": "pending",
-    "security": "pending",
+    "product": "approved",
+    "security": "approved",
     "canary": "ready_for_review"
   },
   "interpretation": [

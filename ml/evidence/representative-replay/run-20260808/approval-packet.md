@@ -29,7 +29,7 @@
 
 ## Current decision
 
-Ready for owner review (`ready_for_review`). Human labels (137/137), validation, and false-positive metrics are complete. 0 approval blockers remain. Product and Security owner decisions remain pending for signature.
+Owner approvals are recorded below (`product=approved`, `security=approved`). Human labels (137/137), validation, and false-positive metrics are complete. 0 approval blockers remain. The next gate is the scoped canary preflight; do not enable `enforce` outside the approved scope.
 
 ### Statistical and governance disclosure
 
@@ -51,16 +51,16 @@ Ready for owner review (`ready_for_review`). Human labels (137/137), validation,
 
 ## Product owner decision
 
-- [ ] Approve threshold and false-positive budget
-- [ ] Approve canary scope and rollback trigger
-- [ ] Approve IDN stratum and single-reviewer waivers
-- Decision/date/owner: ____________________
+- [X] Approve threshold and false-positive budget
+- [X] Approve canary scope and rollback trigger
+- [X] Approve IDN stratum and single-reviewer waivers
+- Decision/date/owner: August 22, 2026 signed by Vo Manh Cuong - Chooky
 
 ## Security owner decision
 
-- [ ] Approve source terms and evidence handling
-- [ ] Approve access, retention, and reviewer scope
-- [ ] Approve staging-to-canary rollout boundary
-- Decision/date/owner: ____________________
+- [X] Approve source terms and evidence handling
+- [X] Approve access, retention, and reviewer scope
+- [X] Approve staging-to-canary rollout boundary
+- Decision/date/owner: August 22, 2026 signed by Vo Manh Cuong - Chooky
 
 Do not enable `enforce` until both owner sections contain explicit approvals.
