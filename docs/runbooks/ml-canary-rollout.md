@@ -5,9 +5,11 @@
 
 ## Trạng thái hiện tại
 
-Run `run-20260808` hiện **blocked**: `0/137` human labels hợp lệ, FPR chưa
-được báo cáo, Product và Security vẫn `pending`. Mặc định production vẫn là
-`SAFE_ZONE_ML_MODE=disabled`.
+Run `run-20260808` hiện đã **owner-approved; canary preflight pending**:
+`137/137` human labels hợp lệ, FPR `0/25` benign false positives và Recall
+`25/33`. Product và Security đã ghi quyết định ngày 2026-08-22; các waiver
+IDN/single-reviewer được nêu rõ trong packet. Mặc định production vẫn là
+`SAFE_ZONE_ML_MODE=disabled` cho tới khi canary preflight hoàn tất.
 
 ## Mục tiêu và phạm vi
 
@@ -20,10 +22,11 @@ Run `run-20260808` hiện **blocked**: `0/137` human labels hợp lệ, FPR chư
 
 ## Điều kiện trước khi canary
 
-1. Evidence phải nằm trong private store, ví dụ
-   `D:\Quorix\private-artifacts\safe-zone\replay\<run-id>`, gồm manifest,
-   requests/results, labels, review summary và approval packet. Không commit
-   domain thô hoặc identity reviewer.
+1. Evidence phải khớp với archive đã ký tại
+   `ml/evidence/representative-replay/run-20260808/`, gồm manifest,
+   requests/results, labels, review summary, approval packet và
+   `checksums.sha256`. Nếu triển khai từ private release store, phải đối soát
+   hash với archive này trước khi chạy.
 2. `manifest.json`, bundle revision, threshold và cấu hình phải khớp giữa
    `core-api` và `dns-resolver`; bundle được validate và mount read-only.
 3. External AI, enrichment và OSINT phải tắt trong clean replay. Source
@@ -110,7 +113,10 @@ Chỉ sau khi mọi gate trên pass và approval packet có đủ quyết địn
 ## Artifacts và source of truth
 
 - Replay procedure: `docs/runbooks/ml-shadow-representative-replay.md`.
-- Private approval packet: `<private-evidence-store>\<run-id>\approval-packet.md`.
+- Tracked approval packet:
+  `ml/evidence/representative-replay/run-20260808/approval-packet.md`.
+- Archive provenance/checksums:
+  `ml/evidence/representative-replay/run-20260808/ARCHIVE.md`.
 - ML methodology và release gates:
   `docs/research/ml/method.md`, `docs/specs/safe-zone-ai-plan.md` và
   `docs/production-completion-checklist.md`.
@@ -121,3 +127,4 @@ Chỉ sau khi mọi gate trên pass và approval packet có đủ quyết địn
 |---|---|---|
 | 2026-08-08 | Tạo runbook canary ban đầu | Junie |
 | 2026-08-09 | Đối chiếu runtime telemetry, label tooling và approval gates; loại bỏ tuyên bố chưa có evidence | Junie |
+| 2026-08-22 | Cập nhật trạng thái run-20260808: human review hoàn tất, owner approvals đã ghi nhận, canary preflight còn lại | Codex |
