@@ -5,11 +5,13 @@
 
 ## Trạng thái hiện tại
 
-Run `run-20260808` hiện đã **owner-approved; canary preflight pending**:
-`137/137` human labels hợp lệ, FPR `0/25` benign false positives và Recall
-`25/33`. Product và Security đã ghi quyết định ngày 2026-08-22; các waiver
-IDN/single-reviewer được nêu rõ trong packet. Mặc định production vẫn là
-`SAFE_ZONE_ML_MODE=disabled` cho tới khi canary preflight hoàn tất.
+Run `run-20260808` hiện là **NO-GO**. Validator chấp nhận `137/137` hàng có
+nhãn, nhưng 79 hàng vẫn có `human_label=unknown` hoặc
+`review_outcome=unresolved`. Reporter hiện hành trả exit `3`, ghi
+`unresolved reviewed cases remain: 79` và giữ
+`approval_state.canary=blocked_by_review_gates`. Các quyết định Product và
+Security trong packet lịch sử không thay thế gate này. Archive được giữ bất
+biến; remediation phải dùng working copy và tạo một run/packet mới.
 
 ## Mục tiêu và phạm vi
 
@@ -43,8 +45,9 @@ Template chuẩn là `docs/templates/ml-human-label-review.csv`. Queue phải c�
 nhiên (target hiện được ghi trong summary là 35). Các trường
 `critical_benign_stratum`, `deterministic_would_block`, `second_human_label`
 và `second_reviewer_id` dùng để đo các gate tương ứng. Queue `run-20260808`
-được tạo trước khi template mở rộng, nên phải thêm/regenerate các cột này
-trước khi adjudication; không được coi queue cũ là đủ cho approval.
+có đủ các cột hiện hành, nhưng giá trị `unknown` hoặc `unresolved` vẫn phải
+được adjudicate bằng evidence độc lập; việc một hàng có đủ schema không đồng
+nghĩa gate đã pass.
 
 Chạy từ repository root:
 
@@ -58,8 +61,13 @@ python ml/src/report_fp.py --labels <private-run>\labels.csv `
 - Validator exit `0`: queue đầy đủ và hợp lệ; exit `1`: dữ liệu/schema sai;
   exit `2`: còn pending. Chỉ dùng `--allow-pending` để tạo trạng thái quan
   sát trước adjudication, không dùng nó để đóng gate.
+- Reporter exit `0`: report không còn approval blocker; exit `1`: lỗi dữ
+  liệu/report; exit `2`: còn pending; exit `3`: report đã tạo nhưng review
+  gate vẫn block canary.
 - Reporter chỉ tính FPR/recall trên `benign` và `malicious`. `compromised`,
-  `shared_hosting` và `unknown` bị loại khỏi binary denominator.
+  `shared_hosting` và `unknown` bị loại khỏi binary denominator. Việc loại
+  khỏi denominator không loại `unknown` khỏi approval gate; reporter ghi
+  `unresolved_count`, `unresolved_case_ids` và một blocker tương ứng.
 - Critical-benign FPR, reviewer agreement, unresolved/disagreement và các
   case deterministic đã block phải có dữ liệu riêng; thiếu một gate vẫn
   giữ `canary=blocked`.
@@ -96,24 +104,45 @@ Rollback ngay nếu một trong các điều kiện xảy ra:
 - Security yêu cầu rollback hoặc bất kỳ owner nào xác định evidence không
   còn đúng với bundle/config đang chạy.
 
+## Canary scope và release identity
+
+Trước khi bật `enforce`, packet mới phải ghi rõ và được phê duyệt:
+
+- instance hoặc compose project cụ thể cho cả `core-api` và `dns-resolver`;
+- routing mechanism, request eligibility và traffic cap theo phần trăm;
+- thời lượng lẫn số `prediction_attempts` tối thiểu của observation window;
+- Product owner, Security owner và operator/on-call chịu trách nhiệm;
+- exact Git commit, CI run, immutable image digest của hai service, bundle
+  revision, threshold và config snapshot;
+- last-known-good image digests/config/bundle và lệnh kill-switch cho đúng
+  scope.
+
+Compose hiện tại chỉ có một biến `SAFE_ZONE_ML_MODE` dùng chung theo service,
+không có canary percentage, selector hoặc routing object. Vì vậy không được
+coi việc sửa `.env` trên stack hiện tại là một canary có giới hạn. Cần tạo
+scope tách biệt và kiểm chứng routing trước, nhưng runbook này không tự tạo
+hoặc thay đổi scope.
+
 ## Kích hoạt và rollback
 
 Chỉ sau khi mọi gate trên pass và approval packet có đủ quyết định:
 
-1. Chọn một instance/traffic scope nhỏ; giữ bundle, threshold và config
-   manifest bất biến.
+1. Xác nhận instance/routing/traffic cap trong packet khớp với runtime và lưu
+   snapshot last-known-good; giữ bundle, threshold và config manifest bất
+   biến.
 2. Đặt `SAFE_ZONE_ML_MODE=enforce` cho đúng scope và restart service theo
    deployment procedure.
 3. Ghi snapshot status trước/sau, theo dõi các field ML và false-positive
    reports trong window đã Product phê duyệt.
 4. Khi rollback, đặt `SAFE_ZONE_ML_MODE=shadow` (hoặc `disabled`), restart,
    xác nhận cả hai service trở lại `ml_state`/revision mong muốn và ghi
-   incident. Model revision mới phải tạo cache miss.
+   incident. Khôi phục bằng immutable image digest/config snapshot đã lưu,
+   không dùng tag trôi nổi. Model revision mới phải tạo cache miss.
 
 ## Artifacts và source of truth
 
 - Replay procedure: `docs/runbooks/ml-shadow-representative-replay.md`.
-- Tracked approval packet:
+- Historical approval packet (không phải approval hợp lệ cho canary hiện tại):
   `ml/evidence/representative-replay/run-20260808/approval-packet.md`.
 - Archive provenance/checksums:
   `ml/evidence/representative-replay/run-20260808/ARCHIVE.md`.
@@ -128,3 +157,4 @@ Chỉ sau khi mọi gate trên pass và approval packet có đủ quyết địn
 | 2026-08-08 | Tạo runbook canary ban đầu | Junie |
 | 2026-08-09 | Đối chiếu runtime telemetry, label tooling và approval gates; loại bỏ tuyên bố chưa có evidence | Junie |
 | 2026-08-22 | Cập nhật trạng thái run-20260808: human review hoàn tất, owner approvals đã ghi nhận, canary preflight còn lại | Codex |
+| 2026-08-22 | Sửa gate `unknown`/`unresolved`, đặt run-20260808 về NO-GO và bổ sung yêu cầu canary scope/release identity/LKG rollback | Codex (GPT-5) |

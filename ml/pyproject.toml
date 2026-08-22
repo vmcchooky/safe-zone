@@ -9,8 +9,10 @@ description = "Safe Zone Custom Domain ML & Feature Extraction Engine"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "idna==3.18",
     "scikit-learn==1.6.1",
     "numpy==2.2.2",
+    "pandas==2.2.3",
     "scipy==1.15.1",
     "pyarrow==19.0.0",
     "lightgbm==4.5.0",

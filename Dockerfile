@@ -6,7 +6,7 @@ RUN npm ci
 COPY ui/ ./
 RUN npm run check
 
-FROM golang:1.25.12-alpine AS build
+FROM golang:1.26.7-alpine AS build
 
 ARG SERVICE=core-api
 ARG VERSION=dev

@@ -241,13 +241,15 @@ def calculate_metrics(
         label: sum(1 for row in labeled if clean(row.get("human_label")).lower() == label)
         for label in sorted(ALLOWED_LABELS - {"benign", "malicious"})
     }
-    unresolved_count = sum(
-        1
+    unresolved_case_ids = [
+        clean(row.get("case_id"))
         for row in labeled
         if clean(row.get("human_label")).lower() == "unknown"
         or clean(row.get("review_outcome")).lower() == "unresolved"
-    )
+    ]
     blockers = [*critical_blockers, *agreement_blockers, *deterministic_blockers]
+    if unresolved_case_ids:
+        blockers.append(f"unresolved reviewed cases remain: {len(unresolved_case_ids)}")
     if not binary["benign_cases"] or not binary["malicious_cases"]:
         blockers.append("both benign and malicious reviewed cases are required")
     return {
@@ -257,7 +259,8 @@ def calculate_metrics(
         "coverage": _ratio(len(labeled), len(all_rows)),
         **binary,
         "non_binary_labels": non_binary_counts,
-        "unresolved_count": unresolved_count,
+        "unresolved_count": len(unresolved_case_ids),
+        "unresolved_case_ids": unresolved_case_ids,
         "strata_breakdown": _strata_metrics(labeled),
         "critical_benign": critical,
         "reviewer_agreement": agreement,
@@ -364,6 +367,7 @@ def _metrics_markdown(
                 f"- **False Positive Rate:** {metrics['fpr_at_threshold']:.4f} ({metrics['false_positives']}/{metrics['benign_cases']})",
                 f"- **Recall:** {metrics['recall_at_threshold']:.4f} ({metrics['true_positives']}/{metrics['malicious_cases']})",
                 f"- **Non-binary labels excluded:** {metrics['non_binary_labels']}",
+                f"- **Unresolved reviewed cases:** {metrics['unresolved_count']}",
                 f"- **Critical-benign review:** `{metrics['critical_benign']['status']}`",
                 f"- **Reviewer agreement:** `{metrics['reviewer_agreement']['status']}`",
                 f"- **Deterministic policy evidence:** `{metrics['deterministic_policy']['status']}`",

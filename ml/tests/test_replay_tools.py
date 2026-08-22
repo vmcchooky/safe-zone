@@ -122,8 +122,11 @@ def test_metrics_exclude_non_binary_labels_and_report_missing_review_gates():
     assert metrics["fpr_at_threshold"] == 0.5
     assert metrics["recall_at_threshold"] == 1.0
     assert metrics["non_binary_labels"]["unknown"] == 1
+    assert metrics["unresolved_count"] == 1
+    assert metrics["unresolved_case_ids"] == ["unknown-case"]
     assert metrics["critical_benign"]["status"] == "unavailable_missing_column"
     assert "critical benign strata were not collected" in metrics["approval_blockers"]
+    assert "unresolved reviewed cases remain: 1" in metrics["approval_blockers"]
 
 
 def test_metrics_do_not_treat_empty_optional_gate_columns_as_complete():
@@ -336,7 +339,7 @@ def test_validation_accepts_independent_human_double_label():
     assert result.pending_case_ids == ()
 
 
-def test_metrics_and_report_with_waivers_clears_blockers(tmp_path):
+def test_unresolved_review_blocks_report_even_with_other_waivers(tmp_path):
     columns = REQUIRED_COLUMNS | OPTIONAL_COLUMNS
     rows = [
         _complete_case(
@@ -403,7 +406,19 @@ def test_metrics_and_report_with_waivers_clears_blockers(tmp_path):
     assert metrics["recall_at_threshold"] == 1.0
     assert metrics["critical_benign"]["status"] == "available_with_waiver"
     assert metrics["reviewer_agreement"]["status"] == "waived"
-    assert metrics["approval_blockers"] == []
+    assert metrics["unresolved_count"] == 1
+    assert metrics["unresolved_case_ids"] == ["unknown-dead"]
+    assert metrics["approval_blockers"] == ["unresolved reviewed cases remain: 1"]
+
+    resolved_metrics = calculate_metrics(
+        result.rows[:-1],
+        0.85,
+        result.columns,
+        double_label_target=35,
+        waivers=waivers,
+    )
+    assert resolved_metrics["unresolved_count"] == 0
+    assert resolved_metrics["approval_blockers"] == []
 
     labels_path = tmp_path / "labels.csv"
     summary_path = tmp_path / "review-summary.json"
@@ -441,7 +456,9 @@ def test_metrics_and_report_with_waivers_clears_blockers(tmp_path):
             str(packet_path),
         ]
     )
-    assert exit_code == 0
+    assert exit_code == 3
     summary_data = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert summary_data["approval_state"]["canary"] == "ready_for_review"
-    assert summary_data["false_positive_metrics"]["approval_blockers"] == []
+    assert summary_data["approval_state"]["canary"] == "blocked_by_review_gates"
+    assert summary_data["false_positive_metrics"]["approval_blockers"] == [
+        "unresolved reviewed cases remain: 1"
+    ]
