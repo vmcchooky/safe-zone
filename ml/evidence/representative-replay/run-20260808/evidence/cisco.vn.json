@@ -1,0 +1,11 @@
+{
+  "site_title": "Page Unavailable - Server Unavailable Error 503 - Cisco",
+  "brand_or_organization": "Cisco",
+  "site_category": "corporate_ecommerce",
+  "is_login_or_credential_form_present": false,
+  "is_impersonation_detected": false,
+  "is_domain_parking_or_for_sale": false,
+  "vietnam_business_verified": false,
+  "threat_assessment": "safe_benign",
+  "threat_rationale": "The website provides a standard error message indicating the server is unavailable, typical for maintenance periods. There are no signs of phishing or malicious content."
+}

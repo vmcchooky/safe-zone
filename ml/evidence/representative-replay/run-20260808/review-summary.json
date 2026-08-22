@@ -1,0 +1,284 @@
+{
+  "packet_version": "1.0.0",
+  "model_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+  "model_threshold": 0.85,
+  "total_cases": 137,
+  "human_label_coverage": 1.0,
+  "human_labels_pending": 0,
+  "false_positive_metrics": {
+    "status": "complete",
+    "threshold": 0.85,
+    "total_labeled": 137,
+    "coverage": 1.0,
+    "benign_cases": 25,
+    "malicious_cases": 33,
+    "false_positives": 0,
+    "true_positives": 25,
+    "fpr_at_threshold": 0.0,
+    "recall_at_threshold": 0.7575757575757576,
+    "false_positive_case_ids": [],
+    "non_binary_labels": {
+      "compromised": 0,
+      "shared_hosting": 0,
+      "unknown": 79
+    },
+    "unresolved_count": 79,
+    "strata_breakdown": {
+      "context_only": {
+        "benign_count": 1,
+        "false_positives": 0,
+        "fpr": 0.0
+      },
+      "specialist_malicious": {
+        "benign_count": 1,
+        "false_positives": 0,
+        "fpr": 0.0
+      },
+      "strong_malicious": {
+        "benign_count": 2,
+        "false_positives": 0,
+        "fpr": 0.0
+      },
+      "strong_safe": {
+        "benign_count": 3,
+        "false_positives": 0,
+        "fpr": 0.0
+      },
+      "user_reported": {
+        "benign_count": 0,
+        "false_positives": 0,
+        "fpr": 0.0
+      },
+      "weak_safe": {
+        "benign_count": 18,
+        "false_positives": 0,
+        "fpr": 0.0
+      }
+    },
+    "critical_benign": {
+      "status": "available_with_waiver",
+      "strata": {
+        "government_education": {
+          "benign_count": 3,
+          "false_positives": 0,
+          "fpr": 0.0,
+          "status": "available"
+        },
+        "idn_punycode": {
+          "benign_count": 0,
+          "false_positives": 0,
+          "fpr": 0.0,
+          "status": "waived"
+        },
+        "shared_hosting": {
+          "benign_count": 1,
+          "false_positives": 0,
+          "fpr": 0.0,
+          "status": "available"
+        },
+        "trusted_brand": {
+          "benign_count": 8,
+          "false_positives": 0,
+          "fpr": 0.0,
+          "status": "available"
+        }
+      },
+      "false_positive_case_ids": [],
+      "waived_strata": [
+        "idn_punycode"
+      ]
+    },
+    "reviewer_agreement": {
+      "status": "waived",
+      "reviewed_cases": 0,
+      "target": 35,
+      "waiver_reason": "single_reviewer_scope"
+    },
+    "deterministic_policy": {
+      "status": "available",
+      "blocked_cases": 0,
+      "blocked_case_ids": []
+    },
+    "approval_blockers": [],
+    "waivers": {
+      "critical_benign_strata": [
+        "idn_punycode"
+      ],
+      "double_label": true,
+      "reasons": {
+        "idn_punycode": "All 12 IDN/Punycode domains in the representative sample are inactive/expired/dead with insufficient live evidence.",
+        "double_label": "Single-reviewer project scope authorized by Product owner."
+      }
+    }
+  },
+  "review_required_cases": 21,
+  "review_required_case_ids": [
+    "replay-0003",
+    "replay-0005",
+    "replay-0006",
+    "replay-0049",
+    "replay-0054",
+    "replay-0065",
+    "replay-0118",
+    "replay-0120",
+    "replay-0121",
+    "replay-0122",
+    "replay-0124",
+    "replay-0125",
+    "replay-0126",
+    "replay-0127",
+    "replay-0128",
+    "replay-0129",
+    "replay-0131",
+    "replay-0133",
+    "replay-0134",
+    "replay-0136",
+    "replay-0137"
+  ],
+  "action_by_stratum": {
+    "context_only": {
+      "promote_malicious": 15,
+      "abstain": 5
+    },
+    "specialist_malicious": {
+      "promote_malicious": 14,
+      "abstain": 6
+    },
+    "strong_malicious": {
+      "promote_malicious": 24,
+      "abstain": 6
+    },
+    "strong_safe": {
+      "abstain": 30
+    },
+    "user_reported": {
+      "abstain": 4,
+      "promote_malicious": 3
+    },
+    "weak_safe": {
+      "abstain": 27,
+      "promote_malicious": 3
+    }
+  },
+  "service_results": {
+    "core_api": {
+      "non200": 0,
+      "ml_status_after": {
+        "ml_mode": "shadow",
+        "ml_enabled": true,
+        "ml_model_version": "1.0.0",
+        "ml_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+        "ml_block_threshold": 0.85,
+        "prediction_attempts": 19,
+        "shadow_would_block": 7,
+        "shadow_would_pass": 12,
+        "enforce_promotions": 0,
+        "abstains": 12,
+        "errors": 0,
+        "skips": 0,
+        "llm_fallbacks_after_ml": 19,
+        "latency_p95_us": 1000,
+        "latency_count": 19,
+        "latency_histogram_us": {
+          "gt_50000us": 0,
+          "le_10000us": 0,
+          "le_1000us": 1,
+          "le_100us": 0,
+          "le_2000us": 0,
+          "le_250us": 1,
+          "le_50000us": 0,
+          "le_5000us": 0,
+          "le_500us": 17
+        },
+        "probability_histogram": {
+          "0_10_0_19": 0,
+          "0_20_0_29": 0,
+          "0_30_0_39": 0,
+          "0_40_0_49": 0,
+          "0_50_0_59": 0,
+          "0_60_0_69": 0,
+          "0_70_0_79": 0,
+          "0_80_0_89": 1,
+          "gte_0_90": 6,
+          "lt_0_10": 12
+        },
+        "ml_state": "ready"
+      }
+    },
+    "dns_resolver": {
+      "non200": 0,
+      "ml_status_after": {
+        "ml_mode": "shadow",
+        "ml_enabled": true,
+        "ml_model_version": "1.0.0",
+        "ml_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+        "ml_block_threshold": 0.85,
+        "prediction_attempts": 19,
+        "shadow_would_block": 7,
+        "shadow_would_pass": 12,
+        "enforce_promotions": 0,
+        "abstains": 12,
+        "errors": 0,
+        "skips": 0,
+        "llm_fallbacks_after_ml": 19,
+        "latency_p95_us": 1000,
+        "latency_count": 19,
+        "latency_histogram_us": {
+          "gt_50000us": 0,
+          "le_10000us": 0,
+          "le_1000us": 3,
+          "le_100us": 0,
+          "le_2000us": 0,
+          "le_250us": 1,
+          "le_50000us": 0,
+          "le_5000us": 0,
+          "le_500us": 15
+        },
+        "probability_histogram": {
+          "0_10_0_19": 0,
+          "0_20_0_29": 0,
+          "0_30_0_39": 0,
+          "0_40_0_49": 0,
+          "0_50_0_59": 0,
+          "0_60_0_69": 0,
+          "0_70_0_79": 0,
+          "0_80_0_89": 1,
+          "gte_0_90": 6,
+          "lt_0_10": 12
+        },
+        "ml_state": "ready"
+      }
+    }
+  },
+  "parity": {
+    "verdict_mismatch_count": 0,
+    "case_ids": []
+  },
+  "approval_state": {
+    "product": "pending",
+    "security": "pending",
+    "canary": "ready_for_review"
+  },
+  "interpretation": [
+    "Source membership and prior user-report status are not human ground truth.",
+    "No false-positive rate is reported until authorized reviewers complete labels.",
+    "Context-only cases are excluded from binary ground-truth metrics.",
+    "Differences in counts: 137 offline predictions represent a stratified sample (including hard cases) to evaluate generalization, while 19 live attempts per service represent actual staging traffic observed during the shadow period."
+  ],
+  "label_validation": {
+    "status": "valid",
+    "errors": [],
+    "warnings": []
+  },
+  "double_label_target": 35,
+  "waivers": {
+    "critical_benign_strata": [
+      "idn_punycode"
+    ],
+    "double_label": true,
+    "reasons": {
+      "idn_punycode": "All 12 IDN/Punycode domains in the representative sample are inactive/expired/dead with insufficient live evidence.",
+      "double_label": "Single-reviewer project scope authorized by Product owner."
+    }
+  }
+}

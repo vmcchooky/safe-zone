@@ -1,0 +1,92 @@
+{
+  "packet_version": "1.0.0",
+  "created_at": "2026-08-08T09:49:30.390727+00:00",
+  "generator": "tmp/phase5-representative-replay/prepare.py",
+  "repository_git_sha": "311cef4fb52f70b58e8881c215402fbef2db27df",
+  "model_version": "1.0.0",
+  "model_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+  "block_threshold": 0.85,
+  "fixture_version": "1.0.0",
+  "sample_policy": "deterministic sha256 stratified sample; source membership is not ground truth",
+  "human_labels": {
+    "status": "pending",
+    "required": true,
+    "allowed": [
+      "benign",
+      "malicious",
+      "compromised",
+      "shared_hosting",
+      "unknown"
+    ]
+  },
+  "source_files": [
+    {
+      "path": "data/whitelist/vietnam/vietnam_websites.csv",
+      "sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
+      "bytes": 73929378,
+      "retrieved_at": "2026-07-28T02:42:17.429800+00:00",
+      "trust_tier": "strong-safe",
+      "available_unique_domains": 656964,
+      "selected": 30
+    },
+    {
+      "path": "data/whitelist/general/tranco_46ZYX.csv",
+      "sha256": "37774d450ac5a60a4ed9ead6d0efda27db238a574fe88d50ee34d2015e3aa199",
+      "bytes": 22698834,
+      "retrieved_at": "2026-07-28T14:50:55.246996+00:00",
+      "trust_tier": "weak-safe",
+      "available_unique_domains": 999991,
+      "selected": 30
+    },
+    {
+      "path": "data/blacklist/general/verified_online.csv",
+      "sha256": "84a3c504ca13f21d2c6f2c908fcedc958568f27eb5b25e81248a443b57f4ccb4",
+      "bytes": 12815773,
+      "retrieved_at": "2026-07-28T14:52:40.937835+00:00",
+      "trust_tier": "strong-malicious",
+      "available_unique_domains": 33784,
+      "selected": 30
+    },
+    {
+      "path": "data/blacklist/general/openphish.txt",
+      "sha256": "c0cf9d58cf0fc39812bf7b140c8bdc5ffff4e6993ca18df1585d7c27ae840ca9",
+      "bytes": 14696,
+      "retrieved_at": "2026-07-28T14:57:37.488401+00:00",
+      "trust_tier": "specialist-community-malicious",
+      "available_unique_domains": 252,
+      "selected": 10
+    },
+    {
+      "path": "data/blacklist/general/phishing_army.txt",
+      "sha256": "13f510cc92206580448a821439090bf94c72c3e3869bd37913543437c9b9804c",
+      "bytes": 3194533,
+      "retrieved_at": "2026-07-28T15:09:38.730645+00:00",
+      "trust_tier": "specialist-community-malicious",
+      "available_unique_domains": 154713,
+      "selected": 10
+    },
+    {
+      "path": "data/blacklist/general/hagezi_tif.txt",
+      "sha256": "b6a807dc0b227c2ec2dde15455b70eded71f9fb57c67fb6d568cb7e0679552b1",
+      "bytes": 44273072,
+      "retrieved_at": "2026-07-28T15:09:30.071953+00:00",
+      "trust_tier": "weak-malicious",
+      "available_unique_domains": 2144062,
+      "selected": 20
+    }
+  ],
+  "counts": {
+    "total": 137,
+    "user_reported": 7,
+    "strong_safe": 30,
+    "weak_safe": 30,
+    "strong_malicious": 30,
+    "specialist_malicious": 20,
+    "context_only": 20
+  },
+  "limitations": [
+    "No production analysis_log rows were available; this is a traffic proxy.",
+    "Source membership and prior block-report status are not human ground truth.",
+    "External AI/enrichment/OSINT must be disabled for the clean ML-path replay."
+  ]
+}

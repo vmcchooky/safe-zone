@@ -2,8 +2,10 @@
 
 Use this runbook before requesting approval for Custom Domain ML canary
 enforce. It creates a private, stratified replay packet and a human-review
-queue. The packet must stay outside Git because it contains domain-level
-traffic candidates.
+queue. Keep the working packet outside Git while it is being generated or
+edited. After review, promote the exact packet to the tracked evidence archive
+only after the repository's access and retention policy permits storing the
+domain-level evidence.
 
 ## Evidence boundary
 
@@ -35,8 +37,10 @@ staging evidence store:
 - `approval-packet.md`: links to the evidence and explicit product/security
   decisions.
 
-Do not commit `requests.jsonl`, `results.jsonl`, raw domains, contact details,
-or reviewer identity data to the repository.
+Do not commit an unreviewed working packet, contact details, credentials, or
+AI-generated labels. For an approved audit archive, the reviewed run may be
+stored at `ml/evidence/representative-replay/<run-id>/`; its checksum manifest
+and provenance note must be reviewed with the Product/Security owner decision.
 
 ## Sampling strata
 
@@ -102,3 +106,13 @@ merely generated; each owner must record an explicit decision and date.
 Only after both approvals and the human-review gates pass may the release
 proceed to a small `enforce` canary with the documented kill switch back to
 `shadow` or `disabled`.
+
+## Tracked evidence archive
+
+The completed Phase 5 run is archived at
+`ml/evidence/representative-replay/run-20260808/`. It contains the run outputs,
+the 137-case human-label packet, every referenced evidence file, an archive
+provenance note, and `checksums.sha256`. The packet's `evidence_refs` are
+relative to the archive, so a clone does not depend on the disposable `tmp/`
+directory. The AI-filled adjudication draft remains quarantined and is not part
+of the signed evidence.

@@ -1,0 +1,11 @@
+{
+  "site_title": "Suspected Malware",
+  "brand_or_organization": "Cloudflare",
+  "site_category": "phishing_scam",
+  "is_login_or_credential_form_present": false,
+  "is_impersonation_detected": false,
+  "is_domain_parking_or_for_sale": false,
+  "vietnam_business_verified": false,
+  "threat_assessment": "phishing_malicious",
+  "threat_rationale": "The website has been reported for potentially distributing malware, indicating a high risk of malicious activity."
+}

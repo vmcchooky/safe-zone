@@ -1,0 +1,11 @@
+{
+  "site_title": "Roblox",
+  "brand_or_organization": "Roblox Corporation",
+  "site_category": "corporate_ecommerce",
+  "is_login_or_credential_form_present": true,
+  "is_impersonation_detected": false,
+  "is_domain_parking_or_for_sale": false,
+  "vietnam_business_verified": false,
+  "threat_assessment": "safe_benign",
+  "threat_rationale": "The website is a well-known gaming platform that provides a login and sign-up functionality without any indication of fraud."
+}

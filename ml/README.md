@@ -79,6 +79,7 @@ ml/
 ├── contracts/                         # frozen feature and analysis snapshots
 ├── data/data_manifest.json            # tracked provenance metadata only
 ├── data/derived/                      # local, ignored datasets/matrices
+├── evidence/                          # tracked, checksum-gated release evidence
 ├── models/v1/                         # immutable v1 bundle
 ├── src/                               # pipeline and validation scripts
 └── tests/fixtures/golden_vectors.v1.json

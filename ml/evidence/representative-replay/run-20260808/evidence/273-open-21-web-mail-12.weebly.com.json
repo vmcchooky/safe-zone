@@ -1,0 +1,11 @@
+{
+  "site_title": "Error - Page Not Found",
+  "brand_or_organization": "Weebly",
+  "site_category": "other",
+  "is_login_or_credential_form_present": false,
+  "is_impersonation_detected": false,
+  "is_domain_parking_or_for_sale": false,
+  "vietnam_business_verified": false,
+  "threat_assessment": "safe_benign",
+  "threat_rationale": "The page is a simple error message indicating that the requested page was not found. There are no phishing or malicious indicators present."
+}

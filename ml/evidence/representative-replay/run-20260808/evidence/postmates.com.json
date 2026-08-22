@@ -1,0 +1,11 @@
+{
+  "site_title": "Order on Postmates",
+  "brand_or_organization": "Postmates",
+  "site_category": "corporate_ecommerce",
+  "is_login_or_credential_form_present": true,
+  "is_impersonation_detected": false,
+  "is_domain_parking_or_for_sale": false,
+  "vietnam_business_verified": false,
+  "threat_assessment": "safe_benign",
+  "threat_rationale": "The website provides services for food delivery and does not exhibit signs of phishing or impersonation."
+}

@@ -1,0 +1,398 @@
+{
+  "before": {
+    "captured_at": "2026-08-08T09:53:06.256660+00:00",
+    "core": {
+      "http_status": 200,
+      "latency_ms": 32.793,
+      "payload": {
+        "service": "core-api",
+        "status": "ok",
+        "mode": "api",
+        "deployment_tier": "budget-vps",
+        "redis": {
+          "configured": true,
+          "status": "ok"
+        },
+        "analysis_config_reload": {
+          "enabled": true,
+          "channel": "safe-zone:config:analysis:updated",
+          "poll_interval": "30s",
+          "node_role": "core-api",
+          "revision": "ecb8a74f314e3df1",
+          "last_reload_source": "startup",
+          "last_reload_at": "2026-08-08T09:53:02.187441433Z",
+          "redis_configured": true,
+          "store_configured": true,
+          "subscriber_active": true,
+          "reconciler_active": true
+        },
+        "ml": {
+          "ml_mode": "shadow",
+          "ml_enabled": true,
+          "ml_model_version": "1.0.0",
+          "ml_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+          "ml_block_threshold": 0.85,
+          "prediction_attempts": 0,
+          "shadow_would_block": 0,
+          "shadow_would_pass": 0,
+          "enforce_promotions": 0,
+          "abstains": 0,
+          "errors": 0,
+          "skips": 0,
+          "llm_fallbacks_after_ml": 0,
+          "latency_p95_us": 0,
+          "latency_count": 0,
+          "latency_histogram_us": {
+            "gt_50000us": 0,
+            "le_10000us": 0,
+            "le_1000us": 0,
+            "le_100us": 0,
+            "le_2000us": 0,
+            "le_250us": 0,
+            "le_50000us": 0,
+            "le_5000us": 0,
+            "le_500us": 0
+          },
+          "probability_histogram": {
+            "0_10_0_19": 0,
+            "0_20_0_29": 0,
+            "0_30_0_39": 0,
+            "0_40_0_49": 0,
+            "0_50_0_59": 0,
+            "0_60_0_69": 0,
+            "0_70_0_79": 0,
+            "0_80_0_89": 0,
+            "gte_0_90": 0,
+            "lt_0_10": 0
+          },
+          "ml_state": "ready"
+        },
+        "feed_sync": {
+          "configured": false,
+          "feed_key": "safe-zone:threat:feed",
+          "status": "disabled",
+          "stale": false,
+          "parser_drift": false,
+          "stale_after": "36h0m0s"
+        },
+        "adblock": {
+          "enabled": true,
+          "domain_count": 99558,
+          "last_sync_at": "2026-08-08T09:53:02Z",
+          "last_sync_ok": true,
+          "source_count": 1,
+          "success_count": 1
+        },
+        "endpoints": [
+          "/",
+          "/v1/status",
+          "/healthz",
+          "/readyz",
+          "/block",
+          "/v1/version",
+          "/v1/analyze?domain=example.com",
+          "/v1/osint/evidence?domain=example.com",
+          "/v1/analysis/recent",
+          "/v1/overrides",
+          "/v1/overrides/review-false-positive",
+          "/v1/brands",
+          "/v1/telemetry/recent",
+          "/v1/telemetry/stats",
+          "/v1/agent/status",
+          "/v1/agent/trigger?task=<name>",
+          "/dashboard"
+        ],
+        "rate_limiting": {
+          "enabled": true
+        },
+        "time": "2026-08-08T09:53:06.288803586Z"
+      }
+    },
+    "dns": {
+      "http_status": 200,
+      "latency_ms": 20.726,
+      "payload": {
+        "analysis_config_reload": {
+          "enabled": true,
+          "channel": "safe-zone:config:analysis:updated",
+          "poll_interval": "30s",
+          "node_role": "dns-resolver",
+          "revision": "ecb8a74f314e3df1",
+          "last_reload_source": "startup",
+          "last_reload_at": "2026-08-08T09:53:02.168335212Z",
+          "redis_configured": true,
+          "store_configured": true,
+          "subscriber_active": true,
+          "reconciler_active": true
+        },
+        "deployment_tier": "budget-vps",
+        "endpoints": [
+          "/",
+          "/healthz",
+          "/v1/version",
+          "/v1/policy?domain=example.com",
+          "/dns-query"
+        ],
+        "ml": {
+          "ml_mode": "shadow",
+          "ml_enabled": true,
+          "ml_model_version": "1.0.0",
+          "ml_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+          "ml_block_threshold": 0.85,
+          "prediction_attempts": 0,
+          "shadow_would_block": 0,
+          "shadow_would_pass": 0,
+          "enforce_promotions": 0,
+          "abstains": 0,
+          "errors": 0,
+          "skips": 0,
+          "llm_fallbacks_after_ml": 0,
+          "latency_p95_us": 0,
+          "latency_count": 0,
+          "latency_histogram_us": {
+            "gt_50000us": 0,
+            "le_10000us": 0,
+            "le_1000us": 0,
+            "le_100us": 0,
+            "le_2000us": 0,
+            "le_250us": 0,
+            "le_50000us": 0,
+            "le_5000us": 0,
+            "le_500us": 0
+          },
+          "probability_histogram": {
+            "0_10_0_19": 0,
+            "0_20_0_29": 0,
+            "0_30_0_39": 0,
+            "0_40_0_49": 0,
+            "0_50_0_59": 0,
+            "0_60_0_69": 0,
+            "0_70_0_79": 0,
+            "0_80_0_89": 0,
+            "gte_0_90": 0,
+            "lt_0_10": 0
+          },
+          "ml_state": "ready"
+        },
+        "mode": "doh",
+        "redis": {
+          "configured": true,
+          "status": "ok"
+        },
+        "service": "dns-resolver",
+        "status": "ok",
+        "time": "2026-08-08T09:53:06.310055424Z",
+        "upstream_doh": "https://cloudflare-dns.com/dns-query",
+        "upstream_doh_resolvers": {
+          "active": "https://cloudflare-dns.com/dns-query",
+          "endpoints": [
+            {
+              "url": "https://cloudflare-dns.com/dns-query",
+              "healthy": true,
+              "latency_ms": 207,
+              "failures": 0
+            }
+          ]
+        }
+      }
+    }
+  },
+  "after": {
+    "captured_at": "2026-08-08T09:53:09.495709+00:00",
+    "core": {
+      "http_status": 200,
+      "latency_ms": 21.116,
+      "payload": {
+        "service": "core-api",
+        "status": "ok",
+        "mode": "api",
+        "deployment_tier": "budget-vps",
+        "redis": {
+          "configured": true,
+          "status": "ok"
+        },
+        "analysis_config_reload": {
+          "enabled": true,
+          "channel": "safe-zone:config:analysis:updated",
+          "poll_interval": "30s",
+          "node_role": "core-api",
+          "revision": "ecb8a74f314e3df1",
+          "last_reload_source": "startup",
+          "last_reload_at": "2026-08-08T09:53:02.187441433Z",
+          "redis_configured": true,
+          "store_configured": true,
+          "subscriber_active": true,
+          "reconciler_active": true
+        },
+        "ml": {
+          "ml_mode": "shadow",
+          "ml_enabled": true,
+          "ml_model_version": "1.0.0",
+          "ml_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+          "ml_block_threshold": 0.85,
+          "prediction_attempts": 19,
+          "shadow_would_block": 7,
+          "shadow_would_pass": 12,
+          "enforce_promotions": 0,
+          "abstains": 12,
+          "errors": 0,
+          "skips": 0,
+          "llm_fallbacks_after_ml": 19,
+          "latency_p95_us": 1000,
+          "latency_count": 19,
+          "latency_histogram_us": {
+            "gt_50000us": 0,
+            "le_10000us": 0,
+            "le_1000us": 1,
+            "le_100us": 0,
+            "le_2000us": 0,
+            "le_250us": 1,
+            "le_50000us": 0,
+            "le_5000us": 0,
+            "le_500us": 17
+          },
+          "probability_histogram": {
+            "0_10_0_19": 0,
+            "0_20_0_29": 0,
+            "0_30_0_39": 0,
+            "0_40_0_49": 0,
+            "0_50_0_59": 0,
+            "0_60_0_69": 0,
+            "0_70_0_79": 0,
+            "0_80_0_89": 1,
+            "gte_0_90": 6,
+            "lt_0_10": 12
+          },
+          "ml_state": "ready"
+        },
+        "feed_sync": {
+          "configured": false,
+          "feed_key": "safe-zone:threat:feed",
+          "status": "disabled",
+          "stale": false,
+          "parser_drift": false,
+          "stale_after": "36h0m0s"
+        },
+        "adblock": {
+          "enabled": true,
+          "domain_count": 99558,
+          "last_sync_at": "2026-08-08T09:53:02Z",
+          "last_sync_ok": true,
+          "source_count": 1,
+          "success_count": 1
+        },
+        "endpoints": [
+          "/",
+          "/v1/status",
+          "/healthz",
+          "/readyz",
+          "/block",
+          "/v1/version",
+          "/v1/analyze?domain=example.com",
+          "/v1/osint/evidence?domain=example.com",
+          "/v1/analysis/recent",
+          "/v1/overrides",
+          "/v1/overrides/review-false-positive",
+          "/v1/brands",
+          "/v1/telemetry/recent",
+          "/v1/telemetry/stats",
+          "/v1/agent/status",
+          "/v1/agent/trigger?task=<name>",
+          "/dashboard"
+        ],
+        "rate_limiting": {
+          "enabled": true
+        },
+        "time": "2026-08-08T09:53:09.516569726Z"
+      }
+    },
+    "dns": {
+      "http_status": 200,
+      "latency_ms": 2.394,
+      "payload": {
+        "analysis_config_reload": {
+          "enabled": true,
+          "channel": "safe-zone:config:analysis:updated",
+          "poll_interval": "30s",
+          "node_role": "dns-resolver",
+          "revision": "ecb8a74f314e3df1",
+          "last_reload_source": "startup",
+          "last_reload_at": "2026-08-08T09:53:02.168335212Z",
+          "redis_configured": true,
+          "store_configured": true,
+          "subscriber_active": true,
+          "reconciler_active": true
+        },
+        "deployment_tier": "budget-vps",
+        "endpoints": [
+          "/",
+          "/healthz",
+          "/v1/version",
+          "/v1/policy?domain=example.com",
+          "/dns-query"
+        ],
+        "ml": {
+          "ml_mode": "shadow",
+          "ml_enabled": true,
+          "ml_model_version": "1.0.0",
+          "ml_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+          "ml_block_threshold": 0.85,
+          "prediction_attempts": 19,
+          "shadow_would_block": 7,
+          "shadow_would_pass": 12,
+          "enforce_promotions": 0,
+          "abstains": 12,
+          "errors": 0,
+          "skips": 0,
+          "llm_fallbacks_after_ml": 19,
+          "latency_p95_us": 1000,
+          "latency_count": 19,
+          "latency_histogram_us": {
+            "gt_50000us": 0,
+            "le_10000us": 0,
+            "le_1000us": 3,
+            "le_100us": 0,
+            "le_2000us": 0,
+            "le_250us": 1,
+            "le_50000us": 0,
+            "le_5000us": 0,
+            "le_500us": 15
+          },
+          "probability_histogram": {
+            "0_10_0_19": 0,
+            "0_20_0_29": 0,
+            "0_30_0_39": 0,
+            "0_40_0_49": 0,
+            "0_50_0_59": 0,
+            "0_60_0_69": 0,
+            "0_70_0_79": 0,
+            "0_80_0_89": 1,
+            "gte_0_90": 6,
+            "lt_0_10": 12
+          },
+          "ml_state": "ready"
+        },
+        "mode": "doh",
+        "redis": {
+          "configured": true,
+          "status": "ok"
+        },
+        "service": "dns-resolver",
+        "status": "ok",
+        "time": "2026-08-08T09:53:09.51935211Z",
+        "upstream_doh": "https://cloudflare-dns.com/dns-query",
+        "upstream_doh_resolvers": {
+          "active": "https://cloudflare-dns.com/dns-query",
+          "endpoints": [
+            {
+              "url": "https://cloudflare-dns.com/dns-query",
+              "healthy": true,
+              "latency_ms": 207,
+              "failures": 0
+            }
+          ]
+        }
+      }
+    }
+  }
+}

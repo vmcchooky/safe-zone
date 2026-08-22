@@ -327,7 +327,7 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 - `[x]` Phase 2: sparse training, LightGBM, Platt calibration and candidate-cohort evaluation artifacts are present; product/security approval of the selected threshold remains open.
 - `[x]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
 - `[x]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache, telemetry, tests, race and static verification pass.
-- `[~]` Phase 5: provisioning/validation tooling, validated private artifact activation, read-only mounts for both services, shadow evidence plumbing, a staging golden-vector observation window, and rollback mechanics verification are complete; human-labelled operational evidence, canary, and owner approvals remain open.
+- `[~]` Phase 5: provisioning/validation tooling, validated private artifact activation, read-only mounts for both services, shadow evidence plumbing, a staging golden-vector observation window, rollback mechanics verification, and the tracked representative human-label archive are complete; canary and owner approvals remain open.
 - `[ ]` Product owner approves threshold/trade-off; security owner approves data/model storage, terms, retention and rollout scope.
 
 Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Phase 5 now has a checksum-gated versioned provisioner, validated private artifact activation, read-only Compose mounts, shadow evidence status fields, a clean staging golden-vector observation window, and a policy-only rollback mechanics drill. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until human-labelled evidence, canary, and approval gates are complete.
@@ -347,6 +347,14 @@ Archive with the release:
 - rollback commands and last-known-good provider/model revision.
 
 ### Current Phase 5 staging evidence
+
+The reviewed representative replay packet is archived at
+`ml/evidence/representative-replay/run-20260808/`. It contains 137 human-label
+rows, the referenced evidence files, the generated metrics/approval packet, and
+`checksums.sha256`. Its `FPR=0.0000` is a zero-event sample result (0/25
+benign), not a production guarantee; the archive records the IDN and
+single-reviewer governance waivers. This evidence is sufficient for owner
+review, but not by itself for `enforce`.
 
 The 2026-08-08 staging smoke used the validated private bundle outside the repository:
 
