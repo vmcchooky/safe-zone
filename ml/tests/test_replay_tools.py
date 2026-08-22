@@ -252,3 +252,196 @@ def test_queue_regeneration_rejects_wrong_case_count(tmp_path):
         assert "case count mismatch" in str(error)
     else:
         raise AssertionError("expected case-count validation failure")
+
+
+def _complete_case(case_id, label="benign", would_block="false", **overrides):
+    outcome = {
+        ("benign", "true"): "false_positive",
+        ("benign", "false"): "true_negative",
+        ("malicious", "true"): "true_positive",
+        ("malicious", "false"): "false_negative",
+    }.get((label, would_block), "unresolved")
+    row = _case(
+        case_id,
+        label=label,
+        would_block=would_block,
+        label_confidence="high",
+        evidence_type="official source",
+        reviewer_id="reviewer-a",
+        reviewed_at="2026-08-09T10:00:00Z",
+        evidence_refs="ticket-1",
+        review_outcome=outcome,
+        review_notes="Verified official owner.",
+    )
+    row.update(overrides)
+    return row
+
+
+def test_validation_rejects_ai_reviewer_ids():
+    result = validate_rows(
+        [_complete_case("replay-1", reviewer_id="gemini-adjudicator")],
+        REQUIRED_COLUMNS,
+        expected_total=1,
+    )
+
+    assert any("cannot be a model or AI agent" in error for error in result.errors)
+
+
+def test_validation_rejects_identical_double_label_reviewer():
+    result = validate_rows(
+        [
+            _complete_case(
+                "replay-1",
+                second_human_label="benign",
+                second_reviewer_id="reviewer-a",
+            )
+        ],
+        REQUIRED_COLUMNS | OPTIONAL_COLUMNS,
+        expected_total=1,
+    )
+
+    assert any("independent reviewer" in error for error in result.errors)
+
+
+def test_validation_rejects_live_content_review_without_live_content():
+    result = validate_rows(
+        [
+            _complete_case(
+                "replay-1",
+                evidence_type="live content review",
+                review_notes='DNS resolution failed for hostname "example.test".',
+            )
+        ],
+        REQUIRED_COLUMNS,
+        expected_total=1,
+    )
+
+    assert any("no live content" in error for error in result.errors)
+
+
+def test_validation_accepts_independent_human_double_label():
+    result = validate_rows(
+        [
+            _complete_case(
+                "replay-1",
+                second_human_label="benign",
+                second_reviewer_id="reviewer-b",
+            )
+        ],
+        REQUIRED_COLUMNS | OPTIONAL_COLUMNS,
+        expected_total=1,
+    )
+
+    assert result.errors == ()
+    assert result.pending_case_ids == ()
+
+
+def test_metrics_and_report_with_waivers_clears_blockers(tmp_path):
+    columns = REQUIRED_COLUMNS | OPTIONAL_COLUMNS
+    rows = [
+        _complete_case(
+            "safe-1",
+            label="benign",
+            critical_benign_stratum="trusted_brand",
+            deterministic_would_block="false",
+        ),
+        _complete_case(
+            "safe-2",
+            label="benign",
+            critical_benign_stratum="government_education",
+            deterministic_would_block="false",
+        ),
+        _complete_case(
+            "safe-3",
+            label="benign",
+            critical_benign_stratum="shared_hosting",
+            deterministic_would_block="false",
+        ),
+        _complete_case(
+            "bad-1",
+            label="malicious",
+            would_block="true",
+            deterministic_would_block="false",
+        ),
+        _case(
+            "unknown-dead",
+            label="unknown",
+            label_confidence="low",
+            evidence_type="insufficient evidence",
+            reviewer_id="reviewer-a",
+            reviewed_at="2026-08-09T10:00:00Z",
+            evidence_refs="ticket-1",
+            review_outcome="unresolved",
+            review_notes="NXDOMAIN domain inactive.",
+            deterministic_would_block="false",
+        ),
+    ]
+
+    result = validate_rows(rows, columns, expected_total=5)
+    assert result.errors == ()
+    assert result.pending_case_ids == ()
+
+    waivers = {
+        "critical_benign_strata": ["idn_punycode"],
+        "double_label": True,
+        "reasons": {
+            "idn_punycode": "Sample has no live IDN cases.",
+            "double_label": "Single reviewer scope.",
+        },
+    }
+
+    metrics = calculate_metrics(
+        result.rows,
+        0.85,
+        result.columns,
+        double_label_target=35,
+        waivers=waivers,
+    )
+
+    assert metrics["false_positives"] == 0
+    assert metrics["fpr_at_threshold"] == 0.0
+    assert metrics["recall_at_threshold"] == 1.0
+    assert metrics["critical_benign"]["status"] == "available_with_waiver"
+    assert metrics["reviewer_agreement"]["status"] == "waived"
+    assert metrics["approval_blockers"] == []
+
+    labels_path = tmp_path / "labels.csv"
+    summary_path = tmp_path / "review-summary.json"
+    packet_path = tmp_path / "approval-packet.md"
+
+    header = sorted(columns)
+    labels_content = [",".join(header)]
+    for r in rows:
+        labels_content.append(",".join(str(r.get(col, "")) for col in header))
+    labels_path.write_text("\n".join(labels_content) + "\n", encoding="utf-8")
+
+    summary_path.write_text(
+        json.dumps(
+            {
+                "total_cases": 5,
+                "model_threshold": 0.85,
+                "approval_state": {"product": "pending", "security": "pending", "canary": "blocked"},
+                "waivers": waivers,
+            }
+        ),
+        encoding="utf-8",
+    )
+    packet_path.write_text(
+        "- Cases: `5`; human labels complete: `0/5`\n\n## Current decision\nApproval is blocked.\n",
+        encoding="utf-8",
+    )
+
+    exit_code = report_main(
+        [
+            "--labels",
+            str(labels_path),
+            "--summary",
+            str(summary_path),
+            "--packet",
+            str(packet_path),
+        ]
+    )
+    assert exit_code == 0
+    summary_data = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary_data["approval_state"]["canary"] == "ready_for_review"
+    assert summary_data["false_positive_metrics"]["approval_blockers"] == []

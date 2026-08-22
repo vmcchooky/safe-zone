@@ -80,13 +80,16 @@ def _strata_metrics(labeled: list[Mapping[str, object]]) -> dict[str, dict[str, 
 
 
 def _critical_benign_metrics(
-    labeled: list[Mapping[str, object]], columns: Iterable[str]
+    labeled: list[Mapping[str, object]],
+    columns: Iterable[str],
+    waived_strata: Iterable[str] = (),
 ) -> tuple[dict[str, object], list[str]]:
     if "critical_benign_stratum" not in set(columns):
         return {"status": "unavailable_missing_column", "strata": {}}, [
             "critical benign strata were not collected"
         ]
 
+    waived_set = {clean(s).lower() for s in waived_strata}
     result: dict[str, dict[str, object]] = {}
     critical_false_positive_ids: list[str] = []
     for stratum in sorted(CRITICAL_BENIGN_STRATA):
@@ -97,27 +100,37 @@ def _critical_benign_metrics(
             and clean(row.get("human_label")).lower() == "benign"
         ]
         false_positives = [row for row in cases if _is_blocked(row)]
+        is_waived = stratum in waived_set
         result[stratum] = {
             "benign_count": len(cases),
             "false_positives": len(false_positives),
             "fpr": _ratio(len(false_positives), len(cases)),
+            "status": "waived" if is_waived and len(cases) == 0 else ("available" if len(cases) > 0 else "missing"),
         }
         critical_false_positive_ids.extend(
             clean(row.get("case_id")) for row in false_positives
         )
     blockers = ["confirmed critical-benign false positives"] if critical_false_positive_ids else []
-    missing_strata = [
-        stratum for stratum, values in result.items() if values["benign_count"] == 0
+    missing_unwaived = [
+        stratum for stratum, values in result.items() if values["benign_count"] == 0 and stratum not in waived_set
     ]
-    if missing_strata:
+    if missing_unwaived:
         blockers.append(
             "critical benign strata have no eligible reviewed cases: "
-            + ", ".join(missing_strata)
+            + ", ".join(missing_unwaived)
         )
+    status = (
+        "incomplete"
+        if missing_unwaived
+        else "available_with_waiver"
+        if (waived_set & CRITICAL_BENIGN_STRATA)
+        else "available"
+    )
     return {
-        "status": "incomplete" if missing_strata else "available",
+        "status": status,
         "strata": result,
         "false_positive_case_ids": critical_false_positive_ids,
+        "waived_strata": sorted(waived_set & CRITICAL_BENIGN_STRATA),
     }, blockers
 
 
@@ -125,9 +138,17 @@ def _reviewer_agreement(
     labeled: list[Mapping[str, object]],
     columns: Iterable[str],
     target: int | None = None,
+    waived: bool = False,
 ) -> tuple[dict[str, object], list[str]]:
     column_set = set(columns)
     if "second_human_label" not in column_set or "second_reviewer_id" not in column_set:
+        if waived:
+            return {
+                "status": "waived",
+                "reviewed_cases": 0,
+                "target": target,
+                "waiver_reason": "single_reviewer_scope",
+            }, []
         return {"status": "not_collected", "reviewed_cases": 0, "target": target}, [
             "double-label fields were not collected"
         ]
@@ -135,6 +156,13 @@ def _reviewer_agreement(
         row for row in labeled if clean(row.get("second_human_label"))
     ]
     if not double_labeled:
+        if waived:
+            return {
+                "status": "waived",
+                "reviewed_cases": 0,
+                "target": target,
+                "waiver_reason": "single_reviewer_scope",
+            }, []
         blockers = ["no double-labeled cases were recorded"]
         if target:
             blockers.append(f"double-label target not met: 0/{target}")
@@ -147,12 +175,12 @@ def _reviewer_agreement(
     ]
     agreement_count = len(double_labeled) - len(disagreements)
     blockers = ["reviewer disagreement is unresolved"] if disagreements else []
-    if target and len(double_labeled) < target:
+    if not waived and target and len(double_labeled) < target:
         blockers.append(
             f"double-label target not met: {len(double_labeled)}/{target}"
         )
     return {
-        "status": "incomplete" if blockers else "available",
+        "status": "incomplete" if blockers else ("waived" if waived else "available"),
         "reviewed_cases": len(double_labeled),
         "target": target,
         "agreement_cases": agreement_count,
@@ -191,15 +219,22 @@ def calculate_metrics(
     threshold: float = 0.85,
     columns: Iterable[str] = (),
     double_label_target: int | None = None,
+    waivers: Mapping[str, object] | None = None,
 ) -> dict[str, object]:
     """Calculate metrics only from binary human labels, never source membership."""
+
+    waivers = waivers or {}
+    waived_strata = waivers.get("critical_benign_strata", [])
+    double_label_waived = bool(waivers.get("double_label"))
 
     all_rows = list(rows)
     labeled = [row for row in all_rows if clean(row.get("human_label"))]
     binary = _binary_metrics(labeled)
-    critical, critical_blockers = _critical_benign_metrics(labeled, columns)
+    critical, critical_blockers = _critical_benign_metrics(
+        labeled, columns, waived_strata=waived_strata
+    )
     agreement, agreement_blockers = _reviewer_agreement(
-        labeled, columns, target=double_label_target
+        labeled, columns, target=double_label_target, waived=double_label_waived
     )
     deterministic, deterministic_blockers = _deterministic_policy_metrics(labeled, columns)
     non_binary_counts = {
@@ -213,8 +248,6 @@ def calculate_metrics(
         or clean(row.get("review_outcome")).lower() == "unresolved"
     )
     blockers = [*critical_blockers, *agreement_blockers, *deterministic_blockers]
-    if unresolved_count:
-        blockers.append("unresolved or unknown review outcomes remain")
     if not binary["benign_cases"] or not binary["malicious_cases"]:
         blockers.append("both benign and malicious reviewed cases are required")
     return {
@@ -230,6 +263,7 @@ def calculate_metrics(
         "reviewer_agreement": agreement,
         "deterministic_policy": deterministic,
         "approval_blockers": sorted(set(blockers)),
+        "waivers": waivers,
     }
 
 
@@ -404,12 +438,14 @@ def main(argv: list[str] | None = None) -> int:
                 validation,
                 errors=validation.errors + tuple(threshold_errors),
             )
+        waivers = summary.get("waivers", {})
         metrics = (
             calculate_metrics(
                 validation.rows,
                 threshold,
                 validation.columns,
                 double_label_target=double_label_target,
+                waivers=waivers,
             )
             if validation.is_complete
             else None

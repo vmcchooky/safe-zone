@@ -75,6 +75,36 @@ _MODEL_ONLY_EVIDENCE = frozenset(
         "shadow prediction",
     }
 )
+_DISALLOWED_REVIEWER_MARKERS = frozenset(
+    {
+        "ai-adjudicator",
+        "ai-agent",
+        "ai-auditor",
+        "antigravity",
+        "anthropic",
+        "chatgpt",
+        "claude",
+        "codex",
+        "copilot",
+        "gemini",
+        "gpt",
+        "grok",
+        "junie",
+        "llm",
+        "openai",
+        "opus",
+        "sonnet",
+    }
+)
+_NO_LIVE_CONTENT_MARKERS = (
+    "connection refused",
+    "dns resolution failed",
+    "name or service not known",
+    "no address associated",
+    "nxdomain",
+    "timed out",
+    "timeout",
+)
 
 
 @dataclass(frozen=True)
@@ -163,6 +193,28 @@ def read_label_csv(path: str | Path) -> tuple[list[dict[str, str]], list[str]]:
 
 def _row_issue(collection: list[str], case_id: str, message: str) -> None:
     collection.append(f"[{case_id or 'missing case_id'}] {message}")
+
+
+def _normalized_reviewer_id(value: object) -> str:
+    return clean(value).lower().replace("_", "-")
+
+
+def _is_disallowed_reviewer(reviewer_id: str) -> bool:
+    """Reject model/agent reviewer IDs; they are not authorized human reviewers."""
+
+    normalized = _normalized_reviewer_id(reviewer_id)
+    if not normalized:
+        return False
+    compact = normalized.replace(".", "-")
+    tokens = {token for token in compact.split("-") if token}
+    if tokens & _DISALLOWED_REVIEWER_MARKERS:
+        return True
+    return any(marker in compact for marker in _DISALLOWED_REVIEWER_MARKERS if "-" in marker)
+
+
+def _notes_indicate_no_live_content(notes: str) -> bool:
+    lowered = notes.lower()
+    return any(marker in lowered for marker in _NO_LIVE_CONTENT_MARKERS)
 
 
 def validate_rows(
@@ -255,6 +307,12 @@ def validate_rows(
         reviewer_id = clean(row.get("reviewer_id"))
         if not reviewer_id or reviewer_id.lower() in {"unknown", "n/a", "na"}:
             _row_issue(errors, case_id, "reviewer_id is required and cannot be a placeholder")
+        elif _is_disallowed_reviewer(reviewer_id):
+            _row_issue(
+                errors,
+                case_id,
+                "reviewer_id cannot be a model or AI agent; human authorization is required",
+            )
         if not _parse_timestamp(clean(row.get("reviewed_at"))):
             _row_issue(errors, case_id, "reviewed_at must be an ISO-8601 timestamp with timezone")
 
@@ -272,6 +330,12 @@ def validate_rows(
             )
         if evidence_type == "insufficient evidence" and label != "unknown":
             _row_issue(errors, case_id, "insufficient evidence requires human_label=unknown")
+        if evidence_type == "live content review" and _notes_indicate_no_live_content(review_notes):
+            _row_issue(
+                errors,
+                case_id,
+                "live content review cannot be used when notes indicate no live content",
+            )
 
         outcome = clean(row.get("review_outcome")).lower()
         if outcome not in ALLOWED_OUTCOMES:
@@ -290,6 +354,20 @@ def validate_rows(
                 _row_issue(errors, case_id, "second_human_label is missing or invalid")
             if not second_reviewer:
                 _row_issue(errors, case_id, "second_reviewer_id is required with second_human_label")
+            elif _is_disallowed_reviewer(second_reviewer):
+                _row_issue(
+                    errors,
+                    case_id,
+                    "second_reviewer_id cannot be a model or AI agent; independent human review is required",
+                )
+            elif reviewer_id and _normalized_reviewer_id(second_reviewer) == _normalized_reviewer_id(
+                reviewer_id
+            ):
+                _row_issue(
+                    errors,
+                    case_id,
+                    "second_reviewer_id must be an independent reviewer",
+                )
 
         critical_stratum = clean(row.get("critical_benign_stratum")).lower()
         if critical_stratum and critical_stratum not in ALLOWED_CRITICAL_BENIGN_STRATA:
