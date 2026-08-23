@@ -47,6 +47,16 @@ type EngineStatus struct {
 	Tasks   []TaskStatus `json:"tasks"`
 }
 
+// TriggerResult describes whether a manual task trigger was accepted.
+type TriggerResult string
+
+const (
+	TriggerAccepted     TriggerResult = "accepted"
+	TriggerTaskNotFound TriggerResult = "task_not_found"
+	TriggerTaskDisabled TriggerResult = "task_disabled"
+	TriggerQueueFull    TriggerResult = "queue_full"
+)
+
 type registeredTask struct {
 	task     Task
 	interval time.Duration
@@ -134,22 +144,26 @@ func (e *Engine) Stop() {
 	logjson.Info("agent engine stopped", map[string]any{"service": "core-api"})
 }
 
-// Trigger requests immediate execution of the named task.
-// Returns true if the task exists, false otherwise.
-func (e *Engine) Trigger(name string) bool {
+// Trigger requests immediate execution of an enabled task.
+// Disabled tasks must be enabled through configuration before either scheduled
+// or manual execution is allowed.
+func (e *Engine) Trigger(name string) TriggerResult {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	for _, rt := range e.tasks {
 		if rt.task.Name() == name {
+			if !rt.enabled {
+				return TriggerTaskDisabled
+			}
 			select {
 			case e.triggerCh <- name:
+				return TriggerAccepted
 			default:
-				// channel full, trigger will be processed on next tick
+				return TriggerQueueFull
 			}
-			return true
 		}
 	}
-	return false
+	return TriggerTaskNotFound
 }
 
 // Status returns a snapshot of the engine and task states.

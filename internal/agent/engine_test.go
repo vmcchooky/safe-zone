@@ -90,9 +90,9 @@ func TestEngineManualTrigger(t *testing.T) {
 	initialCalls := task.calls.Load()
 
 	// Manual trigger.
-	found := e.Trigger("trigger-me")
-	if !found {
-		t.Fatal("expected trigger to find task")
+	result := e.Trigger("trigger-me")
+	if result != TriggerAccepted {
+		t.Fatalf("expected trigger to be accepted, got %q", result)
 	}
 
 	time.Sleep(200 * time.Millisecond)
@@ -106,9 +106,38 @@ func TestEngineTriggerUnknownTask(t *testing.T) {
 	e := NewEngine()
 	e.Register(&mockTask{name: "real"}, time.Hour, time.Minute, true)
 
-	found := e.Trigger("nonexistent")
-	if found {
-		t.Error("expected trigger to return false for unknown task")
+	result := e.Trigger("nonexistent")
+	if result != TriggerTaskNotFound {
+		t.Fatalf("expected task_not_found, got %q", result)
+	}
+}
+
+func TestEngineManualTriggerRejectsDisabledTask(t *testing.T) {
+	e := NewEngine()
+	task := &mockTask{name: "disabled"}
+	e.Register(task, time.Hour, time.Minute, false)
+
+	result := e.Trigger("disabled")
+	if result != TriggerTaskDisabled {
+		t.Fatalf("expected task_disabled, got %q", result)
+	}
+	if got := task.calls.Load(); got != 0 {
+		t.Fatalf("expected disabled task not to run, got %d calls", got)
+	}
+}
+
+func TestEngineManualTriggerReportsFullQueue(t *testing.T) {
+	e := NewEngine()
+	e.Register(&mockTask{name: "queued"}, time.Hour, time.Minute, true)
+
+	for i := 0; i < cap(e.triggerCh); i++ {
+		if result := e.Trigger("queued"); result != TriggerAccepted {
+			t.Fatalf("expected trigger %d to be accepted, got %q", i+1, result)
+		}
+	}
+
+	if result := e.Trigger("queued"); result != TriggerQueueFull {
+		t.Fatalf("expected queue_full, got %q", result)
 	}
 }
 

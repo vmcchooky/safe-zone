@@ -312,7 +312,7 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 - `[x]` Engine implements timeout, per-task single flight, panic recovery, status and admin trigger.
 - `[x]` Current task catalog is documented: `audit`, `feedsync`, `osint-audit`, `alert`, `whitelist_update`.
 - `[!]` Set `SAFE_ZONE_AGENT_WHITELIST_ENABLED=false` in first production environment until controlled import/backup/rollback drill passes.
-- `[ ]` Decide/fix whether admin manual trigger may execute a task disabled for scheduling; record expected API tests.
+- `[x]` Admin manual trigger áp dụng cùng enablement policy với scheduler: task disabled trả `409 Conflict`; unknown task trả `404`, queue đầy trả `429`, và các nhánh API được kiểm thử tự động.
 - `[!]` Run live Agent audit smoke and record resulting reviewed/auto-block event and cache invalidation.
 - `[!]` Run controlled feed partial-failure/parser-drift drill.
 - `[!]` Run alert test for every enabled channel without leaking secrets.
