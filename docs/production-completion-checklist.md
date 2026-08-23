@@ -327,7 +327,7 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 - `[x]` Phase 2: sparse training, LightGBM, Platt calibration and candidate-cohort evaluation artifacts are present; product/security approval of the selected threshold remains open.
 - `[x]` Phase 3: immutable model bundle, checksums and Python–Go feature/probability parity pass.
 - `[x]` Phase 4: Go integration, disabled/shadow/enforce behavior, model-aware cache, telemetry, tests, race and static verification pass.
-- `[~]` Phase 5: provisioning/validation tooling, validated private artifact activation, read-only mounts for both services, shadow evidence plumbing, bounded normalized-domain selector, mode/selector-aware cache revision, a 137-case × 3-round clean replay, rollback mechanics verification, and the tracked representative human-label archive are complete; production canary scope, observation window and final release approvals remain open.
+- `[~]` Phase 5: provisioning/validation tooling, validated private artifact activation, read-only mounts, shadow evidence plumbing, bounded selector, representative replay and rollback mechanics are complete. A separate owner-reviewed hard-case supplement found 3/3 false positives at threshold `0.85`; production canary is blocked pending model/policy remediation and regression replay.
 - `[ ]` Product owner approves threshold/trade-off; security owner approves data/model storage, terms, retention and rollout scope.
 
 Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `41/41`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Phase 5 now has a checksum-gated versioned provisioner, validated private artifact activation, read-only Compose mounts, shadow evidence status fields, a clean staging golden-vector observation window, and a policy-only rollback mechanics drill. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until human-labelled evidence, canary, and approval gates are complete.
@@ -355,6 +355,14 @@ rows, the referenced evidence files, the generated metrics/approval packet, and
 benign), not a production guarantee; the archive records the IDN and
 single-reviewer governance waivers. This evidence is sufficient for owner
 review, but not by itself for `enforce`.
+
+The targeted whitelist-proxy addendum at
+`ml/evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/`
+contains three additional owner-reviewed benign domains. All three are model
+would-block cases, so both offline and runtime-candidate FPR on this deliberately
+selected supplement are `3/3 = 100%`. Probability and response parity remain
+clean, but this model-quality result blocks canary activation until remediation
+passes the supplement and the representative regression suite.
 
 The 2026-08-08 staging smoke used the validated private bundle outside the repository:
 

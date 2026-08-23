@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-Custom Domain ML cần một cohort có giới hạn trước khi bất kỳ prediction nào được phép promote verdict trong `enforce`. Hệ thống sử dụng selector SHA-256 deterministic trên normalized domain, phần trăm và seed bất biến để Core API và DNS Resolver đưa cùng domain vào cùng cohort. Policy revision mới kết hợp model revision, mode và selector revision nhằm ngăn cache của `shadow` bị tái sử dụng trong `enforce`, hoặc ngược lại. Cấu hình `enforce` thiếu phần trăm hay seed bị từ chối khi khởi động; constructor nội bộ hạ yêu cầu không hợp lệ về `shadow`. Clean replay chạy 137 case trong ba vòng, tương đương 411 request cho mỗi service, với Redis, LLM, enrichment và OSINT không tham gia. Kết quả ghi nhận 0 probability mismatch, 0 response mismatch, 0 ML error và 0 enforce promotion; bằng chứng này chỉ xác nhận implementation trong `shadow`, chưa phê duyệt production canary.
+Custom Domain ML cần một cohort có giới hạn trước khi bất kỳ prediction nào được phép promote verdict trong `enforce`. Hệ thống sử dụng selector SHA-256 deterministic trên normalized domain, phần trăm và seed bất biến để Core API và DNS Resolver đưa cùng domain vào cùng cohort. Policy revision mới kết hợp model revision, mode và selector revision nhằm ngăn cache của `shadow` bị tái sử dụng trong `enforce`, hoặc ngược lại. Cấu hình `enforce` thiếu phần trăm hay seed bị từ chối khi khởi động; constructor nội bộ hạ yêu cầu không hợp lệ về `shadow`. Clean replay 137 case xác nhận parity và routing mechanics. Supplement ba benign hard case tiếp tục có 0 parity mismatch nhưng ghi nhận runtime-candidate FPR `3/3 = 100%`; canary vì vậy bị chặn bởi model-quality gate, không phải implementation gate.
 
 ## Bounded Canary Selector và Replay
 
@@ -86,6 +86,26 @@ Run ngày 2026-08-23 sử dụng model `1.0.0`, revision `4632f9ea69124591db89df
 
 Observed selected ratio không bắt buộc bằng 10% trên mẫu nhỏ. Ba selected prediction là cùng một unique candidate lặp qua ba round; selector hoạt động theo domain hash space, không theo request counter. Tập nhãn còn 78 case `unknown` theo waiver đã duyệt, và runtime candidate subset không chứa benign case. Vì vậy replay xác nhận parity và routing mechanics nhưng chưa đủ để đặt production FP budget hoặc mở `enforce`.
 
+### Owner-reviewed targeted benign supplement
+
+Reviewer xác nhận ba exact domain từ whitelist-proxy cohort là benign bằng record Tín Nhiệm Mạng hiện tại. Phương pháp giữ supplement riêng thay vì nhập vào representative sample, vì các case được chọn có chủ đích do model probability vượt threshold; gộp hai cohort sẽ tạo một production FPR estimate sai lệch.
+
+| Chỉ số supplement | Kết quả |
+|---|---:|
+| Human-labelled benign cases | 3 |
+| Model would-block | 3 |
+| Offline FPR | 3/3 = 100% |
+| Runtime-candidate FPR | 3/3 = 100% |
+| Round / request mỗi service | 3 round / 9 request |
+| Offline probability mismatch | 0/3 |
+| Runtime probability mismatch | 0/3 |
+| Response mismatch | 0/9 |
+| ML error / enforce promotion | 0 / 0 |
+| Labels SHA-256 | `0f93be90...fcfb5` |
+| Report SHA-256 | `2ef8b8ab...07abd3` |
+
+Ba false positive đều là tên miền tổ chức tiếng Việt dài; lexical gate ghi `domain is long` và `high_entropy_dga_suspected`. Kết quả cung cấp feedback loop có mục tiêu cho feature/model remediation. Canary `enforce` không được mở cho tới khi supplement không còn false positive tại policy được đề xuất, representative replay không regression và owner phê duyệt packet mới.
+
 ### Liên kết Artifacts
 
 - `internal/risk/ml_canary.go`
@@ -96,6 +116,7 @@ Observed selected ratio không bắt buộc bằng 10% trên mẫu nhỏ. Ba sel
 - `docs/runbooks/ml-canary-rollout.md`
 - `docs/runbooks/ml-shadow-representative-replay.md`
 - Private report: `<private-run>/replay-report.json` — không thuộc Git và không phải signed evidence.
+- `ml/evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/`
 
 ---
 
@@ -104,3 +125,4 @@ Observed selected ratio không bắt buộc bằng 10% trên mẫu nhỏ. Ba sel
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
 | 2026-08-23 | Thêm bounded selector, cache policy isolation và clean replay 137 case × 3 round | Codex GPT-5.6 Sol |
+| 2026-08-23 | Thêm owner-reviewed benign supplement, FPR 3/3 và canary quality blocker | Codex (GPT-5) |

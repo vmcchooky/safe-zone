@@ -7,7 +7,7 @@
 
 ## 1. Tóm tắt (Abstract / Executive Summary)
 
-Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất `137/137` review entries do reviewer ủy quyền (`reviewer.vmc`) ghi nhận; working addendum gồm 25 benign, 34 malicious và 78 reviewed-unclassifiable cases. FPR tại threshold 0.85 là **0.0000** (0/25), Recall là **0.7647** (26/34). Reviewed-unclassifiable exclusion chỉ hợp lệ khi waiver khớp count, would-block count và SHA-256 của chính xác tập case ID; Product và Security owner decisions cho addendum đã được ghi ngày 2026-08-23. Review gate hiện là **`ready_for_review_with_reviewed_unclassifiable_waiver`**, nhưng rollout vẫn **NO-GO** cho tới khi release image, fresh predictive telemetry, canary scope và rollback gates hoàn tất; `enforce` chưa được phép bật.
+Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất `137/137` review entries do reviewer ủy quyền (`reviewer.vmc`) ghi nhận; working addendum gồm 25 benign, 34 malicious và 78 reviewed-unclassifiable cases. FPR representative tại threshold 0.85 là **0.0000** (0/25), Recall là **0.7647** (26/34). Một supplement tách biệt gồm ba targeted benign ML candidate đã được human-review và cả ba đều là false positive, tạo FPR hard-case **3/3 = 100%**. Review governance gate vẫn có waiver hợp lệ, nhưng model-quality gate hiện chặn canary; rollout giữ **NO-GO** và `enforce` chưa được phép bật.
 
 ## 2. Sơ đồ Tổng quan Pipeline
 
@@ -520,7 +520,8 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
   - **Claude Opus 4.6 & Gemini 3.7 Flash (2026-08-22):** Rà soát nhãn người (`reviewer.vmc`), khắc phục 3 lỗi schema CSV và nâng cấp `report_fp.py` hỗ trợ Product Owner waivers. Kết quả khi đó báo `ready_for_review`, nhưng chưa biến 79 nhãn `unknown` thành adjudication đã phân giải.
   - **Codex (GPT-5.6 Sol — 2026-08-22):** Thực hiện preflight local/read-only, phát hiện sai lệch giữa runbook và reporter, bổ sung unresolved approval blocker, kiểm thử trên bản sao archive và lập queue triage. Không sử dụng subagent hoặc voting; kiểm soát chất lượng dựa trên checksum, exit code và test tái hiện được.
   - **Codex (GPT-5.6 Sol — 2026-08-23):** Kiểm tra ảnh do người dùng cung cấp, ghi evidence SHA-256 vào working copy, chuyển riêng `replay-0072` thành malicious theo xác nhận của reviewer và triển khai exact-set waiver. Không truy cập domain nguy hiểm, không dùng AI làm reviewer và không sử dụng subagent/voting.
-  - **Human-in-the-loop:** Các review entry do reviewer ủy quyền (`reviewer.vmc`) ghi nhận. Người dùng xác nhận evidence mới cho `replay-0072`, chấp nhận policy reviewed-unclassifiable và ghi Product/Security owner decisions ngày 2026-08-23. Deploy/restart/enforce vẫn cần preflight và xác nhận riêng.
+  - **Codex (GPT-5 — 2026-08-23):** Khóa Firecrawl raw-response provenance, tạo addendum mới cho ba exact domain và chạy bounded shadow replay. Prompt strategy tách human decision khỏi extraction, không sửa signed archive và không dùng subagent/voting; checksum, parity và full test suite là quality controls.
+  - **Human-in-the-loop:** Các review entry do reviewer ủy quyền (`reviewer.vmc`) ghi nhận. Người dùng xác nhận evidence mới cho `replay-0072`, chấp nhận policy reviewed-unclassifiable, ghi Product/Security owner decisions và xác nhận ba whitelist-proxy domain là `Allow`/benign false positive ngày 2026-08-23. Deploy/restart/enforce vẫn cần preflight và xác nhận riêng.
 
 ### Số liệu cụ thể (Metrics & Results)
 
@@ -537,6 +538,7 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
 | Review-entry coverage | **137/137** (100%); reviewer: `reviewer.vmc`; working resolved binary subset: **59/137** | Working-copy validator; signed [labels.csv](../../../ml/evidence/representative-replay/run-20260808/labels.csv) giữ nguyên |
 | Label distribution | 25 benign · 34 malicious · 78 reviewed-unclassifiable | Working-copy reporter |
 | FPR @ threshold 0.85 | **0.0000** (0/25 benign bị block sai) | `report_fp.py` → `review-summary.json` |
+| Targeted benign supplement FPR | **1.0000** (3/3 benign bị block sai); runtime-candidate FPR cũng 3/3 | [whitelist-proxy addendum](../../../ml/evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/) và private bounded replay |
 | Recall @ threshold 0.85 | **0.7647** (26/34 malicious được phát hiện) | Working-copy `report_fp.py` output |
 | False negatives | **8 cases** (malicious không bị block) | `mod22.com`, `absicherung-kontakt.com`, `pl.spotify-original.com`, `mcaavoli.com`, `1xbet-xoso.com`, `axygames.com`, `li88.net`, `speedingk.com` |
 | Critical-benign strata | `trusted_brand`: 8, `government_education`: 3, `shared_hosting`: 1, `idn_punycode`: **waived** (`available_with_waiver`) | `report_fp.py` → `critical_benign` |
@@ -570,6 +572,12 @@ casino gambling và phishing dùng cloaking có probability dưới threshold
 - 8 false negatives (probability 0.38–0.83) cho thấy model yếu ở TDS,
   gambling gateway, và phishing dùng cloaking. Có thể cân nhắc threshold
   sweep (0.70–0.85) hoặc thêm heuristic rule sau giai đoạn Canary.
+- Ba targeted benign false positive có probability `0.9258–0.9564`; cả ba
+  mang lexical reasons `domain is long` và `high_entropy_dga_suspected`.
+  Canary bị chặn cho tới khi feature/model/policy remediation đưa ba case qua
+  mà không làm regression representative recall/FPR. Không gộp supplement
+  được chọn có chủ đích vào denominator representative để suy diễn production
+  FPR.
 - Không yêu cầu reviewer lặp lại 78 case nếu không có evidence mới.
   Product/Security đã xác nhận exact-set waiver và canary boundary trong
   working packet. Bước tiếp theo là đóng release identity, runtime snapshots,
@@ -605,3 +613,4 @@ casino gambling và phishing dùng cloaking có probability dưới threshold
 | 2026-08-22 | Phase 5 human labeling hoàn tất: 137/137 labeled bởi `reviewer.vmc`, FPR=0.0000 (0/25), Recall=0.7576 (25/33), 79 unknown. Sửa 3 lỗi CSV (duplicate case_id, invalid stratum). Xử lý 4 blockers qua Product Owner waivers (IDN stratum, single-reviewer scope) và unclassifiable handling; trạng thái chuyển sang `ready_for_review`. 12/12 tooling tests pass | Gemini 3.7 Flash & Claude Opus 4.6 |
 | 2026-08-22 | Preflight phát hiện `unknown`/`unresolved` chưa được đưa vào approval blocker. Reporter được sửa để trả exit 3 và khóa canary; run-20260808 chuyển về NO-GO. Dependency Python được khai báo đầy đủ; 34/34 test ML, 41/41 artifact checks và Go 1.26.7 security scan pass | Codex (GPT-5.6 Sol) |
 | 2026-08-23 | Phân biệt reviewed-unclassifiable với pending review; thêm waiver ràng buộc count/would-block/case-ID SHA-256. Evidence người dùng chuyển replay-0072 thành malicious true positive; Product/Security ghi owner decisions; runtime local healthy nhưng fresh predictive telemetry/release/canary gates còn pending | Codex (GPT-5.6 Sol) |
+| 2026-08-23 | Thêm ba owner-reviewed whitelist-proxy false positive; bounded replay FPR 3/3, parity mismatch 0 và canary chuyển sang blocked chờ remediation | Codex (GPT-5) |

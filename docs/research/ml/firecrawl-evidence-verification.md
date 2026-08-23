@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-Curated whitelist replay tạo 14 review group cần đối chiếu evidence hiện tại trước khi xem chúng là false positive đã xác nhận. `cmd/ml-evidence-firecrawl` chuẩn bị và thực thi tối đa một Firecrawl `/scrape` JSON request cho mỗi group, chỉ tới hai evidence host đã phê duyệt trong selection policy. Runner không gọi candidate domain, không follow link, không dùng crawl/agent discovery và mặc định chạy dry-run. API key chỉ được đọc từ secret file local khi có `--execute`; key không được chấp nhận qua flag trực tiếp, source code hoặc output. Mọi input được khóa SHA-256 theo curated replay/data manifest, còn output được ghi vào private directory mới bằng staging + rename. Raw response đã lưu có thể được tái kiểm định offline bằng `--revalidate-results`, gồm kiểm tra response SHA-256, nên sửa local validator không cần gọi lại Firecrawl.
+Curated whitelist replay tạo 14 review group cần đối chiếu evidence hiện tại trước khi xem chúng là false positive đã xác nhận. `cmd/ml-evidence-firecrawl` chuẩn bị và thực thi tối đa một Firecrawl `/scrape` JSON request cho mỗi group, chỉ tới hai evidence host đã phê duyệt trong selection policy. Runner không gọi candidate domain, không follow link, không dùng crawl/agent discovery và mặc định chạy dry-run. API key chỉ được đọc từ secret file local khi có `--execute`; key không được chấp nhận qua flag trực tiếp, source code hoặc output. Mọi input được khóa SHA-256 theo curated replay/data manifest, còn output được ghi vào private directory mới bằng staging + rename. Raw response đã lưu có thể được tái kiểm định offline bằng `--revalidate-results`, gồm kiểm tra response SHA-256, nên sửa local validator không cần gọi lại Firecrawl. Human reviewer sau đó xác nhận ba would-block domain là benign; bounded replay đo FPR `3/3 = 100%` trên supplement hard-case và chặn canary cho tới khi có remediation.
 
 ## Bounded Firecrawl evidence verification
 
@@ -80,6 +80,8 @@ External execution dùng key trong file secret đã xác minh khác key từng x
 
 Bốn exact record tìm thấy là `benhviendalieuthanhhoa.com` (`0.9257835736488635`, would-block), `benhviennoitietthanhhoa.com` (`0.9384566167627869`, would-block), `vietmassagebuiquocchau.com` (`0.9563838532880636`, would-block) và `dichthuatcongchung24h.com` (`0.8016674662953063`, near-only). Directory membership là provenance để reviewer kiểm tra tiếp, không tự tạo `Allow`, benign label hoặc canary approval.
 
+Reviewer `reviewer.vmc` xác nhận ba would-block domain là website hợp pháp và ghi quyết định `Allow`/`benign`/`false_positive` ngày 2026-08-23. Evidence refs, exact domain match, source approval date và Firecrawl response hash được lưu trong addendum mới; signed representative archive không bị sửa. Replay supplement chạy 3 case × 3 round, tương đương 9 request/service, ghi nhận offline FPR và runtime-candidate FPR cùng bằng `3/3 = 100%`, probability/response mismatch bằng 0, ML error bằng 0 và enforce promotion bằng 0. Vì cohort được chọn có chủ đích từ hard cases, số đo này không đại diện production FPR; nó xác nhận một failure mode cụ thể đối với tên miền tổ chức tiếng Việt dài.
+
 ### Liên kết Artifacts
 
 - Runner: `cmd/ml-evidence-firecrawl/main.go`
@@ -87,8 +89,10 @@ Bốn exact record tìm thấy là `benhviendalieuthanhhoa.com` (`0.925783573648
 - Curated replay research: `docs/research/ml/vietnam-whitelist-proxy-replay.md`
 - Shadow replay runbook: `docs/runbooks/ml-shadow-representative-replay.md`
 - Secret handling: `ops/secrets/README.md`
-- Initial execute artifact: `D:\Quorix\private-artifacts\safe-zone\firecrawl\run-20260823-evidence-execute-retry-4531be8`
-- Offline revalidated artifact: `D:\Quorix\private-artifacts\safe-zone\firecrawl\run-20260823-evidence-revalidated-d5debea`
+- Initial execute artifact: `<private-artifact-root>/safe-zone/firecrawl/run-20260823-evidence-execute-retry-4531be8/`
+- Offline revalidated artifact: `<private-artifact-root>/safe-zone/firecrawl/run-20260823-evidence-revalidated-d5debea/`
+- Human-review addendum: `ml/evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/`
+- Private bounded replay: `<private-artifact-root>/safe-zone/replay/run-20260823-whitelist-fp-owner-reviewed-final-v2-17b8483/replay-report.json`
 
 ## Lịch sử Thay đổi (Version History)
 
@@ -98,3 +102,4 @@ Bốn exact record tìm thấy là `benhviendalieuthanhhoa.com` (`0.925783573648
 | 2026-08-23 | Khóa dry-run bằng runner commit và manifest checksum | Codex (GPT-5) |
 | 2026-08-23 | Thêm exact pinned alias validation và offline raw-response revalidation | Codex (GPT-5) |
 | 2026-08-23 | Ghi nhận execute 14 request và revalidation 4 found/10 unresolved/0 contract error | Codex (GPT-5) |
+| 2026-08-23 | Ghi nhận ba human-reviewed false positive và bounded replay FPR 3/3 | Codex (GPT-5) |

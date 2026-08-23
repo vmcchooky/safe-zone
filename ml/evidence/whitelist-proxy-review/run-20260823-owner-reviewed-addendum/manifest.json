@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "archive_type": "owner_reviewed_whitelist_proxy_false_positive_addendum",
+  "created_at": "2026-08-23T20:33:07+07:00",
+  "status": "canary_blocked_model_false_positive",
+  "source_commit": "17b848360d1e413c2935b82b8911ad41dd6b15be",
+  "model": {
+    "version": "1.0.0",
+    "revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+    "threshold": 0.85,
+    "bundle_sha256s_sha256": "be6a9034a764e33acfac8a639a84c0bad03e759fc4b962d91f17b6ca071c32d8"
+  },
+  "provenance": {
+    "curated_replay_manifest_sha256": "4d0f56753420e08cb3ee3736403ec211b1b1fee3f377213aa1ce5db57d8be380",
+    "firecrawl_revalidated_manifest_sha256": "33c116a80e91f1496f01916478a747d6158896e824c5d3581d7588a65a140438",
+    "firecrawl_revalidated_results_sha256": "992c6681989f81263eaed19267ebd0153cf51b2766e179e89b323c26ae98ca39",
+    "evidence_validator_commit": "d5debeaf59a55d3c5d8ce656ca664e56f52a4d55"
+  },
+  "review": {
+    "reviewer_id": "reviewer.vmc",
+    "owner": "Vo Manh Cuong - Chooky",
+    "reviewed_at": "2026-08-23T20:33:07+07:00",
+    "decision": "allow",
+    "human_label": "benign",
+    "review_outcome": "false_positive",
+    "case_count": 3,
+    "attestation_type": "typed_human_decision_not_cryptographic_signature"
+  },
+  "replay": {
+    "generated_at": "2026-08-23T13:41:04.0683248Z",
+    "mode": "shadow",
+    "rounds": 3,
+    "requests_per_service": 9,
+    "canary_percent": 10,
+    "canary_seed": "phase5-local-shadow-v1",
+    "labels_sha256": "0f93be906a4da6352075634cd127ea89148dc7352df8249015c432f5ef8fcfb5",
+    "private_report_sha256": "2ef8b8abe1b3babfdf47103206b63111b4ad47a27f0f2ce43df134b50407abd3",
+    "offline_false_positives": 3,
+    "offline_benign_cases": 3,
+    "offline_fpr": 1.0,
+    "runtime_candidate_false_positives": 3,
+    "runtime_candidate_benign_cases": 3,
+    "runtime_candidate_fpr": 1.0,
+    "offline_probability_mismatches": 0,
+    "runtime_probability_mismatches": 0,
+    "response_mismatches": 0,
+    "core_ml_errors": 0,
+    "dns_ml_errors": 0,
+    "enforce_promotions": 0
+  },
+  "files": [
+    {
+      "path": "ARCHIVE.md",
+      "sha256": "1488741c61d74554150d171513c7297164409f0154d937ebb1cdd3c1be33dcd4"
+    },
+    {
+      "path": "REVIEW-DECISION.md",
+      "sha256": "2191e11b6643d1dd664b2963df949852247e34a1867e71ccf4572427d470c328"
+    },
+    {
+      "path": "labels.csv",
+      "sha256": "0f93be906a4da6352075634cd127ea89148dc7352df8249015c432f5ef8fcfb5"
+    },
+    {
+      "path": "evidence/benhviendalieuthanhhoa.com.md",
+      "sha256": "21ec983955e5c1382765c04fe4fbedd9ec2bb9e52adfac5c2d771043751f32e5"
+    },
+    {
+      "path": "evidence/benhviennoitietthanhhoa.com.md",
+      "sha256": "5f99f52895f0391cb201575ab1922337b81c229646e04d126072ccee53b62c67"
+    },
+    {
+      "path": "evidence/vietmassagebuiquocchau.com.md",
+      "sha256": "4b45123317d6deb66ca1a0d1d92ae845aa6ad646bc3fe30882c18eea6053e0e2"
+    }
+  ],
+  "authorization": {
+    "runtime_allow_override_created": false,
+    "signed_representative_archive_modified": false,
+    "deploy_authorized": false,
+    "restart_authorized": false,
+    "enforce_authorized": false
+  },
+  "remaining_gate": "remediate model or policy and pass both targeted supplement and representative regression replay"
+}
