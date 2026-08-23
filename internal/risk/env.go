@@ -100,6 +100,10 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	mlCanary, err := loadMLCanaryFromEnv(mlMode)
+	if err != nil {
+		return nil, err
+	}
 
 	return NewService(Options{
 		Redis:                    redisCache,
@@ -136,7 +140,30 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 		OSINT:                    osintService,
 		MLClassifier:             mlClassifier,
 		MLMode:                   mlMode,
+		MLCanary:                 mlCanary,
 	}), nil
+}
+
+func loadMLCanaryFromEnv(mode analysis.MLMode) (MLCanaryConfig, error) {
+	if mode == analysis.MLModeDisabled {
+		return MLCanaryConfig{}, nil
+	}
+	rawPercent := strings.TrimSpace(config.String("SAFE_ZONE_ML_CANARY_PERCENT", "0"))
+	percent, err := strconv.Atoi(rawPercent)
+	if err != nil {
+		return MLCanaryConfig{}, fmt.Errorf("invalid SAFE_ZONE_ML_CANARY_PERCENT %q", rawPercent)
+	}
+	canary := MLCanaryConfig{
+		Percent: percent,
+		Seed:    strings.TrimSpace(config.String("SAFE_ZONE_ML_CANARY_SEED", "")),
+	}
+	if err := canary.validate(); err != nil {
+		return MLCanaryConfig{}, fmt.Errorf("invalid ML canary configuration: %w", err)
+	}
+	if mode == analysis.MLModeEnforce && !canary.enabled() {
+		return MLCanaryConfig{}, fmt.Errorf("SAFE_ZONE_ML_MODE=enforce requires a bounded ML canary percent and seed")
+	}
+	return canary, nil
 }
 
 func loadMLFromEnv() (analysis.MLMode, analysis.DomainClassifier, error) {

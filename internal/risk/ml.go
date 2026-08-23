@@ -2,6 +2,8 @@ package risk
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math"
 	"sync/atomic"
@@ -30,6 +32,11 @@ type mlTelemetry struct {
 	latencyTotalMicros atomic.Int64
 	latencyBuckets     [len(mlLatencyBuckets) + 1]atomic.Int64
 	probabilityBuckets [len(mlProbabilityBuckets)]atomic.Int64
+	canarySelected     atomic.Int64
+	canaryExcluded     atomic.Int64
+	canaryWouldBlock   atomic.Int64
+	canaryWouldPass    atomic.Int64
+	canarySuppressed   atomic.Int64
 }
 
 type MLStatus struct {
@@ -37,6 +44,7 @@ type MLStatus struct {
 	Enabled              bool             `json:"ml_enabled"`
 	ModelVersion         string           `json:"ml_model_version,omitempty"`
 	Revision             string           `json:"ml_revision,omitempty"`
+	PolicyRevision       string           `json:"ml_policy_revision,omitempty"`
 	BlockThreshold       float64          `json:"ml_block_threshold,omitempty"`
 	PredictionAttempts   int64            `json:"prediction_attempts"`
 	ShadowWouldBlock     int64            `json:"shadow_would_block"`
@@ -51,6 +59,7 @@ type MLStatus struct {
 	LatencyHistogram     map[string]int64 `json:"latency_histogram_us"`
 	ProbabilityHistogram map[string]int64 `json:"probability_histogram"`
 	State                string           `json:"ml_state"`
+	Canary               MLCanaryStatus   `json:"canary"`
 }
 
 func (t *mlTelemetry) observeLatency(duration time.Duration) {
@@ -96,6 +105,7 @@ func (s *Service) MLStatus() MLStatus {
 		Mode:                 s.mlMode,
 		Enabled:              s.mlClassifier != nil && s.mlClassifier.Enabled(),
 		State:                mlState(s.mlMode, s.mlClassifier != nil && s.mlClassifier.Enabled()),
+		PolicyRevision:       s.currentMLPolicyRevision(),
 		PredictionAttempts:   s.mlTelemetry.predictionAttempts.Load(),
 		ShadowWouldBlock:     s.mlTelemetry.shadowWouldBlock.Load(),
 		ShadowWouldPass:      s.mlTelemetry.shadowWouldPass.Load(),
@@ -108,6 +118,19 @@ func (s *Service) MLStatus() MLStatus {
 		LatencyCount:         s.mlTelemetry.latencyCount.Load(),
 		LatencyHistogram:     make(map[string]int64, len(mlLatencyBuckets)+1),
 		ProbabilityHistogram: make(map[string]int64, len(mlProbabilityBuckets)),
+		Canary: MLCanaryStatus{
+			Configured:          s.mlCanary.enabled(),
+			Percent:             s.mlCanary.Percent,
+			SelectedPredictions: s.mlTelemetry.canarySelected.Load(),
+			ExcludedPredictions: s.mlTelemetry.canaryExcluded.Load(),
+			SelectedWouldBlock:  s.mlTelemetry.canaryWouldBlock.Load(),
+			SelectedWouldPass:   s.mlTelemetry.canaryWouldPass.Load(),
+			EnforceSuppressed:   s.mlTelemetry.canarySuppressed.Load(),
+		},
+	}
+	if status.Canary.Configured {
+		status.Canary.Algorithm = mlCanarySelectorAlgorithm
+		status.Canary.SelectorRevision = s.mlCanary.revision()
 	}
 	if metadata, ok := s.mlClassifier.(analysis.ClassifierMetadata); ok {
 		status.ModelVersion = metadata.ModelVersion()
@@ -136,11 +159,13 @@ func mlState(mode analysis.MLMode, enabled bool) string {
 	return "degraded"
 }
 
-func (s *Service) currentModelRevision() string {
+func (s *Service) currentMLPolicyRevision() string {
 	if s == nil || s.mlClassifier == nil || !s.mlClassifier.Enabled() {
 		return ""
 	}
-	return s.mlClassifier.Revision()
+	material := fmt.Sprintf("model=%s\nmode=%s\ncanary=%s\n", s.mlClassifier.Revision(), s.mlMode, s.mlCanary.revision())
+	sum := sha256.Sum256([]byte(material))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Service) classifyML(ctx context.Context, current analysis.Result) (analysis.Result, bool) {
@@ -164,10 +189,26 @@ func (s *Service) classifyML(ctx context.Context, current analysis.Result) (anal
 		return current, false
 	}
 	s.mlTelemetry.observeProbability(decision.Probability)
+	canaryConfigured := s.mlCanary.enabled()
+	canarySelected := canaryConfigured && s.mlCanary.Eligible(current.Domain)
+	if canaryConfigured {
+		if canarySelected {
+			s.mlTelemetry.canarySelected.Add(1)
+		} else {
+			s.mlTelemetry.canaryExcluded.Add(1)
+		}
+	}
 	switch decision.Action {
 	case analysis.MLActionPromoteMalicious:
+		if canarySelected {
+			s.mlTelemetry.canaryWouldBlock.Add(1)
+		}
 		if s.mlMode == analysis.MLModeShadow {
 			s.mlTelemetry.shadowWouldBlock.Add(1)
+			return current, false
+		}
+		if !canarySelected {
+			s.mlTelemetry.canarySuppressed.Add(1)
 			return current, false
 		}
 		s.mlTelemetry.enforcePromotions.Add(1)
@@ -189,6 +230,9 @@ func (s *Service) classifyML(ctx context.Context, current analysis.Result) (anal
 		}
 		return current, true
 	case analysis.MLActionAbstain:
+		if canarySelected {
+			s.mlTelemetry.canaryWouldPass.Add(1)
+		}
 		if s.mlMode == analysis.MLModeShadow {
 			s.mlTelemetry.shadowWouldPass.Add(1)
 		}

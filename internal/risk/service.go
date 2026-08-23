@@ -95,6 +95,7 @@ type Options struct {
 	// Immutable model bundle classifier and merge policy.
 	MLClassifier analysis.DomainClassifier
 	MLMode       analysis.MLMode
+	MLCanary     MLCanaryConfig
 }
 
 type adblockSourceMeta struct {
@@ -149,6 +150,7 @@ type Service struct {
 	adblockDataRoot   string
 	mlClassifier      analysis.DomainClassifier
 	mlMode            analysis.MLMode
+	mlCanary          MLCanaryConfig
 	mlTelemetry       mlTelemetry
 
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
@@ -300,6 +302,15 @@ func NewService(options Options) *Service {
 	if options.MLClassifier == nil || !options.MLClassifier.Enabled() {
 		mlMode = analysis.MLModeDisabled
 	}
+	mlCanary := options.MLCanary
+	if err := mlCanary.validate(); err != nil {
+		mlCanary = MLCanaryConfig{}
+	}
+	// Direct constructor callers cannot return a startup error. Degrade an
+	// unbounded enforce request to shadow; env-based startup rejects it earlier.
+	if mlMode == analysis.MLModeEnforce && !mlCanary.enabled() {
+		mlMode = analysis.MLModeShadow
+	}
 
 	wl := NewWhitelist(options.Store)
 	if options.WhitelistPath != "" {
@@ -357,6 +368,7 @@ func NewService(options Options) *Service {
 		adblockDataRoot:  adblockDataRoot,
 		mlClassifier:     options.MLClassifier,
 		mlMode:           mlMode,
+		mlCanary:         mlCanary,
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -1019,7 +1031,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	}
 
 	// 1. Check Cache
-	modelRevision := s.currentModelRevision()
+	modelRevision := s.currentMLPolicyRevision()
 	cacheKey := analysisCacheKey(normalized, modelRevision)
 	currentRevision := s.currentFeedRevision(ctx)
 	currentBrandRevision := s.currentBrandRevision(ctx)
@@ -1780,7 +1792,7 @@ func (s *Service) applyOSINT(ctx context.Context, domain string, result analysis
 		return updated
 	}
 
-	modelRevision := s.currentModelRevision()
+	modelRevision := s.currentMLPolicyRevision()
 	cacheKey := analysisCacheKey(domain, modelRevision)
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
@@ -1898,7 +1910,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	if current := s.currentConfigRevision(); current != job.ConfigRevision {
 		return
 	}
-	if current := s.currentModelRevision(); current != job.ModelRevision {
+	if current := s.currentMLPolicyRevision(); current != job.ModelRevision {
 		return
 	}
 

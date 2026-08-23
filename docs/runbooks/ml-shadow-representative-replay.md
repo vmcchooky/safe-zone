@@ -114,6 +114,31 @@ Only after both approvals and the human-review gates pass may the release
 proceed to a small `enforce` canary with the documented kill switch back to
 `shadow` or `disabled`.
 
+## Clean bounded-canary replay
+
+Use `cmd/ml-replay` to compare two independent classifier/service paths without
+Redis, LLM, enrichment or OSINT. The command remains in `shadow`, checks model
+probability parity and service response parity, and records the bounded selector
+observation. Write the report to a private working directory; do not overwrite
+the signed packet.
+
+```powershell
+go run ./cmd/ml-replay `
+  --labels <reviewed-run>\labels.csv `
+  --bundle <immutable-bundle> `
+  --canary-percent 10 `
+  --canary-seed <stable-window-seed> `
+  --rounds 3 `
+  --tolerance 1e-12 `
+  --output <private-run>\replay-report.json
+```
+
+The configured percentage bounds normalized-domain hash space, not the exact
+request count in a finite sample. Require non-zero selected and excluded
+predictions before treating the selector branches as observed. A replay with no
+benign runtime candidates cannot establish runtime-candidate FPR even when the
+offline reviewed-set FPR is zero.
+
 ## Tracked evidence archive
 
 The completed Phase 5 run is archived at

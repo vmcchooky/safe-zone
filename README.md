@@ -135,9 +135,11 @@ SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
 SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
 SAFE_ZONE_ML_REQUIRED=false
 SAFE_ZONE_ML_BLOCK_THRESHOLD=
+SAFE_ZONE_ML_CANARY_PERCENT=0
+SAFE_ZONE_ML_CANARY_SEED=
 ```
 
-The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. Provision the approved bundle with `mise run ops:ml-provision`; Compose mounts the active `current` release read-only into both services. `shadow` records aggregate prediction evidence without changing verdicts; `enforce` may promote only lexical `SUSPICIOUS` results at the approved calibrated threshold. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
+The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. Provision the approved bundle with `mise run ops:ml-provision`; Compose mounts the active `current` release read-only into both services. `shadow` records aggregate prediction evidence without changing verdicts. A configured canary observes the deterministic normalized-domain cohort in `shadow`; `enforce` is rejected at startup unless a percentage and stable seed bound the eligible cohort. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
 
 ## Dynamic Analysis Configuration
 

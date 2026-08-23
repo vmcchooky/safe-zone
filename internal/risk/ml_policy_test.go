@@ -31,11 +31,16 @@ func (f *fakeMLClassifier) Classify(string) (analysis.MLDecision, error) {
 }
 
 func newMLPolicyTestService(classifier analysis.DomainClassifier, mode analysis.MLMode) *Service {
+	canary := MLCanaryConfig{}
+	if mode == analysis.MLModeEnforce {
+		canary = MLCanaryConfig{Percent: 100, Seed: "test-enforce"}
+	}
 	return NewService(Options{
 		AIProvider:          "",
 		AnalysisConfig:      config.DefaultAnalysisConfig(),
 		MLClassifier:        classifier,
 		MLMode:              mode,
+		MLCanary:            canary,
 		TTLAllowed:          time.Hour,
 		TTLSuspicious:       time.Hour,
 		TTLBlocked:          time.Hour,
@@ -159,6 +164,38 @@ func TestMLRuntimeConfigValidation(t *testing.T) {
 			t.Fatal("expected invalid threshold error")
 		}
 	})
+	t.Run("enforce requires bounded canary", func(t *testing.T) {
+		t.Setenv("SAFE_ZONE_ML_CANARY_PERCENT", "0")
+		t.Setenv("SAFE_ZONE_ML_CANARY_SEED", "")
+		if _, err := loadMLCanaryFromEnv(analysis.MLModeEnforce); err == nil {
+			t.Fatal("expected enforce without canary to fail")
+		}
+	})
+	t.Run("shadow accepts configured canary observation", func(t *testing.T) {
+		t.Setenv("SAFE_ZONE_ML_CANARY_PERCENT", "5")
+		t.Setenv("SAFE_ZONE_ML_CANARY_SEED", "phase5-test")
+		canary, err := loadMLCanaryFromEnv(analysis.MLModeShadow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if canary.Percent != 5 || !canary.enabled() {
+			t.Fatalf("unexpected canary config: %+v", canary)
+		}
+	})
+	t.Run("rejects invalid canary percent", func(t *testing.T) {
+		t.Setenv("SAFE_ZONE_ML_CANARY_PERCENT", "101")
+		t.Setenv("SAFE_ZONE_ML_CANARY_SEED", "phase5-test")
+		if _, err := loadMLCanaryFromEnv(analysis.MLModeShadow); err == nil {
+			t.Fatal("expected invalid canary percent to fail")
+		}
+	})
+	t.Run("rejects non-numeric canary percent", func(t *testing.T) {
+		t.Setenv("SAFE_ZONE_ML_CANARY_PERCENT", "ten")
+		t.Setenv("SAFE_ZONE_ML_CANARY_SEED", "phase5-test")
+		if _, err := loadMLCanaryFromEnv(analysis.MLModeShadow); err == nil {
+			t.Fatal("expected non-numeric canary percent to fail")
+		}
+	})
 }
 
 func TestAnalysisCacheInvalidatesWhenModelRevisionChanges(t *testing.T) {
@@ -177,6 +214,7 @@ func TestAnalysisCacheInvalidatesWhenModelRevisionChanges(t *testing.T) {
 		AnalysisConfig:      config.DefaultAnalysisConfig(),
 		MLClassifier:        classifierV1,
 		MLMode:              analysis.MLModeEnforce,
+		MLCanary:            MLCanaryConfig{Percent: 100, Seed: "cache-v1"},
 		TTLAllowed:          time.Hour,
 		TTLSuspicious:       time.Hour,
 		TTLBlocked:          time.Hour,
@@ -188,6 +226,7 @@ func TestAnalysisCacheInvalidatesWhenModelRevisionChanges(t *testing.T) {
 		AnalysisConfig:      config.DefaultAnalysisConfig(),
 		MLClassifier:        classifierV2,
 		MLMode:              analysis.MLModeEnforce,
+		MLCanary:            MLCanaryConfig{Percent: 100, Seed: "cache-v2"},
 		TTLAllowed:          time.Hour,
 		TTLSuspicious:       time.Hour,
 		TTLBlocked:          time.Hour,
