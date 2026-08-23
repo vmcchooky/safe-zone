@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -33,6 +34,54 @@ func TestNewCreatesDatabase(t *testing.T) {
 	db := newTestDB(t)
 	if !db.Enabled() {
 		t.Fatal("expected db to be enabled")
+	}
+}
+
+func TestNewMigratesLegacyBlockReportReviewColumns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	rawDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`
+		CREATE TABLE block_reports (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			domain TEXT NOT NULL,
+			contact TEXT,
+			note TEXT,
+			status TEXT DEFAULT 'pending',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+		INSERT INTO block_reports (domain, note) VALUES ('legacy.example', 'legacy report');
+	`); err != nil {
+		_ = rawDB.Close()
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := rawDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := New(path, 30)
+	if err != nil {
+		t.Fatalf("migrate legacy database: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := db.ReviewBlockReport(
+		context.Background(),
+		1,
+		"resolved",
+		"verified after schema migration",
+		"migration-test",
+		"resolve",
+	); err != nil {
+		t.Fatalf("review migrated report: %v", err)
+	}
+	reports, err := db.ListBlockReports(context.Background(), "resolved", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 || reports[0].ReviewedBy != "migration-test" || reports[0].ReviewedAt == "" {
+		t.Fatalf("expected migrated review provenance, got %+v", reports)
 	}
 }
 

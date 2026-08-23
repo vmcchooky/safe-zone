@@ -80,7 +80,7 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	mux.HandleFunc("/v1/overrides", handler.RequireAdminForMutationFunc(handler.OverridesHandler))
 	mux.HandleFunc("/v1/overrides/review-false-positive", handler.RequireAdminFunc(handler.ReviewFalsePositiveHandler))
 	mux.HandleFunc("/v1/telemetry/recent", handler.RequireAuthFunc(handler.TelemetryRecentHandler))
-	mux.HandleFunc("/v1/reports", handler.RequireAuthFunc(handler.ListReportsHandler))
+	mux.HandleFunc("/v1/reports", handler.RequireAdminFunc(handler.ListReportsHandler))
 	mux.HandleFunc("/v1/reports/status", handler.RequireAdminFunc(handler.UpdateReportStatusHandler))
 	mux.HandleFunc("/v1/agent/trigger", handler.RequireAdminFunc(AgentTriggerHandler(nil)))
 	mux.HandleFunc("/dashboard", handler.DashboardHandler)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -137,13 +138,29 @@ type OSINTEvidence struct {
 }
 
 type BlockReport struct {
-	ID        int64  `json:"id"`
-	Domain    string `json:"domain"`
-	Contact   string `json:"contact"`
-	Note      string `json:"note"`
-	Status    string `json:"status"`
-	CreatedAt string `json:"created_at"`
+	ID               int64  `json:"id"`
+	Domain           string `json:"domain"`
+	Contact          string `json:"contact"`
+	Note             string `json:"note"`
+	Status           string `json:"status"`
+	CreatedAt        string `json:"created_at"`
+	ReviewReason     string `json:"review_reason"`
+	ReviewedBy       string `json:"reviewed_by"`
+	ReviewedAt       string `json:"reviewed_at"`
+	ResolutionAction string `json:"resolution_action"`
 }
+
+// BlockReportStatusCounts summarizes the operator queue by workflow state.
+type BlockReportStatusCounts struct {
+	Pending  int `json:"pending"`
+	Resolved int `json:"resolved"`
+	Rejected int `json:"rejected"`
+}
+
+var (
+	ErrBlockReportNotFound       = errors.New("block report not found")
+	ErrBlockReportDomainMismatch = errors.New("block report domain mismatch")
+)
 
 // BlockReportFilter constrains user report queries at the SQL layer.
 type BlockReportFilter struct {
@@ -301,7 +318,11 @@ CREATE TABLE IF NOT EXISTS block_reports (
     contact TEXT,
     note TEXT,
     status TEXT DEFAULT 'pending',
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    review_reason TEXT NOT NULL DEFAULT '',
+    reviewed_by TEXT NOT NULL DEFAULT '',
+    reviewed_at TEXT NOT NULL DEFAULT '',
+    resolution_action TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_block_reports_status ON block_reports(status);
 CREATE INDEX IF NOT EXISTS idx_block_reports_domain ON block_reports(domain);
@@ -413,6 +434,54 @@ func New(path string, retentionDays int) (*DB, error) {
 	}
 	if !hasClientID {
 		_, _ = sqlDB.Exec("ALTER TABLE analysis_log ADD COLUMN client_id TEXT DEFAULT ''")
+	}
+
+	// Extend databases created before the operator review queue captured
+	// decision provenance. These columns use empty defaults so the migration is
+	// safe for existing reports and does not rewrite signed or external evidence.
+	blockReportColumns := make(map[string]bool)
+	rows, err = sqlDB.Query("PRAGMA table_info(block_reports)")
+	if err != nil {
+		_ = sqlDB.Close() // #nosec G104 -- error path; primary error already captured
+		return nil, fmt.Errorf("inspect block_reports schema: %w", err)
+	}
+	for rows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = rows.Close() // #nosec G104 -- error path; primary error already captured
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("scan block_reports schema: %w", err)
+		}
+		blockReportColumns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close() // #nosec G104 -- error path; primary error already captured
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("read block_reports schema: %w", err)
+	}
+	_ = rows.Close() // #nosec G104 -- rows read successfully; close error is non-critical
+
+	blockReportMigrations := []struct {
+		name string
+		sql  string
+	}{
+		{"review_reason", "ALTER TABLE block_reports ADD COLUMN review_reason TEXT NOT NULL DEFAULT ''"},
+		{"reviewed_by", "ALTER TABLE block_reports ADD COLUMN reviewed_by TEXT NOT NULL DEFAULT ''"},
+		{"reviewed_at", "ALTER TABLE block_reports ADD COLUMN reviewed_at TEXT NOT NULL DEFAULT ''"},
+		{"resolution_action", "ALTER TABLE block_reports ADD COLUMN resolution_action TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, migration := range blockReportMigrations {
+		if blockReportColumns[migration.name] {
+			continue
+		}
+		if _, err := sqlDB.Exec(migration.sql); err != nil {
+			_ = sqlDB.Close() // #nosec G104 -- error path; primary error already captured
+			return nil, fmt.Errorf("migrate block_reports column %s: %w", migration.name, err)
+		}
 	}
 
 	// Load custom retentionDays if stored in database
@@ -1802,6 +1871,57 @@ func (d *DB) CreateBlockReport(ctx context.Context, domain, contact, note string
 	return res.LastInsertId()
 }
 
+// CreateBlockReportWithAudit persists the queue item and its intake event as a
+// single transaction so callers never observe only half of the submission.
+func (d *DB) CreateBlockReportWithAudit(
+	ctx context.Context,
+	domain, contact, note string,
+	auditDetails map[string]any,
+) (int64, error) {
+	if !d.Enabled() {
+		return 0, fmt.Errorf("sqlite store disabled")
+	}
+	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin block report submission: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	result, err := tx.ExecContext(ctx, `
+		INSERT INTO block_reports (domain, contact, note, status)
+		VALUES (?, ?, ?, 'pending')`, domain, contact, note)
+	if err != nil {
+		return 0, fmt.Errorf("insert block report: %w", err)
+	}
+	reportID, err := result.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("read block report ID: %w", err)
+	}
+
+	details := make(map[string]any, len(auditDetails)+1)
+	for key, value := range auditDetails {
+		details[key] = value
+	}
+	details["report_id"] = reportID
+	encodedDetails, err := json.Marshal(details)
+	if err != nil {
+		return 0, fmt.Errorf("marshal block report audit: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO agent_audit_log (task_name, event_type, domain, details) VALUES (?, ?, ?, ?)`,
+		"block_page", "false_positive_report", domain, string(encodedDetails),
+	); err != nil {
+		return 0, fmt.Errorf("record block report audit: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit block report submission: %w", err)
+	}
+	return reportID, nil
+}
+
 // ListBlockReports retrieves block reports with pagination.
 func (d *DB) ListBlockReports(ctx context.Context, status string, limit, offset int) ([]BlockReport, error) {
 	return d.ListBlockReportsFiltered(ctx, BlockReportFilter{Status: status}, limit, offset)
@@ -1820,7 +1940,9 @@ func (d *DB) ListBlockReportsFiltered(ctx context.Context, filter BlockReportFil
 	}
 
 	query := `
-		SELECT id, domain, COALESCE(contact, ''), COALESCE(note, ''), status, created_at
+		SELECT id, domain, COALESCE(contact, ''), COALESCE(note, ''), status, created_at,
+		       COALESCE(review_reason, ''), COALESCE(reviewed_by, ''),
+		       COALESCE(reviewed_at, ''), COALESCE(resolution_action, '')
 		FROM block_reports `
 	var args []any
 	var clauses []string
@@ -1849,7 +1971,18 @@ func (d *DB) ListBlockReportsFiltered(ctx context.Context, filter BlockReportFil
 	var reports []BlockReport
 	for rows.Next() {
 		var r BlockReport
-		if err := rows.Scan(&r.ID, &r.Domain, &r.Contact, &r.Note, &r.Status, &r.CreatedAt); err != nil {
+		if err := rows.Scan(
+			&r.ID,
+			&r.Domain,
+			&r.Contact,
+			&r.Note,
+			&r.Status,
+			&r.CreatedAt,
+			&r.ReviewReason,
+			&r.ReviewedBy,
+			&r.ReviewedAt,
+			&r.ResolutionAction,
+		); err != nil {
 			return nil, fmt.Errorf("scan block report: %w", err)
 		}
 		reports = append(reports, r)
@@ -1889,25 +2022,167 @@ func (d *DB) CountBlockReportsFiltered(ctx context.Context, filter BlockReportFi
 	return total, nil
 }
 
-// UpdateBlockReportStatus updates the status of a specific block report.
-func (d *DB) UpdateBlockReportStatus(ctx context.Context, id int64, status string) error {
+// CountBlockReportsByStatus summarizes all reports by workflow status.
+func (d *DB) CountBlockReportsByStatus(ctx context.Context) (BlockReportStatusCounts, error) {
+	if !d.Enabled() {
+		return BlockReportStatusCounts{}, nil
+	}
+
+	var counts BlockReportStatusCounts
+	err := d.db.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END), 0)
+		FROM block_reports`).Scan(&counts.Pending, &counts.Resolved, &counts.Rejected)
+	if err != nil {
+		return BlockReportStatusCounts{}, fmt.Errorf("count block reports by status: %w", err)
+	}
+	return counts, nil
+}
+
+// ReviewBlockReport records an operator decision and its audit event atomically.
+func (d *DB) ReviewBlockReport(ctx context.Context, id int64, status, reason, reviewer, resolutionAction string) error {
 	if !d.Enabled() {
 		return fmt.Errorf("sqlite store disabled")
 	}
-	_, err := d.db.ExecContext(ctx, `UPDATE block_reports SET status = ? WHERE id = ?`, status, id)
+
+	tx, err := d.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("update block report status: %w", err)
+		return fmt.Errorf("begin block report review: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var domain, previousStatus string
+	if err := tx.QueryRowContext(ctx, `SELECT domain, status FROM block_reports WHERE id = ?`, id).Scan(&domain, &previousStatus); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrBlockReportNotFound
+		}
+		return fmt.Errorf("load block report for review: %w", err)
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE block_reports
+		SET status = ?, review_reason = ?, reviewed_by = ?, reviewed_at = datetime('now'), resolution_action = ?
+		WHERE id = ?`, status, reason, reviewer, resolutionAction, id)
+	if err != nil {
+		return fmt.Errorf("update block report review: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err != nil || affected != 1 {
+		if err != nil {
+			return fmt.Errorf("confirm block report review: %w", err)
+		}
+		return ErrBlockReportNotFound
+	}
+
+	details, err := json.Marshal(map[string]any{
+		"report_id":         id,
+		"previous_status":   previousStatus,
+		"status":            status,
+		"review_reason":     reason,
+		"reviewed_by":       reviewer,
+		"resolution_action": resolutionAction,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal block report review audit: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO agent_audit_log (task_name, event_type, domain, details) VALUES (?, ?, ?, ?)`,
+		"operator_review", "operator_report_review", domain, string(details),
+	); err != nil {
+		return fmt.Errorf("record block report review audit: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit block report review: %w", err)
 	}
 	return nil
 }
 
-// ResolveBlockReportsForDomain marks all pending reports for a domain as resolved.
-func (d *DB) ResolveBlockReportsForDomain(ctx context.Context, domain string) error {
+// ApproveFalsePositive creates the allow override, updates related reports, and
+// records the operator decision as one transaction. reportID is optional to
+// preserve the existing review endpoint contract for reviews started elsewhere.
+func (d *DB) ApproveFalsePositive(
+	ctx context.Context,
+	reportID int64,
+	domain, overrideReason, reviewReason, reviewer, source, previousAction string,
+) (int64, error) {
 	if !d.Enabled() {
-		return fmt.Errorf("sqlite store disabled")
+		return 0, fmt.Errorf("sqlite store disabled")
 	}
-	_, err := d.db.ExecContext(ctx, `UPDATE block_reports SET status = 'resolved' WHERE domain = ? AND status = 'pending'`, domain)
-	return err
+
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin false-positive review: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	if reportID > 0 {
+		var reportDomain string
+		if err := tx.QueryRowContext(ctx, `SELECT domain FROM block_reports WHERE id = ?`, reportID).Scan(&reportDomain); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return 0, ErrBlockReportNotFound
+			}
+			return 0, fmt.Errorf("load false-positive report: %w", err)
+		}
+		if reportDomain != domain {
+			return 0, ErrBlockReportDomainMismatch
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO local_overrides (domain, action, reason, updated_at)
+		VALUES (?, 'allow', ?, datetime('now'))
+		ON CONFLICT(domain) DO UPDATE SET
+			action = 'allow',
+			reason = excluded.reason,
+			updated_at = datetime('now')`, domain, overrideReason); err != nil {
+		return 0, fmt.Errorf("upsert false-positive allow override: %w", err)
+	}
+
+	var result sql.Result
+	if reportID > 0 {
+		result, err = tx.ExecContext(ctx, `
+			UPDATE block_reports
+			SET status = 'resolved', review_reason = ?, reviewed_by = ?, reviewed_at = datetime('now'), resolution_action = 'allow'
+			WHERE domain = ? AND (status = 'pending' OR id = ?)`, reviewReason, reviewer, domain, reportID)
+	} else {
+		result, err = tx.ExecContext(ctx, `
+			UPDATE block_reports
+			SET status = 'resolved', review_reason = ?, reviewed_by = ?, reviewed_at = datetime('now'), resolution_action = 'allow'
+			WHERE domain = ? AND status = 'pending'`, reviewReason, reviewer, domain)
+	}
+	if err != nil {
+		return 0, fmt.Errorf("resolve false-positive reports: %w", err)
+	}
+	resolvedReports, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count resolved false-positive reports: %w", err)
+	}
+
+	details, err := json.Marshal(map[string]any{
+		"report_id":        reportID,
+		"source":           source,
+		"review_reason":    reviewReason,
+		"reviewed_by":      reviewer,
+		"previous_action":  previousAction,
+		"resolved_action":  "allow",
+		"resolved_reports": resolvedReports,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("marshal false-positive review audit: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx,
+		`INSERT INTO agent_audit_log (task_name, event_type, domain, details) VALUES (?, ?, ?, ?)`,
+		"operator_review", "operator_false_positive_review", domain, string(details),
+	); err != nil {
+		return 0, fmt.Errorf("record false-positive review audit: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit false-positive review: %w", err)
+	}
+	return resolvedReports, nil
 }
 
 // GetSystemConfig retrieves the value of a system configuration key.

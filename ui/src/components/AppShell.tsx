@@ -190,10 +190,12 @@ export function AppShell({
                 <ShieldAlert size={20} />
                 <span className="dock-label">Overrides</span>
               </NavLink>
-              <NavLink to="/reports" className={({ isActive }) => isActive ? 'active' : ''}>
-                <Flag size={20} />
-                <span className="dock-label">Reports</span>
-              </NavLink>
+              {session.can_mutate ? (
+                <NavLink to="/reports" className={({ isActive }) => isActive ? 'active' : ''}>
+                  <Flag size={20} />
+                  <span className="dock-label">Reports</span>
+                </NavLink>
+              ) : null}
               <NavLink to="/system" className={({ isActive }) => isActive ? 'active' : ''}>
                 <HardDrive size={20} />
                 <span className="dock-label">System</span>

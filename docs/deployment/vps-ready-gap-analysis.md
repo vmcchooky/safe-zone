@@ -4,6 +4,8 @@ This document serves as the master checklist and execution roadmap to transition
 
 It lists all functional gaps, UI/UX mismatches, and operational checklist items, and outlines a structured sequence of highly precise prompts for AI coding agents to address each gap sequentially.
 
+Status was reconciled against the repository on 2026-08-23. Completed items remain in the roadmap as provenance, but are explicitly marked to prevent duplicate implementation or manual review.
+
 ---
 
 ## 1. Identified Mismatches & Gaps
@@ -16,7 +18,7 @@ These powerful backend capabilities are fully functional but completely inaccess
 | **Brand Spoofing / Typosquatting CRUD** | `internal/serve/brands.go`<br>`/v1/brands` | **Critical.** VN Phishing protection parameters (banks, gov domains) cannot be adjusted dynamically. | Add a new sub-panel or tab **"Brand Controls"** to list, create, edit, and delete spoofed brand profiles. |
 | **Webhook Alert Configuration** | `internal/agent/alert.go`<br>`AlertTask` | **High.** Operators cannot view or modify where security alerts (Discord/Slack) are sent. | Add a **"Notifications"** section under a new **"Settings"** tab to set and test Webhook URLs. |
 | **Tranco Whitelist & Bloom Filter State** | `internal/risk/bloom.go`<br>`internal/risk/whitelist.go` | **Medium.** Operators cannot verify if the memory-saving Bloom filter is active or if the Tranco Top 1M list is fresh. | Add a **"Whitelist Statistics"** card in the System tab showing loaded domain counts and last Tranco sync time. |
-| **False-Positive Tickets Queue** | `cmd/core-api/main.go`<br>`/block/report` | **Medium.** Admin cannot view or action incoming reports from blocked users. | Add a **"False-Positive Tickets"** sub-section inside Telemetry or a dedicated queue to review and approve allows. |
+| **False-Positive Tickets Queue — completed 2026-08-23** | `internal/api/handlers/reports.go`<br>`ui/src/routes/UserReportsPage.tsx` | **Closed.** Admin-only queue now captures reason, reviewer, time, resolution action and status counts. Allow decisions commit the override, report resolution and audit event atomically. | Dedicated **Reports** route with pagination, search, status filters and a mandatory review dialog. |
 | **Build & Version Metadata** | `/v1/version`<br>`buildinfo.Snapshot` | **Low.** Difficult to trace running build information on VPS. | Add a neat version stamp (e.g. `v0.1.0-prod`) in the dashboard footer or System tab. |
 | **AI Provider & Quota Controls** | `internal/ai/client.go`<br>`Gemini Client` | **High.** Cannot toggle AI refinement off, adjust model types, or input new API keys dynamically when quota is exhausted. | Add an **"AI Core Settings"** panel under the new **"Settings"** tab. |
 | **Telemetry DB Disk Controls** | `internal/store/sqlite.go`<br>`retentionDays` | **Critical.** SQLite logs can fill VPS disk. Admin cannot adjust log retention days or view database file size. | Add a **"Database Storage"** panel in the System tab showing DB size, disk space, and custom retention settings. |
@@ -35,7 +37,7 @@ These visual elements in the current dashboard are placeholders or simulated, le
 
 ### C. UX & Manual QA Gaps
 * **Mobile / Responsive Layout Verification:** All 5 main tabs must be smoke-tested at `375px` viewport widths to eliminate text overflows or overlapping interactive controls.
-* **AJAX False-Positive Reports:** The blocked landing page (`block.html`) does full-page reloads on report submission. It must be refactored to perform smooth asynchronous AJAX posts.
+* **AJAX False-Positive Reports — completed:** `internal/api/assets/block.js` submits `/block/report` asynchronously and preserves the standard form fallback.
 
 ### D. VPS Operations & Deployment Prerequisite Gaps
 * **Performance Benchmarking:** Real CPX21 Hetzner benchmarks are needed (Cache-hit: 500 req/s, Cache-miss: 50 req/s).
@@ -84,6 +86,9 @@ graph TD
 > [!NOTE]
 > Focus: Design an inbox panel for the admin to view and approve reports submitted by blocked users.
 
+> [!IMPORTANT]
+> **Completed on 2026-08-23.** The final implementation uses a dedicated React `Reports` route, admin-only API access, decision provenance columns, atomic allow/audit transactions and automated backend/UI tests. The original prompt below is retained as planning provenance.
+
 *   **Task:**
     1. Create a SQLite table `block_reports` in `internal/store/sqlite.go` if it doesn't already exist to persist `/block/report` submissions.
     2. Create a backend API `GET /v1/reports` (requires authentication) to list submitted tickets, complete with pagination.
@@ -93,7 +98,7 @@ graph TD
 *   **Input Files to Read:** [internal/store/sqlite.go](file:///d:/Quorix/services/safe-zone/internal/store/sqlite.go), [cmd/core-api/main.go](file:///d:/Quorix/services/safe-zone/cmd/core-api/main.go), [internal/api/views/dashboard.html](file:///d:/Quorix/services/safe-zone/internal/api/views/dashboard.html)
 *   **Files to Edit:** `internal/store/sqlite.go`, `cmd/core-api/main.go`, `internal/api/views/dashboard.html`
 *   **Hard Rules:** Keep the existing payload signature for `/v1/overrides/review-false-positive` intact.
-*   **Acceptance Criteria:**
+*   **Acceptance Criteria — met:**
     *   An admin can view the queue of false-positive requests submitted by blocked clients.
     *   Clicking "Approve" moves the domain into the Allowed Overrides list and resolves the ticket dynamically.
 *   **Verification:** Simulate a block report post, verify it appears in the queue, and approve it via UI.
