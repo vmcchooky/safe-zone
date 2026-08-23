@@ -220,7 +220,8 @@ Contract theo code hiện tại:
 - panic được recover, log structured stack và ghi agent event khi store hỗ trợ;
 - stop hủy context và đợi goroutines;
 - scheduled run bỏ qua task disabled;
-- manual trigger hiện tìm task theo tên và có thể execute task registered disabled. Đây là behavior cần được product/security quyết định và test; mặc định an toàn nên reject trigger disabled trừ khi có explicit force/admin design.
+- manual trigger áp dụng cùng enablement policy với scheduler: task registered disabled bị từ chối và chỉ có thể chạy sau khi operator bật cấu hình tương ứng rồi khởi động lại/reload theo cơ chế được hỗ trợ;
+- trigger queue là bounded queue; API trả lỗi khi queue đầy thay vì báo thành công cho yêu cầu không được enqueue.
 
 ### 1.10 Agent task catalog
 
@@ -295,7 +296,7 @@ Email config gồm `SAFE_ZONE_ALERT_EMAIL_SMTP_HOST`, `SAFE_ZONE_ALERT_EMAIL_SMT
 | Method | Path | Auth | Hành vi |
 |---|---|---|---|
 | `GET` | `/v1/agent/status` | Authenticated user | Engine/task status, whitelist metrics, DB stats, telemetry retention. Engine disabled trả `enabled:false`. |
-| `POST` | `/v1/agent/trigger?task=<name>` | Admin | Queue immediate trigger; 503 nếu engine disabled, 400 thiếu task, 404 unknown task. |
+| `POST` | `/v1/agent/trigger?task=<name>` | Admin | Queue immediate trigger cho task enabled; 503 nếu engine disabled, 400 thiếu task, 404 unknown task, 409 nếu task disabled và 429 nếu trigger queue đầy. |
 | `POST` | `/v1/settings/test-ai` | Admin | Hiện test Gemini key/endpoint; không phải generic Ollama/hybrid/ML health endpoint. |
 | `POST` | `/v1/settings/test-alert` | Admin | Test alert settings theo handler hiện hữu. |
 
@@ -305,7 +306,7 @@ Agent task runtime events được ghi vào SQLite `agent_audit_log` khi store e
 
 1. Bật Agent với feed/OSINT/alert/whitelist tasks disabled trừ task đang test.
 2. Xác minh `GET /v1/agent/status` và task names/defaults.
-3. Trigger từng task bằng admin API; lưu response, logs có `run_id`, task status và DB event.
+3. Xác minh task disabled trả 409 và không tạo run/event; sau đó chỉ trigger task enabled bằng admin API, lưu response, logs có `run_id`, task status và DB event.
 4. Audit drill: tạo/ghi nhận suspicious candidate trong staging, chạy `audit`, xác minh existing override được skip và auto-block chỉ xảy ra theo threshold.
 5. Feed drill: dùng controlled fixture/source, xác minh partial failure, parser drift, revision và cache invalidation.
 6. OSINT drill: dùng approved context fixture, xác minh victim không bị promote nhầm.

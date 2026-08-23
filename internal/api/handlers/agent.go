@@ -63,10 +63,17 @@ func AgentTriggerHandler(engine *agent.Engine) http.HandlerFunc {
 			httputil.WriteError(w, http.StatusBadRequest, "task query parameter is required")
 			return
 		}
-		if !engine.Trigger(taskName) {
+		switch result := engine.Trigger(taskName); result {
+		case agent.TriggerAccepted:
+			httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "triggered", "task": taskName})
+		case agent.TriggerTaskNotFound:
 			httputil.WriteError(w, http.StatusNotFound, "task not found: "+taskName)
-			return
+		case agent.TriggerTaskDisabled:
+			httputil.WriteError(w, http.StatusConflict, "task is disabled: "+taskName)
+		case agent.TriggerQueueFull:
+			httputil.WriteError(w, http.StatusTooManyRequests, "agent trigger queue is full")
+		default:
+			httputil.WriteError(w, http.StatusInternalServerError, "unexpected agent trigger result")
 		}
-		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "triggered", "task": taskName})
 	}
 }
