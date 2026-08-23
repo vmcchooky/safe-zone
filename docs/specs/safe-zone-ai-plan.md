@@ -1080,6 +1080,10 @@ SAFE_ZONE_ML_REQUIRED=false
 # Empty means use approved value from policy.json.
 # An override must be validated and included in ModelRevision.
 SAFE_ZONE_ML_BLOCK_THRESHOLD=
+
+# 0 disables cohort observation in shadow. Enforce requires 1..100 and a seed.
+SAFE_ZONE_ML_CANARY_PERCENT=0
+SAFE_ZONE_ML_CANARY_SEED=
 ```
 
 Validation:
@@ -1089,6 +1093,8 @@ Validation:
 - threshold override nằm trong `(0,1)`;
 - `required=true` + missing bundle fail startup;
 - `disabled` không cần đọc bundle;
+- `enforce` cần bounded canary percent `1..100` và seed ổn định;
+- cache policy revision phải thay đổi khi mode, model hoặc selector thay đổi;
 - structured logs chỉ ghi version/revision/error class, không ghi domain/data contents.
 
 ### 7.5 Merge policy
@@ -1229,7 +1235,7 @@ Baked-in image chỉ là phương án release khác, cần quyết định/appro
 - Ignore `deploy/model-bundle/` trong Git nếu chứa private artifact.
 - Với phương án mount đang chọn, loại `deploy/model-bundle/`, training data, virtualenv và `ml/models/` khỏi Docker build context; baked-in image sẽ là một quyết định release khác và phải đổi rule này có chủ đích.
 - Thêm read-only mount cho cả `core-api` và `dns-resolver`.
-- Truyền cùng `SAFE_ZONE_ML_MODE`, `SAFE_ZONE_ML_BUNDLE_DIR`, `SAFE_ZONE_ML_REQUIRED`; host path dùng `SAFE_ZONE_ML_BUNDLE_HOST_DIR`.
+- Truyền cùng `SAFE_ZONE_ML_MODE`, `SAFE_ZONE_ML_BUNDLE_DIR`, `SAFE_ZONE_ML_REQUIRED`, `SAFE_ZONE_ML_CANARY_PERCENT` và `SAFE_ZONE_ML_CANARY_SEED`; host path dùng `SAFE_ZONE_ML_BUNDLE_HOST_DIR`.
 - `scripts/ops/ml-bundle.sh` và `.ps1` xác minh checksum trước khi copy/activate version immutable; deploy helper chặn shadow/enforce nếu `current` thiếu hoặc sai checksum.
 - Runbook mô tả provision, activate symlink/junction, rollback và cleanup retention.
 

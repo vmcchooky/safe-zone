@@ -123,11 +123,25 @@ Trước khi bật `enforce`, packet mới phải ghi rõ và được phê duy�
 - last-known-good image digests/config/bundle và lệnh kill-switch cho đúng
   scope.
 
-Compose hiện tại chỉ có một biến `SAFE_ZONE_ML_MODE` dùng chung theo service,
-không có canary percentage, selector hoặc routing object. Vì vậy không được
-coi việc sửa `.env` trên stack hiện tại là một canary có giới hạn. Cần tạo
-scope tách biệt và kiểm chứng routing trước, nhưng runbook này không tự tạo
-hoặc thay đổi scope.
+Runtime có bounded selector `sha256_normalized_domain_v1`. Cấu hình dùng
+`SAFE_ZONE_ML_CANARY_PERCENT` (số nguyên `1..100`) và
+`SAFE_ZONE_ML_CANARY_SEED` bất biến trong observation window. Selector ánh xạ
+normalized domain vào 10.000 bucket, nên cùng domain có cùng eligibility ở
+`core-api`, `dns-resolver` và mọi client. Đây là cap theo domain hash space;
+phân phối request thực tế phải được đối chiếu qua `canary.selected_predictions`
+và `canary.excluded_predictions`, không suy ra trực tiếp từ percent cấu hình.
+
+`SAFE_ZONE_ML_MODE=enforce` bị từ chối khi khởi động nếu percent bằng `0` hoặc
+seed rỗng. Trong `shadow`, selector chỉ ghi observation và không thay đổi
+verdict. `ml_policy_revision` kết hợp model revision, mode và selector revision
+để cache của `shadow`/selector cũ không đi qua boundary của `enforce`. Các field
+`canary.selected_would_block`, `selected_would_pass` và `enforce_suppressed`
+phải được lưu trong runtime snapshot.
+
+Selector cấp ứng dụng đã có, nhưng instance/compose project, cap production,
+duration, minimum attempts, owner/on-call và LKG snapshot vẫn phải ghi trong
+packet mới. Không dùng việc selector tồn tại để tự phê duyệt hoặc tự bật
+`enforce`.
 
 ## Kích hoạt và rollback
 
@@ -166,3 +180,4 @@ Chỉ sau khi mọi gate trên pass và approval packet có đủ quyết địn
 | 2026-08-22 | Sửa gate `unknown`/`unresolved`, đặt run-20260808 về NO-GO và bổ sung yêu cầu canary scope/release identity/LKG rollback | Codex (GPT-5) |
 | 2026-08-23 | Thêm reviewed-unclassifiable waiver ràng buộc count/would-block/case-ID hash; ghi nhận evidence người dùng chuyển replay-0072 thành malicious trong working copy | Codex (GPT-5.6 Sol) |
 | 2026-08-23 | Ghi nhận Product/Security owner decisions cho working packet; rollout tiếp tục NO-GO do runtime/release/canary/rollback gates | Codex (GPT-5.6 Sol) |
+| 2026-08-23 | Thêm bounded normalized-domain selector, cache policy revision và shadow-only canary telemetry; production enforce chưa được phê duyệt | Codex (GPT-5.6 Sol) |

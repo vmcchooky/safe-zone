@@ -22,7 +22,14 @@ SAFE_ZONE_ML_MODE=shadow
 SAFE_ZONE_ML_REQUIRED=true
 SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
 SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
+SAFE_ZONE_ML_CANARY_PERCENT=10
+SAFE_ZONE_ML_CANARY_SEED=<stable-observation-window-seed>
 ```
+
+The selector only records cohort telemetry in `shadow`. `enforce` requires a
+non-zero percentage and stable seed, and it promotes only selected normalized
+domains. A production percentage/seed must come from the approved canary
+packet; the values above are an observation example, not approval.
 
 Do not place secrets, raw domains, training data, or unverified model files in
 this directory.
