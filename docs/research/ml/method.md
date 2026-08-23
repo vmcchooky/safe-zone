@@ -7,7 +7,7 @@
 
 ## 1. Tóm tắt (Abstract / Executive Summary)
 
-Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất toàn bộ quy trình replay review: `137/137` cases được gán nhãn bởi reviewer ủy quyền (`reviewer.vmc`), gồm 25 benign, 33 malicious, 79 unknown (domain chết/insufficient evidence). FPR tại threshold 0.85 đạt **0.0000** (0/25), Recall đạt **0.7576** (25/33). Toàn bộ 4 review blockers đã được giải quyết qua cơ chế Product Owner waivers (`idn_punycode` stratum không có case sống; single-reviewer scope) và xử lý nhãn unclassifiable đúng chuẩn. Trạng thái hiện tại chuyển sang **`ready_for_review`**, chờ Product và Security Owner ký duyệt packet. Runtime production giữ `SAFE_ZONE_ML_MODE=disabled` cho tới khi có chữ ký chính thức.
+Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất `137/137` review entries do reviewer ủy quyền (`reviewer.vmc`) ghi nhận; working addendum gồm 25 benign, 34 malicious và 78 reviewed-unclassifiable cases. FPR tại threshold 0.85 là **0.0000** (0/25), Recall là **0.7647** (26/34). Reviewed-unclassifiable exclusion chỉ hợp lệ khi waiver khớp count, would-block count và SHA-256 của chính xác tập case ID; Product và Security owner decisions cho addendum đã được ghi ngày 2026-08-23. Review gate hiện là **`ready_for_review_with_reviewed_unclassifiable_waiver`**, nhưng rollout vẫn **NO-GO** cho tới khi release image, fresh predictive telemetry, canary scope và rollback gates hoàn tất; `enforce` chưa được phép bật.
 
 ## 2. Sơ đồ Tổng quan Pipeline
 
@@ -49,8 +49,8 @@ flowchart TB
 
     subgraph P5["10. Phase 5: Replay Review"]
         G1["21-column Queue"] --> G2["Validator / Reporter"]
-        G2 --> G3["137/137 Labels<br>FPR 0.00 · Recall 75.76%"]
-        G3 --> G4["READY FOR REVIEW<br>0 Blockers · Waivers Documented"]
+        G2 --> G3["137/137 Reviews<br>25 benign · 34 malicious · 78 waived<br>FPR 0.00 · Recall 76.47%"]
+        G3 --> G4["REVIEW READY WITH WAIVER<br>ROLLOUT NO-GO"]
     end
 
     DP --> P0 --> P1 --> P2 --> P3 --> P4 --> P5
