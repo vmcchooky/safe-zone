@@ -106,6 +106,7 @@ type evidenceResult struct {
 	RequestedAt  string          `json:"requested_at"`
 	HTTPStatus   int             `json:"http_status"`
 	Success      bool            `json:"success"`
+	Disposition  string          `json:"local_disposition"`
 	Record       extractedRecord `json:"record"`
 	ResponseHash string          `json:"response_sha256"`
 	RawResponse  string          `json:"raw_response,omitempty"`
@@ -135,6 +136,10 @@ type outputManifest struct {
 	CompletedCases      int          `json:"completed_cases"`
 	SucceededCases      int          `json:"succeeded_cases"`
 	FailedCases         int          `json:"failed_cases"`
+	EvidenceFound       int          `json:"evidence_found"`
+	UnresolvedNotFound  int          `json:"unresolved_not_found"`
+	ContractErrors      int          `json:"contract_errors"`
+	RevalidatedFromHash string       `json:"revalidated_from_sha256,omitempty"`
 	ApprovedHosts       []string     `json:"approved_hosts"`
 	Files               []fileRecord `json:"files"`
 	ExternalSideEffects []string     `json:"external_side_effects"`
@@ -142,17 +147,18 @@ type outputManifest struct {
 }
 
 type runOptions struct {
-	ReplayManifestPath string
-	CandidatesPath     string
-	DataManifestPath   string
-	MetadataPath       string
-	SourceLogicalName  string
-	APIKeyFile         string
-	OutputDir          string
-	RunnerCommit       string
-	Execute            bool
-	MaxCases           int
-	Timeout            time.Duration
+	ReplayManifestPath    string
+	CandidatesPath        string
+	DataManifestPath      string
+	MetadataPath          string
+	SourceLogicalName     string
+	APIKeyFile            string
+	OutputDir             string
+	RunnerCommit          string
+	RevalidateResultsPath string
+	Execute               bool
+	MaxCases              int
+	Timeout               time.Duration
 }
 
 func main() {
@@ -165,6 +171,7 @@ func main() {
 	flag.StringVar(&options.APIKeyFile, "api-key-file", "", "Firecrawl API key file; required only with --execute")
 	flag.StringVar(&options.OutputDir, "output", "", "new private output directory")
 	flag.StringVar(&options.RunnerCommit, "runner-commit", "", "exact 40-character Git commit containing this runner")
+	flag.StringVar(&options.RevalidateResultsPath, "revalidate-results", "", "prior results.jsonl to validate offline without Firecrawl requests")
 	flag.BoolVar(&options.Execute, "execute", false, "perform bounded Firecrawl requests")
 	flag.IntVar(&options.MaxCases, "max-cases", 20, "maximum evidence case groups")
 	flag.DurationVar(&options.Timeout, "timeout", 10*time.Minute, "overall execution timeout")
@@ -176,8 +183,9 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("manifest: %s\n", manifestPath)
-	fmt.Printf("status=%s planned=%d completed=%d succeeded=%d failed=%d\n",
-		manifest.Status, manifest.PlannedCases, manifest.CompletedCases, manifest.SucceededCases, manifest.FailedCases)
+	fmt.Printf("status=%s planned=%d completed=%d succeeded=%d failed=%d evidence_found=%d unresolved_not_found=%d contract_errors=%d\n",
+		manifest.Status, manifest.PlannedCases, manifest.CompletedCases, manifest.SucceededCases, manifest.FailedCases,
+		manifest.EvidenceFound, manifest.UnresolvedNotFound, manifest.ContractErrors)
 }
 
 func run(parent context.Context, options runOptions, endpoint string, client *http.Client) (string, outputManifest, error) {
@@ -188,6 +196,9 @@ func run(parent context.Context, options runOptions, endpoint string, client *ht
 	}
 	if !validCommit(options.RunnerCommit) {
 		return "", outputManifest{}, errors.New("--runner-commit must be an exact 40-character hexadecimal Git commit")
+	}
+	if options.Execute && strings.TrimSpace(options.RevalidateResultsPath) != "" {
+		return "", outputManifest{}, errors.New("--execute and --revalidate-results are mutually exclusive")
 	}
 	if options.MaxCases < 1 || options.MaxCases > 100 {
 		return "", outputManifest{}, errors.New("--max-cases must be between 1 and 100")
@@ -286,20 +297,121 @@ func run(parent context.Context, options runOptions, endpoint string, client *ht
 		for _, item := range cases {
 			result := scrapeEvidence(ctx, client, endpoint, apiKey, item)
 			results = append(results, result)
-			manifest.CompletedCases++
-			if result.Success {
-				manifest.SucceededCases++
-			} else {
-				manifest.FailedCases++
-			}
 		}
-		manifest.Status = "complete"
-		if manifest.FailedCases > 0 {
-			manifest.Status = "completed_with_errors"
+		setResultCounts(&manifest, results)
+		manifest.Status = statusForResults("complete", manifest.ContractErrors)
+	} else if strings.TrimSpace(options.RevalidateResultsPath) != "" {
+		priorResults, err := readPath(options.RevalidateResultsPath)
+		if err != nil {
+			return "", outputManifest{}, fmt.Errorf("read prior results: %w", err)
 		}
+		results, err = revalidateResults(cases, priorResults)
+		if err != nil {
+			return "", outputManifest{}, err
+		}
+		manifest.RevalidatedFromHash = hashBytes(priorResults)
+		setResultCounts(&manifest, results)
+		manifest.Status = statusForResults("revalidated", manifest.ContractErrors)
 	}
 
 	return writeOutput(options.OutputDir, manifest, cases, results)
+}
+
+func statusForResults(base string, contractErrors int) string {
+	if contractErrors > 0 {
+		return base + "_with_errors"
+	}
+	return base
+}
+
+func setResultCounts(manifest *outputManifest, results []evidenceResult) {
+	manifest.CompletedCases = len(results)
+	for _, result := range results {
+		if result.Success {
+			manifest.SucceededCases++
+		} else {
+			manifest.FailedCases++
+		}
+		switch result.Disposition {
+		case "evidence_found":
+			manifest.EvidenceFound++
+		case "unresolved_not_found":
+			manifest.UnresolvedNotFound++
+		default:
+			manifest.ContractErrors++
+		}
+	}
+}
+
+func revalidateResults(cases []evidenceCase, data []byte) ([]evidenceResult, error) {
+	caseByID := make(map[string]evidenceCase, len(cases))
+	for _, item := range cases {
+		caseByID[item.CaseID] = item
+	}
+
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	seen := make(map[string]bool, len(cases))
+	results := make([]evidenceResult, 0, len(cases))
+	for {
+		var result evidenceResult
+		if err := decoder.Decode(&result); errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return nil, fmt.Errorf("decode prior results: %w", err)
+		}
+		item, ok := caseByID[result.CaseID]
+		if !ok {
+			return nil, fmt.Errorf("prior results contain unknown case_id %q", result.CaseID)
+		}
+		if seen[result.CaseID] {
+			return nil, fmt.Errorf("prior results contain duplicate case_id %q", result.CaseID)
+		}
+		seen[result.CaseID] = true
+		result.Success = false
+		result.Error = ""
+		result.Disposition = "contract_error"
+		if result.RawResponse == "" || hashBytes([]byte(result.RawResponse)) != strings.ToLower(result.ResponseHash) {
+			result.Error = "stored Firecrawl response checksum mismatch"
+			results = append(results, result)
+			continue
+		}
+		if result.HTTPStatus != http.StatusOK {
+			result.Error = fmt.Sprintf("stored Firecrawl response has HTTP %d", result.HTTPStatus)
+			results = append(results, result)
+			continue
+		}
+		var envelope firecrawlResponse
+		if err := json.Unmarshal([]byte(result.RawResponse), &envelope); err != nil {
+			result.Error = "decode stored Firecrawl response: " + err.Error()
+			results = append(results, result)
+			continue
+		}
+		if !envelope.Success || len(envelope.Data.JSON) == 0 {
+			result.Error = strings.TrimSpace(envelope.Error)
+			if result.Error == "" {
+				result.Error = "stored Firecrawl response contains no structured JSON"
+			}
+			results = append(results, result)
+			continue
+		}
+		if err := json.Unmarshal(envelope.Data.JSON, &result.Record); err != nil {
+			result.Error = "decode stored extracted record: " + err.Error()
+			results = append(results, result)
+			continue
+		}
+		if err := validateExtractedRecord(item, result.Record); err != nil {
+			result.Error = err.Error()
+			results = append(results, result)
+			continue
+		}
+		result.Success = true
+		result.Disposition = dispositionForRecord(result.Record)
+		results = append(results, result)
+	}
+	if len(results) != len(cases) {
+		return nil, fmt.Errorf("prior results contain %d cases; expected %d", len(results), len(cases))
+	}
+	return results, nil
 }
 
 func readPath(path string) ([]byte, error) {
@@ -673,7 +785,15 @@ func scrapeEvidence(ctx context.Context, client *http.Client, endpoint, apiKey s
 		return result
 	}
 	result.Success = true
+	result.Disposition = dispositionForRecord(result.Record)
 	return result
+}
+
+func dispositionForRecord(record extractedRecord) string {
+	if record.RecordFound {
+		return "evidence_found"
+	}
+	return "unresolved_not_found"
 }
 
 func validateExtractedRecord(item evidenceCase, record extractedRecord) error {
@@ -684,7 +804,15 @@ func validateExtractedRecord(item evidenceCase, record extractedRecord) error {
 	if err != nil || strings.ToLower(parsed.Hostname()) != item.EvidenceHost || parsed.String() != item.EvidenceURL {
 		return errors.New("extracted evidence_url does not match requested evidence URL")
 	}
-	if record.RequestedDomain != item.CanonicalDomain {
+	requestedDomain := strings.ToLower(strings.TrimSpace(record.RequestedDomain))
+	requestedDomainMatches := requestedDomain == item.CanonicalDomain
+	for _, domain := range item.RequestedDomains {
+		if requestedDomain == strings.ToLower(strings.TrimSpace(domain)) {
+			requestedDomainMatches = true
+			break
+		}
+	}
+	if !requestedDomainMatches {
 		return errors.New("extracted requested_domain does not match case")
 	}
 	if len(record.EvidenceExcerpt) > 1000 {
@@ -750,7 +878,7 @@ func writeOutput(outputDir string, manifest outputManifest, cases []evidenceCase
 		return "", outputManifest{}, err
 	}
 	manifest.Files = append(manifest.Files, fileRecord{Path: "cases.json", SHA256: hashBytes(casesData), Rows: len(cases)})
-	if manifest.Execute {
+	if len(results) > 0 {
 		var buffer bytes.Buffer
 		writer := bufio.NewWriter(&buffer)
 		for _, result := range results {

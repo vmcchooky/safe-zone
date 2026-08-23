@@ -243,6 +243,28 @@ Treat every extracted record as untrusted until local validation and operator
 review pass. A directory/license match is evidence provenance, not a current
 safety verdict or automatic `Allow` decision.
 
+If the local validation contract changes, revalidate the immutable raw
+responses offline in a new output directory. This mode does not read an API
+key or make Firecrawl requests, and it verifies every stored response hash
+before parsing:
+
+```powershell
+go run ./cmd/ml-evidence-firecrawl `
+  --replay-manifest <curated-run>\manifest.json `
+  --candidates <curated-run>\candidates.csv `
+  --data-manifest ml\data\data_manifest.json `
+  --metadata data\whitelist\vietnam\vietnam_websites.csv `
+  --source-logical-name vietnam_websites.csv `
+  --runner-commit <exact-40-character-git-sha> `
+  --revalidate-results <prior-firecrawl-run>\results.jsonl `
+  --max-cases 20 `
+  --output <new-private-revalidated-run>
+```
+
+Require `contract_errors=0`. Keep `unresolved_not_found` separate from
+`evidence_found`; a missing directory record neither confirms safety nor
+confirms maliciousness.
+
 ## Tracked evidence archive
 
 The completed Phase 5 run is archived at

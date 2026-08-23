@@ -115,3 +115,59 @@ func TestValidateExtractedRecordRequiresExpectedLicense(t *testing.T) {
 		t.Fatal("expected license mismatch")
 	}
 }
+
+func TestValidateExtractedRecordAcceptsPinnedWWWAlias(t *testing.T) {
+	t.Parallel()
+	item := evidenceCase{
+		CanonicalDomain:  "example.vn",
+		RequestedDomains: []string{"www.example.vn"},
+		EvidenceHost:     "tinnhiemmang.vn",
+		EvidenceURL:      "https://tinnhiemmang.vn/evidence/example",
+		EvidenceType:     "trust_directory",
+	}
+	record := extractedRecord{
+		RequestedDomain: "www.example.vn", SourceHost: item.EvidenceHost, EvidenceURL: item.EvidenceURL,
+		RecordFound: false, EvidenceType: item.EvidenceType, RecordStatus: "not_found", DomainMatch: "no_match",
+	}
+	if err := validateExtractedRecord(item, record); err != nil {
+		t.Fatalf("pinned www alias rejected: %v", err)
+	}
+}
+
+func TestRevalidateResultsUsesStoredResponseAndClassifiesNotFound(t *testing.T) {
+	t.Parallel()
+	item := evidenceCase{
+		CaseID: "fce-1", CanonicalDomain: "example.vn", RequestedDomains: []string{"www.example.vn"},
+		EvidenceHost: "tinnhiemmang.vn", EvidenceURL: "https://tinnhiemmang.vn/evidence/example", EvidenceType: "trust_directory",
+	}
+	raw := `{"success":true,"data":{"json":{"requested_domain":"www.example.vn","source_host":"tinnhiemmang.vn","evidence_url":"https://tinnhiemmang.vn/evidence/example","record_found":false,"listed_domain":"","organization_name":"","evidence_type":"trust_directory","license_number":"","record_status":"not_found","issued_date":"","last_updated_date":"","domain_match":"no_match","evidence_excerpt":"","needs_manual_review":false,"review_reason":""}}}`
+	prior := evidenceResult{CaseID: item.CaseID, HTTPStatus: http.StatusOK, ResponseHash: hashBytes([]byte(raw)), RawResponse: raw}
+	encoded, err := json.Marshal(prior)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := revalidateResults([]evidenceCase{item}, append(encoded, '\n'))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || !results[0].Success || results[0].Disposition != "unresolved_not_found" {
+		t.Fatalf("unexpected revalidation result: %+v", results)
+	}
+}
+
+func TestRevalidateResultsRejectsStoredResponseChecksumMismatch(t *testing.T) {
+	t.Parallel()
+	item := evidenceCase{CaseID: "fce-1"}
+	prior := evidenceResult{CaseID: item.CaseID, HTTPStatus: http.StatusOK, ResponseHash: strings.Repeat("0", 64), RawResponse: `{}`}
+	encoded, err := json.Marshal(prior)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results, err := revalidateResults([]evidenceCase{item}, append(encoded, '\n'))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Success || results[0].Disposition != "contract_error" || !strings.Contains(results[0].Error, "checksum mismatch") {
+		t.Fatalf("unexpected checksum result: %+v", results)
+	}
+}
