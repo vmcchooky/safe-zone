@@ -5,13 +5,15 @@
 
 ## Trạng thái hiện tại
 
-Run `run-20260808` hiện là **NO-GO**. Validator chấp nhận `137/137` hàng có
-nhãn, nhưng 79 hàng vẫn có `human_label=unknown` hoặc
-`review_outcome=unresolved`. Reporter hiện hành trả exit `3`, ghi
-`unresolved reviewed cases remain: 79` và giữ
-`approval_state.canary=blocked_by_review_gates`. Các quyết định Product và
-Security trong packet lịch sử không thay thế gate này. Archive được giữ bất
-biến; remediation phải dùng working copy và tạo một run/packet mới.
+Archive `run-20260808` được giữ bất biến và vẫn phản ánh 79 case
+`unknown`/`unresolved`. Working preflight ngày 2026-08-23 bổ sung evidence
+người dùng cho `replay-0072`, chuyển case này thành malicious true positive và
+còn 78 reviewed-unclassifiable cases. Reporter chấp nhận waiver chỉ khi count,
+số would-block và SHA-256 của tập case ID khớp; working report hiện ở
+`ready_for_review_with_reviewed_unclassifiable_waiver`. Trạng thái rollout vẫn
+là **NO-GO**: Product/Security đã ghi owner decisions ngày 2026-08-23, nhưng
+release identity, runtime snapshot, canary routing scope và rollback inputs
+vẫn chưa khép kín.
 
 ## Mục tiêu và phạm vi
 
@@ -45,9 +47,10 @@ Template chuẩn là `docs/templates/ml-human-label-review.csv`. Queue phải c�
 nhiên (target hiện được ghi trong summary là 35). Các trường
 `critical_benign_stratum`, `deterministic_would_block`, `second_human_label`
 và `second_reviewer_id` dùng để đo các gate tương ứng. Queue `run-20260808`
-có đủ các cột hiện hành, nhưng giá trị `unknown` hoặc `unresolved` vẫn phải
-được adjudicate bằng evidence độc lập; việc một hàng có đủ schema không đồng
-nghĩa gate đã pass.
+có đủ các cột hiện hành. Giá trị `unknown` hoặc `unresolved` có thể là kết quả
+review hợp lệ khi evidence không đủ, nhưng không tự động pass approval gate:
+case phải được phân giải thêm hoặc nằm trong waiver reviewed-unclassifiable
+được ràng buộc và phê duyệt rõ ràng.
 
 Chạy từ repository root:
 
@@ -61,18 +64,21 @@ python ml/src/report_fp.py --labels <private-run>\labels.csv `
 - Validator exit `0`: queue đầy đủ và hợp lệ; exit `1`: dữ liệu/schema sai;
   exit `2`: còn pending. Chỉ dùng `--allow-pending` để tạo trạng thái quan
   sát trước adjudication, không dùng nó để đóng gate.
-- Reporter exit `0`: report không còn approval blocker; exit `1`: lỗi dữ
-  liệu/report; exit `2`: còn pending; exit `3`: report đã tạo nhưng review
-  gate vẫn block canary.
+- Reporter exit `0`: report không còn approval blocker, gồm trường hợp waiver
+  reviewed-unclassifiable hợp lệ; exit `1`: lỗi dữ liệu/report; exit `2`: còn
+  pending; exit `3`: report đã tạo nhưng review gate vẫn block canary.
 - Reporter chỉ tính FPR/recall trên `benign` và `malicious`. `compromised`,
   `shared_hosting` và `unknown` bị loại khỏi binary denominator. Việc loại
-  khỏi denominator không loại `unknown` khỏi approval gate; reporter ghi
-  `unresolved_count`, `unresolved_case_ids` và một blocker tương ứng.
+  khỏi denominator không tự loại `unknown` khỏi approval gate. Reporter ghi
+  `unresolved_count`, `unresolved_case_ids`, số would-block và SHA-256 của tập
+  case ID. Waiver sai count/hash hoặc thiếu lý do vẫn tạo blocker.
 - Critical-benign FPR, reviewer agreement, unresolved/disagreement và các
   case deterministic đã block phải có dữ liệu riêng; thiếu một gate vẫn
   giữ `canary=blocked`.
-- Không có confirmed critical-benign FP, thiếu evidence, unresolved case
-  hoặc disagreement chưa giải quyết nào được phép đi qua approval.
+- Không có confirmed critical-benign FP hoặc disagreement chưa giải quyết nào
+  được phép đi qua approval. Case thiếu evidence chỉ được loại khỏi binary
+  metrics bằng waiver khớp chính xác và quyết định rõ của Product/Security;
+  waiver không biến case đó thành benign hoặc malicious.
 
 ## Runtime observation
 
@@ -158,3 +164,5 @@ Chỉ sau khi mọi gate trên pass và approval packet có đủ quyết địn
 | 2026-08-09 | Đối chiếu runtime telemetry, label tooling và approval gates; loại bỏ tuyên bố chưa có evidence | Junie |
 | 2026-08-22 | Cập nhật trạng thái run-20260808: human review hoàn tất, owner approvals đã ghi nhận, canary preflight còn lại | Codex |
 | 2026-08-22 | Sửa gate `unknown`/`unresolved`, đặt run-20260808 về NO-GO và bổ sung yêu cầu canary scope/release identity/LKG rollback | Codex (GPT-5) |
+| 2026-08-23 | Thêm reviewed-unclassifiable waiver ràng buộc count/would-block/case-ID hash; ghi nhận evidence người dùng chuyển replay-0072 thành malicious trong working copy | Codex (GPT-5.6 Sol) |
+| 2026-08-23 | Ghi nhận Product/Security owner decisions cho working packet; rollout tiếp tục NO-GO do runtime/release/canary/rollback gates | Codex (GPT-5.6 Sol) |

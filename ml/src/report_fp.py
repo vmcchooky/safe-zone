@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -214,6 +215,56 @@ def _deterministic_policy_metrics(
     }, []
 
 
+def _reviewed_unclassifiable_metrics(
+    labeled: list[Mapping[str, object]], waivers: Mapping[str, object]
+) -> tuple[dict[str, object], list[str]]:
+    unresolved = [
+        row
+        for row in labeled
+        if clean(row.get("human_label")).lower() == "unknown"
+        or clean(row.get("review_outcome")).lower() == "unresolved"
+    ]
+    case_ids = sorted(clean(row.get("case_id")) for row in unresolved)
+    would_block_count = sum(1 for row in unresolved if _is_blocked(row))
+    digest_payload = "".join(f"{case_id}\n" for case_id in case_ids)
+    case_ids_sha256 = hashlib.sha256(digest_payload.encode("utf-8")).hexdigest()
+    result: dict[str, object] = {
+        "status": "not_applicable" if not unresolved else "not_waived",
+        "case_count": len(case_ids),
+        "would_block_count": would_block_count,
+        "would_pass_count": len(case_ids) - would_block_count,
+        "case_ids": case_ids,
+        "case_ids_sha256": case_ids_sha256,
+    }
+    if not unresolved:
+        return result, []
+
+    configured = waivers.get("reviewed_unclassifiable")
+    if not isinstance(configured, Mapping):
+        return result, [f"unresolved reviewed cases remain: {len(case_ids)}"]
+
+    errors: list[str] = []
+    if configured.get("approved") is not True:
+        errors.append("approved must be true")
+    if configured.get("case_count") != len(case_ids):
+        errors.append("case_count does not match")
+    if configured.get("would_block_count") != would_block_count:
+        errors.append("would_block_count does not match")
+    if clean(configured.get("case_ids_sha256")).lower() != case_ids_sha256:
+        errors.append("case_ids_sha256 does not match")
+    if len(clean(configured.get("reason"))) < 20:
+        errors.append("reason must contain at least 20 characters")
+
+    result["waiver"] = dict(configured)
+    if errors:
+        result["status"] = "invalid_waiver"
+        result["errors"] = errors
+        return result, ["reviewed-unclassifiable waiver is invalid: " + "; ".join(errors)]
+
+    result["status"] = "waived"
+    return result, []
+
+
 def calculate_metrics(
     rows: Iterable[Mapping[str, object]],
     threshold: float = 0.85,
@@ -241,15 +292,16 @@ def calculate_metrics(
         label: sum(1 for row in labeled if clean(row.get("human_label")).lower() == label)
         for label in sorted(ALLOWED_LABELS - {"benign", "malicious"})
     }
-    unresolved_case_ids = [
-        clean(row.get("case_id"))
-        for row in labeled
-        if clean(row.get("human_label")).lower() == "unknown"
-        or clean(row.get("review_outcome")).lower() == "unresolved"
+    reviewed_unclassifiable, unresolved_blockers = _reviewed_unclassifiable_metrics(
+        labeled, waivers
+    )
+    unresolved_case_ids = reviewed_unclassifiable["case_ids"]
+    blockers = [
+        *critical_blockers,
+        *agreement_blockers,
+        *deterministic_blockers,
+        *unresolved_blockers,
     ]
-    blockers = [*critical_blockers, *agreement_blockers, *deterministic_blockers]
-    if unresolved_case_ids:
-        blockers.append(f"unresolved reviewed cases remain: {len(unresolved_case_ids)}")
     if not binary["benign_cases"] or not binary["malicious_cases"]:
         blockers.append("both benign and malicious reviewed cases are required")
     return {
@@ -261,6 +313,7 @@ def calculate_metrics(
         "non_binary_labels": non_binary_counts,
         "unresolved_count": len(unresolved_case_ids),
         "unresolved_case_ids": unresolved_case_ids,
+        "reviewed_unclassifiable": reviewed_unclassifiable,
         "strata_breakdown": _strata_metrics(labeled),
         "critical_benign": critical,
         "reviewer_agreement": agreement,
@@ -337,6 +390,10 @@ def update_summary(
         output["false_positive_metrics"] = metrics
         if metrics["approval_blockers"]:
             output["approval_state"]["canary"] = "blocked_by_review_gates"
+        elif metrics["reviewed_unclassifiable"]["status"] == "waived":
+            output["approval_state"]["canary"] = (
+                "ready_for_review_with_reviewed_unclassifiable_waiver"
+            )
         else:
             output["approval_state"]["canary"] = "ready_for_review"
     _atomic_write(path, json.dumps(output, indent=2, ensure_ascii=False) + "\n")
@@ -368,6 +425,9 @@ def _metrics_markdown(
                 f"- **Recall:** {metrics['recall_at_threshold']:.4f} ({metrics['true_positives']}/{metrics['malicious_cases']})",
                 f"- **Non-binary labels excluded:** {metrics['non_binary_labels']}",
                 f"- **Unresolved reviewed cases:** {metrics['unresolved_count']}",
+                f"- **Reviewed-unclassifiable gate:** `{metrics['reviewed_unclassifiable']['status']}`",
+                f"- **Reviewed-unclassifiable would-block:** {metrics['reviewed_unclassifiable']['would_block_count']}",
+                f"- **Reviewed-unclassifiable case-ID SHA-256:** `{metrics['reviewed_unclassifiable']['case_ids_sha256']}`",
                 f"- **Critical-benign review:** `{metrics['critical_benign']['status']}`",
                 f"- **Reviewer agreement:** `{metrics['reviewer_agreement']['status']}`",
                 f"- **Deterministic policy evidence:** `{metrics['deterministic_policy']['status']}`",
