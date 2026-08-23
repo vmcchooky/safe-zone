@@ -62,20 +62,31 @@ Không ghi API key vào history hoặc report. Có thể dùng `--admin-api-key-
 
 ## Số liệu (Metrics & Results)
 
-| Chỉ số | Giá trị nguồn trước replay | Diễn giải |
+| Chỉ số | Kết quả run `run-20260823-vietnam-whitelist-proxy-216a024` | Diễn giải |
 |---|---:|---|
-| Source lines theo summary | 656.983 | Snapshot whitelist Việt Nam ngày 2026-07-28 |
+| Source lines | 656.983 domain | Snapshot whitelist Việt Nam ngày 2026-07-28 |
+| Unique proxy-benign | 656.972 domain | Có 11 dòng bị normalizer loại và 0 normalized duplicate |
+| Lexical `SAFE` | 425.713 domain | Không đi vào ML candidate path |
+| Lexical `SUSPICIOUS` | 226.052 domain | 34,408% snapshot; toàn bộ được model đánh giá offline |
+| Lexical `MALICIOUS` | 5.207 domain | 0,793% snapshot; bị deterministic policy loại trước ML |
+| ML would-block | 37 domain | Probability lớn hơn hoặc bằng 0,85 |
+| ML whitelist-proxy FPR | 0,005632% | 37 / 656.972; chỉ số proxy, không phải human-labelled FPR |
+| Candidate-conditional block rate | 0,016368% | 37 / 226.052 lexical candidate |
+| Near-threshold | 21 domain | Margin tuyệt đối 0,05 quanh threshold |
+| Review union | 47 domain | Hợp của would-block và near-threshold, trùng 11 domain |
 | Source SHA-256 | `5d8b902d...7c0c1807` | Phải khớp data manifest trước khi report hợp lệ |
 | Trust tier trong manifest | `strong-safe` | Tên phân tầng của pipeline, không thay human label |
 | Terms review | `pending-review` | Chưa đủ điều kiện để tuyên bố source terms đã được phê duyệt |
-| Runtime mode bắt buộc | `shadow` | Công cụ từ chối chạy nếu runtime ở `enforce` hoặc không `ready` |
-| Threshold runtime tại thời điểm thiết kế | `0.85` | Lần chạy cuối phải lấy lại và khóa giá trị thực tế |
+| Runtime contract | `shadow/ready`, model `1.0.0`, threshold `0,85` | Core API giữ nguyên contract ở status đầu/cuối |
+| Runtime whitelist loaded | 0 domain | Agent local đang disabled; run đánh giá data snapshot, không phải active runtime list |
+| Output checksum verification | 3/3 file khớp | `candidates.csv`, `would-block.csv`, `near-threshold.csv` |
 
-Kết quả probability/FPR cụ thể thuộc private run manifest, không được chép vào tài liệu sống nếu chưa khóa run ID và checksum.
+Run dùng source commit `216a02458f8d4e5aba68f9f740a79c29053255f8`; manifest SHA-256 là `8d6b0ce6adf2536dbe4afe980778dfe9bb5e9d9ccb36d5edc94681571f730547`. Ba output CSV khớp checksum khai báo trong manifest. Core API và DNS resolver sau run cùng healthy, cùng config revision `ecb8a74f314e3df1`, model revision `4632f9ea...f92c3bca`, policy revision `5583f307...ae646`, threshold `0,85`, `ml_state=ready`, `errors=0` và `enforce_promotions=0`.
 
 ## Giới hạn và giải pháp tối ưu
 
 - Snapshot trộn nguồn thu thập với candidate được sinh theo quy tắc rồi xác minh DNS/TCP; DNS/service availability tại thời điểm cũ không chứng minh an toàn nội dung hiện tại.
+- Một số row would-block có pseudo-TLD hoặc chuỗi giống candidate sinh tự động. Chưa nên giao toàn bộ 47 row cho operator review trước khi lọc provenance mạnh hơn từ `vietnam_websites.csv`.
 - `terms_review_id=pending-review` là provenance gap. Report phù hợp cho R&D local, chưa phù hợp để làm signed production approval evidence.
 - Domain có thể đổi chủ hoặc bị compromise sau ngày retrieval. `would-block` là queue ưu tiên review, không phải lỗi model đã xác nhận.
 - Giải pháp tối ưu trước staging canary là review có mục tiêu: ưu tiên toàn bộ `would-block`, sau đó near-threshold critical strata; không review lại hàng trăm nghìn domain và không review lại 79 case cũ nếu không có evidence mới.
@@ -95,3 +106,4 @@ Kết quả probability/FPR cụ thể thuộc private run manifest, không đư
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
 | 2026-08-23 | Thêm thiết kế whitelist-proxy replay, provenance gates và cách diễn giải FPR | Codex (GPT-5) |
+| 2026-08-23 | Ghi kết quả replay 656.983 dòng, runtime parity và hạn chế chất lượng nguồn | Codex (GPT-5) |
