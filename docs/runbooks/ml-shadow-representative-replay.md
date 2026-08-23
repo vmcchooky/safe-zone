@@ -140,6 +140,31 @@ predictions before treating the selector branches as observed. A replay with no
 benign runtime candidates cannot establish runtime-candidate FPR even when the
 offline reviewed-set FPR is zero.
 
+### Targeted benign supplement from the operator queue
+
+When `runtime_candidate_false_positive.benign_cases` is zero, use
+`cmd/ml-fp-candidates` to build a private supplemental set from false-positive
+reports already confirmed with the `Allow` action. The exporter fetches the
+active analysis config and trusted-brand list, verifies that the local bundle
+matches the runtime model contract, and retains only counterfactual lexical
+`SUSPICIOUS` domains.
+
+```powershell
+go run ./cmd/ml-fp-candidates `
+  --api-url http://127.0.0.1:8080 `
+  --admin-api-key-file <private-admin-key-file> `
+  --bundle <immutable-bundle> `
+  --source-commit <exact-40-character-git-sha> `
+  --min-candidates 25 `
+  --output <new-private-targeted-run>
+```
+
+Run `cmd/ml-replay` against the resulting `labels.csv` as a separate report;
+do not merge it into or overwrite the signed representative packet. Treat
+`empty_queue` and `insufficient_candidates` as evidence gaps, not as passing
+FPR results. This workflow consumes only new operator decisions and does not
+ask the reviewer to repeat the archived 78 unclassifiable reviews.
+
 ## Tracked evidence archive
 
 The completed Phase 5 run is archived at

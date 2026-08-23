@@ -100,6 +100,34 @@ Use the table below:
 | Lexical / brand / enrichment logic caused the block | Open an engineering issue with the analyzed domain, reasons, and expected verdict. |
 | Group override or client policy caused the block | Fix the affected group override or mapping and record the change. |
 
+## Step 6: Export targeted benign ML candidates
+
+After one or more reports have been confirmed with the `Allow` action, export a
+private supplemental replay set. The command reads the queue through the admin
+API, pins the current analysis config and trusted-brand snapshot, and only keeps
+domains whose counterfactual lexical verdict is `SUSPICIOUS`. It never exports
+report contact, note, or review reason.
+
+```powershell
+go run ./cmd/ml-fp-candidates `
+  --api-url http://127.0.0.1:8080 `
+  --admin-api-key-file <private-admin-key-file> `
+  --bundle <immutable-bundle> `
+  --source-commit <exact-40-character-git-sha> `
+  --min-candidates 25 `
+  --output <new-private-run-directory>
+```
+
+The output directory must not exist. A ready run contains `manifest.json` and
+`labels.csv`; feed the CSV into `cmd/ml-replay`. If the queue is empty, the tool
+writes only a manifest with `status=empty_queue` and exits with code `2`. Do not
+seed the operator queue with synthetic reports and do not copy previously signed
+review rows into it merely to satisfy the minimum.
+
+Only new queue decisions are considered. The 78 reviewed-unclassifiable cases
+in the archived packet do not need another review unless new evidence changes
+their outcome.
+
 ## Required operator note format
 
 Every false-positive override should capture:

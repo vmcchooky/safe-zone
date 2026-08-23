@@ -141,6 +141,8 @@ SAFE_ZONE_ML_CANARY_SEED=
 
 The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. Provision the approved bundle with `mise run ops:ml-provision`; Compose mounts the active `current` release read-only into both services. `shadow` records aggregate prediction evidence without changing verdicts. A configured canary observes the deterministic normalized-domain cohort in `shadow`; `enforce` is rejected at startup unless a percentage and stable seed bound the eligible cohort. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
 
+For supplemental false-positive measurement, `cmd/ml-fp-candidates` exports only operator-confirmed `resolved + allow` reports that still enter the counterfactual lexical `SUSPICIOUS` path. It pins the active config, trusted brands, and model contract, removes contact/note/reason from output, and refuses to publish labels when the queue is empty. See [the false-positive workflow](docs/runbooks/false-positive-workflow.md) and [shadow replay runbook](docs/runbooks/ml-shadow-representative-replay.md).
+
 ## Dynamic Analysis Configuration
 
 WHOIS responses are cached in SQLite for seven days by default. Override the
