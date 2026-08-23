@@ -7,7 +7,7 @@
 
 ## 1. Tóm tắt (Abstract / Executive Summary)
 
-Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất toàn bộ quy trình replay review: `137/137` cases được gán nhãn bởi reviewer ủy quyền (`reviewer.vmc`), gồm 25 benign, 33 malicious, 79 unknown (domain chết/insufficient evidence). FPR tại threshold 0.85 đạt **0.0000** (0/25), Recall đạt **0.7576** (25/33). Toàn bộ 4 review blockers đã được giải quyết qua cơ chế Product Owner waivers (`idn_punycode` stratum không có case sống; single-reviewer scope) và xử lý nhãn unclassifiable đúng chuẩn. Trạng thái hiện tại chuyển sang **`ready_for_review`**, chờ Product và Security Owner ký duyệt packet. Runtime production giữ `SAFE_ZONE_ML_MODE=disabled` cho tới khi có chữ ký chính thức.
+Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất `137/137` review entries do reviewer ủy quyền (`reviewer.vmc`) ghi nhận; working addendum gồm 25 benign, 34 malicious và 78 reviewed-unclassifiable cases. FPR tại threshold 0.85 là **0.0000** (0/25), Recall là **0.7647** (26/34). Reviewed-unclassifiable exclusion chỉ hợp lệ khi waiver khớp count, would-block count và SHA-256 của chính xác tập case ID; Product và Security owner decisions cho addendum đã được ghi ngày 2026-08-23. Review gate hiện là **`ready_for_review_with_reviewed_unclassifiable_waiver`**, nhưng rollout vẫn **NO-GO** cho tới khi release image, fresh predictive telemetry, canary scope và rollback gates hoàn tất; `enforce` chưa được phép bật.
 
 ## 2. Sơ đồ Tổng quan Pipeline
 
@@ -49,8 +49,8 @@ flowchart TB
 
     subgraph P5["10. Phase 5: Replay Review"]
         G1["21-column Queue"] --> G2["Validator / Reporter"]
-        G2 --> G3["137/137 Labels<br>FPR 0.00 · Recall 75.76%"]
-        G3 --> G4["READY FOR REVIEW<br>0 Blockers · Waivers Documented"]
+        G2 --> G3["137/137 Reviews<br>25 benign · 34 malicious · 78 waived<br>FPR 0.00 · Recall 76.47%"]
+        G3 --> G4["REVIEW READY WITH WAIVER<br>ROLLOUT NO-GO"]
     end
 
     DP --> P0 --> P1 --> P2 --> P3 --> P4 --> P5
@@ -454,11 +454,16 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
 
 ## 10. Phase 5 — Replay label tooling và review
 
-> **Trạng thái:** `blocked_by_review_gates` / **NO-GO**. Validator chấp nhận
-> `137/137` hàng có nhãn, nhưng chỉ 58 hàng có nhãn nhị phân đã phân giải;
-> 79 hàng vẫn là `unknown`/`unresolved`. FPR = **0.0000** (0/25), Recall =
-> **0.7576** (25/33) chỉ mô tả subset đã phân giải và không mở approval gate.
-> Reporter hiện ghi blocker `unresolved reviewed cases remain: 79`.
+> **Trạng thái review gate:**
+> `ready_for_review_with_reviewed_unclassifiable_waiver`; rollout vẫn
+> **NO-GO**. Working copy ngày 2026-08-23 có 25 benign, 34 malicious và 78
+> reviewed-unclassifiable cases sau khi evidence người dùng chuyển
+> `replay-0072` thành malicious true positive. FPR = **0.0000** (0/25), Recall
+> = **0.7647** (26/34). Product/Security decisions cho packet mới đã được ghi
+> ngày 2026-08-23. Runtime local hiện healthy ở `shadow` và hai service khớp
+> revision/threshold/state, nhưng counters sau start chưa có representative
+> requests; release identity, fresh predictive telemetry và canary scope vẫn
+> pending. Signed archive không bị sửa.
 
 ### Mục tiêu (Objectives)
 
@@ -468,9 +473,9 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
 3. Giữ approval packet ở trạng thái `blocked` khi queue còn pending, thiếu
    critical-benign/double-label evidence, thiếu deterministic evidence hoặc
    chưa có bằng chứng ủy quyền adjudication.
-4. Giữ approval packet ở trạng thái `blocked` khi còn bất kỳ nhãn `unknown`
-   hoặc outcome `unresolved`, kể cả khi hàng đã đủ field và binary metrics đã
-   tính được trên subset còn lại.
+4. Phân biệt case chưa review với case đã review nhưng không thể phân loại.
+   Nhóm thứ hai chỉ được loại khỏi binary metrics khi waiver khớp chính xác
+   count, would-block count và SHA-256 của tập case ID.
 
 ### Phương pháp & Lý do (Methodology & Rationale)
 
@@ -480,7 +485,7 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
 | Đọc queue | `csv` của Python standard library với schema strict | `pandas` permissive parsing | Không biến ô trống thành nhãn hợp lệ và không thêm package ngoài cho queue replay. |
 | Human evidence | Bắt buộc reviewer, timestamp có timezone, evidence refs/notes và outcome nhất quán | Chỉ kiểm tra `human_label` không rỗng | Ngăn nhãn không thể audit và ngăn dùng prediction làm evidence duy nhất. |
 | Binary metrics | Chỉ dùng `benign`/`malicious`; loại `compromised`, `shared_hosting`, `unknown` khỏi FPR/recall | Ép mọi label vào binary | Giữ đúng rubric và không làm sai denominator hoặc phân loại outcome. |
-| Approval gate | `blocked` cho tới khi validation, coverage, unresolved cases, critical strata, agreement, deterministic evidence và owner decisions hoàn tất | Cho phép review/rollout khi mới có số FPR | FPR partial hoặc thiếu gate không đủ làm cơ sở cho canary; `unknown` được loại khỏi denominator nhưng không được loại khỏi approval gate. |
+| Approval gate | `blocked` cho tới khi validation, coverage, critical strata, agreement và deterministic evidence hoàn tất; reviewed-unclassifiable cases cần waiver ràng buộc đúng tập case | Block mọi `unknown` vô điều kiện hoặc bỏ qua toàn bộ `unknown` | Block vô điều kiện lặp lại human review không tạo thêm evidence; bỏ qua vô điều kiện che khuất uncertainty. Hash-bound waiver giữ tập exclusion truy nguyên và làm mọi thay đổi case tự vô hiệu waiver. |
 | Evidence storage | Dùng thư mục tạm cho quá trình tạo/sửa; sau review promote bản bất biến vào `ml/evidence/` kèm provenance và SHA-256 | Commit packet đang ở trạng thái dở dang | Giữ working state an toàn, nhưng vẫn có artifact truy nguyên để ký và clone lại được. |
 
 ### Cách thức Thực hiện (Implementation Details)
@@ -503,15 +508,19 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
   `--allow-pending` trả exit `2`; đây là expected gate, không phải lỗi tooling.
   Có `--allow-pending` chỉ cho phép quan sát/cập nhật trạng thái pending, không
   tạo human labels, không tạo FPR/recall và không mở approval. Khi còn nhãn
-  `unknown` hoặc outcome `unresolved`, reporter ghi `unresolved_count`,
-  `unresolved_case_ids`, đặt `canary=blocked_by_review_gates` và trả exit `3`.
+  `unknown` hoặc outcome `unresolved`, reporter ghi count, would-block count,
+  case IDs và SHA-256. Không có waiver hoặc waiver sai phạm vi trả exit `3`;
+  waiver khớp chuyển review gate sang
+  `ready_for_review_with_reviewed_unclassifiable_waiver`, nhưng không thay thế
+  Product/Security approval hay runtime preflight.
 - Không có human label, reviewer ID, evidence reference hoặc authorization
   evidence nào được suy diễn từ model output, source membership hay AI agent.
   Vai trò các AI agent trong Phase 5:
   - **Junie (Grok 4.6 — 2026-08-14):** Thực hiện audit độc lập, phát hiện packet nhãn máy giả lập (`gemini-adjudicator`/`gemini-auditor`), cách ly vào `tmp/gemini/quarantine-ai-adjudication-20260814/`, nâng cấp validator `ml/src/replay_labels.py` (chặn toàn bộ reviewer AI qua `_DISALLOWED_REVIEWER_MARKERS`, cấm reviewer trùng lặp, cấm `live content review` trên domain chết), reset queue chính về `0/137` pending và xây dựng workbook `tmp/gemini/human-review/` cho reviewer người.
   - **Claude Opus 4.6 & Gemini 3.7 Flash (2026-08-22):** Rà soát nhãn người (`reviewer.vmc`), khắc phục 3 lỗi schema CSV và nâng cấp `report_fp.py` hỗ trợ Product Owner waivers. Kết quả khi đó báo `ready_for_review`, nhưng chưa biến 79 nhãn `unknown` thành adjudication đã phân giải.
   - **Codex (GPT-5.6 Sol — 2026-08-22):** Thực hiện preflight local/read-only, phát hiện sai lệch giữa runbook và reporter, bổ sung unresolved approval blocker, kiểm thử trên bản sao archive và lập queue triage. Không sử dụng subagent hoặc voting; kiểm soát chất lượng dựa trên checksum, exit code và test tái hiện được.
-  - **Human-in-the-loop:** Các review entry do reviewer ủy quyền (`reviewer.vmc`) ghi nhận; 79 entry `unknown` vẫn cần evidence/adjudication của người. Quyết định rollout thuộc thẩm quyền Product và Security Owners sau khi mọi gate kỹ thuật pass.
+  - **Codex (GPT-5.6 Sol — 2026-08-23):** Kiểm tra ảnh do người dùng cung cấp, ghi evidence SHA-256 vào working copy, chuyển riêng `replay-0072` thành malicious theo xác nhận của reviewer và triển khai exact-set waiver. Không truy cập domain nguy hiểm, không dùng AI làm reviewer và không sử dụng subagent/voting.
+  - **Human-in-the-loop:** Các review entry do reviewer ủy quyền (`reviewer.vmc`) ghi nhận. Người dùng xác nhận evidence mới cho `replay-0072`, chấp nhận policy reviewed-unclassifiable và ghi Product/Security owner decisions ngày 2026-08-23. Deploy/restart/enforce vẫn cần preflight và xác nhận riêng.
 
 ### Số liệu cụ thể (Metrics & Results)
 
@@ -525,42 +534,47 @@ Toàn bộ 7 quyết định trên đã được triển khai trong Phases 0–4
 | Go test/build/security | **PASS** trên Go 1.26.7; `govulncheck` có 0 vulnerability reachable | `go test ./...`; `go build ./...`; `govulncheck@v1.4.0 ./...` |
 | Go race verification | **PASS** | `go test -race ./internal/analysis ./internal/risk` |
 | Go static analysis | **PASS** | `go vet ./...` |
-| Review-entry coverage | **137/137** (100%); reviewer: `reviewer.vmc`; resolved binary subset: **58/137** | [labels.csv](../../../ml/evidence/representative-replay/run-20260808/labels.csv) |
-| Label distribution | 25 benign · 33 malicious · 79 unknown | Validator output; `replay_labels.py` |
+| Review-entry coverage | **137/137** (100%); reviewer: `reviewer.vmc`; working resolved binary subset: **59/137** | Working-copy validator; signed [labels.csv](../../../ml/evidence/representative-replay/run-20260808/labels.csv) giữ nguyên |
+| Label distribution | 25 benign · 34 malicious · 78 reviewed-unclassifiable | Working-copy reporter |
 | FPR @ threshold 0.85 | **0.0000** (0/25 benign bị block sai) | `report_fp.py` → `review-summary.json` |
-| Recall @ threshold 0.85 | **0.7576** (25/33 malicious được phát hiện) | `report_fp.py` → `review-summary.json` |
+| Recall @ threshold 0.85 | **0.7647** (26/34 malicious được phát hiện) | Working-copy `report_fp.py` output |
 | False negatives | **8 cases** (malicious không bị block) | `mod22.com`, `absicherung-kontakt.com`, `pl.spotify-original.com`, `mcaavoli.com`, `1xbet-xoso.com`, `axygames.com`, `li88.net`, `speedingk.com` |
 | Critical-benign strata | `trusted_brand`: 8, `government_education`: 3, `shared_hosting`: 1, `idn_punycode`: **waived** (`available_with_waiver`) | `report_fp.py` → `critical_benign` |
 | Double-label | **waived** (single-reviewer project scope) | `report_fp.py` → `reviewer_agreement` |
 | Deterministic policy | **available**; 0 cases deterministic block | `report_fp.py` → `deterministic_policy` |
-| Approval blockers | **1 blocker:** `unresolved reviewed cases remain: 79` | Reporter hiện hành chạy trên bản sao archive |
-| Adjudication/approval | **`blocked_by_review_gates` / NO-GO** | Reporter exit `3`; archive signed được giữ nguyên |
+| Reviewed-unclassifiable waiver | **78 cases:** 33 would-block, 45 would-pass; case-ID SHA-256 `efdaa81a...` | Exact-set waiver; hash/count mismatch test |
+| Approval blockers | **0 review blockers** khi waiver khớp | Working reporter exit `0`; owner/runtime gates tách riêng |
+| Adjudication/approval | **`ready_for_review_with_reviewed_unclassifiable_waiver`**; Product/Security approved | Working summary và owner-attested addendum; archive signed được giữ nguyên |
 
-Nhãn `unknown` áp dụng cho 79 case có evidence chưa đủ, thường là domain
+Nhãn `unknown` còn áp dụng cho 78 case có evidence chưa đủ, thường là domain
 NXDOMAIN, timeout, parked, 403 hoặc 503. Các case này bị loại khỏi denominator
-nhị phân nhưng vẫn chặn approval. Preflight không có runtime để chụp snapshot:
-Docker daemon không chạy và không có listener local tại cổng 8080/8081. Cấu
-hình local hiện ở `shadow`; compose default vẫn là `disabled`. Tám false
-negative trong subset đã phân giải tập trung ở domain TDS (Traffic Distribution
-System), casino gambling và phishing dùng cloaking có probability dưới
-threshold (0.38–0.83).
+nhị phân bằng waiver ràng buộc đúng tập case; uncertainty vẫn được ghi trong
+packet và cần owner acceptance. Snapshot local ngày 2026-08-23 ghi nhận Docker
+Desktop 29.4.0, `core-api` healthy/ready tại cổng 8080 và `dns-resolver`
+healthy tại cổng 8081. Hai service cùng ở `shadow`, `ml_state=ready`, revision
+`4632f9ea...`, threshold `0.85`, errors/skips bằng 0; `prediction_attempts=0`
+nên latency/probability histograms mới chưa đại diện. Tám false negative trong
+subset đã phân giải tập trung ở domain TDS (Traffic Distribution System),
+casino gambling và phishing dùng cloaking có probability dưới threshold
+(0.38–0.83).
 
 ### Giới hạn và bước còn lại
 
-- 79 case `unknown` (57.7% queue) có evidence chưa đủ; phần lớn endpoint không
+- 78 case reviewed-unclassifiable (56.9% queue) có evidence chưa đủ; phần lớn endpoint không
   còn trả nội dung có thể adjudicate tại thời điểm review.
-  Binary metrics (FPR/recall) chỉ tính trên 58 cases có nhãn xác định.
-  Subset 25 benign và 33 malicious cho số liệu quan sát ban đầu nhưng không đủ
-  để mở canary khi unresolved gate còn tồn tại. FPR `0.0000` ở đây là
+  Binary metrics (FPR/recall) chỉ tính trên 59 cases có nhãn xác định.
+  Subset 25 benign và 34 malicious cho số liệu quan sát ban đầu; FPR `0.0000` ở đây là
   “chưa quan sát thấy FP trong mẫu”; với 0 FP trên 25 benign, rule-of-three
   cho cận trên xấp xỉ 12% ở mức tin cậy 95%, không phải bảo đảm FPR thực tế là
   0%.
 - 8 false negatives (probability 0.38–0.83) cho thấy model yếu ở TDS,
   gambling gateway, và phishing dùng cloaking. Có thể cân nhắc threshold
   sweep (0.70–0.85) hoặc thêm heuristic rule sau giai đoạn Canary.
-- Bước tiếp theo: reviewer người xử lý 79 case trong working copy mới, ưu tiên
-  34 case model đề xuất block; sau đó chạy lại validator/reporter và tạo packet
-  mới. Archive `run-20260808` không được sửa tại chỗ.
+- Không yêu cầu reviewer lặp lại 78 case nếu không có evidence mới.
+  Product/Security đã xác nhận exact-set waiver và canary boundary trong
+  working packet. Bước tiếp theo là đóng release identity, runtime snapshots,
+  canary routing scope và rollback inputs; archive `run-20260808` không được
+  sửa tại chỗ.
 - Packet mới phải ghi exact commit/CI/image digest, canary instance/routing/
   traffic cap/window/owners và last-known-good rollback snapshot trước khi
   Product và Security quyết định.
@@ -590,3 +604,4 @@ threshold (0.38–0.83).
 | 2026-08-14 | Audit Phase 5 adjudication: phát hiện nhãn AI giả lập (`gemini-adjudicator`), cách ly packet vào quarantine; siết chặt validator chặn reviewer AI (`_DISALLOWED_REVIEWER_MARKERS`), cấm live content review khi domain chết; reset queue về `0/137` pending và dựng `tmp/gemini/human-review/` workbook | Junie Grok 4.6 |
 | 2026-08-22 | Phase 5 human labeling hoàn tất: 137/137 labeled bởi `reviewer.vmc`, FPR=0.0000 (0/25), Recall=0.7576 (25/33), 79 unknown. Sửa 3 lỗi CSV (duplicate case_id, invalid stratum). Xử lý 4 blockers qua Product Owner waivers (IDN stratum, single-reviewer scope) và unclassifiable handling; trạng thái chuyển sang `ready_for_review`. 12/12 tooling tests pass | Gemini 3.7 Flash & Claude Opus 4.6 |
 | 2026-08-22 | Preflight phát hiện `unknown`/`unresolved` chưa được đưa vào approval blocker. Reporter được sửa để trả exit 3 và khóa canary; run-20260808 chuyển về NO-GO. Dependency Python được khai báo đầy đủ; 34/34 test ML, 41/41 artifact checks và Go 1.26.7 security scan pass | Codex (GPT-5.6 Sol) |
+| 2026-08-23 | Phân biệt reviewed-unclassifiable với pending review; thêm waiver ràng buộc count/would-block/case-ID SHA-256. Evidence người dùng chuyển replay-0072 thành malicious true positive; Product/Security ghi owner decisions; runtime local healthy nhưng fresh predictive telemetry/release/canary gates còn pending | Codex (GPT-5.6 Sol) |

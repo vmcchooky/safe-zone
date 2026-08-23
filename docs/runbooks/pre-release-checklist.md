@@ -12,7 +12,7 @@ Complete this checklist before every Safe Zone production release.
 
 ## Local preflight evidence
 
-- [ ] `scripts/release-preflight.sh` or `scripts/release-preflight.ps1` completed successfully.
+- [ ] `scripts/ops/release-preflight.sh` or `scripts/ops/release-preflight.ps1` completed successfully.
 - [ ] `go test ./...` passed.
 - [ ] `go build ./...` passed.
 - [ ] `mise run ci` passed locally, including isolated React E2E on `/app/*`.

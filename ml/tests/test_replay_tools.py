@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 from ml.src.replay_labels import OPTIONAL_COLUMNS, REQUIRED_COLUMNS, validate_rows
@@ -410,6 +411,43 @@ def test_unresolved_review_blocks_report_even_with_other_waivers(tmp_path):
     assert metrics["unresolved_case_ids"] == ["unknown-dead"]
     assert metrics["approval_blockers"] == ["unresolved reviewed cases remain: 1"]
 
+    reviewed_unclassifiable_waiver = {
+        "approved": True,
+        "case_count": 1,
+        "would_block_count": 0,
+        "case_ids_sha256": hashlib.sha256(b"unknown-dead\n").hexdigest(),
+        "reason": "Human review completed; current evidence cannot classify this inactive domain.",
+    }
+    mismatched_metrics = calculate_metrics(
+        result.rows,
+        0.85,
+        result.columns,
+        double_label_target=35,
+        waivers={
+            **waivers,
+            "reviewed_unclassifiable": {
+                **reviewed_unclassifiable_waiver,
+                "case_ids_sha256": "0" * 64,
+            },
+        },
+    )
+    assert mismatched_metrics["reviewed_unclassifiable"]["status"] == "invalid_waiver"
+    assert "case_ids_sha256 does not match" in mismatched_metrics["approval_blockers"][0]
+
+    waived_waivers = {
+        **waivers,
+        "reviewed_unclassifiable": reviewed_unclassifiable_waiver,
+    }
+    waived_metrics = calculate_metrics(
+        result.rows,
+        0.85,
+        result.columns,
+        double_label_target=35,
+        waivers=waived_waivers,
+    )
+    assert waived_metrics["reviewed_unclassifiable"]["status"] == "waived"
+    assert waived_metrics["approval_blockers"] == []
+
     resolved_metrics = calculate_metrics(
         result.rows[:-1],
         0.85,
@@ -462,3 +500,21 @@ def test_unresolved_review_blocks_report_even_with_other_waivers(tmp_path):
     assert summary_data["false_positive_metrics"]["approval_blockers"] == [
         "unresolved reviewed cases remain: 1"
     ]
+
+    summary_data["waivers"] = waived_waivers
+    summary_path.write_text(json.dumps(summary_data), encoding="utf-8")
+    exit_code = report_main(
+        [
+            "--labels",
+            str(labels_path),
+            "--summary",
+            str(summary_path),
+            "--packet",
+            str(packet_path),
+        ]
+    )
+    assert exit_code == 0
+    summary_data = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary_data["approval_state"]["canary"] == (
+        "ready_for_review_with_reviewed_unclassifiable_waiver"
+    )

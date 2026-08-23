@@ -1,0 +1,143 @@
+{
+  "schema_version": 1,
+  "archive_type": "owner_approved_governance_addendum",
+  "created_at": "2026-08-23T14:03:12+07:00",
+  "status": "owner_approved_preflight_pending",
+  "base_archive": {
+    "path": "ml/evidence/representative-replay/run-20260808",
+    "archive_commit": "56f25dd970cee368be306fe3beb75959a393d285",
+    "labels_sha256": "bdef87e4e775740a32713d0b471d1f37d2ff7ec62eed591f424e41498cb75d15",
+    "review_summary_sha256": "79131ec8ffbf97a224525914d77dd3692e8a361667b18f07fb54cefd51b3d8c9",
+    "approval_packet_sha256": "f2f5282dd0d2700bf7dbf0038121fd62774850cf25aa1270b4c9f4bb05ee4639"
+  },
+  "implementation": {
+    "source_base_commit": "35e6a1d5f62e6889201ffbfb1472f25b4fdaadd2",
+    "ml_logic_commit": "847c6d582f305c99439e1293d2e28ba65606205d",
+    "candidate_commit": "2f0a9e79cf468e2b8603f709479850b629453b4a",
+    "reporter_source_sha256": "2e463c6a80325fd118f994cb07969ae902d5c869db2772336de9e2ecf8ee8262",
+    "reporter_tests_sha256": "87d6cab681a3e681b1267a6a7c35e246fd07c62fac9643e919303e4fc1696f31",
+    "release_commit_status": "local_candidate_committed_ci_pending"
+  },
+  "model": {
+    "version": "1.0.0",
+    "revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+    "threshold": 0.85
+  },
+  "review_update": {
+    "case_id": "replay-0072",
+    "domain": "ahshyallegrolokalnie.pl-835347547.click",
+    "previous_label": "unknown",
+    "updated_label": "malicious",
+    "label_confidence": "high",
+    "review_outcome": "true_positive",
+    "reviewed_at": "2026-08-23T13:45:15+07:00",
+    "reviewer_id": "reviewer.vmc",
+    "evidence_path": "evidence/replay-0072/chrome-safe-browsing-warning-20260823.png",
+    "evidence_sha256": "3c7f33dd56077994ad9d660a359dfe459d6b5a0420eace5829199946d8142831"
+  },
+  "reviewed_unclassifiable_waiver": {
+    "approved": true,
+    "case_count": 78,
+    "would_block_count": 33,
+    "would_pass_count": 45,
+    "case_ids_sha256": "efdaa81a8fc9cb6350aff67a1e1513f4b696a71f7d11b3e8c728fcf86e6acb27"
+  },
+  "metrics": {
+    "review_coverage": "137/137",
+    "benign_cases": 25,
+    "malicious_cases": 34,
+    "false_positives": 0,
+    "true_positives": 26,
+    "fpr_at_threshold": 0.0,
+    "recall_at_threshold": 0.7647058823529411
+  },
+  "approvals": {
+    "product": "approved",
+    "security": "approved",
+    "decision_date": "2026-08-23",
+    "owner": "Vo Manh Cuong - Chooky",
+    "attestation_type": "typed_governance_attestation_not_cryptographic_signature"
+  },
+  "local_preflight": {
+    "compose_render": {
+      "base": "pass",
+      "dev": "pass",
+      "production": "pass",
+      "host_edge": "pass",
+      "dot": "pass"
+    },
+    "python": {
+      "observed_version": "3.13.14",
+      "tests": "34_passed",
+      "artifact_validation": "41_of_41_passed"
+    },
+    "go": {
+      "configured_version": "1.26.7",
+      "observed_path_version": "1.26.7",
+      "tests": "pass",
+      "build": "pass",
+      "release_toolchain_status": "match",
+      "govulncheck": "0_reachable_vulnerabilities",
+      "gosec": "0_issues_in_87_files"
+    },
+    "ci_equivalent": {
+      "golangci_lint_2_12_2": "config_valid_0_issues",
+      "go_vet": "pass",
+      "go_race_analysis_and_risk": "pass",
+      "ui_typecheck_and_build": "pass",
+      "ui_playwright_e2e": "4_of_4_passed",
+      "github_actions": "pending_not_pushed"
+    },
+    "runtime": {
+      "captured_at": "2026-08-23T14:27:28+07:00",
+      "docker_daemon": "available_29.4.0",
+      "core_api_127_0_0_1_8080": "healthy_ready_http_200",
+      "dns_resolver_127_0_0_1_8081": "healthy_http_200",
+      "fresh_status_metrics_snapshot": "captured",
+      "ml_runtime_parity": {
+        "mode": "shadow",
+        "state": "ready",
+        "model_version": "1.0.0",
+        "revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+        "threshold": 0.85,
+        "errors": 0,
+        "skips": 0,
+        "prediction_attempts_per_service": 0,
+        "telemetry_note": "configuration and zero-state counters match; fresh predictive parity requires representative requests"
+      },
+      "application_images": {
+        "core_api_local_digest": "sha256:edde8906030254763e6e60fce78241ffe56aabe7e8895041571fb23ea1c24c26",
+        "dns_resolver_local_digest": "sha256:4384c75b77702d938dfac258d20df2f6a78b4cd054d5c971f696ba3e607b6fe8",
+        "build_identity": "dev_unknown_commit_unreleased",
+        "release_candidate_status": "not_built"
+      }
+    },
+    "bundle": {
+      "production_mode": "shadow",
+      "production_mount_read_only": {
+        "core_api": true,
+        "dns_resolver": true
+      },
+      "mounted_bundle_validation": "pass",
+      "repo_private_file_parity": "6_of_6_byte_identical",
+      "sha256s_file_sha256": "be6a9034a764e33acfac8a639a84c0bad03e759fc4b962d91f17b6ca071c32d8",
+      "computed_runtime_revision": "4632f9ea69124591db89dfb176aacf46323c18043c7b8c8d0972c3b2f92c3bca",
+      "policy_threshold": 0.85
+    },
+    "canary_and_rollback": {
+      "canary_scope_status": "not_implemented_shared_mode_for_both_services",
+      "kill_switch": "documented_mode_change_to_shadow_or_disabled_requires_restart",
+      "bundle_rollback_helper": "available",
+      "current_bundle_target": "v1",
+      "last_known_good_image_and_config": "not_recorded"
+    }
+  },
+  "remaining_gates": [
+    "GitHub Actions evidence for candidate commit 2f0a9e79cf468e2b8603f709479850b629453b4a",
+    "immutable release-candidate core-api and dns-resolver image digests with embedded build identity",
+    "fresh representative traffic telemetry and cross-service predictive parity after start",
+    "implemented and verified canary routing scope",
+    "last-known-good rollback image and config snapshot",
+    "explicit confirmation before deploy, restart, or enforce"
+  ]
+}

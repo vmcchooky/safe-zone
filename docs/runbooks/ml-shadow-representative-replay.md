@@ -96,6 +96,13 @@ Any confirmed critical-benign false positive, missing evidence for a proposed
 block, or reviewer disagreement on a high-probability case blocks canary
 approval until resolved or explicitly accepted by Product and Security.
 
+Nếu Product/Security chấp nhận các case đã review nhưng không thể phân loại,
+reporter chỉ áp dụng `reviewed_unclassifiable` waiver khi `case_count`,
+`would_block_count` và SHA-256 của danh sách `case_id` đã sort khớp chính xác.
+Waiver phải có lý do cụ thể, không biến case thành binary ground truth và tự
+mất hiệu lực khi tập case thay đổi. Packet mới vẫn cần owner decision/date;
+waiver hợp lệ ở review gate không tự phê duyệt rollout.
+
 ## Approval request
 
 The approval packet must ask Product to approve the threshold and false-

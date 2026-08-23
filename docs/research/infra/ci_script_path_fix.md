@@ -23,6 +23,7 @@ Safe-Zone từng có lỗi CI tại `golangci-lint`: module khai báo Go 1.25.0 
 | Đồng bộ Go | Pin `go = "1.26.7"` trong `mise.toml` và `golang:1.26.7-alpine` trong Docker; giữ `go 1.25.0` là language target tối thiểu trong `go.mod` | Giữ 1.25.12/1.26.4 hoặc hạ module target | Go 1.26.4 còn vulnerability standard-library có đường gọi; 1.26.7 là patch release đã xác minh và vẫn build module target 1.25. |
 | Đồng bộ Python ML | Pin `python = "3.13.14"`; khai báo `pandas==2.2.3` và `idna==3.18` bên cạnh các dependency hiện có | Dựa vào package global cài ngầm | Import trực tiếp nhưng không khai báo làm full suite không tái lập; môi trường biệt lập xác nhận toàn bộ pin tương thích. |
 | Nâng linter | Pin `golangci-lint = "2.12.2"`, thêm `version: "2"`, migrate `default: none`, gộp `gosimple` vào `staticcheck` | Giữ `golangci-lint` v1.64.5 hoặc tắt linter | Binary v1 hiện tại được build bằng Go 1.24 nên không đọc được target Go 1.25; tắt linter làm giảm coverage chất lượng mã. |
+| Cách ly artifact local | Loại `^tmp/` khỏi package discovery của linter | Xóa artifact tạm trước mỗi lần lint hoặc sửa các script không tracked | `tmp/` bị Git ignore nhưng `go list ./...` vẫn nhìn thấy package Go local; exclusion giữ local CI tái lập mà không giảm coverage trên source tracked. |
 | Pin security scanner | Dùng `gosec@v2.28.0` và `govulncheck@v1.4.0` trong `mise` và cả hai script release preflight | Tiếp tục dùng `@latest` | Phiên bản trôi nổi có thể tự yêu cầu toolchain mới hoặc thay đổi kết quả CI giữa hai lần chạy. |
 | Xử lý security finding | Giữ invariant bundle file name cố định, ghi rõ suppression cục bộ có lý do, và thêm guard chỉ số TF-IDF | Tắt rule G304/G602 toàn cục | Giới hạn phạm vi suppression và giữ các rule khác hoạt động đầy đủ. |
 | Canonicalize bundle checksum | Chuẩn hóa `CRLF` thành `LF` trước SHA-256 và lưu hash canonical trong `ml/models/v1/SHA256SUMS` | Lưu hash theo line ending của từng máy | Hash theo môi trường làm CI Linux từ chối bundle hợp lệ đã pass trên Windows. Canonical text hashing giữ integrity invariant mà không đổi nội dung model. |
@@ -33,11 +34,18 @@ Safe-Zone từng có lỗi CI tại `golangci-lint`: module khai báo Go 1.25.0 
 - **Chiến lược:** Audit tĩnh toàn bộ workflow, task, script và version pin; chạy từng task độc lập; sửa theo output thực tế; chạy lại bằng đúng Go/Python đã pin.
 - **Subagents/voting:** Không sử dụng subagent hoặc voting; kết luận dựa trên output CI và các lệnh kiểm tra tái hiện được.
 - `.golangci.yml` được migrate sang schema v2 và giữ tập linter có chủ đích: `errcheck`, `govet`, `ineffassign`, `staticcheck`, `unused`.
+- `.golangci.yml` loại `tmp/` khỏi lint vì đây là vùng evidence/workbench bị
+  Git ignore; source tracked vẫn được lint đầy đủ.
+- Khóa v1 `issues.exclude-use-default` được loại bỏ sau khi `config verify`
+  xác nhận khóa này không hợp lệ trong schema v2; cấu hình hiện được kiểm tra
+  schema trước khi chạy lint.
 - Các lỗi `errcheck` được sửa bằng cách xử lý tường minh kết quả `Close`; các lỗi `staticcheck` được sửa bằng tagged switch, selector được promote và `fmt.Fprintf`.
 - `golang.org/x/text` được nâng lên `v0.39.0` cùng các module liên quan do `govulncheck` xác định bản `v0.38.0` có lỗi.
 - `internal/analysis/ml_classifier.go` canonicalize `CRLF` → `LF` khi hash model/manifest/calibration/policy; `ml/tests/model_bundle_test.go` dùng cùng quy tắc để golden revision không phụ thuộc OS.
 - `ml/models/v1/SHA256SUMS` và golden `bundle_revision` được cập nhật theo canonical hashes; model bytes, feature values và inference logic không thay đổi.
 - Release preflight PowerShell và shell dùng cùng phiên bản scanner với task CI.
+- Các runbook release gọi helper qua đường dẫn chuẩn `scripts/ops/`; đường dẫn
+  cũ dưới `scripts/` bị loại vì không còn khớp cấu trúc script đã phân loại.
 - `mise.toml` pin Go 1.26.7 và Python 3.13.14; Docker build stage dùng
   `golang:1.26.7-alpine`. `ml/pyproject.toml` khai báo thêm hai dependency
   import trực tiếp là `pandas` và `idna`.
@@ -75,6 +83,7 @@ Safe-Zone từng có lỗi CI tại `golangci-lint`: module khai báo Go 1.25.0 
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-23 | Loại khóa linter v1 khỏi schema v2, cách ly `tmp/`, xác nhận `config verify`/lint 0 issue và đồng bộ đường dẫn release helper với `scripts/ops/` | Codex (GPT-5.6 Sol) |
 | 2026-08-22 | Nâng Go build toolchain lên 1.26.7, pin Python 3.13.14 và khai báo dependency ML còn thiếu; xác nhận Go security scan, Python test và artifact validation | Codex (GPT-5) |
 | 2026-08-08 | Sửa checksum bundle lệch CRLF/LF giữa Windows và GitHub Actions Ubuntu; đồng bộ golden revision | Codex (GPT-5) |
 | 2026-08-08 | Đồng bộ Go 1.25.12, migrate golangci-lint v2, pin scanner, xử lý finding linter/gosec và cập nhật bằng chứng CI | Codex (GPT-5) |
