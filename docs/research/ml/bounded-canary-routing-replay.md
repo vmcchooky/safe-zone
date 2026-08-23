@@ -53,6 +53,7 @@ Clean replay có thể tái lập bằng lệnh sau. Output phải nằm trong p
 go run ./cmd/ml-replay `
   --labels ml/evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv `
   --bundle <private-bundle> `
+  --source-commit <exact-40-character-git-sha> `
   --canary-percent 10 `
   --canary-seed phase5-local-shadow-v1 `
   --rounds 3 `

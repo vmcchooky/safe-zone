@@ -31,6 +31,17 @@ func TestReadCasesHashesExactInputAndRejectsDuplicates(t *testing.T) {
 	}
 }
 
+func TestValidCommitRequiresExactHexSHA(t *testing.T) {
+	if !validCommit("d0a07e0c502e629e157a181e9de53e6c77a842da") {
+		t.Fatal("expected full Git SHA to be valid")
+	}
+	for _, value := range []string{"d0a07e0", "z0a07e0c502e629e157a181e9de53e6c77a842da", ""} {
+		if validCommit(value) {
+			t.Fatalf("expected %q to be invalid", value)
+		}
+	}
+}
+
 func TestCompareDecisionsFindsProbabilityAndActionMismatch(t *testing.T) {
 	cases := []replayCase{
 		{CaseID: "case-1", Domain: "one.example"},

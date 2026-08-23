@@ -30,6 +30,23 @@ func TestMLCanarySelectorIsDeterministicAndNormalized(t *testing.T) {
 	}
 }
 
+func TestMLCanarySelectorKnownVectors(t *testing.T) {
+	canary := MLCanaryConfig{Percent: 10, Seed: "phase5-local-shadow-v1"}
+	tests := map[string]bool{
+		"login-security-canary-00000.example.com": false,
+		"login-security-canary-00001.example.com": false,
+		"login-security-canary-00004.example.com": true,
+		"login-security-canary-00017.example.com": true,
+		"login-security-canary-00026.example.com": false,
+		"login-security-canary-00038.example.com": true,
+	}
+	for domain, expected := range tests {
+		if actual := canary.Eligible(domain); actual != expected {
+			t.Errorf("Eligible(%q)=%v, expected %v", domain, actual, expected)
+		}
+	}
+}
+
 func TestMLCanarySelectorApproximatesConfiguredHashSpace(t *testing.T) {
 	canary := MLCanaryConfig{Percent: 10, Seed: "phase5-distribution"}
 	selected := 0

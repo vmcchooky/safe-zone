@@ -105,6 +105,8 @@ type replayReport struct {
 	Cases              int                   `json:"cases"`
 	RequestsPerService int                   `json:"requests_per_service"`
 	LabelsSHA256       string                `json:"labels_sha256"`
+	SourceCommit       string                `json:"source_commit"`
+	BundleSHA256SHash  string                `json:"bundle_sha256s_sha256"`
 	ModelVersion       string                `json:"model_version"`
 	ModelRevision      string                `json:"model_revision"`
 	ModelThreshold     float64               `json:"model_threshold"`
@@ -124,6 +126,7 @@ func main() {
 		labelsPath    string
 		bundleDir     string
 		outputPath    string
+		sourceCommit  string
 		canaryPercent int
 		canarySeed    string
 		rounds        int
@@ -132,24 +135,28 @@ func main() {
 	flag.StringVar(&labelsPath, "labels", "", "reviewed labels.csv to replay")
 	flag.StringVar(&bundleDir, "bundle", "", "immutable model bundle directory")
 	flag.StringVar(&outputPath, "output", "", "optional JSON report path")
+	flag.StringVar(&sourceCommit, "source-commit", "", "exact 40-character Git commit under evaluation")
 	flag.IntVar(&canaryPercent, "canary-percent", 5, "bounded canary percentage to observe in shadow")
 	flag.StringVar(&canarySeed, "canary-seed", "", "immutable canary selector seed")
 	flag.IntVar(&rounds, "rounds", 3, "number of clean replay rounds per service")
 	flag.Float64Var(&tolerance, "tolerance", 1e-12, "maximum probability parity delta")
 	flag.Parse()
 
-	if err := run(labelsPath, bundleDir, outputPath, canaryPercent, canarySeed, rounds, tolerance); err != nil {
+	if err := run(labelsPath, bundleDir, outputPath, sourceCommit, canaryPercent, canarySeed, rounds, tolerance); err != nil {
 		fmt.Fprintln(os.Stderr, "ml replay failed:", err)
 		os.Exit(1)
 	}
 }
 
-func run(labelsPath, bundleDir, outputPath string, canaryPercent int, canarySeed string, rounds int, tolerance float64) error {
+func run(labelsPath, bundleDir, outputPath, sourceCommit string, canaryPercent int, canarySeed string, rounds int, tolerance float64) error {
 	if strings.TrimSpace(labelsPath) == "" || strings.TrimSpace(bundleDir) == "" {
 		return errors.New("--labels and --bundle are required")
 	}
 	if strings.TrimSpace(canarySeed) == "" {
 		return errors.New("--canary-seed is required")
+	}
+	if !validCommit(sourceCommit) {
+		return errors.New("--source-commit must be an exact 40-character hexadecimal Git commit")
 	}
 	if canaryPercent < 1 || canaryPercent > 100 {
 		return errors.New("--canary-percent must be between 1 and 100")
@@ -162,6 +169,10 @@ func run(labelsPath, bundleDir, outputPath string, canaryPercent int, canarySeed
 	}
 
 	cases, labelsHash, err := readCases(labelsPath)
+	if err != nil {
+		return err
+	}
+	bundleHash, err := readBundleChecksumHash(bundleDir)
 	if err != nil {
 		return err
 	}
@@ -230,6 +241,8 @@ func run(labelsPath, bundleDir, outputPath string, canaryPercent int, canarySeed
 		Cases:              len(cases),
 		RequestsPerService: len(cases) * rounds,
 		LabelsSHA256:       labelsHash,
+		SourceCommit:       strings.ToLower(sourceCommit),
+		BundleSHA256SHash:  bundleHash,
 		ModelVersion:       offlineCore.ModelVersion(),
 		ModelRevision:      offlineCore.Revision(),
 		ModelThreshold:     offlineCore.BlockThreshold(),
@@ -256,6 +269,28 @@ func run(labelsPath, bundleDir, outputPath string, canaryPercent int, canarySeed
 	}
 	_, err = os.Stdout.Write(encoded)
 	return err
+}
+
+func validCommit(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 40 {
+		return false
+	}
+	for _, character := range value {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') && (character < 'A' || character > 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+func readBundleChecksumHash(bundleDir string) (string, error) {
+	data, err := safefile.ReadFileWithin(bundleDir, "SHA256SUMS")
+	if err != nil {
+		return "", fmt.Errorf("read bundle SHA256SUMS: %w", err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }
 
 func newReplayService(classifier analysis.DomainClassifier, canary risk.MLCanaryConfig) *risk.Service {

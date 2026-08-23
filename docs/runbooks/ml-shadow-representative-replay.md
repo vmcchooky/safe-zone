@@ -126,6 +126,7 @@ the signed packet.
 go run ./cmd/ml-replay `
   --labels <reviewed-run>\labels.csv `
   --bundle <immutable-bundle> `
+  --source-commit <exact-40-character-git-sha> `
   --canary-percent 10 `
   --canary-seed <stable-window-seed> `
   --rounds 3 `
