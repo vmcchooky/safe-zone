@@ -120,9 +120,10 @@ go run ./cmd/ml-fp-candidates `
 
 The output directory must not exist. A ready run contains `manifest.json` and
 `labels.csv`; feed the CSV into `cmd/ml-replay`. If the queue is empty, the tool
-writes only a manifest with `status=empty_queue` and exits with code `2`. Do not
-seed the operator queue with synthetic reports and do not copy previously signed
-review rows into it merely to satisfy the minimum.
+writes only a manifest with `status=empty_queue` and exits non-zero (`2` for the
+compiled binary; `go run` may surface it as wrapper code `1`). Do not seed the
+operator queue with synthetic reports and do not copy previously signed review
+rows into it merely to satisfy the minimum.
 
 Only new queue decisions are considered. The 78 reviewed-unclassifiable cases
 in the archived packet do not need another review unless new evidence changes

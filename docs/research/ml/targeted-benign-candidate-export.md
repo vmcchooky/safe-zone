@@ -36,7 +36,7 @@ Phép đo là counterfactual: domain đã được allow override sẽ không đ
 
 Mỗi queue record phải có `status=resolved`, `resolution_action=allow`, `review_reason` tối thiểu 8 ký tự, `reviewed_by`, `reviewed_at` và domain hợp lệ. Các report cùng normalized domain được gộp; case ID ổn định là tiền tố `fpq-` cộng 64 bit đầu của SHA-256 domain. CSV tương thích `cmd/ml-replay` qua ba cột bắt buộc `case_id`, `domain`, `human_label`, đồng thời ghi model probability và provenance tối thiểu. Manifest khóa source commit, SHA-256 của config/brand snapshot, hash `SHA256SUMS`, model contract, queue counters và selection statistics.
 
-Output directory phải chưa tồn tại. Công cụ tạo một staging directory cùng filesystem, ghi file với permission `0600`, sau đó rename sang target. Khi không có candidate, manifest vẫn được phát hành nhưng process trả exit code `2`; `labels.csv` không tồn tại để tránh replay nhầm tập rỗng hoặc stale file.
+Output directory phải chưa tồn tại. Công cụ tạo một staging directory cùng filesystem, ghi file với permission `0600`, sau đó rename sang target. Khi không có candidate, manifest vẫn được phát hành nhưng binary trả exit code `2`; `go run` thông báo `exit status 2` nhưng có thể trả wrapper code `1` cho shell. `labels.csv` không tồn tại để tránh replay nhầm tập rỗng hoặc stale file.
 
 Codex (GPT-5) thực hiện audit queue contract, thiết kế exporter, viết test và tài liệu trên một branch riêng. Chiến lược kiểm soát chất lượng sử dụng contract checks, unit/integration test, model/runtime revision comparison và repository CI. Không sử dụng subagent; số lượng subagent là 0. Human-in-the-loop vẫn quyết định một report có phải false positive hay không; AI agent không tạo hoặc sửa operator review.
 
