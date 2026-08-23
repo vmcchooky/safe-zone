@@ -62,6 +62,24 @@ Codex (GPT-5) triển khai theo chiến lược contract-first và threat-model 
 
 External execution dùng key trong file secret đã xác minh khác key từng xuất hiện trong chat. Giá trị key không được ghi vào log hoặc artifact. Kết quả execute và revalidation được ghi riêng để giữ nguyên provenance của raw response ban đầu.
 
+| Chỉ số execute/revalidation | Kết quả | Diễn giải |
+|---|---:|---|
+| Firecrawl requests | 14 request | Một request cho mỗi evidence group đã khóa |
+| HTTP 200 | 14/14 | Không có API/transport failure |
+| Candidate-domain requests | 0 request | Chỉ hai evidence host trong allowlist được gọi |
+| Initial local validation | 11 pass, 3 fail | Ba failure do validator cũ chỉ nhận canonical domain trong case chỉ có alias `www.` |
+| Offline revalidation | 14/14 pass | Exact pinned alias fix; không gọi Firecrawl lại |
+| `evidence_found` | 4 group | Exact record trên Tín Nhiệm Mạng; vẫn cần human review |
+| `unresolved_not_found` | 10 group | Thiếu current evidence; không phải kết luận malicious |
+| `contract_errors` | 0 group | Raw envelope/hash/schema đều qua local contract |
+| Would-block có evidence | 3 group | Tập ưu tiên cho manual false-positive review |
+| Near-only có evidence | 1 group | Không bị block ở threshold `0.85` |
+| Initial results SHA-256 | `898d10b4...eb06c41` | Raw response input bất biến của revalidation |
+| Revalidated results SHA-256 | `992c6681...98ca39` | 14 local dispositions sau validator fix |
+| Revalidated manifest SHA-256 | `33c116a8...a140438` | Khóa runner `d5debeaf...f52a4d55` và output |
+
+Bốn exact record tìm thấy là `benhviendalieuthanhhoa.com` (`0.9257835736488635`, would-block), `benhviennoitietthanhhoa.com` (`0.9384566167627869`, would-block), `vietmassagebuiquocchau.com` (`0.9563838532880636`, would-block) và `dichthuatcongchung24h.com` (`0.8016674662953063`, near-only). Directory membership là provenance để reviewer kiểm tra tiếp, không tự tạo `Allow`, benign label hoặc canary approval.
+
 ### Liên kết Artifacts
 
 - Runner: `cmd/ml-evidence-firecrawl/main.go`
@@ -69,6 +87,8 @@ External execution dùng key trong file secret đã xác minh khác key từng x
 - Curated replay research: `docs/research/ml/vietnam-whitelist-proxy-replay.md`
 - Shadow replay runbook: `docs/runbooks/ml-shadow-representative-replay.md`
 - Secret handling: `ops/secrets/README.md`
+- Initial execute artifact: `D:\Quorix\private-artifacts\safe-zone\firecrawl\run-20260823-evidence-execute-retry-4531be8`
+- Offline revalidated artifact: `D:\Quorix\private-artifacts\safe-zone\firecrawl\run-20260823-evidence-revalidated-d5debea`
 
 ## Lịch sử Thay đổi (Version History)
 
@@ -77,3 +97,4 @@ External execution dùng key trong file secret đã xác minh khác key từng x
 | 2026-08-23 | Thêm bounded Firecrawl runner, dry-run 14 group và secret/output controls | Codex (GPT-5) |
 | 2026-08-23 | Khóa dry-run bằng runner commit và manifest checksum | Codex (GPT-5) |
 | 2026-08-23 | Thêm exact pinned alias validation và offline raw-response revalidation | Codex (GPT-5) |
+| 2026-08-23 | Ghi nhận execute 14 request và revalidation 4 found/10 unresolved/0 contract error | Codex (GPT-5) |
