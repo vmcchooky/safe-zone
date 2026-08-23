@@ -75,9 +75,12 @@ type Options struct {
 	OllamaTimeout   time.Duration
 	WhitelistPath   string
 	AdblockFileRoot string
-	AnalysisConfig  config.AnalysisConfig
-	Store           *store.DB
-	BrandCacheTTL   time.Duration
+	// DisableAdblockSync prevents background source/cache synchronization for
+	// isolated replay and tests that must not perform external I/O.
+	DisableAdblockSync bool
+	AnalysisConfig     config.AnalysisConfig
+	Store              *store.DB
+	BrandCacheTTL      time.Duration
 	// Analysis config hot-reload orchestration.
 	ConfigReloadChannel      string
 	ConfigReloadPollInterval time.Duration
@@ -393,8 +396,10 @@ func NewService(options Options) *Service {
 		go svc.runConfigReloadReconciler()
 	}
 
-	go svc.runAdblockSync()
-	go svc.runAdblockConfigSync()
+	if !options.DisableAdblockSync {
+		go svc.runAdblockSync()
+		go svc.runAdblockConfigSync()
+	}
 
 	return svc
 }

@@ -7,7 +7,7 @@
 
 ## 1. Tóm tắt (Abstract / Executive Summary)
 
-Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1,000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất `137/137` review entries do reviewer ủy quyền (`reviewer.vmc`) ghi nhận; working addendum gồm 25 benign, 34 malicious và 78 reviewed-unclassifiable cases. FPR representative tại threshold 0.85 là **0.0000** (0/25), Recall là **0.7647** (26/34). Một supplement tách biệt gồm ba targeted benign ML candidate đã được human-review và cả ba đều là false positive, tạo FPR hard-case **3/3 = 100%**. Review governance gate vẫn có waiver hợp lệ, nhưng model-quality gate hiện chặn canary; rollout giữ **NO-GO** và `enforce` chưa được phép bật.
+Tài liệu này trình bày phương pháp luận và quy trình xây dựng AI Engine cho dự án Safe-Zone, phục vụ hệ thống phân giải DNS chống lừa đảo. Pipeline học máy sử dụng mô hình LightGBM (1.000 trees) kết hợp với 534 đặc trưng từ văn bản (TF-IDF) và cấu trúc thủ công (handcrafted). Quá trình phát triển đi từ data preflight, feature contract, group-disjoint split, training/calibration đến immutable bundle và Go runtime integration. Golden parity giữa Python và Go qua thư viện `leaves` được đánh giá bằng sai số cực đại trong tolerance floating-point, không dùng giả định sai số bằng không. Phase 5 đã hoàn tất `137/137` review entries do reviewer ủy quyền (`reviewer.vmc`) ghi nhận; working addendum gồm 25 benign, 34 malicious và 78 reviewed-unclassifiable cases. FPR representative tại threshold `0,85` là `0/25`, Recall là `26/34`. Supplement tách biệt gồm ba targeted benign ML candidate từng tạo `3/3` false positive trên v1. Candidate v2 suffix-debiased + tiered hard-negative giảm supplement này xuống `0/3`, đồng thời cải thiện held-out runtime-candidate FPR/recall tại threshold `0,92`; SAFE VN audit vẫn còn `4/1.404` runtime-candidate proxy false positive. Model-quality gate vì vậy tiếp tục chặn canary; rollout giữ **NO-GO** và `enforce` chưa được phép bật.
 
 ## 2. Sơ đồ Tổng quan Pipeline
 
@@ -599,6 +599,32 @@ casino gambling và phishing dùng cloaking có probability dưới threshold
 
 ---
 
+## 10.1 Candidate v2 suffix-debiased + tiered hard-negative
+
+### Mục tiêu (Objectives)
+
+Candidate xử lý failure mode tên miền tổ chức Việt Nam dài mà không train trên ba case human-reviewed. Feature contract v2 bỏ complete public suffix khỏi TF-IDF, còn training dùng hai tier benign proxy có weight `1,5` và `3,0`.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Leakage control | Loại ba registrable groups khỏi bốn partition | Chỉ xóa exact train row | Ngăn duplicate/subdomain cùng tổ chức xuất hiện trong model |
+| Operating point | Chọn `0,92` trên validation candidate cohort | Giữ `0,85`; chọn theo test | Validation v2 có FPR thấp hơn và recall cao hơn v1; test vẫn held-out |
+| Release state | Private candidate, NO-GO | Provision staging ngay | SAFE VN còn 4 runtime-candidate proxy false positive |
+
+### Cách thức Thực hiện (Implementation Details)
+
+Pipeline mới nằm trong `ml/src/build_features.py`, `ml/src/training_data.py`, `ml/src/train_lightgbm.py` và `internal/analysis/features.go`. Codex (GPT-5) thực hiện thay đổi theo contract-first/leakage-first, không dùng subagent và không áp dụng bỏ phiếu. Quality control gồm 33/33 artifact checks, Python/Go tests, canonical-LF bundle checksums và Go core/DNS shadow replay; con người vẫn phê duyệt threshold và rollout.
+
+### Số liệu (Metrics & Results)
+
+Held-out runtime-candidate FPR giảm từ `228/9.504 = 2,3990%` xuống `160/9.504 = 1,6835%`; recall tăng từ `10.991/14.577 = 75,3996%` lên `11.235/14.577 = 77,0735%`. Frozen challenge đạt `0/3` false positive. SAFE VN runtime-candidate audit còn `4/1.404 = 0,2849%`, nên candidate chưa đóng production gate.
+
+Chi tiết phương pháp, metrics và giới hạn được ghi tại `docs/research/ml/suffix-debiased-hard-negative-candidate.md`.
+
+---
+
 ## 11. Lịch sử Thay đổi (Version History)
 
 | Ngày | Mô tả | Tác giả |
@@ -614,3 +640,4 @@ casino gambling và phishing dùng cloaking có probability dưới threshold
 | 2026-08-22 | Preflight phát hiện `unknown`/`unresolved` chưa được đưa vào approval blocker. Reporter được sửa để trả exit 3 và khóa canary; run-20260808 chuyển về NO-GO. Dependency Python được khai báo đầy đủ; 34/34 test ML, 41/41 artifact checks và Go 1.26.7 security scan pass | Codex (GPT-5.6 Sol) |
 | 2026-08-23 | Phân biệt reviewed-unclassifiable với pending review; thêm waiver ràng buộc count/would-block/case-ID SHA-256. Evidence người dùng chuyển replay-0072 thành malicious true positive; Product/Security ghi owner decisions; runtime local healthy nhưng fresh predictive telemetry/release/canary gates còn pending | Codex (GPT-5.6 Sol) |
 | 2026-08-23 | Thêm ba owner-reviewed whitelist-proxy false positive; bounded replay FPR 3/3, parity mismatch 0 và canary chuyển sang blocked chờ remediation | Codex (GPT-5) |
+| 2026-08-23 | Thêm candidate v2 suffix-debiased + tiered hard-negative; supplement còn 0/3 false positive nhưng SAFE VN audit giữ NO-GO | Codex (GPT-5) |

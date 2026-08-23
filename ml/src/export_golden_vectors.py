@@ -22,18 +22,21 @@ if str(BASE_DIR / "src") not in sys.path:
     sys.path.insert(0, str(BASE_DIR / "src"))
 
 from src.canonicalize import canonicalize_domain
-from src.build_features import FeatureExtractor, FEATURE_NAMES
+from src.build_features import (
+    FeatureExtractor,
+    FEATURE_NAMES,
+    TFIDF_INPUT_DOMAIN_ASCII,
+    tfidf_input_from_canonical,
+)
 
 MODELS_DIR = BASE_DIR / "models" / "v1"
 DERIVED_DIR = BASE_DIR / "data" / "derived"
 FIXTURES_DIR = BASE_DIR / "tests" / "fixtures"
 
 def compute_sha256(file_path: Path) -> str:
-    hasher = hashlib.sha256()
     with open(file_path, "rb") as f:
-        while chunk := f.read(8192):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+        canonical = f.read().replace(b"\r\n", b"\n")
+    return hashlib.sha256(canonical).hexdigest()
 
 def load_bundle_metadata():
     model_path = MODELS_DIR / "domain_threat_lgbm.txt"
@@ -174,7 +177,12 @@ def generate_golden_vectors():
         handcrafted = np.array([feat_dict[fn] for fn in FEATURE_NAMES], dtype=np.float64)
 
         # Compute TF-IDF n-grams (512 features)
-        tfidf_vec = vectorizer.transform([canon.domain_ascii]).toarray()[0]
+        tfidf_input_view = meta["manifest"].get("tfidf_config", {}).get(
+            "input_view", TFIDF_INPUT_DOMAIN_ASCII
+        )
+        tfidf_vec = vectorizer.transform(
+            [tfidf_input_from_canonical(canon, tfidf_input_view)]
+        ).toarray()[0]
 
         # Combine handcrafted (22) + TF-IDF (512) = 534 features
         feature_vec = np.concatenate([handcrafted, tfidf_vec])
@@ -227,6 +235,7 @@ def generate_golden_vectors():
     output_path = FIXTURES_DIR / "golden_vectors.v1.json"
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(fixture_output, f, indent=2)
+        f.write("\n")
 
     print(f"Successfully generated {len(test_cases)} golden test vectors.")
     print(f"Saved to: {output_path}")

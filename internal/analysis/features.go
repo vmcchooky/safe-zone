@@ -17,10 +17,13 @@ import (
 )
 
 const (
-	featureManifestVersion  = "1.0.0"
-	handcraftedFeatureCount = 22
-	tfidfFeatureCount       = 512
-	totalFeatureCount       = handcraftedFeatureCount + tfidfFeatureCount
+	featureManifestVersionV1 = "1.0.0"
+	featureManifestVersionV2 = "2.0.0"
+	handcraftedFeatureCount  = 22
+	tfidfFeatureCount        = 512
+	totalFeatureCount        = handcraftedFeatureCount + tfidfFeatureCount
+	tfidfInputDomainASCII    = "domain_ascii"
+	tfidfInputWithoutSuffix  = "domain_without_public_suffix"
 )
 
 var featureNames = []string{
@@ -50,6 +53,7 @@ type TFIDFConfig struct {
 	Lowercase   bool   `json:"lowercase"`
 	SublinearTF bool   `json:"sublinear_tf"`
 	Norm        string `json:"norm"`
+	InputView   string `json:"input_view,omitempty"`
 }
 
 type canonicalDomain struct {
@@ -91,8 +95,9 @@ var mlPhishingKeywords = []string{
 	"xacthuc", "cungcap",
 }
 
-// FeatureExtractor recreates the v1 handcrafted and character n-gram feature
-// contract. It is immutable after construction and safe for concurrent use.
+// FeatureExtractor recreates the supported handcrafted and character n-gram
+// feature contracts. It is immutable after construction and safe for
+// concurrent use.
 type FeatureExtractor struct {
 	manifest FeatureManifest
 	vocab    []string
@@ -149,7 +154,7 @@ func NewFeatureExtractor(manifestPath string) (*FeatureExtractor, error) {
 }
 
 func validateFeatureManifest(manifest FeatureManifest) error {
-	if manifest.ContractVersion != featureManifestVersion {
+	if manifest.ContractVersion != featureManifestVersionV1 && manifest.ContractVersion != featureManifestVersionV2 {
 		return fmt.Errorf("unsupported feature manifest version %q", manifest.ContractVersion)
 	}
 	if manifest.HandcraftedFeatureCount != handcraftedFeatureCount ||
@@ -169,6 +174,16 @@ func validateFeatureManifest(manifest FeatureManifest) error {
 		manifest.TFIDFConfig.MaxFeatures != tfidfFeatureCount || manifest.TFIDFConfig.Analyzer != "char" ||
 		!manifest.TFIDFConfig.Lowercase || !manifest.TFIDFConfig.SublinearTF || manifest.TFIDFConfig.Norm != "l2" {
 		return errors.New("unsupported TF-IDF configuration in feature manifest")
+	}
+	switch manifest.ContractVersion {
+	case featureManifestVersionV1:
+		if manifest.TFIDFConfig.InputView != "" && manifest.TFIDFConfig.InputView != tfidfInputDomainASCII {
+			return fmt.Errorf("v1 feature manifest has unsupported TF-IDF input view %q", manifest.TFIDFConfig.InputView)
+		}
+	case featureManifestVersionV2:
+		if manifest.TFIDFConfig.InputView != tfidfInputWithoutSuffix {
+			return fmt.Errorf("v2 feature manifest requires TF-IDF input view %q", tfidfInputWithoutSuffix)
+		}
 	}
 	return nil
 }
@@ -332,8 +347,22 @@ func (e *FeatureExtractor) ExtractCanonical(canonical canonicalDomain) []float64
 		}
 	}
 	e.extractBrandFeatures(features, canonical)
-	e.extractTFIDF(features, ascii)
+	e.extractTFIDF(features, tfidfInput(canonical, e.manifest.TFIDFConfig.InputView))
 	return features
+}
+
+func tfidfInput(canonical canonicalDomain, inputView string) string {
+	if inputView == "" || inputView == tfidfInputDomainASCII {
+		return canonical.ascii
+	}
+	if inputView != tfidfInputWithoutSuffix || canonical.suffix == "" {
+		return ""
+	}
+	marker := "." + canonical.suffix
+	if !strings.HasSuffix(canonical.ascii, marker) {
+		return ""
+	}
+	return strings.TrimSuffix(canonical.ascii, marker)
 }
 
 func (e *FeatureExtractor) extractBrandFeatures(features []float64, canonical canonicalDomain) {

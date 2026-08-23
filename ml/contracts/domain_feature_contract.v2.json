@@ -1,0 +1,69 @@
+{
+  "contract_version": "2.0.0",
+  "supersedes": "domain_feature_contract.v1.json",
+  "created_at": "2026-08-23T00:00:00Z",
+  "dataset_target": "domain_dataset",
+  "input_views": {
+    "domain_ascii": "ASCII A-label canonical FQDN used by handcrafted features",
+    "domain_unicode": "Unicode U-label canonical FQDN used by script and homoglyph features",
+    "domain_without_public_suffix": "All canonical labels before the complete PSL public suffix; dots between subdomain and registrable labels are retained"
+  },
+  "handcrafted_feature_count": 22,
+  "tfidf_feature_count": 512,
+  "total_feature_count": 534,
+  "handcrafted_feature_order": [
+    "fqdn_length",
+    "num_dots",
+    "num_hyphens",
+    "num_digits",
+    "digit_ratio",
+    "entropy",
+    "max_consecutive_consonants",
+    "main_label_length",
+    "registrable_domain_length",
+    "subdomain_depth",
+    "token_count",
+    "is_punycode",
+    "has_mixed_script",
+    "is_ip_like",
+    "tld_risk_score",
+    "phishing_keyword_count",
+    "is_shared_hosting",
+    "min_brand_levenshtein",
+    "min_brand_keyboard_distance",
+    "has_brand_homoglyph",
+    "has_brand_in_main_label",
+    "has_brand_in_subdomain"
+  ],
+  "tfidf_config": {
+    "ngram_range": [
+      2,
+      3
+    ],
+    "max_features": 512,
+    "analyzer": "char",
+    "lowercase": true,
+    "sublinear_tf": true,
+    "norm": "l2",
+    "oov_handling": "ignore_unknown_ngrams",
+    "input_view": "domain_without_public_suffix",
+    "examples": {
+      "example.com": "example",
+      "login.example.gov.vn": "login.example",
+      "a.b.example.co.uk": "a.b.example",
+      "full-hostname-matched-by-psl-wildcard": ""
+    }
+  },
+  "compatibility": {
+    "v1_default_input_view": "domain_ascii",
+    "runtime_must_reject_v2_without_explicit_input_view": true,
+    "handcrafted_features_unchanged_from_v1": true
+  },
+  "training_invariants": {
+    "fit_tfidf_on": "train_split_only",
+    "group_key": "registrable_domain",
+    "frozen_challenge_excluded_from_all_partitions": true,
+    "hard_negative_label_kind": "benign_proxy",
+    "hard_negative_weight_must_be_greater_than_one_and_at_most_ten": true
+  }
+}

@@ -5,7 +5,7 @@ Fits TfidfVectorizer ONLY on the train partition.
 Exports CSR sparse matrices (.npz), Parquet partitions, feature_manifest.json, and capacity_report.json.
 """
 
-from dataclasses import dataclass
+import argparse
 import hashlib
 import json
 import math
@@ -14,8 +14,8 @@ import re
 import sys
 import time
 import tracemalloc
-from typing import Any, Dict, List, Optional, Tuple
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from typing import Any, Dict, List, Mapping, Optional, Tuple
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -50,6 +50,78 @@ FEATURE_NAMES = [
     "has_brand_in_main_label",
     "has_brand_in_subdomain",
 ]
+
+TFIDF_INPUT_DOMAIN_ASCII = "domain_ascii"
+TFIDF_INPUT_WITHOUT_PUBLIC_SUFFIX = "domain_without_public_suffix"
+SUPPORTED_TFIDF_INPUT_VIEWS = {
+    TFIDF_INPUT_DOMAIN_ASCII,
+    TFIDF_INPUT_WITHOUT_PUBLIC_SUFFIX,
+}
+
+
+def tfidf_input_from_canonical(
+    canonical_res: CanonicalResult,
+    input_view: str = TFIDF_INPUT_DOMAIN_ASCII,
+) -> str:
+    """Return the exact text consumed by the character TF-IDF contract."""
+    if input_view not in SUPPORTED_TFIDF_INPUT_VIEWS:
+        raise ValueError(f"unsupported TF-IDF input view: {input_view!r}")
+    domain_ascii = canonical_res.domain_ascii.lower()
+    if input_view == TFIDF_INPUT_DOMAIN_ASCII:
+        return domain_ascii
+    if not canonical_res.is_valid:
+        return ""
+    suffix = canonical_res.suffix.lower().strip(".")
+    if suffix and domain_ascii == suffix:
+        # PSL wildcard/private rules can classify the complete hostname as a
+        # suffix (for example some dynamic cloud-hosting names).  Removing the
+        # suffix therefore yields the intentional empty TF-IDF document.
+        return ""
+    marker = f".{suffix}" if suffix else ""
+    if not marker or not domain_ascii.endswith(marker):
+        raise ValueError(
+            f"cannot remove public suffix {suffix!r} from {domain_ascii!r}"
+        )
+    lexical_labels = domain_ascii[: -len(marker)]
+    return lexical_labels
+
+
+def tfidf_input_from_domain(
+    domain: str,
+    input_view: str = TFIDF_INPUT_DOMAIN_ASCII,
+) -> str:
+    return tfidf_input_from_canonical(canonicalize_domain(str(domain)), input_view)
+
+
+def _tfidf_input_chunk(domains: List[str], input_view: str) -> List[str]:
+    psl = get_psl()
+    values: List[str] = []
+    for domain in domains:
+        canonical = canonicalize_domain(str(domain), psl)
+        values.append(tfidf_input_from_canonical(canonical, input_view))
+    return values
+
+
+def build_tfidf_inputs(
+    domains: List[str], input_view: str, num_workers: int
+) -> List[str]:
+    if input_view == TFIDF_INPUT_DOMAIN_ASCII:
+        return [str(domain).lower() for domain in domains]
+    chunk_size = 50000
+    chunks = [domains[i : i + chunk_size] for i in range(0, len(domains), chunk_size)]
+    if not chunks:
+        return []
+    values: List[str] = []
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        # executor.map preserves chunk order.  Feature rows must never be
+        # collected through as_completed(), which can silently misalign X/y.
+        for chunk_values in executor.map(
+            _tfidf_input_chunk,
+            chunks,
+            [input_view] * len(chunks),
+        ):
+            values.extend(chunk_values)
+    return values
 
 
 class SnapshotStore:
@@ -402,9 +474,67 @@ def compute_file_sha256(filepath: str) -> str:
     return hasher.hexdigest()
 
 
+def build_feature_matrix_from_manifest(
+    domains: List[str], manifest_path: str
+):
+    """Build a small inference matrix from a frozen feature manifest."""
+    from scipy.sparse import csr_matrix, hstack
+    from sklearn.feature_extraction.text import TfidfVectorizer
+
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        manifest = json.load(handle)
+    names = manifest.get("feature_names", [])
+    if len(names) != len(FEATURE_NAMES) + 512:
+        raise ValueError("feature manifest must contain exactly 534 features")
+    prefix = "char_2_3_"
+    vocabulary: Dict[str, int] = {}
+    terms: List[str] = []
+    for index, name in enumerate(names[len(FEATURE_NAMES) :]):
+        if not str(name).startswith(prefix):
+            raise ValueError(f"invalid TF-IDF feature name: {name!r}")
+        term = str(name)[len(prefix) :]
+        if not term or term in vocabulary:
+            raise ValueError(f"invalid or duplicate TF-IDF term: {term!r}")
+        vocabulary[term] = index
+        terms.append(term)
+    idf = manifest.get("idf_by_index")
+    if not isinstance(idf, list) or len(idf) != len(terms):
+        raise ValueError("feature manifest must contain 512 learned IDF values")
+
+    vectorizer = TfidfVectorizer(
+        analyzer="char",
+        ngram_range=(2, 3),
+        vocabulary=vocabulary,
+        sublinear_tf=True,
+        norm="l2",
+        lowercase=True,
+    )
+    vectorizer.fit([" ".join(terms)])
+    vectorizer._tfidf.idf_ = np.asarray(idf, dtype=np.float64)
+
+    extractor = FeatureExtractor()
+    handcrafted_rows: List[List[float]] = []
+    tfidf_inputs: List[str] = []
+    input_view = manifest.get("tfidf_config", {}).get(
+        "input_view", TFIDF_INPUT_DOMAIN_ASCII
+    )
+    for domain in domains:
+        canonical = canonicalize_domain(str(domain))
+        if not canonical.is_valid:
+            raise ValueError(f"invalid inference domain: {domain!r}")
+        features = extractor.extract_features(str(domain), canonical)
+        handcrafted_rows.append([features[name] for name in FEATURE_NAMES])
+        tfidf_inputs.append(tfidf_input_from_canonical(canonical, input_view))
+    handcrafted = csr_matrix(np.asarray(handcrafted_rows, dtype=np.float64))
+    return hstack([handcrafted, vectorizer.transform(tfidf_inputs)]).tocsr()
+
+
 def build_full_features(
     derived_dir: Optional[str] = None,
     num_workers: Optional[int] = None,
+    contract_path: Optional[str] = None,
+    source_partitions_dir: Optional[str] = None,
+    training_data_policy: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     from scipy.sparse import hstack, csr_matrix, save_npz
     from sklearn.feature_extraction.text import TfidfVectorizer
@@ -414,6 +544,21 @@ def build_full_features(
 
     if derived_dir is None:
         derived_dir = os.path.join(BASE_DIR, "data", "derived")
+
+    if contract_path is None:
+        contract_path = os.path.join(BASE_DIR, "contracts", "domain_feature_contract.v1.json")
+    with open(contract_path, "r", encoding="utf-8") as f:
+        contract = json.load(f)
+    contract_version = str(contract.get("contract_version", ""))
+    tfidf_input_view = str(
+        contract.get("tfidf_config", {}).get(
+            "input_view", TFIDF_INPUT_DOMAIN_ASCII
+        )
+    )
+    if tfidf_input_view not in SUPPORTED_TFIDF_INPUT_VIEWS:
+        raise ValueError(
+            f"unsupported TF-IDF input view in feature contract: {tfidf_input_view!r}"
+        )
 
     matrices_dir = os.path.join(derived_dir, "matrices")
     partitions_dir = os.path.join(derived_dir, "partitions")
@@ -426,7 +571,21 @@ def build_full_features(
     cal_part = os.path.join(partitions_dir, "cal.parquet")
     test_part = os.path.join(partitions_dir, "test.parquet")
 
-    if not all(os.path.exists(p) for p in [train_part, val_part, cal_part, test_part]):
+    training_data_manifest = None
+    if training_data_policy is not None:
+        if source_partitions_dir is None:
+            raise ValueError(
+                "source_partitions_dir is required when training_data_policy is enabled"
+            )
+        from src.training_data import prepare_training_partitions
+
+        training_data_manifest = prepare_training_partitions(
+            source_partitions_dir=source_partitions_dir,
+            output_partitions_dir=partitions_dir,
+            policy=training_data_policy,
+            output_dir=derived_dir,
+        )
+    elif not all(os.path.exists(p) for p in [train_part, val_part, cal_part, test_part]):
         print("[*] Partitions missing. Running make_splits()...", flush=True)
         from src.make_splits import make_splits
         make_splits(derived_dir=derived_dir)
@@ -444,9 +603,19 @@ def build_full_features(
         "test": df_test,
     }
 
+    if num_workers is None:
+        num_workers = min(os.cpu_count() or 4, 8)
+
     # 2. Fit TfidfVectorizer ONLY on the train split
-    print("[*] Fitting TfidfVectorizer (range=(2,3), max_features=512) ONLY on train split...", flush=True)
+    print(
+        "[*] Fitting TfidfVectorizer (range=(2,3), max_features=512) "
+        f"on {tfidf_input_view!r}, ONLY on train split...",
+        flush=True,
+    )
     train_ascii = df_train["domain_ascii"].fillna("").astype(str).tolist()
+    train_tfidf_inputs = build_tfidf_inputs(
+        train_ascii, tfidf_input_view, num_workers
+    )
 
     vectorizer = TfidfVectorizer(
         analyzer="char",
@@ -456,36 +625,37 @@ def build_full_features(
         norm="l2",
         lowercase=True,
     )
-    vectorizer.fit(train_ascii)
+    vectorizer.fit(train_tfidf_inputs)
     vocab = vectorizer.get_feature_names_out().tolist()
     print(f"[+] TfidfVectorizer fitted successfully. Vocab size: {len(vocab)}", flush=True)
 
     # 3. Extract Features and Transform for Each Partition
-    if num_workers is None:
-        num_workers = min(os.cpu_count() or 4, 8)
-
     matrix_info = {}
     checksums = {}
 
     for name, df in partition_dfs.items():
         print(f"[*] Processing partition '{name}' ({len(df):,} rows)...", flush=True)
         domains = df["domain_ascii"].fillna("").astype(str).tolist()
+        tfidf_inputs = (
+            train_tfidf_inputs
+            if name == "train"
+            else build_tfidf_inputs(domains, tfidf_input_view, num_workers)
+        )
 
         # Handcrafted extraction via multiprocessing
         chunk_size = 50000
         domain_chunks = [domains[i : i + chunk_size] for i in range(0, len(domains), chunk_size)]
-        handcrafted_chunks = []
-
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
-            futures = [executor.submit(_extract_handcrafted_chunk, chunk) for chunk in domain_chunks]
-            for f in as_completed(futures):
-                handcrafted_chunks.append(f.result())
+            # map() preserves the source row order and therefore X/y alignment.
+            handcrafted_chunks = list(
+                executor.map(_extract_handcrafted_chunk, domain_chunks)
+            )
 
         handcrafted_np = np.vstack(handcrafted_chunks) if handcrafted_chunks else np.empty((0, 22), dtype=np.float64)
         handcrafted_csr = csr_matrix(handcrafted_np)
 
         # TF-IDF transform
-        tfidf_csr = vectorizer.transform(domains)
+        tfidf_csr = vectorizer.transform(tfidf_inputs)
 
         # Combine into full 534 feature CSR matrix
         full_csr = hstack([handcrafted_csr, tfidf_csr]).tocsr()
@@ -515,7 +685,7 @@ def build_full_features(
     # 4. Generate feature_manifest.json
     all_feature_names = FEATURE_NAMES + [f"char_2_3_{term}" for term in vocab]
     feature_manifest = {
-        "contract_version": "1.0.0",
+        "contract_version": contract_version,
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "handcrafted_feature_count": len(FEATURE_NAMES),
         "tfidf_feature_count": len(vocab),
@@ -529,6 +699,7 @@ def build_full_features(
             "sublinear_tf": True,
             "norm": "l2",
             "fitted_on": "train_split_only",
+            "input_view": tfidf_input_view,
         },
         # Runtime Go inference needs the learned smoothed IDF values; keeping
         # them adjacent to the vocabulary makes the feature contract
@@ -537,6 +708,13 @@ def build_full_features(
         "matrices": matrix_info,
         "checksums": checksums,
     }
+    if training_data_manifest is not None:
+        feature_manifest["training_data_policy"] = {
+            "manifest_path": training_data_manifest["manifest_path"],
+            "manifest_sha256": training_data_manifest["manifest_sha256"],
+            "frozen_challenge": training_data_manifest["frozen_challenge"],
+            "hard_negative": training_data_manifest["hard_negative"],
+        }
 
     manifest_path = os.path.join(derived_dir, "feature_manifest.json")
     with open(manifest_path, "w", encoding="utf-8") as f:
@@ -591,5 +769,38 @@ def build_full_features(
     }
 
 
+def run_from_config(config_path: str, num_workers: Optional[int] = None) -> Dict[str, Any]:
+    with open(config_path, "r", encoding="utf-8") as handle:
+        config = json.load(handle)
+
+    def config_path_value(key: str, default: str) -> str:
+        value = str(config.get(key, default))
+        return value if os.path.isabs(value) else os.path.join(BASE_DIR, value)
+
+    training_policy = config.get("training_data_policy")
+    source_partitions_dir = None
+    if training_policy is not None:
+        source_partitions_dir = config_path_value(
+            "source_partitions_dir", "data/derived/partitions"
+        )
+    return build_full_features(
+        derived_dir=config_path_value("derived_dir", "data/derived"),
+        num_workers=num_workers,
+        contract_path=config_path_value(
+            "contract_path", "contracts/domain_feature_contract.v1.json"
+        ),
+        source_partitions_dir=source_partitions_dir,
+        training_data_policy=training_policy,
+    )
+
+
 if __name__ == "__main__":
-    build_full_features()
+    parser = argparse.ArgumentParser(description="Build ML feature matrices")
+    parser.add_argument(
+        "--config",
+        default=os.path.join(BASE_DIR, "configs", "v1.json"),
+        help="training configuration path",
+    )
+    parser.add_argument("--num-workers", type=int, default=None)
+    args = parser.parse_args()
+    run_from_config(args.config, args.num_workers)

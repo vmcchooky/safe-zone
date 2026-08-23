@@ -6,6 +6,7 @@ non-empty data rows, NaN/Inf sanity, and SHA-256 manifest hashes.
 """
 
 import hashlib
+import argparse
 import json
 import os
 import sys
@@ -52,12 +53,23 @@ class ArtifactValidator:
 
     def validate_manifests(self) -> bool:
         print("\n--- 1. Validating JSON Manifests & Checksums ---")
+        training_manifest_path = os.path.join(
+            self.derived_dir, "training_data_manifest.json"
+        )
+        candidate_mode = os.path.exists(training_manifest_path)
         manifests = [
             ("data_manifest", os.path.join(BASE_DIR, "data", "data_manifest.json")),
-            ("split_manifest", os.path.join(self.derived_dir, "split_manifest.json")),
             ("feature_manifest", os.path.join(self.derived_dir, "feature_manifest.json")),
             ("capacity_report", os.path.join(self.derived_dir, "capacity_report.json")),
         ]
+        manifests.append(
+            (
+                "training_data_manifest" if candidate_mode else "split_manifest",
+                training_manifest_path
+                if candidate_mode
+                else os.path.join(self.derived_dir, "split_manifest.json"),
+            )
+        )
 
         all_ok = True
         for name, mpath in manifests:
@@ -109,6 +121,60 @@ class ArtifactValidator:
                 if not match:
                     all_ok = False
 
+        feature_manifest_path = os.path.join(
+            self.derived_dir, "feature_manifest.json"
+        )
+        if os.path.exists(feature_manifest_path):
+            with open(feature_manifest_path, "r", encoding="utf-8") as f:
+                feature_data = json.load(f)
+            for rel_path, expected_sha in feature_data.get("checksums", {}).items():
+                full_path = os.path.join(BASE_DIR, rel_path)
+                exists = os.path.exists(full_path)
+                actual_sha = compute_file_sha256(full_path) if exists else ""
+                match = exists and actual_sha.lower() == expected_sha.lower()
+                self.log_check(
+                    "Checksum",
+                    f"feature:{rel_path}",
+                    match,
+                    "SHA-256 match"
+                    if match
+                    else f"Missing or mismatched artifact: {full_path}",
+                )
+                if not match:
+                    all_ok = False
+
+        if candidate_mode:
+            with open(training_manifest_path, "r", encoding="utf-8") as f:
+                training_data = json.load(f)
+            challenge = training_data.get("frozen_challenge", {})
+            challenge_ok = (
+                challenge.get("domain_count", 0) > 0
+                and challenge.get("overlap_after_exclusion") == 0
+            )
+            self.log_check(
+                "Leakage",
+                "frozen_challenge_excluded",
+                challenge_ok,
+                f"domains={challenge.get('domain_count', 0)}, overlap={challenge.get('overlap_after_exclusion')}",
+            )
+            all_ok = all_ok and challenge_ok
+            hard_negative = training_data.get("hard_negative", {})
+            hard_csv = hard_negative.get("csv_path", "")
+            hard_sha = hard_negative.get("csv_sha256", "")
+            hard_ok = (
+                bool(hard_csv)
+                and os.path.exists(hard_csv)
+                and compute_file_sha256(hard_csv).lower() == str(hard_sha).lower()
+                and hard_negative.get("counts", {}).get("selected_rows", 0) > 0
+            )
+            self.log_check(
+                "Provenance",
+                "hard_negative_manifest",
+                hard_ok,
+                f"selected_rows={hard_negative.get('counts', {}).get('selected_rows', 0)}",
+            )
+            all_ok = all_ok and hard_ok
+
         return all_ok
 
     def validate_parquet_partitions(self) -> bool:
@@ -135,7 +201,10 @@ class ArtifactValidator:
                 all_ok = False
 
         # Candidate Parquet Files
-        cand_names = ["train_candidates", "validation_candidates", "calibration_candidates", "test_candidates", "conflicts_excluded", "hard_cases"]
+        candidate_mode = os.path.exists(
+            os.path.join(self.derived_dir, "training_data_manifest.json")
+        )
+        cand_names = [] if candidate_mode else ["train_candidates", "validation_candidates", "calibration_candidates", "test_candidates", "conflicts_excluded", "hard_cases"]
         for c_name in cand_names:
             cpath = os.path.join(self.derived_dir, f"{c_name}.parquet")
             if not os.path.exists(cpath):
@@ -174,6 +243,24 @@ class ArtifactValidator:
             self.log_check("Assertion", "conflicts_in_trainable_zero", conflicts_pass, f"Total cross-label conflicts in trainable partitions: {conflicts}")
             if not conflicts_pass:
                 all_ok = False
+
+            if candidate_mode:
+                train_weights = partition_dfs["train"].get("sample_weight")
+                weight_pass = (
+                    train_weights is not None
+                    and train_weights.notna().all()
+                    and (train_weights > 0).all()
+                    and (train_weights <= 10).all()
+                    and int((train_weights > 1).sum()) > 0
+                )
+                self.log_check(
+                    "Training",
+                    "bounded_sample_weights",
+                    weight_pass,
+                    f"weighted_rows={int((train_weights > 1).sum()) if train_weights is not None else 0}",
+                )
+                if not weight_pass:
+                    all_ok = False
 
         return all_ok
 
@@ -248,8 +335,8 @@ class ArtifactValidator:
             return False
 
 
-def validate_artifacts() -> bool:
-    validator = ArtifactValidator()
+def validate_artifacts(derived_dir: Optional[str] = None) -> bool:
+    validator = ArtifactValidator(derived_dir=derived_dir)
     success = validator.run_all_validations()
     if not success:
         sys.exit(1)
@@ -257,4 +344,7 @@ def validate_artifacts() -> bool:
 
 
 if __name__ == "__main__":
-    validate_artifacts()
+    parser = argparse.ArgumentParser(description="Validate ML derived artifacts")
+    parser.add_argument("--derived-dir", default=None)
+    args = parser.parse_args()
+    validate_artifacts(args.derived_dir)

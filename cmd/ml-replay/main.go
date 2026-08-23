@@ -305,6 +305,7 @@ func newReplayService(classifier analysis.DomainClassifier, canary risk.MLCanary
 		TTLBlocked:          time.Hour,
 		ConfigReloadEnabled: false,
 		EnrichEnabled:       false,
+		DisableAdblockSync:  true,
 	})
 }
 

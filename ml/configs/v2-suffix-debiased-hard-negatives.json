@@ -1,0 +1,74 @@
+{
+  "version": "2.0.0-candidate",
+  "seed": 42,
+  "contract_path": "contracts/domain_feature_contract.v2.json",
+  "source_partitions_dir": "data/derived/partitions",
+  "matrices_dir": "data/derived/v2-suffix-debiased-hard-negatives/matrices",
+  "partitions_dir": "data/derived/v2-suffix-debiased-hard-negatives/partitions",
+  "derived_dir": "data/derived/v2-suffix-debiased-hard-negatives",
+  "models_dir": "data/derived/v2-suffix-debiased-hard-negatives/models",
+  "bundle_dir": "data/derived/v2-suffix-debiased-hard-negatives/bundle",
+  "training_data_policy": {
+    "frozen_challenge_labels": "evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/labels.csv",
+    "hard_negative": {
+      "source_csv": "../data/whitelist/vietnam/vietnam_websites.csv",
+      "data_manifest": "data/data_manifest.json",
+      "logical_name": "vietnam_websites.csv",
+      "allowed_evidence_hosts": [
+        "tinnhiemmang.vn",
+        "giayphep.abei.gov.vn"
+      ],
+      "weight": 3.0,
+      "max_samples": 300
+    }
+  },
+  "lightgbm_params": {
+    "objective": "binary",
+    "metric": "binary_logloss",
+    "boosting_type": "gbdt",
+    "n_estimators": 1000,
+    "learning_rate": 0.05,
+    "num_leaves": 31,
+    "max_depth": -1,
+    "min_child_samples": 50,
+    "subsample": 0.8,
+    "subsample_freq": 1,
+    "colsample_bytree": 0.8,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "random_state": 42,
+    "n_jobs": -1,
+    "verbose": -1
+  },
+  "training": {
+    "evaluate_baselines": false,
+    "source_proxy": {
+      "enabled": true,
+      "source": "vietnam_whitelist",
+      "label": 0,
+      "require_ml_candidate": true,
+      "weight": 1.5,
+      "provenance": "checksum-pinned vietnam_domains.txt membership; benign_proxy, not human ground truth"
+    }
+  },
+  "calibration": {
+    "method": "platt",
+    "clip_eps": 1e-15
+  },
+  "evaluation": {
+    "frozen_challenge_labels": "evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/labels.csv",
+    "hard_cases_path": "data/derived/hard_cases.parquet",
+    "thresholds": [0.5, 0.7, 0.8, 0.85, 0.9, 0.92, 0.95],
+    "recommended_block_threshold": 0.92,
+    "selection_basis": "validation candidate cohort dominates v1 at 0.85: lower FPR and higher recall; test and frozen challenge remain held-out audits"
+  },
+  "policy": {
+    "policy_version": "1.0.0",
+    "created_at": "2026-08-23T15:00:00Z",
+    "operating_mode": "shadow_candidate",
+    "block_threshold": 0.92,
+    "action_on_block": "PROMOTE_SUSPICIOUS_TO_MALICIOUS",
+    "action_on_pass": "ABSTAIN_KEEP_SUSPICIOUS",
+    "allow_threshold_enabled": false
+  }
+}

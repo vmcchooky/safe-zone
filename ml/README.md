@@ -13,6 +13,17 @@ The v1 contract contains 534 ordered features:
 
 The bundle at `ml/models/v1/` contains the LightGBM text model, `feature_manifest.v1.json`, Platt calibration, policy, model report, and `SHA256SUMS`. Raw/processed datasets and derived matrices remain outside the Git commit policy; `ml/data/data_manifest.json` records non-sensitive provenance and checksums.
 
+An R&D-only v2 candidate is configured by
+`ml/configs/v2-suffix-debiased-hard-negatives.json`. It removes the complete
+public suffix from TF-IDF input, uses bounded provenance-aware weights for
+benign hard negatives, and excludes the owner-reviewed false-positive groups
+from every model partition. Generated matrices and the candidate bundle remain
+under the Git-ignored `ml/data/derived/v2-suffix-debiased-hard-negatives/`
+directory. The candidate is not provisioned to staging and does not authorize
+`enforce`; see
+`docs/research/ml/suffix-debiased-hard-negative-candidate.md` for metrics and
+the remaining SAFE VN false-positive blocker.
+
 ## Runtime configuration
 
 ```env
@@ -63,9 +74,20 @@ go test -race ./internal/analysis ./internal/risk
 go vet ./...
 ```
 
+Candidate v2 reproduction uses an explicit derived root:
+
+```powershell
+python -B ml/src/build_features.py --config ml/configs/v2-suffix-debiased-hard-negatives.json --num-workers 8
+python -B ml/src/validate_artifacts.py --derived-dir ml/data/derived/v2-suffix-debiased-hard-negatives
+python -B ml/src/train_lightgbm.py --config ml/configs/v2-suffix-debiased-hard-negatives.json
+python -B ml/src/calibrate_model.py --config ml/configs/v2-suffix-debiased-hard-negatives.json
+python -B ml/src/evaluate_model.py --config ml/configs/v2-suffix-debiased-hard-negatives.json
+python -B ml/src/export_artifacts.py --config ml/configs/v2-suffix-debiased-hard-negatives.json
+```
+
 The current local evidence is:
 
-- artifact validation: 41/41 checks passed;
+- artifact validation: 49/49 checks passed for v1 and 33/33 for the v2 candidate;
 - data provenance: 15/15 raw/processed file hashes matched;
 - Go unit/integration tests: passed;
 - Go race tests for analysis and risk: passed;

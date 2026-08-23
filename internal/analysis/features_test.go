@@ -65,3 +65,57 @@ func TestFeatureExtractorRejectsManifestDrift(t *testing.T) {
 		t.Fatalf("current v1 manifest should load: %v", err)
 	}
 }
+
+func TestTFIDFInputWithoutPublicSuffix(t *testing.T) {
+	tests := []struct {
+		domain string
+		want   string
+	}{
+		{domain: "example.com", want: "example"},
+		{domain: "login.example.gov.vn", want: "login.example"},
+		{domain: "a.b.example.co.uk", want: "a.b.example"},
+		{domain: "ec2-54-208-233-16.compute-1.amazonaws.com", want: ""},
+	}
+	for _, tc := range tests {
+		canonical, err := canonicalizeMLDomain(tc.domain)
+		if err != nil {
+			t.Fatalf("canonicalize %s: %v", tc.domain, err)
+		}
+		if got := tfidfInput(canonical, tfidfInputWithoutSuffix); got != tc.want {
+			t.Errorf("tfidf input for %s got %q, want %q", tc.domain, got, tc.want)
+		}
+	}
+}
+
+func TestFeatureExtractorV2SuffixInvariantTFIDF(t *testing.T) {
+	manifestPath := filepath.Join("..", "..", "ml", "models", "v1", "feature_manifest.v1.json")
+	extractor, err := NewFeatureExtractor(manifestPath)
+	if err != nil {
+		t.Fatalf("load v1 feature extractor: %v", err)
+	}
+	extractor.manifest.ContractVersion = featureManifestVersionV2
+	extractor.manifest.TFIDFConfig.InputView = tfidfInputWithoutSuffix
+	if err := validateFeatureManifest(extractor.manifest); err != nil {
+		t.Fatalf("valid v2 manifest rejected: %v", err)
+	}
+
+	com, err := extractor.Extract("login.example.com")
+	if err != nil {
+		t.Fatalf("extract .com: %v", err)
+	}
+	netFeatures, err := extractor.Extract("login.example.net")
+	if err != nil {
+		t.Fatalf("extract .net: %v", err)
+	}
+	for index := handcraftedFeatureCount; index < totalFeatureCount; index++ {
+		if math.Abs(com[index]-netFeatures[index]) > 1e-12 {
+			t.Fatalf("suffix leaked into TF-IDF feature %d: .com=%g .net=%g", index, com[index], netFeatures[index])
+		}
+	}
+
+	invalid := extractor.manifest
+	invalid.TFIDFConfig.InputView = ""
+	if err := validateFeatureManifest(invalid); err == nil {
+		t.Fatal("v2 manifest without explicit suffix-stripped input view should be rejected")
+	}
+}
