@@ -153,7 +153,23 @@ go run ./cmd/ml-whitelist-proxy `
 | `giayphep.abei.gov.vn` | 4.165 record | License registry entries |
 | Evidence/source-field overlap | 105 record | Không dùng `source` field làm selection criterion |
 
-Probability/FPR của curated run chỉ được ghi sau khi source commit và private manifest đã được khóa checksum.
+Curated run `run-20260823-vietnam-whitelist-curated-cd89dca` dùng source commit `cd89dcad858bf66ff0129611d0865246370dfc75` và manifest SHA-256 `4d0f56753420e08cb3ee3736403ec211b1b1fee3f377213aa1ce5db57d8be380`.
+
+| Chỉ số curated replay | Kết quả | Diễn giải |
+|---|---:|---|
+| Missing evidence | 646.658 record | Bị loại trước domain analysis |
+| Unknown ICANN suffix | 21 record | Pseudo-TLD hoặc suffix chưa được PSL công nhận |
+| Invalid domain | 11 record | Không vượt qua normalizer |
+| Selected unique FQDN | 10.293 domain | Mẫu số benign proxy sau provenance gates |
+| Lexical `SAFE` / `SUSPICIOUS` / `MALICIOUS` | 9.914 / 376 / 3 domain | 376 domain đi vào ML candidate path |
+| ML would-block | 14 domain | 9 Tín Nhiệm Mạng, 5 ABEI |
+| ML whitelist-proxy FPR | 0,136015% | 14 / 10.293; chưa phải human-labelled FPR |
+| Candidate-conditional block rate | 3,723404% | 14 / 376 lexical candidates |
+| Near-threshold | 5 domain | Margin 0,05; 4 row đồng thời thuộc would-block |
+| Review union | 15 FQDN / 14 group | Một cặp `www` và bare domain được gộp khi review |
+| Output checksum | 3/3 file khớp | Candidates, would-block và near-threshold CSV |
+
+Các would-block case chủ yếu mang lý do `domain is long;high_entropy_dga_suspected`; `facebook.net` là case brand-keyword riêng. Kết quả chỉ xác định cohort cần kiểm tra evidence. Không có website nào được truy cập trong lần chạy này. Sau replay, `core-api` và `dns-resolver` cùng `shadow/ready`, config/model/policy revision khớp, threshold `0,85`, `errors=0` và `enforce_promotions=0`.
 
 ## Lịch sử Thay đổi (Version History)
 
@@ -162,3 +178,4 @@ Probability/FPR của curated run chỉ được ghi sau khi source commit và p
 | 2026-08-23 | Thêm thiết kế whitelist-proxy replay, provenance gates và cách diễn giải FPR | Codex (GPT-5) |
 | 2026-08-23 | Ghi kết quả replay 656.983 dòng, runtime parity và hạn chế chất lượng nguồn | Codex (GPT-5) |
 | 2026-08-23 | Thêm curated CSV selection bằng exact evidence host và ICANN suffix gate | Codex (GPT-5) |
+| 2026-08-23 | Ghi curated replay 10.293 domain và cohort 14 review group | Codex (GPT-5) |
