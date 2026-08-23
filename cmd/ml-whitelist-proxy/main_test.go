@@ -52,7 +52,7 @@ func TestEvaluateSourceComputesProxyRatesAndDeduplicates(t *testing.T) {
 		"suspicious.vn": 0.82,
 		"block.vn":      0.91,
 	}}
-	rows, stats, gotHash, gotBytes, err := evaluateSource(context.Background(), source, analyzer, classifier, 0.05, 100)
+	rows, stats, gotHash, gotBytes, err := evaluateSource(context.Background(), source, analyzer, classifier, selectionPolicy{SourceFormat: "domains"}, 0.05, 100)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,48 @@ func TestEvaluateSourceComputesProxyRatesAndDeduplicates(t *testing.T) {
 	}
 	if len(rows) != 2 || !rows[1].WouldBlock {
 		t.Fatalf("unexpected rows: %+v", rows)
+	}
+}
+
+func TestEvaluateCSVFiltersEvidenceAndPublicSuffix(t *testing.T) {
+	t.Parallel()
+	source := filepath.Join(t.TempDir(), "websites.csv")
+	contents := []byte("domain,detail_url\n" +
+		"official.vn,https://tinnhiemmang.vn/evidence/1\n" +
+		"safe.gov.vn,https://giayphep.abei.gov.vn/evidence/2\n" +
+		"bad.invalidtld,https://tinnhiemmang.vn/evidence/3\n" +
+		"missing.vn,\n" +
+		"other.vn,https://unapproved.example/evidence/4\n" +
+		"invalid.vn,not-a-url\n" +
+		"official.vn,https://tinnhiemmang.vn/evidence/1\n")
+	if err := os.WriteFile(source, contents, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	analyzer := fakeAnalyzer{results: map[string]analysis.Result{
+		"official.vn": {Domain: "official.vn", Verdict: analysis.VerdictSuspicious, Score: 60, Confidence: 0.6},
+		"safe.gov.vn": {Domain: "safe.gov.vn", Verdict: analysis.VerdictSafe},
+	}}
+	classifier := fakeClassifier{threshold: 0.85, probabilities: map[string]float64{"official.vn": 0.9}}
+	selection := selectionPolicy{
+		SourceFormat:         "csv",
+		DomainColumn:         "domain",
+		EvidenceURLColumn:    "detail_url",
+		AllowedEvidenceHosts: []string{"giayphep.abei.gov.vn", "tinnhiemmang.vn"},
+		RequireICANNSuffix:   true,
+	}
+	rows, stats, _, _, err := evaluateSource(context.Background(), source, analyzer, classifier, selection, 0.05, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.SourceLines != 7 || stats.MissingEvidence != 1 || stats.InvalidEvidenceURLs != 1 ||
+		stats.UnapprovedEvidenceHosts != 1 || stats.UnknownPublicSuffixes != 1 || stats.DuplicateDomains != 1 {
+		t.Fatalf("unexpected CSV selection counters: %+v", stats)
+	}
+	if stats.SelectedSourceRecords != 2 || stats.UniqueProxyBenignDomains != 2 || stats.MLCandidateDomains != 1 || stats.WouldBlock != 1 {
+		t.Fatalf("unexpected CSV evaluation counters: %+v", stats)
+	}
+	if len(rows) != 1 || rows[0].EvidenceHost != "tinnhiemmang.vn" || rows[0].EvidenceReference == "" {
+		t.Fatalf("unexpected CSV candidate: %+v", rows)
 	}
 }
 
@@ -111,11 +153,11 @@ func TestLoadSourceProvenanceRejectsPathMismatch(t *testing.T) {
 
 func TestEncodeRowsUsesProxyLabel(t *testing.T) {
 	t.Parallel()
-	data, count, err := encodeRows([]candidateRow{{CaseID: "wlp-1", Domain: "example.vn"}}, func(candidateRow) bool { return true })
+	data, count, err := encodeRows([]candidateRow{{CaseID: "wlp-1", Domain: "example.vn", EvidenceHost: "tinnhiemmang.vn", EvidenceReference: "https://tinnhiemmang.vn/example"}}, func(candidateRow) bool { return true })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 || !bytesContains(data, []byte("benign_proxy")) || bytesContains(data, []byte("human_label")) {
+	if count != 1 || !bytesContains(data, []byte("benign_proxy")) || !bytesContains(data, []byte("tinnhiemmang.vn")) || bytesContains(data, []byte("human_label")) {
 		t.Fatalf("unexpected encoded CSV: %s", data)
 	}
 }

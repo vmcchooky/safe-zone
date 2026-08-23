@@ -192,6 +192,28 @@ near-threshold critical domains before converting any row into approval
 evidence. The source manifest currently records terms review as pending, so
 the generated report is R&D evidence rather than a signed rollout packet.
 
+Prefer the curated CSV mode before assigning cases to a reviewer. It excludes
+rows without an approved evidence reference and rejects unknown public
+suffixes without making outbound requests:
+
+```powershell
+go run ./cmd/ml-whitelist-proxy `
+  --api-url http://127.0.0.1:8080 `
+  --admin-api-key-file <private-admin-key-file> `
+  --bundle <immutable-bundle> `
+  --source data\whitelist\vietnam\vietnam_websites.csv `
+  --data-manifest ml\data\data_manifest.json `
+  --source-logical-name vietnam_websites.csv `
+  --source-format csv `
+  --domain-column domain `
+  --evidence-url-column detail_url `
+  --allowed-evidence-hosts tinnhiemmang.vn,giayphep.abei.gov.vn `
+  --require-icann-suffix `
+  --source-commit <exact-40-character-git-sha> `
+  --near-threshold-margin 0.05 `
+  --output <new-private-curated-run>
+```
+
 ## Tracked evidence archive
 
 The completed Phase 5 run is archived at

@@ -22,6 +22,9 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/idna"
+	"golang.org/x/net/publicsuffix"
+
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/config"
 	"safe-zone/internal/safefile"
@@ -77,6 +80,8 @@ type apiSnapshot struct {
 type candidateRow struct {
 	CaseID            string
 	Domain            string
+	EvidenceHost      string
+	EvidenceReference string
 	LexicalScore      int
 	LexicalConfidence float64
 	LexicalReasons    string
@@ -96,22 +101,28 @@ type domainClassifier interface {
 }
 
 type sourceProvenance struct {
-	LogicalName        string `json:"logical_name"`
-	Path               string `json:"path"`
-	SHA256             string `json:"sha256"`
-	Bytes              int64  `json:"bytes"`
-	RetrievedAt        string `json:"retrieved_at"`
-	TrustTier          string `json:"trust_tier"`
-	TermsReviewID      string `json:"terms_review_id"`
-	DataManifest       string `json:"data_manifest"`
-	DataManifestSHA256 string `json:"data_manifest_sha256"`
-	PipelineGitSHA     string `json:"pipeline_git_sha"`
-	ManifestGenerated  string `json:"manifest_generated_at"`
+	LogicalName        string          `json:"logical_name"`
+	Path               string          `json:"path"`
+	SHA256             string          `json:"sha256"`
+	Bytes              int64           `json:"bytes"`
+	RetrievedAt        string          `json:"retrieved_at"`
+	TrustTier          string          `json:"trust_tier"`
+	TermsReviewID      string          `json:"terms_review_id"`
+	DataManifest       string          `json:"data_manifest"`
+	DataManifestSHA256 string          `json:"data_manifest_sha256"`
+	PipelineGitSHA     string          `json:"pipeline_git_sha"`
+	ManifestGenerated  string          `json:"manifest_generated_at"`
+	SelectionPolicy    selectionPolicy `json:"selection_policy"`
 }
 
 type statistics struct {
 	SourceLines                   int      `json:"source_lines"`
 	BlankLines                    int      `json:"blank_lines"`
+	MissingEvidence               int      `json:"missing_evidence"`
+	InvalidEvidenceURLs           int      `json:"invalid_evidence_urls"`
+	UnapprovedEvidenceHosts       int      `json:"unapproved_evidence_hosts"`
+	UnknownPublicSuffixes         int      `json:"unknown_public_suffixes"`
+	SelectedSourceRecords         int      `json:"selected_source_records"`
 	InvalidDomains                int      `json:"invalid_domains"`
 	DuplicateDomains              int      `json:"duplicate_domains"`
 	UniqueProxyBenignDomains      int      `json:"unique_proxy_benign_domains"`
@@ -124,6 +135,14 @@ type statistics struct {
 	NearThreshold                 int      `json:"near_threshold"`
 	WhitelistProxyFPR             *float64 `json:"whitelist_proxy_fpr,omitempty"`
 	CandidateConditionalBlockRate *float64 `json:"candidate_conditional_block_rate,omitempty"`
+}
+
+type selectionPolicy struct {
+	SourceFormat         string   `json:"source_format"`
+	DomainColumn         string   `json:"domain_column,omitempty"`
+	EvidenceURLColumn    string   `json:"evidence_url_column,omitempty"`
+	AllowedEvidenceHosts []string `json:"allowed_evidence_hosts,omitempty"`
+	RequireICANNSuffix   bool     `json:"require_icann_suffix"`
 }
 
 type outputFile struct {
@@ -155,17 +174,22 @@ type replayManifest struct {
 }
 
 type runOptions struct {
-	APIURL            string
-	APIKeyFile        string
-	BundleDir         string
-	SourcePath        string
-	DataManifestPath  string
-	SourceLogicalName string
-	OutputDir         string
-	SourceCommit      string
-	NearMargin        float64
-	Timeout           time.Duration
-	MaxDomains        int
+	APIURL               string
+	APIKeyFile           string
+	BundleDir            string
+	SourcePath           string
+	DataManifestPath     string
+	SourceLogicalName    string
+	SourceFormat         string
+	DomainColumn         string
+	EvidenceURLColumn    string
+	AllowedEvidenceHosts string
+	RequireICANNSuffix   bool
+	OutputDir            string
+	SourceCommit         string
+	NearMargin           float64
+	Timeout              time.Duration
+	MaxDomains           int
 }
 
 func main() {
@@ -176,6 +200,11 @@ func main() {
 	flag.StringVar(&options.SourcePath, "source", "", "newline-delimited whitelist snapshot")
 	flag.StringVar(&options.DataManifestPath, "data-manifest", "", "data provenance manifest")
 	flag.StringVar(&options.SourceLogicalName, "source-logical-name", "", "raw_sources logical_name")
+	flag.StringVar(&options.SourceFormat, "source-format", "domains", "source format: domains or csv")
+	flag.StringVar(&options.DomainColumn, "domain-column", "domain", "CSV domain column")
+	flag.StringVar(&options.EvidenceURLColumn, "evidence-url-column", "detail_url", "CSV evidence URL column")
+	flag.StringVar(&options.AllowedEvidenceHosts, "allowed-evidence-hosts", "", "comma-separated exact evidence URL hosts required for CSV")
+	flag.BoolVar(&options.RequireICANNSuffix, "require-icann-suffix", false, "require an ICANN public suffix")
 	flag.StringVar(&options.OutputDir, "output", "", "new private output directory")
 	flag.StringVar(&options.SourceCommit, "source-commit", "", "exact 40-character Git commit under evaluation")
 	flag.Float64Var(&options.NearMargin, "near-threshold-margin", 0.05, "absolute probability margin around the model threshold")
@@ -215,6 +244,10 @@ func run(parent context.Context, options runOptions) (string, replayManifest, er
 	}
 	if options.MaxDomains < 1 || options.MaxDomains > 10000000 {
 		return "", replayManifest{}, errors.New("--max-domains must be between 1 and 10000000")
+	}
+	selection, err := validateSelectionPolicy(options)
+	if err != nil {
+		return "", replayManifest{}, err
 	}
 
 	baseURL, err := validateBaseURL(options.APIURL)
@@ -257,8 +290,9 @@ func run(parent context.Context, options runOptions) (string, replayManifest, er
 	if err != nil {
 		return "", replayManifest{}, err
 	}
+	provenance.SelectionPolicy = selection
 	analyzer := analysis.NewAnalyzerWithBrandStore(snapshot.Config, analysis.NewMemoryBrandStore(snapshot.Brands))
-	rows, stats, actualHash, actualBytes, err := evaluateSource(ctx, options.SourcePath, analyzer, classifier, options.NearMargin, options.MaxDomains)
+	rows, stats, actualHash, actualBytes, err := evaluateSource(ctx, options.SourcePath, analyzer, classifier, selection, options.NearMargin, options.MaxDomains)
 	if err != nil {
 		return "", replayManifest{}, err
 	}
@@ -394,7 +428,48 @@ func loadSourceProvenance(manifestPath, logicalName, sourcePath string) (sourceP
 	}, strings.ToLower(matched.SHA256), matched.Bytes, nil
 }
 
-func evaluateSource(ctx context.Context, sourcePath string, analyzer domainAnalyzer, classifier domainClassifier, nearMargin float64, maxDomains int) ([]candidateRow, statistics, string, int64, error) {
+func validateSelectionPolicy(options runOptions) (selectionPolicy, error) {
+	format := strings.ToLower(strings.TrimSpace(options.SourceFormat))
+	policy := selectionPolicy{SourceFormat: format, RequireICANNSuffix: options.RequireICANNSuffix}
+	switch format {
+	case "domains":
+		if strings.TrimSpace(options.AllowedEvidenceHosts) != "" {
+			return selectionPolicy{}, errors.New("--allowed-evidence-hosts is only valid with --source-format=csv")
+		}
+		return policy, nil
+	case "csv":
+		policy.DomainColumn = strings.TrimSpace(options.DomainColumn)
+		policy.EvidenceURLColumn = strings.TrimSpace(options.EvidenceURLColumn)
+		if policy.DomainColumn == "" || policy.EvidenceURLColumn == "" {
+			return selectionPolicy{}, errors.New("--domain-column and --evidence-url-column are required for CSV sources")
+		}
+		seen := make(map[string]struct{})
+		for _, raw := range strings.Split(options.AllowedEvidenceHosts, ",") {
+			host := strings.ToLower(strings.TrimSpace(raw))
+			if host == "" {
+				continue
+			}
+			parsed, err := url.Parse("https://" + host)
+			if err != nil || parsed.Hostname() != host || parsed.Port() != "" || strings.ContainsAny(host, "/?#@") {
+				return selectionPolicy{}, fmt.Errorf("invalid exact evidence host %q", raw)
+			}
+			if _, exists := seen[host]; exists {
+				continue
+			}
+			seen[host] = struct{}{}
+			policy.AllowedEvidenceHosts = append(policy.AllowedEvidenceHosts, host)
+		}
+		if len(policy.AllowedEvidenceHosts) == 0 {
+			return selectionPolicy{}, errors.New("--allowed-evidence-hosts requires at least one exact host for CSV sources")
+		}
+		sort.Strings(policy.AllowedEvidenceHosts)
+		return policy, nil
+	default:
+		return selectionPolicy{}, errors.New("--source-format must be domains or csv")
+	}
+}
+
+func evaluateSource(ctx context.Context, sourcePath string, analyzer domainAnalyzer, classifier domainClassifier, selection selectionPolicy, nearMargin float64, maxDomains int) ([]candidateRow, statistics, string, int64, error) {
 	file, err := safefile.OpenWithin(filepath.Dir(sourcePath), filepath.Base(sourcePath))
 	if err != nil {
 		return nil, statistics{}, "", 0, fmt.Errorf("open source snapshot: %w", err)
@@ -402,33 +477,44 @@ func evaluateSource(ctx context.Context, sourcePath string, analyzer domainAnaly
 	defer func() { _ = file.Close() }()
 	hasher := sha256.New()
 	counting := &countingWriter{writer: hasher}
-	scanner := bufio.NewScanner(io.TeeReader(file, counting))
-	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	reader := io.TeeReader(file, counting)
 	seen := make(map[string]struct{}, 700000)
 	rows := make([]candidateRow, 0, 4096)
 	stats := statistics{}
-	for scanner.Scan() {
+	processDomain := func(raw, evidenceHost, evidenceReference string) error {
 		if err := ctx.Err(); err != nil {
-			return nil, stats, "", counting.bytes, err
+			return err
 		}
-		stats.SourceLines++
-		raw := strings.TrimSpace(scanner.Text())
+		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			stats.BlankLines++
-			continue
+			return nil
 		}
 		domain, err := analysis.NormalizeDomain(raw)
 		if err != nil {
 			stats.InvalidDomains++
-			continue
+			return nil
+		}
+		if selection.RequireICANNSuffix {
+			ascii, err := idna.Lookup.ToASCII(domain)
+			if err != nil {
+				stats.InvalidDomains++
+				return nil
+			}
+			_, icann := publicsuffix.PublicSuffix(strings.ToLower(ascii))
+			if !icann {
+				stats.UnknownPublicSuffixes++
+				return nil
+			}
 		}
 		if _, exists := seen[domain]; exists {
 			stats.DuplicateDomains++
-			continue
+			return nil
 		}
 		seen[domain] = struct{}{}
+		stats.SelectedSourceRecords++
 		if len(seen) > maxDomains {
-			return nil, stats, "", counting.bytes, fmt.Errorf("source exceeds --max-domains=%d", maxDomains)
+			return fmt.Errorf("source exceeds --max-domains=%d", maxDomains)
 		}
 		lexical := analyzer.Analyze(domain)
 		switch lexical.Verdict {
@@ -440,14 +526,14 @@ func evaluateSource(ctx context.Context, sourcePath string, analyzer domainAnaly
 			stats.LexicalMalicious++
 		default:
 			stats.InvalidDomains++
-			continue
+			return nil
 		}
 		if lexical.Verdict != analysis.VerdictSuspicious {
-			continue
+			return nil
 		}
 		decision, err := classifier.Classify(domain)
 		if err != nil {
-			return nil, stats, "", counting.bytes, fmt.Errorf("classify %s: %w", domain, err)
+			return fmt.Errorf("classify %s: %w", domain, err)
 		}
 		wouldBlock := decision.Action == analysis.MLActionPromoteMalicious
 		near := math.Abs(decision.Probability-classifier.BlockThreshold()) <= nearMargin
@@ -462,6 +548,8 @@ func evaluateSource(ctx context.Context, sourcePath string, analyzer domainAnaly
 		rows = append(rows, candidateRow{
 			CaseID:            caseID(domain),
 			Domain:            domain,
+			EvidenceHost:      evidenceHost,
+			EvidenceReference: evidenceReference,
 			LexicalScore:      lexical.Score,
 			LexicalConfidence: lexical.Confidence,
 			LexicalReasons:    strings.Join(lexical.Reasons, ";"),
@@ -470,9 +558,65 @@ func evaluateSource(ctx context.Context, sourcePath string, analyzer domainAnaly
 			WouldBlock:        wouldBlock,
 			NearThreshold:     near,
 		})
+		return nil
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, stats, "", counting.bytes, fmt.Errorf("scan source snapshot: %w", err)
+
+	switch selection.SourceFormat {
+	case "domains":
+		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+		for scanner.Scan() {
+			stats.SourceLines++
+			if err := processDomain(scanner.Text(), "", ""); err != nil {
+				return nil, stats, "", counting.bytes, err
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			return nil, stats, "", counting.bytes, fmt.Errorf("scan source snapshot: %w", err)
+		}
+	case "csv":
+		csvReader := csv.NewReader(reader)
+		header, err := csvReader.Read()
+		if err != nil {
+			return nil, stats, "", counting.bytes, fmt.Errorf("read CSV header: %w", err)
+		}
+		domainIndex, err := exactColumnIndex(header, selection.DomainColumn)
+		if err != nil {
+			return nil, stats, "", counting.bytes, err
+		}
+		evidenceIndex, err := exactColumnIndex(header, selection.EvidenceURLColumn)
+		if err != nil {
+			return nil, stats, "", counting.bytes, err
+		}
+		for {
+			record, err := csvReader.Read()
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			if err != nil {
+				return nil, stats, "", counting.bytes, fmt.Errorf("read CSV record %d: %w", stats.SourceLines+2, err)
+			}
+			stats.SourceLines++
+			evidenceReference := strings.TrimSpace(record[evidenceIndex])
+			if evidenceReference == "" {
+				stats.MissingEvidence++
+				continue
+			}
+			evidenceHost, valid, approved := validateEvidenceURL(evidenceReference, selection.AllowedEvidenceHosts)
+			if !valid {
+				stats.InvalidEvidenceURLs++
+				continue
+			}
+			if !approved {
+				stats.UnapprovedEvidenceHosts++
+				continue
+			}
+			if err := processDomain(record[domainIndex], evidenceHost, evidenceReference); err != nil {
+				return nil, stats, "", counting.bytes, err
+			}
+		}
+	default:
+		return nil, stats, "", counting.bytes, fmt.Errorf("unsupported source format %q", selection.SourceFormat)
 	}
 	stats.UniqueProxyBenignDomains = len(seen)
 	stats.MLCandidateDomains = len(rows)
@@ -485,6 +629,38 @@ func evaluateSource(ctx context.Context, sourcePath string, analyzer domainAnaly
 		stats.CandidateConditionalBlockRate = &rate
 	}
 	return rows, stats, hex.EncodeToString(hasher.Sum(nil)), counting.bytes, nil
+}
+
+func exactColumnIndex(header []string, name string) (int, error) {
+	found := -1
+	for i, column := range header {
+		if strings.TrimSpace(column) != name {
+			continue
+		}
+		if found >= 0 {
+			return -1, fmt.Errorf("CSV contains duplicate column %q", name)
+		}
+		found = i
+	}
+	if found < 0 {
+		return -1, fmt.Errorf("CSV is missing required column %q", name)
+	}
+	return found, nil
+}
+
+func validateEvidenceURL(raw string, allowedHosts []string) (string, bool, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" ||
+		parsed.User != nil || parsed.Port() != "" {
+		return "", false, false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	for _, allowed := range allowedHosts {
+		if host == allowed {
+			return host, true, true
+		}
+	}
+	return host, true, false
 }
 
 type countingWriter struct {
@@ -631,7 +807,7 @@ func writeReport(outputDir string, manifest replayManifest, rows []candidateRow)
 func encodeRows(rows []candidateRow, include func(candidateRow) bool) ([]byte, int, error) {
 	var buffer bytes.Buffer
 	writer := csv.NewWriter(&buffer)
-	header := []string{"case_id", "domain", "proxy_label", "lexical_score", "lexical_confidence", "lexical_reasons", "model_probability", "model_threshold", "would_block", "near_threshold"}
+	header := []string{"case_id", "domain", "proxy_label", "evidence_host", "evidence_reference", "lexical_score", "lexical_confidence", "lexical_reasons", "model_probability", "model_threshold", "would_block", "near_threshold"}
 	if err := writer.Write(header); err != nil {
 		return nil, 0, err
 	}
@@ -641,7 +817,7 @@ func encodeRows(rows []candidateRow, include func(candidateRow) bool) ([]byte, i
 			continue
 		}
 		record := []string{
-			row.CaseID, row.Domain, "benign_proxy", strconv.Itoa(row.LexicalScore),
+			row.CaseID, row.Domain, "benign_proxy", row.EvidenceHost, row.EvidenceReference, strconv.Itoa(row.LexicalScore),
 			strconv.FormatFloat(row.LexicalConfidence, 'g', -1, 64), row.LexicalReasons,
 			strconv.FormatFloat(row.Probability, 'g', -1, 64), strconv.FormatFloat(row.Threshold, 'g', -1, 64),
 			strconv.FormatBool(row.WouldBlock), strconv.FormatBool(row.NearThreshold),

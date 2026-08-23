@@ -101,9 +101,64 @@ Run dùng source commit `216a02458f8d4e5aba68f9f740a79c29053255f8`; manifest SHA
 - Targeted queue exporter: `docs/research/ml/targeted-benign-candidate-export.md`
 - Replay runbook: `docs/runbooks/ml-shadow-representative-replay.md`
 
+## Curated evidence subset
+
+### Mục tiêu (Objectives)
+
+1. Loại phần massive/procedural khỏi phép đo ưu tiên review.
+2. Chỉ giữ record có evidence URL thuộc nguồn chính thức đã tồn tại trong CSV snapshot.
+3. Loại pseudo-TLD bằng ICANN public suffix gate trước lexical scoring.
+4. Mang evidence reference vào private candidate CSV để reviewer không phải tìm lại provenance.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Curated membership | `detail_url` có host chính xác `tinnhiemmang.vn` hoặc `giayphep.abei.gov.vn` | Chọn mọi row có `owner`; chọn `.vn`; dùng toàn bộ massive list | `owner` có trong toàn bộ 656.983 row và không phân biệt nguồn; suffix quốc gia không chứng minh provenance |
+| Host matching | Exact hostname, URL phải dùng HTTP(S), không có credential/port | Suffix match; regex chứa chuỗi host | Exact match ngăn domain như `tinnhiemmang.vn.attacker.example` đi qua selection gate |
+| Domain validity | Chuẩn hóa IDNA rồi yêu cầu ICANN public suffix | Chỉ kiểm tra cú pháp label | Public suffix gate loại pseudo-TLD vẫn hợp lệ về mặt ký tự |
+| Firecrawl | Chưa sử dụng trong subset extraction | Crawl toàn bộ evidence/live domain | Dữ liệu local đã đủ để chọn cohort; crawl thêm cost, network side effect và trạng thái live không tái lập |
+| Evidence output | Ghi `evidence_host` và `evidence_reference` cho candidate | Chỉ ghi domain | Reviewer có thể đối chiếu record gốc mà không tìm kiếm lại |
+
+### Cách thức Thực hiện (Implementation Details)
+
+CSV mode được bật bằng `--source-format=csv`, với domain/evidence columns và danh sách exact host ghi vào `selection_policy` của manifest. Source CSV vẫn phải khớp byte size và SHA-256 trong `ml/data/data_manifest.json`. Parser đọc theo record bằng Go `encoding/csv`; các counter `missing_evidence`, `invalid_evidence_urls`, `unapproved_evidence_hosts`, `unknown_public_suffixes` và `duplicate_domains` giải thích toàn bộ row bị loại.
+
+Codex (GPT-5) thực hiện thay đổi theo chiến lược contract-first và adversarial test cho URL host confusion, missing evidence, unknown suffix, duplicate domain. Số lượng subagent là 0; không áp dụng bỏ phiếu. Quality control gồm unit test, full Go suite, race detector, gofmt, vet, golangci-lint, gosec, govulncheck, source/output checksum và runtime status đầu/cuối. Human-in-the-loop chỉ xác nhận candidate sau khi local filtering hoàn tất.
+
+```powershell
+go run ./cmd/ml-whitelist-proxy `
+  --api-url http://127.0.0.1:8080 `
+  --bundle <immutable-bundle> `
+  --source data\whitelist\vietnam\vietnam_websites.csv `
+  --data-manifest ml\data\data_manifest.json `
+  --source-logical-name vietnam_websites.csv `
+  --source-format csv `
+  --domain-column domain `
+  --evidence-url-column detail_url `
+  --allowed-evidence-hosts tinnhiemmang.vn,giayphep.abei.gov.vn `
+  --require-icann-suffix `
+  --source-commit <exact-40-character-git-sha> `
+  --near-threshold-margin 0.05 `
+  --output <new-private-curated-run>
+```
+
+### Số liệu (Metrics & Results)
+
+| Chỉ số pre-selection | Giá trị | Ý nghĩa |
+|---|---:|---|
+| CSV rows | 656.983 record | Source tổng trước selection |
+| Evidence URL rows | 10.325 record | 1,572% source có `detail_url` |
+| `tinnhiemmang.vn` | 6.160 record | Evidence directory entries |
+| `giayphep.abei.gov.vn` | 4.165 record | License registry entries |
+| Evidence/source-field overlap | 105 record | Không dùng `source` field làm selection criterion |
+
+Probability/FPR của curated run chỉ được ghi sau khi source commit và private manifest đã được khóa checksum.
+
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
 | 2026-08-23 | Thêm thiết kế whitelist-proxy replay, provenance gates và cách diễn giải FPR | Codex (GPT-5) |
 | 2026-08-23 | Ghi kết quả replay 656.983 dòng, runtime parity và hạn chế chất lượng nguồn | Codex (GPT-5) |
+| 2026-08-23 | Thêm curated CSV selection bằng exact evidence host và ICANN suffix gate | Codex (GPT-5) |
