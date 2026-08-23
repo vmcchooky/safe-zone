@@ -222,8 +222,8 @@ func run(parent context.Context, options runOptions) (runResult, error) {
 	if !validCommit(options.SourceCommit) {
 		return runResult{}, errors.New("--source-commit must be an exact 40-character hexadecimal Git commit")
 	}
-	if strings.TrimSpace(options.APIKeyFile) == "" || strings.TrimSpace(options.BundleDir) == "" || strings.TrimSpace(options.OutputDir) == "" {
-		return runResult{}, errors.New("--admin-api-key-file, --bundle, and --output are required")
+	if strings.TrimSpace(options.BundleDir) == "" || strings.TrimSpace(options.OutputDir) == "" {
+		return runResult{}, errors.New("--bundle and --output are required")
 	}
 	if options.MinCandidates < 1 || options.MinCandidates > 100000 {
 		return runResult{}, errors.New("--min-candidates must be between 1 and 100000")
@@ -239,13 +239,12 @@ func run(parent context.Context, options runOptions) (runResult, error) {
 	if err != nil {
 		return runResult{}, err
 	}
-	keyData, err := safefile.ReadFileWithin(filepath.Dir(options.APIKeyFile), filepath.Base(options.APIKeyFile))
+	apiKey, err := readAdminAPIKey(options.APIKeyFile)
 	if err != nil {
-		return runResult{}, fmt.Errorf("read admin API key: %w", err)
+		return runResult{}, err
 	}
-	apiKey := strings.TrimSpace(string(keyData))
 	if len(apiKey) < 16 {
-		return runResult{}, errors.New("admin API key file is empty or invalid")
+		return runResult{}, errors.New("admin API key is empty or invalid")
 	}
 
 	ctx, cancel := context.WithTimeout(parent, options.Timeout)
@@ -345,6 +344,22 @@ func run(parent context.Context, options runOptions) (runResult, error) {
 		return runResult{}, err
 	}
 	return result, nil
+}
+
+func readAdminAPIKey(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		value := strings.TrimSpace(os.Getenv("SAFE_ZONE_ADMIN_API_KEY"))
+		if value == "" {
+			return "", errors.New("--admin-api-key-file or SAFE_ZONE_ADMIN_API_KEY is required")
+		}
+		return value, nil
+	}
+	keyData, err := safefile.ReadFileWithin(filepath.Dir(path), filepath.Base(path))
+	if err != nil {
+		return "", fmt.Errorf("read admin API key: %w", err)
+	}
+	return strings.TrimSpace(string(keyData)), nil
 }
 
 func validateBaseURL(raw string) (string, error) {

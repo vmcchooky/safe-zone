@@ -32,7 +32,7 @@ Phép đo là counterfactual: domain đã được allow override sẽ không đ
 
 ### Cách thức Thực hiện (Implementation Details)
 
-`cmd/ml-fp-candidates` dùng admin API read-only để lấy hai snapshot status, analysis config, trusted brands và toàn bộ trang `status=resolved`. Hai status phải giữ nguyên config revision, mode, model revision, version và threshold trong suốt lần chạy. Pagination thất bại nếu total/count thay đổi, report ID bị lặp hoặc số record vượt giới hạn cấu hình.
+`cmd/ml-fp-candidates` dùng admin API read-only để lấy hai snapshot status, analysis config, trusted brands và toàn bộ trang `status=resolved`. API key được đọc từ file private; biến tiến trình `SAFE_ZONE_ADMIN_API_KEY` chỉ là fallback khi môi trường local chưa provision secret file. Hai status phải giữ nguyên config revision, mode, model revision, version và threshold trong suốt lần chạy. Pagination thất bại nếu total/count thay đổi, report ID bị lặp hoặc số record vượt giới hạn cấu hình.
 
 Mỗi queue record phải có `status=resolved`, `resolution_action=allow`, `review_reason` tối thiểu 8 ký tự, `reviewed_by`, `reviewed_at` và domain hợp lệ. Các report cùng normalized domain được gộp; case ID ổn định là tiền tố `fpq-` cộng 64 bit đầu của SHA-256 domain. CSV tương thích `cmd/ml-replay` qua ba cột bắt buộc `case_id`, `domain`, `human_label`, đồng thời ghi model probability và provenance tối thiểu. Manifest khóa source commit, SHA-256 của config/brand snapshot, hash `SHA256SUMS`, model contract, queue counters và selection statistics.
 
@@ -49,7 +49,7 @@ Codex (GPT-5) thực hiện audit queue contract, thiết kế exporter, viết 
 | Targeted candidates | 0 domain | `runtime-candidate FPR` vẫn chưa có mẫu số mới |
 | Minimum mặc định | 25 domain | Gate ban đầu cho staging replay; không phải production sufficiency claim |
 | Contact/note/reason trong CSV | 0 field | Dữ liệu không cần thiết không rời queue API response |
-| Focused automated tests | 5 test | Selection, dedup/provenance, pagination, empty output, replay-compatible CSV và commit validation |
+| Focused automated tests | 6 test | Selection, dedup/provenance, pagination, empty output, replay-compatible CSV, commit validation và API-key source |
 
 FPR quan sát được chỉ được tính khi candidate count lớn hơn 0. Với 25 candidate và 0 false positive, zero-event sample vẫn có one-sided 95% upper bound xấp xỉ `1 - 0.05^(1/25) = 11.3%`; do đó ngưỡng 25 chỉ mở phép đo ban đầu, không đủ chứng minh budget FPR nhỏ cho production.
 

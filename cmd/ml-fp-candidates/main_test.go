@@ -168,3 +168,14 @@ func TestValidCommit(t *testing.T) {
 		}
 	}
 }
+
+func TestReadAdminAPIKeyFallsBackToEnvironment(t *testing.T) {
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY", "environment-key-0123456789")
+	got, err := readAdminAPIKey("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "environment-key-0123456789" {
+		t.Fatalf("unexpected API key source: %q", got)
+	}
+}
