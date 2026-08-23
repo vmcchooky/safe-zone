@@ -68,9 +68,11 @@ FPR quan sát được chỉ được tính khi candidate count lớn hơn 0. V�
 - Allow decision có thể là business exception. Operator phải chỉ dùng false-positive action khi evidence xác nhận domain benign; exporter không diễn giải free-text reason.
 - Brand snapshot được hash nhưng API hiện không cung cấp atomic revision cho brand list. Hai status snapshot khóa config/model, còn thay đổi brand đồng thời vẫn cần operator tránh trong cửa sổ export ngắn.
 - Dataset phản thực tế không thay thế fresh production-like telemetry, canary observation window hoặc owner approval.
+- Khi queue trống, `cmd/ml-whitelist-proxy` có thể tạo phép đo sàng lọc từ snapshot whitelist Việt Nam. Kết quả chỉ là benign proxy và không thay thế quyết định `Allow` có reviewer provenance.
 
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
 | 2026-08-23 | Thêm exporter có provenance gate, privacy filtering và empty-queue behavior | Codex (GPT-5) |
+| 2026-08-23 | Liên kết whitelist-proxy replay làm fallback R&D khi queue local trống | Codex (GPT-5) |

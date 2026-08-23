@@ -165,6 +165,33 @@ do not merge it into or overwrite the signed representative packet. Treat
 FPR results. This workflow consumes only new operator decisions and does not
 ask the reviewer to repeat the archived 78 unclassifiable reviews.
 
+### Vietnam whitelist proxy fallback
+
+When the local false-positive queue is empty, use `cmd/ml-whitelist-proxy` as
+an offline screening supplement. It evaluates the checksum-pinned Vietnam
+whitelist snapshot counterfactually without changing the runtime whitelist or
+requesting any source domain. The runtime must remain `shadow/ready/enabled`.
+
+```powershell
+go run ./cmd/ml-whitelist-proxy `
+  --api-url http://127.0.0.1:8080 `
+  --admin-api-key-file <private-admin-key-file> `
+  --bundle <immutable-bundle> `
+  --source data\whitelist\vietnam\vietnam_domains.txt `
+  --data-manifest ml\data\data_manifest.json `
+  --source-logical-name vietnam_domains.txt `
+  --source-commit <exact-40-character-git-sha> `
+  --near-threshold-margin 0.05 `
+  --output <new-private-whitelist-proxy-run>
+```
+
+Treat `whitelist_proxy_fpr` as a proxy metric only. Whitelist membership is not
+a human label, and a row in `would-block.csv` is a targeted review candidate,
+not a confirmed false positive. Review the would-block cases and relevant
+near-threshold critical domains before converting any row into approval
+evidence. The source manifest currently records terms review as pending, so
+the generated report is R&D evidence rather than a signed rollout packet.
+
 ## Tracked evidence archive
 
 The completed Phase 5 run is archived at
