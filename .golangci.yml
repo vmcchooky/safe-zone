@@ -12,6 +12,6 @@ linters:
     - ineffassign
     - staticcheck
     - unused
-
-issues:
-  exclude-use-default: true
+  exclusions:
+    paths:
+      - ^tmp/

@@ -18,8 +18,8 @@ cp ops/vps-edge/env.production-edge.production.example .env
 vi .env
 mkdir -p ops/certs/dot
 mkdir -p ops/secrets
-scripts/release-preflight.sh --edge-mode production-edge --version 0.1.0
-scripts/safe-zone.sh deploy
+scripts/ops/release-preflight.sh --edge-mode production-edge --version 0.1.0
+scripts/ops/safe-zone.sh deploy
 ```
 
 Set at minimum:
@@ -56,11 +56,11 @@ Production deploy now uses:
 ## Verify
 
 ```sh
-scripts/check-production-ports.sh
+scripts/ops/check-production-ports.sh
 curl -fsS https://$SAFE_ZONE_PUBLIC_HOST/healthz
 curl -fsS "https://$SAFE_ZONE_PUBLIC_HOST/v1/analyze?domain=example.com"
-scripts/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
-scripts/check-block-page.sh "$SAFE_ZONE_PUBLIC_HOST" "$SAFE_ZONE_BLOCK_PAGE_IP" blocked.example.test
+scripts/ops/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
+scripts/ops/check-block-page.sh "$SAFE_ZONE_PUBLIC_HOST" "$SAFE_ZONE_BLOCK_PAGE_IP" blocked.example.test
 ```
 
 DoH uses the same host at `/dns-query`. DoT is published on host port `853` and mapped to container port `8533` by default so the non-root resolver process does not need to bind a privileged port inside the container.
@@ -97,7 +97,7 @@ Direct HTTPS access to an arbitrary blocked third-party domain will still hit a 
 Set `SAFE_ZONE_DUCKDNS_DOMAIN` and `SAFE_ZONE_DUCKDNS_TOKEN`, then run:
 
 ```sh
-scripts/safe-zone.sh duckdns
+scripts/ops/safe-zone.sh duckdns
 ```
 
 `SAFE_ZONE_DUCKDNS_TOKEN_FILE` is also supported for file-based or Docker-secret-style setups.
@@ -115,6 +115,6 @@ The resolver expects:
 Export them into place with:
 
 ```sh
-scripts/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem
+scripts/ops/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem
 docker compose -f docker-compose.yml -f docker-compose.production.yml restart dns-resolver
 ```

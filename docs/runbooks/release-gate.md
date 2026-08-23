@@ -48,13 +48,13 @@ Run the helper that collects all local evidence:
 Linux/macOS:
 
 ```sh
-scripts/release-preflight.sh --edge-mode production-edge --version 0.1.0
+scripts/ops/release-preflight.sh --edge-mode production-edge --version 0.1.0
 ```
 
 Windows:
 
 ```powershell
-pwsh ./scripts/release-preflight.ps1 -EdgeMode production-edge -Version 0.1.0
+pwsh ./scripts/ops/release-preflight.ps1 -EdgeMode production-edge -Version 0.1.0
 ```
 
 For `shared-host-edge`, replace `production-edge` with `shared-host-edge`.
@@ -81,7 +81,7 @@ Do not continue if preflight fails.
 3. Deploy with:
 
 ```sh
-scripts/safe-zone.sh deploy
+scripts/ops/safe-zone.sh deploy
 ```
 
 ### Shared-host-edge staging
@@ -117,9 +117,9 @@ Staging approval requires all of the following:
 Run:
 
 ```sh
-scripts/check-production-ports.sh
-scripts/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
-scripts/check-block-page.sh "$SAFE_ZONE_PUBLIC_HOST" "$SAFE_ZONE_BLOCK_PAGE_IP" blocked.example.test
+scripts/ops/check-production-ports.sh
+scripts/ops/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
+scripts/ops/check-block-page.sh "$SAFE_ZONE_PUBLIC_HOST" "$SAFE_ZONE_BLOCK_PAGE_IP" blocked.example.test
 curl -fsS "https://$SAFE_ZONE_PUBLIC_HOST/v1/version"
 ```
 
@@ -160,7 +160,7 @@ Production deploy should reuse the same edge mode and same release metadata alre
 3. Deploy with:
 
 ```sh
-scripts/safe-zone.sh deploy
+scripts/ops/safe-zone.sh deploy
 ```
 
 ### Shared-host-edge
