@@ -214,6 +214,35 @@ go run ./cmd/ml-whitelist-proxy `
   --output <new-private-curated-run>
 ```
 
+### Bounded Firecrawl evidence verification
+
+After curated replay, use `cmd/ml-evidence-firecrawl` to prepare a dry-run of
+the would-block and near-threshold review union. Dry-run performs no network
+request and does not require an API key:
+
+```powershell
+go run ./cmd/ml-evidence-firecrawl `
+  --replay-manifest <curated-run>\manifest.json `
+  --candidates <curated-run>\candidates.csv `
+  --data-manifest ml\data\data_manifest.json `
+  --metadata data\whitelist\vietnam\vietnam_websites.csv `
+  --source-logical-name vietnam_websites.csv `
+  --runner-commit <exact-40-character-git-sha> `
+  --max-cases 20 `
+  --output <new-private-firecrawl-dry-run>
+```
+
+Review `cases.json` before external execution. Firecrawl may request only the
+exact HTTPS evidence URLs on `tinnhiemmang.vn` and
+`giayphep.abei.gov.vn`; it must never request candidate domains or follow their
+links. Store a newly rotated key in `ops/secrets/firecrawl_api_key`, then run a
+new output directory with both `--api-key-file` and `--execute`. Never place
+the key in source, a command-line value, chat, output, or signed evidence.
+
+Treat every extracted record as untrusted until local validation and operator
+review pass. A directory/license match is evidence provenance, not a current
+safety verdict or automatic `Allow` decision.
+
 ## Tracked evidence archive
 
 The completed Phase 5 run is archived at
