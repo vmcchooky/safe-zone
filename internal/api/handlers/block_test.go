@@ -69,6 +69,9 @@ func TestBlockReportHandlerStoresFalsePositiveReport(t *testing.T) {
 	if !strings.Contains(events[0].Details, "Business login page") {
 		t.Fatalf("expected report note in details, got %q", events[0].Details)
 	}
+	if !strings.Contains(events[0].Details, `"report_id":1`) {
+		t.Fatalf("expected report ID correlation in audit details, got %q", events[0].Details)
+	}
 
 	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/v1/reports?status=pending", nil)
 	if err != nil {
@@ -85,5 +88,26 @@ func TestBlockReportHandlerStoresFalsePositiveReport(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected reports endpoint 200, got %d: %s", resp.StatusCode, body)
+	}
+}
+
+func TestBlockReportHandlerRejectsInvalidDomain(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	form := url.Values{"domain": {"not a domain"}, "note": {"invalid submission"}}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/block/report", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	ts.Handler.BlockReportHandler(recorder, request)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected invalid domain to return 400, got %d", recorder.Code)
+	}
+	reports, err := ts.Store.ListBlockReports(context.Background(), "", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("invalid domain must not enter review queue, got %+v", reports)
 	}
 }

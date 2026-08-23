@@ -1,15 +1,15 @@
 package handlers
 
 import (
-	"encoding/json"
 	"net"
 	"net/http"
 	"net/url"
-	"safe-zone/internal/api/httputil"
-	"safe-zone/internal/api/views"
 	"strings"
 	"time"
 
+	"safe-zone/internal/analysis"
+	"safe-zone/internal/api/httputil"
+	"safe-zone/internal/api/views"
 	"safe-zone/internal/config"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
@@ -72,10 +72,16 @@ func (h *Handler) BlockReportHandler(w http.ResponseWriter, r *http.Request) {
 		strings.TrimSpace(r.Form.Get("domain")),
 		blockedDomainFromRequest(r),
 	)
+	normalizedDomain, err := analysis.NormalizeDomain(domain)
+	if err != nil {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid report domain")
+		return
+	}
+	domain = normalizedDomain
 	requestedPath := firstNonEmpty(strings.TrimSpace(r.Form.Get("requested_path")), blockedPathFromRequest(r))
 	contact := strings.TrimSpace(r.Form.Get("contact"))
 	note := strings.TrimSpace(r.Form.Get("note"))
-	reportDetails, err := json.Marshal(map[string]string{
+	reportDetails := map[string]any{
 		"domain":         domain,
 		"requested_path": requestedPath,
 		"contact":        contact,
@@ -83,18 +89,10 @@ func (h *Handler) BlockReportHandler(w http.ResponseWriter, r *http.Request) {
 		"user_agent":     r.UserAgent(),
 		"request_id":     serve.RequestID(r.Context()),
 		"reported_at":    time.Now().UTC().Format(time.RFC3339Nano),
-	})
-	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, "failed to serialize report")
-		return
 	}
 
 	if db := h.Risk.StoreDB(); db != nil && db.Enabled() {
-		if _, err := db.CreateBlockReport(r.Context(), domain, contact, note); err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, "failed to record report")
-			return
-		}
-		if err := db.RecordAgentEvent(r.Context(), "block_page", "false_positive_report", domain, string(reportDetails)); err != nil {
+		if _, err := db.CreateBlockReportWithAudit(r.Context(), domain, contact, note, reportDetails); err != nil {
 			httputil.WriteError(w, http.StatusInternalServerError, "failed to record report")
 			return
 		}

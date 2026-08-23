@@ -13,6 +13,17 @@ interface BlockReport {
   note: string;
   status: string;
   created_at: string;
+  review_reason: string;
+  reviewed_by: string;
+  reviewed_at: string;
+  resolution_action: string;
+}
+
+type ReviewAction = 'allow' | 'resolved' | 'rejected';
+
+interface ReviewDraft {
+  report: BlockReport;
+  action: ReviewAction;
 }
 
 interface ToastMessage {
@@ -24,6 +35,11 @@ interface ToastMessage {
 interface ReportsResponse {
   reports: BlockReport[];
   total: number;
+  counts: {
+    pending: number;
+    resolved: number;
+    rejected: number;
+  };
 }
 
 export function UserReportsPage() {
@@ -32,6 +48,9 @@ export function UserReportsPage() {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [reviewDraft, setReviewDraft] = useState<ReviewDraft | null>(null);
+  const [reviewReason, setReviewReason] = useState('');
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
   const itemsPerPage = 12;
 
   useEffect(() => {
@@ -59,34 +78,58 @@ export function UserReportsPage() {
     setCurrentPage((page) => Math.min(page, totalPages));
   }, [totalPages]);
 
-  const handleUpdateStatus = async (id: number, status: string) => {
-    try {
-      await apiJSON('/v1/reports/status', { id, status }, { method: 'POST' });
-      await mutate();
-      showToast(status === 'resolved' ? 'Report marked as resolved.' : 'Report rejected.', 'success');
-    } catch (err) {
-      showToast(`Failed to update report status: ${messageFromError(err)}`, 'error');
-    }
+  const openReview = (report: BlockReport, action: ReviewAction) => {
+    setReviewDraft({ report, action });
+    setReviewReason('');
   };
 
-  const handleAllowDomain = async (report: BlockReport) => {
+  const closeReview = () => {
+    if (isSubmittingReview) return;
+    setReviewDraft(null);
+    setReviewReason('');
+  };
+
+  const submitReview = async () => {
+    if (!reviewDraft) return;
+    const reason = reviewReason.trim();
+    if (reason.length < 8) {
+      showToast('Review reason must contain at least 8 characters.', 'error');
+      return;
+    }
+
+    setIsSubmittingReview(true);
     try {
-      // This endpoint always creates an `allow` override and resolves pending reports
-      // for the approved domain as one review operation.
-      await apiJSON('/v1/overrides/review-false-positive', {
-        domain: report.domain,
-        reason: 'Approved from User Reports',
-        source: 'user_reports',
-      }, { method: 'POST' });
+      if (reviewDraft.action === 'allow') {
+        await apiJSON('/v1/overrides/review-false-positive', {
+          report_id: reviewDraft.report.id,
+          domain: reviewDraft.report.domain,
+          reason,
+          source: 'user_reports',
+          previous_action: 'block',
+        }, { method: 'POST' });
+      } else {
+        await apiJSON('/v1/reports/status', {
+          id: reviewDraft.report.id,
+          status: reviewDraft.action,
+          reason,
+        }, { method: 'POST' });
+      }
       await mutate();
-      showToast(`Allowed ${report.domain} and resolved its pending reports.`, 'success');
+      if (reviewDraft.action === 'allow') {
+        showToast(`Allowed ${reviewDraft.report.domain} and resolved related pending reports.`, 'success');
+      } else {
+        showToast(reviewDraft.action === 'resolved' ? 'Report marked as resolved.' : 'Report rejected.', 'success');
+      }
+      setReviewDraft(null);
+      setReviewReason('');
     } catch (err) {
-      showToast(`Failed to allow domain: ${messageFromError(err)}`, 'error');
+      showToast(`Failed to apply review: ${messageFromError(err)}`, 'error');
+    } finally {
+      setIsSubmittingReview(false);
     }
   };
 
   const isLoading = !data && !error;
-  const startIndex = offset;
   const currentItems = data?.reports || [];
 
   return (
@@ -111,6 +154,19 @@ export function UserReportsPage() {
           </div>
         </div>
       </motion.div>
+
+      <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Report queue summary">
+        {[
+          { label: 'Pending review', value: data?.counts?.pending ?? 0, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { label: 'Resolved', value: data?.counts?.resolved ?? 0, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
+          { label: 'Rejected', value: data?.counts?.rejected ?? 0, tone: 'text-rose-700 bg-rose-50 border-rose-200' },
+        ].map((item) => (
+          <div key={item.label} className={`rounded-2xl border px-5 py-4 ${item.tone}`}>
+            <div className="text-2xl font-bold tabular-nums">{item.value}</div>
+            <div className="mt-1 text-xs font-semibold uppercase tracking-wide opacity-75">{item.label}</div>
+          </div>
+        ))}
+      </section>
 
       {/* Controls Section */}
       <section className="bg-transparent border border-black/5 rounded-3xl p-6 shadow-sm relative overflow-hidden">
@@ -210,9 +266,17 @@ export function UserReportsPage() {
                         </span>
                       </td>
                       <td className="px-6 py-4 w-64">
-                        <span className="text-slate-600 truncate w-60 inline-block" title={report.note}>
+                        <span className="text-slate-600 truncate w-60 block" title={report.note}>
                           {report.note || '-'}
                         </span>
+                        {report.review_reason ? (
+                          <span
+                            className="mt-1 block w-60 truncate text-xs text-slate-400"
+                            title={`${report.resolution_action}: ${report.review_reason} — ${report.reviewed_by} at ${report.reviewed_at}`}
+                          >
+                            {report.resolution_action}: {report.review_reason}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-6 py-4 w-28 text-center">
                         <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-medium border ${
@@ -230,7 +294,7 @@ export function UserReportsPage() {
                           {report.status !== 'resolved' && (
                             <>
                               <button
-                                onClick={() => handleAllowDomain(report)}
+                                onClick={() => openReview(report, 'allow')}
                                 className="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5"
                                 title="Allow this domain (Override)"
                               >
@@ -238,14 +302,14 @@ export function UserReportsPage() {
                                 Allow
                               </button>
                               <button
-                                onClick={() => handleUpdateStatus(report.id, 'resolved')}
+                                onClick={() => openReview(report, 'resolved')}
                                 className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                                 title="Mark Resolved"
                               >
                                 <CheckCircle2 className="w-5 h-5" />
                               </button>
                               <button
-                                onClick={() => handleUpdateStatus(report.id, 'rejected')}
+                                onClick={() => openReview(report, 'rejected')}
                                 className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                                 title="Reject Report"
                               >
@@ -303,6 +367,103 @@ export function UserReportsPage() {
           </>
         )}
       </section>
+
+      <AnimatePresence>
+        {reviewDraft ? (
+          <motion.div
+            className="fixed inset-0 z-[180] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onMouseDown={(event) => {
+              if (event.target === event.currentTarget) closeReview();
+            }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="review-dialog-title"
+              initial={{ opacity: 0, y: 20, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              className="w-full max-w-xl rounded-3xl border border-white/60 bg-white p-6 shadow-2xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-amber-600">Operator decision</div>
+                  <h2 id="review-dialog-title" className="mt-1 text-xl font-bold text-slate-900">
+                    {reviewDraft.action === 'allow'
+                      ? 'Allow domain as false positive'
+                      : reviewDraft.action === 'resolved'
+                        ? 'Resolve report without override'
+                        : 'Reject report'}
+                  </h2>
+                  <p className="mt-2 break-all font-mono text-sm text-slate-600">{reviewDraft.report.domain}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeReview}
+                  disabled={isSubmittingReview}
+                  className="rounded-xl p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+                  aria-label="Close review dialog"
+                >
+                  <XCircle className="h-5 w-5" />
+                </button>
+              </div>
+
+              <label htmlFor="review-reason" className="mt-6 block text-sm font-semibold text-slate-700">
+                Review reason <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                id="review-reason"
+                autoFocus
+                rows={5}
+                maxLength={2000}
+                value={reviewReason}
+                onChange={(event) => setReviewReason(event.target.value)}
+                placeholder="Describe what was verified, the related ticket/evidence, and whether this decision is temporary."
+                className="mt-2 w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-4 focus:ring-amber-100"
+              />
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
+                <span>Minimum 8 characters; reviewer and time are recorded automatically.</span>
+                <span>{reviewReason.length}/2000</span>
+              </div>
+
+              {reviewDraft.action === 'allow' ? (
+                <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  This creates a global allow override and resolves pending reports for the same domain atomically.
+                </div>
+              ) : null}
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={closeReview}
+                  disabled={isSubmittingReview}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void submitReview()}
+                  disabled={isSubmittingReview || reviewReason.trim().length < 8}
+                  className={`inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                    reviewDraft.action === 'rejected'
+                      ? 'bg-rose-600 hover:bg-rose-700'
+                      : reviewDraft.action === 'allow'
+                        ? 'bg-emerald-600 hover:bg-emerald-700'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                  }`}
+                >
+                  {isSubmittingReview ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  Confirm decision
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <div className="fixed bottom-6 right-6 z-[200] flex flex-col-reverse gap-3 pointer-events-none" aria-live="polite">
         <AnimatePresence>

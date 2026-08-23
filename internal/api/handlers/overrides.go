@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -18,6 +19,7 @@ type overrideRequest struct {
 }
 
 type falsePositiveReviewRequest struct {
+	ReportID       int64  `json:"report_id,omitempty"`
 	Domain         string `json:"domain"`
 	Reason         string `json:"reason"`
 	Source         string `json:"source,omitempty"`
@@ -97,8 +99,12 @@ func (h *Handler) ReviewFalsePositiveHandler(w http.ResponseWriter, r *http.Requ
 		httputil.WriteError(w, http.StatusBadRequest, "domain is required")
 		return
 	}
-	if req.Reason == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "review reason is required")
+	if len(req.Reason) < 8 {
+		httputil.WriteError(w, http.StatusBadRequest, "review reason must contain at least 8 characters")
+		return
+	}
+	if req.ReportID < 0 {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid report ID")
 		return
 	}
 	normalized, err := analysis.NormalizeDomain(req.Domain)
@@ -112,30 +118,44 @@ func (h *Handler) ReviewFalsePositiveHandler(w http.ResponseWriter, r *http.Requ
 		reviewReason = fmt.Sprintf("false-positive review (%s): %s", req.Source, req.Reason)
 	}
 
-	if err := h.Risk.UpsertOverride(normalized, "allow", reviewReason); err != nil {
-		httputil.WriteError(w, http.StatusBadRequest, err.Error())
+	db := h.Risk.StoreDB()
+	if db == nil || !db.Enabled() {
+		httputil.WriteError(w, http.StatusServiceUnavailable, "database not configured")
 		return
 	}
 
-	if db := h.Risk.StoreDB(); db != nil {
-		details := map[string]string{
-			"source":          req.Source,
-			"review_reason":   req.Reason,
-			"previous_action": req.PreviousAction,
-			"resolved_action": "allow",
+	reviewer := "admin"
+	if identity, ok := authIdentityFromRequest(r); ok && strings.TrimSpace(identity.Username) != "" {
+		reviewer = identity.Username
+	}
+	resolvedReports, err := db.ApproveFalsePositive(
+		r.Context(),
+		req.ReportID,
+		normalized,
+		reviewReason,
+		req.Reason,
+		reviewer,
+		req.Source,
+		req.PreviousAction,
+	)
+	if err != nil {
+		switch {
+		case errors.Is(err, store.ErrBlockReportNotFound):
+			httputil.WriteError(w, http.StatusNotFound, "block report not found")
+		case errors.Is(err, store.ErrBlockReportDomainMismatch):
+			httputil.WriteError(w, http.StatusConflict, "report domain does not match review domain")
+		default:
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to apply false-positive review: "+err.Error())
 		}
-		if data, err := json.Marshal(details); err == nil {
-			_ = db.RecordAgentEvent(r.Context(), "operator_review", "operator_false_positive_review", normalized, string(data))
-		}
-		if db.Enabled() {
-			_ = db.ResolveBlockReportsForDomain(r.Context(), normalized)
-		}
+		return
 	}
 
-	httputil.WriteJSON(w, http.StatusOK, map[string]string{
-		"status": "ok",
-		"domain": normalized,
-		"action": "allow",
-		"reason": reviewReason,
+	httputil.WriteJSON(w, http.StatusOK, map[string]any{
+		"status":           "ok",
+		"domain":           normalized,
+		"action":           "allow",
+		"reason":           reviewReason,
+		"reviewed_by":      reviewer,
+		"resolved_reports": resolvedReports,
 	})
 }

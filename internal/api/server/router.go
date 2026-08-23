@@ -44,7 +44,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/v1/overrides/review-false-positive", h.RequireAdminFunc(h.ReviewFalsePositiveHandler))
 
 	// Reports
-	mux.HandleFunc("/v1/reports", h.RequireAuthFunc(h.ListReportsHandler))
+	mux.HandleFunc("/v1/reports", h.RequireAdminFunc(h.ListReportsHandler))
 	mux.HandleFunc("/v1/reports/status", h.RequireAdminFunc(h.UpdateReportStatusHandler))
 
 	// Brands

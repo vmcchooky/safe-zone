@@ -159,7 +159,10 @@ function ProtectedRoutes() {
           <Route path="/telemetry" element={<TelemetryPage />} />
           <Route path="/endpoints" element={<EndpointsPage />} />
           <Route path="/overrides" element={<OverridesPage />} />
-          <Route path="/reports" element={<UserReportsPage />} />
+          <Route
+            path="/reports"
+            element={session?.can_mutate ? <UserReportsPage /> : <Navigate to="/analysis" replace />}
+          />
           <Route path="/system" element={<SystemPage />} />
           <Route
             path="/settings"

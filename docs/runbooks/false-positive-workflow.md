@@ -23,12 +23,13 @@ Restore legitimate access quickly without losing operator traceability.
 ## Step 1: Confirm the current behavior
 
 1. Open the primary admin dashboard at `/app/`. Use `/dashboard` only when validating the legacy compatibility UI.
-2. Analyze the reported domain in the `Analysis` tab.
-3. Confirm whether the current result is:
+2. Open `Reports` and select the pending report. This queue is admin-only because it can contain reporter contact details and notes.
+3. Analyze the reported domain in the `Analysis` tab.
+4. Confirm whether the current result is:
    - an `admin override: block`
    - a threat-feed match
    - a lexical / enrichment / OSINT classification
-4. Check `Telemetry` to see whether the domain is isolated or part of a larger pattern.
+5. Check `Telemetry` to see whether the domain is isolated or part of a larger pattern.
 
 ## Step 2: Decide whether this is a local false positive or a broader incident
 
@@ -49,9 +50,11 @@ Escalate to incident review when:
 
 Preferred path in the dashboard:
 
-1. Stay on the `Analysis` tab after analyzing the domain.
-2. In `False-positive review`, enter a review note that explains why the domain is legitimate.
-3. Click `Allow / whitelist domain`.
+1. Return to `Reports` and click `Allow` on the matching report.
+2. Enter a review note that explains the evidence, ticket and expected lifetime of the override.
+3. Confirm the decision. Safe Zone records the authenticated reviewer and server time automatically.
+
+If the report is valid but does not require an allow override, use `Resolve`. If the evidence confirms that the block was correct, use `Reject`. Both decisions require a reason and remain visible in the queue history.
 
 API fallback:
 
@@ -60,6 +63,7 @@ curl -X POST http://localhost:8080/v1/overrides/review-false-positive \
   -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
+    "report_id": 42,
     "domain": "example.com",
     "reason": "verified partner portal during operator review",
     "source": "runbook",
@@ -70,15 +74,20 @@ curl -X POST http://localhost:8080/v1/overrides/review-false-positive \
 Expected result:
 
 - Safe Zone writes a global `allow` override for the domain.
-- The review reason is stored in the override record.
-- An audit event `operator_false_positive_review` is recorded when SQLite is enabled.
+- The allow override, report resolution and `operator_false_positive_review` event commit in one SQLite transaction.
+- Every pending report for the same normalized domain is resolved with `resolution_action=allow`.
+- The queue stores `review_reason`, `reviewed_by` and `reviewed_at` for staging evidence.
+
+`report_id` is optional for compatibility with reviews started from Analysis or the legacy dashboard. Queue-originated reviews should always send it so Safe Zone can reject a mismatched report/domain pair before changing the override.
 
 ## Step 4: Verify remediation
 
 1. Re-run analysis for the same domain.
 2. Confirm the response now shows `admin override: allow`.
 3. Check the `Overrides` tab and verify the domain appears with action `allow`.
-4. If client-specific policies exist, validate from an affected client path as well.
+4. Return to `Reports`, filter by `Resolved`, and verify the reason, reviewer, review time and queue counter.
+5. Query `agent_audit_log` or the agent audit view and verify `operator_false_positive_review` exists for the normalized domain.
+6. If client-specific policies exist, validate from an affected client path as well.
 
 ## Step 5: Decide on follow-up cleanup
 

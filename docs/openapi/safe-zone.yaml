@@ -114,10 +114,15 @@ paths:
               type: object
               required: [domain, reason]
               properties:
+                report_id:
+                  type: integer
+                  minimum: 1
+                  description: Optional queue report identifier; required for queue-originated reviews.
                 domain:
                   type: string
                 reason:
                   type: string
+                  minLength: 8
                 source:
                   type: string
                 previous_action:
@@ -125,6 +130,91 @@ paths:
       responses:
         "200":
           description: False-positive review applied
+        "404":
+          description: Queue report was not found
+        "409":
+          description: Queue report domain does not match the requested domain
+  /v1/reports:
+    get:
+      summary: List false-positive reports for operator review
+      description: Admin-only because report contact and note fields may contain personal data.
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, resolved, rejected]
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: Paginated report queue plus global status counts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [reports, total, counts, filter]
+                properties:
+                  reports:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BlockReport"
+                  total:
+                    type: integer
+                  counts:
+                    $ref: "#/components/schemas/BlockReportStatusCounts"
+                  filter:
+                    type: object
+                    properties:
+                      status: {type: string}
+                      q: {type: string}
+        "403":
+          description: Authenticated user is not an admin
+  /v1/reports/status:
+    post:
+      summary: Resolve or reject a false-positive report without creating an override
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, status, reason]
+              properties:
+                id:
+                  type: integer
+                  minimum: 1
+                status:
+                  type: string
+                  enum: [resolved, rejected]
+                reason:
+                  type: string
+                  minLength: 8
+      responses:
+        "200":
+          description: Operator decision and audit event committed
+        "404":
+          description: Queue report was not found
   /v1/telemetry/recent:
     get:
       summary: List telemetry entries
@@ -300,6 +390,31 @@ components:
           enum: [allow, block]
         reason:
           type: string
+    BlockReport:
+      type: object
+      required: [id, domain, contact, note, status, created_at, review_reason, reviewed_by, reviewed_at, resolution_action]
+      properties:
+        id: {type: integer}
+        domain: {type: string}
+        contact: {type: string}
+        note: {type: string}
+        status:
+          type: string
+          enum: [pending, resolved, rejected]
+        created_at: {type: string}
+        review_reason: {type: string}
+        reviewed_by: {type: string}
+        reviewed_at: {type: string}
+        resolution_action:
+          type: string
+          enum: ["", allow, resolve, reject]
+    BlockReportStatusCounts:
+      type: object
+      required: [pending, resolved, rejected]
+      properties:
+        pending: {type: integer, minimum: 0}
+        resolved: {type: integer, minimum: 0}
+        rejected: {type: integer, minimum: 0}
     AnalysisConfig:
       type: object
       required:

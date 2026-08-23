@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 type updateReportStatusRequest struct {
 	ID     int64  `json:"id"`
 	Status string `json:"status"`
+	Reason string `json:"reason"`
 }
 
 func (h *Handler) ListReportsHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +40,10 @@ func (h *Handler) ListReportsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	status := r.URL.Query().Get("status")
 	query := r.URL.Query().Get("q")
+	if status != "" && status != "pending" && status != "resolved" && status != "rejected" {
+		httputil.WriteError(w, http.StatusBadRequest, "invalid report status filter")
+		return
+	}
 
 	db := h.Risk.StoreDB()
 	if db == nil || !db.Enabled() {
@@ -62,10 +68,16 @@ func (h *Handler) ListReportsHandler(w http.ResponseWriter, r *http.Request) {
 	if reports == nil {
 		reports = []store.BlockReport{}
 	}
+	counts, err := db.CountBlockReportsByStatus(r.Context())
+	if err != nil {
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to count report statuses: "+err.Error())
+		return
+	}
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"reports": reports,
 		"total":   total,
+		"counts":  counts,
 		"filter": map[string]string{
 			"status": status,
 			"q":      query,
@@ -89,12 +101,17 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 	}
 
 	req.Status = strings.TrimSpace(req.Status)
+	req.Reason = strings.TrimSpace(req.Reason)
 	if req.ID <= 0 {
 		httputil.WriteError(w, http.StatusBadRequest, "invalid ID")
 		return
 	}
-	if req.Status == "" {
-		httputil.WriteError(w, http.StatusBadRequest, "status is required")
+	if req.Status != "resolved" && req.Status != "rejected" {
+		httputil.WriteError(w, http.StatusBadRequest, "status must be resolved or rejected")
+		return
+	}
+	if len(req.Reason) < 8 {
+		httputil.WriteError(w, http.StatusBadRequest, "review reason must contain at least 8 characters")
 		return
 	}
 
@@ -104,12 +121,26 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := db.UpdateBlockReportStatus(r.Context(), req.ID, req.Status); err != nil {
+	reviewer := "admin"
+	if identity, ok := authIdentityFromRequest(r); ok && strings.TrimSpace(identity.Username) != "" {
+		reviewer = identity.Username
+	}
+	resolutionAction := "resolve"
+	if req.Status == "rejected" {
+		resolutionAction = "reject"
+	}
+	if err := db.ReviewBlockReport(r.Context(), req.ID, req.Status, req.Reason, reviewer, resolutionAction); err != nil {
+		if errors.Is(err, store.ErrBlockReportNotFound) {
+			httputil.WriteError(w, http.StatusNotFound, "block report not found")
+			return
+		}
 		httputil.WriteError(w, http.StatusInternalServerError, "failed to update report status: "+err.Error())
 		return
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{
-		"status": "ok",
+		"status":            "ok",
+		"decision":          req.Status,
+		"resolution_action": resolutionAction,
 	})
 }
