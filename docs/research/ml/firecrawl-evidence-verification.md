@@ -50,10 +50,12 @@ Codex (GPT-5) triển khai theo chiến lược contract-first và threat-model 
 | ABEI | 4 license group | Dùng 4 license number, cùng registry landing URL |
 | Network requests | 0 request | `--execute=false` |
 | Candidate-domain requests | 0 request | Candidate domains chỉ nằm trong prompt context |
+| Runner commit | `4531be82...bee621` | Exact commit chứa bounded runner |
 | Replay manifest SHA-256 | `4d0f5675...d8be380` | Khớp curated run |
 | Candidates SHA-256 | `7885591a...e82b0d` | Khớp replay manifest |
 | Metadata SHA-256 | `9a3cacb2...76f58` | Khớp data manifest |
 | Cases SHA-256 | `980088cf...6b445` | 14 prompts/URLs cố định trong dry-run |
+| Dry-run manifest SHA-256 | `97627d6c...97be8b` | Khóa runner/input/output contract |
 
 External execution chưa chạy vì key đã xuất hiện trong một kênh không phù hợp để giữ secret và cần được rotate. Đây là intentional security gate, không phải evidence failure.
 
@@ -70,3 +72,4 @@ External execution chưa chạy vì key đã xuất hiện trong một kênh kh�
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
 | 2026-08-23 | Thêm bounded Firecrawl runner, dry-run 14 group và secret/output controls | Codex (GPT-5) |
+| 2026-08-23 | Khóa dry-run bằng runner commit và manifest checksum | Codex (GPT-5) |
