@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "protocol_path": "configs/v5-char-linear-ensemble-protocol.json",
+  "protocol_sha256": "3521b21a2345659590886daaf18abd5c3b882d91e33cb55db9b58be566f0eac0",
+  "collected_at": "2026-08-24T12:35:07.321447Z",
+  "inputs": {
+    "phishtank": {
+      "path": "data/derived/time-forward-20260824/raw/phishtank-online-valid-20260824.csv",
+      "sha256": "f5bed724cc935b2b81f40005693f11ae8454924064a048487a6b9051d61893e7",
+      "raw_rows": 73191,
+      "canonical_rows": 73043
+    },
+    "phishdestroy": {
+      "path": "data/derived/v5-char-linear-20260824/raw/phishdestroy-primary-active-domains.txt",
+      "source_url": "https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt",
+      "sha256": "1de52204e8f949e359ae7d21490b97491673b9294b3bcba8c51fb205d7e79f40",
+      "bytes": 2725014,
+      "raw_rows": 120606,
+      "source_disjoint_rows": 81528
+    },
+    "prior_development": {
+      "manifest_sha256": "8a7669aceb11f91ec52f61b517015da3f918928d1c7336cdb67ef51e7aafd768",
+      "path": "data/derived/time-forward-20260824/development.parquet",
+      "sha256": "80c8246d3204ebe699d398d7559602e9b7dd1667844e98481822d52a9e37968f",
+      "rows": 467
+    }
+  },
+  "exclusions": {
+    "baseline_partition_groups": 1936767,
+    "frozen_groups": 140,
+    "prior_development_groups": 467,
+    "current_phishtank_groups": 32963,
+    "cross_cohort_group_overlap": 0
+  },
+  "cohort_policy": {
+    "exclude_all_baseline_partition_groups": true,
+    "exclude_all_frozen_groups": true,
+    "exclude_prior_time_forward_development_groups": true,
+    "holdout_excludes_all_current_phishtank_groups": true,
+    "one_row_per_evaluation_group": true,
+    "development_requires_ordinary_looking": true,
+    "ordinary_looking_contract": "contracts/domain_feature_contract.v3.json",
+    "selection_order": "event_time_asc,domain_ascii_asc"
+  },
+  "outputs": {
+    "development": {
+      "path": "data/derived/v5-char-linear-20260824/development.parquet",
+      "rows": 349,
+      "sha256": "eb188ea5fda8ee63a1ea31d76a390206c7e0850c9d4ea5f1c2fd878a613d2455"
+    },
+    "phishdestroy_holdout": {
+      "path": "data/derived/v5-char-linear-20260824/phishdestroy-holdout.parquet",
+      "rows": 81528,
+      "sha256": "8f8dc4b4ad03898bed8a48ba82da18f28570012b837ba1241369cb04207e27de"
+    }
+  },
+  "counts": {
+    "development_window_rows_before_ordinary_filter": 813,
+    "development_rows": 349,
+    "holdout_rows": 81528,
+    "holdout_ordinary_rows": 44419
+  }
+}
