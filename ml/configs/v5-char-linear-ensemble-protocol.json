@@ -54,7 +54,7 @@
     "holdout_excludes_all_current_phishtank_groups": true,
     "one_row_per_evaluation_group": true,
     "development_requires_ordinary_looking": true,
-    "ordinary_looking_contract": "contracts/domain_feature_contract.v4.json",
+    "ordinary_looking_contract": "contracts/domain_feature_contract.v3.json",
     "selection_order": "event_time_asc,domain_ascii_asc"
   },
   "representation": {
