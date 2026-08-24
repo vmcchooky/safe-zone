@@ -48,6 +48,10 @@
       "path": "data/derived/v3-leakage-free-context/matrices/X_val.npz",
       "sha256": "91a5c8026d390d0a92aa178dc15c6178d689e9d54e08a44bae5923dd378e8b10"
     },
+    "v3_final_test_matrix": {
+      "path": "data/derived/v3-leakage-free-context/matrices/X_test.npz",
+      "sha256": "3c72dc8cb15ba339bbfdad0c362f1938b976eaf4dc2ef5bf28b68a4a66ba97ff"
+    },
     "calibration_partition": {
       "path": "data/derived/v3-time-forward-data/partitions/cal.parquet",
       "sha256": "6032895eb224549ce4d359f6fed9eeec9539cdbd9da4041b3bbb3ebce7a32322"
