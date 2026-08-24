@@ -109,6 +109,37 @@ def apply_training_weight_policy(
     }
 
 
+def apply_monotone_feature_policy(
+    lgb_params: Dict[str, Any],
+    training_cfg: Dict[str, Any],
+    feature_names: List[str],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Resolve named monotone constraints against the frozen feature order."""
+
+    params = dict(lgb_params)
+    names = [str(name) for name in training_cfg.get("monotone_increasing_features", [])]
+    if len(names) != len(set(names)):
+        raise ValueError("monotone feature policy contains duplicates")
+    unknown = sorted(set(names) - set(feature_names))
+    if unknown:
+        raise ValueError(f"unknown monotone features: {unknown}")
+    if names and "monotone_constraints" in params:
+        raise ValueError(
+            "use named monotone_increasing_features instead of raw monotone_constraints"
+        )
+    if names:
+        selected = set(names)
+        params["monotone_constraints"] = [
+            1 if feature in selected else 0 for feature in feature_names
+        ]
+        params.setdefault("monotone_constraints_method", "intermediate")
+    return params, {
+        "enabled": bool(names),
+        "increasing_features": names,
+        "method": params.get("monotone_constraints_method", ""),
+    }
+
+
 def train_and_eval_baselines(
     X_train: Any,
     y_train: np.ndarray,
@@ -225,8 +256,11 @@ def run_training(config_path: str):
 
     matrices_dir = os.path.join(BASE_DIR, cfg.get("matrices_dir", "data/derived/matrices"))
     partitions_dir = os.path.join(BASE_DIR, cfg.get("partitions_dir", "data/derived/partitions"))
+    derived_dir = os.path.join(BASE_DIR, cfg.get("derived_dir", "data/derived"))
     models_dir = os.path.join(BASE_DIR, cfg.get("models_dir", "data/derived/models"))
     os.makedirs(models_dir, exist_ok=True)
+
+    training_cfg = cfg.get("training", {})
 
     print("[*] Loading Train partition (X_train.npz)...", flush=True)
     X_train, y_train, train_weight, df_train = load_data_split(matrices_dir, partitions_dir, "train")
@@ -236,8 +270,17 @@ def run_training(config_path: str):
     X_val, y_val, val_weight, df_val = load_data_split(matrices_dir, partitions_dir, "validation")
     print(f"    X_val shape: {X_val.shape}, Labels: safe={np.sum(y_val==0):,}, malicious={np.sum(y_val==1):,}", flush=True)
 
-    lgb_params = cfg.get("lightgbm_params", {})
-    training_cfg = cfg.get("training", {})
+    feature_manifest_path = os.path.join(derived_dir, "feature_manifest.json")
+    with open(feature_manifest_path, "r", encoding="utf-8") as handle:
+        feature_manifest = json.load(handle)
+    feature_names = feature_manifest.get("feature_names", [])
+    if len(feature_names) != X_train.shape[1]:
+        raise ValueError(
+            "feature manifest order does not match training matrix width"
+        )
+    lgb_params, monotone_report = apply_monotone_feature_policy(
+        cfg.get("lightgbm_params", {}), training_cfg, feature_names
+    )
     train_weight, weighting_report = apply_training_weight_policy(
         df_train, train_weight, training_cfg
     )
@@ -276,13 +319,6 @@ def run_training(config_path: str):
     print(f"\n[+] Saved raw LightGBM model text to {raw_model_path}", flush=True)
 
     # Feature Importance Top 25
-    feature_manifest_path = os.path.join(BASE_DIR, "data/derived/feature_manifest.json")
-    feature_names = None
-    if os.path.exists(feature_manifest_path):
-        with open(feature_manifest_path, "r", encoding="utf-8") as f:
-            fm = json.load(f)
-            feature_names = fm.get("feature_names", None)
-
     importances = booster.feature_importance(importance_type="gain")
     top_indices = np.argsort(importances)[::-1][:25]
     top_features = []
@@ -296,6 +332,7 @@ def run_training(config_path: str):
         "best_iteration": booster.best_iteration,
         "n_features": booster.num_feature(),
         "sample_weighting": {"enabled": bool(np.any(train_weight != 1.0)), **weighting_report},
+        "monotone_feature_policy": monotone_report,
         "baselines": results,
         "top_25_features_by_gain": top_features,
     }

@@ -125,19 +125,86 @@ def build_tfidf_inputs(
 
 
 class SnapshotStore:
-    def __init__(self, snapshots_dir: Optional[str] = None):
+    def __init__(
+        self,
+        snapshots_dir: Optional[str] = None,
+        snapshot_policy: Optional[Mapping[str, Any]] = None,
+    ):
         if snapshots_dir is None:
             snapshots_dir = os.path.join(BASE_DIR, "contracts", "snapshots")
         self.snapshots_dir = snapshots_dir
 
-        self.brands = self._load_json("brands.v1.json")
-        self.keywords = self._load_json("keywords.v1.json")
-        self.tld_risk = self._load_json("tld_risk.v1.json")
-        self.shared_hosting = self._load_json("shared_hosting.v1.json")
-        self.homoglyphs = self._load_json("homoglyphs.v1.json")
-        self.keyboard_adjacency = self._load_json("keyboard_adjacency.v1.json")
+        policy = dict(snapshot_policy or {})
+        base_files = {
+            "brands": "brands.v1.json",
+            "keywords": "keywords.v1.json",
+            "tld_risk": "tld_risk.v1.json",
+            "shared_hosting": "shared_hosting.v1.json",
+            "homoglyphs": "homoglyphs.v1.json",
+            "keyboard_adjacency": "keyboard_adjacency.v1.json",
+            **dict(policy.get("base_files", {})),
+        }
+        self.brands = self._load_json(str(base_files["brands"]))
+        self.keywords = self._load_json(str(base_files["keywords"]))
+        self.tld_risk = self._load_json(str(base_files["tld_risk"]))
+        self.shared_hosting = self._load_json(str(base_files["shared_hosting"]))
+        self.homoglyphs = self._load_json(str(base_files["homoglyphs"]))
+        self.keyboard_adjacency = self._load_json(
+            str(base_files["keyboard_adjacency"])
+        )
+
+        keyword_extensions = [
+            str(value).strip().lower()
+            for value in policy.get("keyword_extensions", [])
+            if str(value).strip()
+        ]
+        if len(keyword_extensions) != len(set(keyword_extensions)):
+            raise ValueError("snapshot keyword extensions contain duplicates")
+        self.keywords = list(self.keywords) + [
+            value for value in keyword_extensions if value not in self.keywords
+        ]
+
+        shared_extensions = [
+            str(value).strip().rstrip(".").lower()
+            for value in policy.get("shared_hosting_extensions", [])
+            if str(value).strip()
+        ]
+        if len(shared_extensions) != len(set(shared_extensions)):
+            raise ValueError("snapshot shared-hosting extensions contain duplicates")
+        self.shared_hosting = list(self.shared_hosting) + [
+            value
+            for value in shared_extensions
+            if value not in self.shared_hosting
+        ]
+
+        brand_extensions = policy.get("brand_extensions", [])
+        if not isinstance(brand_extensions, list):
+            raise ValueError("snapshot brand_extensions must be a list")
+        existing_brand_names = {
+            str(entry.get("name", "")).strip().lower() for entry in self.brands
+        }
+        self.brands = list(self.brands)
+        for raw_entry in brand_extensions:
+            if not isinstance(raw_entry, dict):
+                raise ValueError("snapshot brand extension must be an object")
+            entry = dict(raw_entry)
+            name = str(entry.get("name", "")).strip().lower()
+            official = str(entry.get("official_domain", "")).strip().lower()
+            if not name or not official or name in existing_brand_names:
+                raise ValueError(f"invalid or duplicate snapshot brand extension: {name!r}")
+            entry["name"] = name
+            entry["official_domain"] = official
+            entry["alt_domains"] = [
+                str(value).strip().lower()
+                for value in entry.get("alt_domains", [])
+                if str(value).strip()
+            ]
+            self.brands.append(entry)
+            existing_brand_names.add(name)
 
     def _load_json(self, filename: str) -> Any:
+        if os.path.basename(filename) != filename:
+            raise ValueError(f"snapshot filename must be a basename: {filename!r}")
         filepath = os.path.join(self.snapshots_dir, filename)
         if not os.path.exists(filepath):
             raise FileNotFoundError(f"Snapshot file not found at {filepath}")
@@ -453,9 +520,12 @@ class FeatureExtractor:
         }
 
 
-def _extract_handcrafted_chunk(domains: List[str]) -> np.ndarray:
+def _extract_handcrafted_chunk(
+    payload: tuple[List[str], Mapping[str, Any]],
+) -> np.ndarray:
+    domains, snapshot_policy = payload
     psl = get_psl()
-    store = SnapshotStore()
+    store = SnapshotStore(snapshot_policy=snapshot_policy)
     extractor = FeatureExtractor(snapshot_store=store)
 
     rows = []
@@ -512,7 +582,10 @@ def build_feature_matrix_from_manifest(
     vectorizer.fit([" ".join(terms)])
     vectorizer._tfidf.idf_ = np.asarray(idf, dtype=np.float64)
 
-    extractor = FeatureExtractor()
+    snapshot_policy = manifest.get("snapshot_policy", {})
+    extractor = FeatureExtractor(
+        snapshot_store=SnapshotStore(snapshot_policy=snapshot_policy)
+    )
     handcrafted_rows: List[List[float]] = []
     tfidf_inputs: List[str] = []
     input_view = manifest.get("tfidf_config", {}).get(
@@ -550,6 +623,12 @@ def build_full_features(
     with open(contract_path, "r", encoding="utf-8") as f:
         contract = json.load(f)
     contract_version = str(contract.get("contract_version", ""))
+    snapshot_policy = contract.get("snapshot_policy", {})
+    if not isinstance(snapshot_policy, dict):
+        raise ValueError("feature contract snapshot_policy must be an object")
+    # Fail before multiprocessing starts if a policy references an invalid
+    # snapshot or extension.
+    SnapshotStore(snapshot_policy=snapshot_policy)
     tfidf_input_view = str(
         contract.get("tfidf_config", {}).get(
             "input_view", TFIDF_INPUT_DOMAIN_ASCII
@@ -648,7 +727,10 @@ def build_full_features(
         with ProcessPoolExecutor(max_workers=num_workers) as executor:
             # map() preserves the source row order and therefore X/y alignment.
             handcrafted_chunks = list(
-                executor.map(_extract_handcrafted_chunk, domain_chunks)
+                executor.map(
+                    _extract_handcrafted_chunk,
+                    [(chunk, snapshot_policy) for chunk in domain_chunks],
+                )
             )
 
         handcrafted_np = np.vstack(handcrafted_chunks) if handcrafted_chunks else np.empty((0, 22), dtype=np.float64)
@@ -701,6 +783,7 @@ def build_full_features(
             "fitted_on": "train_split_only",
             "input_view": tfidf_input_view,
         },
+        "snapshot_policy": snapshot_policy,
         # Runtime Go inference needs the learned smoothed IDF values; keeping
         # them adjacent to the vocabulary makes the feature contract
         # self-contained and prevents silent drift from the train matrix.
@@ -713,6 +796,8 @@ def build_full_features(
             "manifest_path": training_data_manifest["manifest_path"],
             "manifest_sha256": training_data_manifest["manifest_sha256"],
             "frozen_challenge": training_data_manifest["frozen_challenge"],
+            "frozen_evaluation": training_data_manifest["frozen_evaluation"],
+            "combined_exclusions": training_data_manifest["combined_exclusions"],
             "hard_negative": training_data_manifest["hard_negative"],
         }
 

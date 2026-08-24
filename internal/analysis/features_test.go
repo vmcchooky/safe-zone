@@ -119,3 +119,61 @@ func TestFeatureExtractorV2SuffixInvariantTFIDF(t *testing.T) {
 		t.Fatal("v2 manifest without explicit suffix-stripped input view should be rejected")
 	}
 }
+
+func TestFeatureExtractorV3SnapshotExtensions(t *testing.T) {
+	manifestPath := filepath.Join("..", "..", "ml", "models", "v1", "feature_manifest.v1.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest FeatureManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.ContractVersion = featureManifestVersionV3
+	manifest.TFIDFConfig.InputView = tfidfInputWithoutSuffix
+	manifest.SnapshotPolicy = SnapshotPolicy{
+		BaseFiles: map[string]string{
+			"brands": "brands.v1.json", "keywords": "keywords.v1.json",
+			"tld_risk": "tld_risk.v1.json", "shared_hosting": "shared_hosting.v1.json",
+			"homoglyphs": "homoglyphs.v1.json", "keyboard_adjacency": "keyboard_adjacency.v1.json",
+		},
+		KeywordExtensions:       []string{"xbet", "casino", "slot"},
+		BrandExtensions:         []Brand{{Name: "spotify", OfficialDomain: "spotify.com", AltDomains: []string{"spotifycdn.com"}}},
+		SharedHostingExtensions: []string{"weebly.com", "weeblysite.com", "godaddysites.com"},
+	}
+	tempManifest := filepath.Join(t.TempDir(), "feature_manifest.json")
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tempManifest, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	extractor, err := NewFeatureExtractor(tempManifest)
+	if err != nil {
+		t.Fatalf("load v3 extractor: %v", err)
+	}
+
+	spotify, err := extractor.Extract("pl.spotify-original.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if spotify[20] != 1 {
+		t.Fatalf("expected Spotify compound main-label feature, got %g", spotify[20])
+	}
+	xbet, err := extractor.Extract("1xbet-xoso.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if xbet[15] < 1 {
+		t.Fatalf("expected v3 risk keyword feature, got %g", xbet[15])
+	}
+	sharedHosting, err := extractor.Extract("tenant.weebly.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sharedHosting[16] != 1 {
+		t.Fatalf("expected v3 shared-hosting feature, got %g", sharedHosting[16])
+	}
+}

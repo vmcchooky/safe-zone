@@ -4,6 +4,7 @@ Verifies Expected Calibration Error (ECE) math, Platt sigmoid formula,
 and metric calculation bounds.
 """
 
+import json
 import math
 import os
 import sys
@@ -14,12 +15,17 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.calibrate_model import compute_expected_calibration_error
+from src.build_features import FeatureExtractor, SnapshotStore
 from src.evaluate_model import (
     build_benign_subset_audit,
     load_reviewed_unclassifiable_domains,
 )
 from src.export_artifacts import compute_file_sha256
-from src.train_lightgbm import apply_training_weight_policy, evaluate_predictions
+from src.train_lightgbm import (
+    apply_monotone_feature_policy,
+    apply_training_weight_policy,
+    evaluate_predictions,
+)
 
 
 def test_expected_calibration_error_calculation():
@@ -87,6 +93,48 @@ def test_tiered_training_weights_preserve_stronger_evidence_weight():
     assert weights.tolist() == [1.5, 3.0, 1.0, 1.0]
     assert report["source_proxy_rows"] == 2
     assert report["evidence_hard_negative_rows"] == 1
+
+
+def test_named_monotone_feature_policy_uses_frozen_order():
+    params, report = apply_monotone_feature_policy(
+        {"objective": "binary"},
+        {"monotone_increasing_features": ["tld_risk_score"]},
+        ["fqdn_length", "tld_risk_score", "phishing_keyword_count"],
+    )
+    assert params["monotone_constraints"] == [0, 1, 0]
+    assert params["monotone_constraints_method"] == "intermediate"
+    assert report["increasing_features"] == ["tld_risk_score"]
+
+    with pytest.raises(ValueError, match="unknown monotone features"):
+        apply_monotone_feature_policy(
+            {}, {"monotone_increasing_features": ["missing"]}, ["known"]
+        )
+
+
+def test_v3_snapshot_extensions_are_explicit_and_bounded():
+    contract_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "contracts",
+        "domain_feature_contract.v3.json",
+    )
+    with open(contract_path, encoding="utf-8") as handle:
+        contract = json.load(handle)
+    extractor = FeatureExtractor(
+        snapshot_store=SnapshotStore(snapshot_policy=contract["snapshot_policy"])
+    )
+
+    assert extractor.extract_features("pl.spotify-original.com")[
+        "has_brand_in_main_label"
+    ] == 1
+    assert extractor.extract_features("1xbet-xoso.com")[
+        "phishing_keyword_count"
+    ] >= 1
+    assert extractor.extract_features("open.spotify.com")[
+        "has_brand_in_main_label"
+    ] == 0
+    assert extractor.extract_features("tenant.weebly.com")[
+        "is_shared_hosting"
+    ] == 1
 
 
 def test_bundle_hash_is_canonical_across_windows_and_unix_newlines(tmp_path):

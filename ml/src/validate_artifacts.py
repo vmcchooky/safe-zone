@@ -158,6 +158,38 @@ class ArtifactValidator:
                 f"domains={challenge.get('domain_count', 0)}, overlap={challenge.get('overlap_after_exclusion')}",
             )
             all_ok = all_ok and challenge_ok
+            frozen_evaluation = training_data.get("frozen_evaluation")
+            if frozen_evaluation is not None:
+                evaluation_ok = (
+                    frozen_evaluation.get("case_count", 0) > 0
+                    and frozen_evaluation.get("registrable_group_count", 0) > 0
+                    and frozen_evaluation.get("overlap_after_exclusion") == 0
+                )
+                self.log_check(
+                    "Leakage",
+                    "frozen_evaluation_excluded",
+                    evaluation_ok,
+                    "cases="
+                    f"{frozen_evaluation.get('case_count', 0)}, groups="
+                    f"{frozen_evaluation.get('registrable_group_count', 0)}, overlap="
+                    f"{frozen_evaluation.get('overlap_after_exclusion')}",
+                )
+                all_ok = all_ok and evaluation_ok
+            combined = training_data.get("combined_exclusions")
+            if combined is not None:
+                combined_ok = (
+                    combined.get("registrable_group_count", 0) > 0
+                    and combined.get("overlap_after_exclusion") == 0
+                )
+                self.log_check(
+                    "Leakage",
+                    "combined_evaluation_exclusions",
+                    combined_ok,
+                    "groups="
+                    f"{combined.get('registrable_group_count', 0)}, overlap="
+                    f"{combined.get('overlap_after_exclusion')}",
+                )
+                all_ok = all_ok and combined_ok
             hard_negative = training_data.get("hard_negative", {})
             hard_csv = hard_negative.get("csv_path", "")
             hard_sha = hard_negative.get("csv_sha256", "")

@@ -19,6 +19,7 @@ import (
 const (
 	featureManifestVersionV1 = "1.0.0"
 	featureManifestVersionV2 = "2.0.0"
+	featureManifestVersionV3 = "3.0.0"
 	handcraftedFeatureCount  = 22
 	tfidfFeatureCount        = 512
 	totalFeatureCount        = handcraftedFeatureCount + tfidfFeatureCount
@@ -37,13 +38,21 @@ var featureNames = []string{
 
 // FeatureManifest is the runtime portion of feature_manifest.v1.json.
 type FeatureManifest struct {
-	ContractVersion         string      `json:"contract_version"`
-	HandcraftedFeatureCount int         `json:"handcrafted_feature_count"`
-	TFIDFFeatureCount       int         `json:"tfidf_feature_count"`
-	TotalFeatureCount       int         `json:"total_feature_count"`
-	FeatureNames            []string    `json:"feature_names"`
-	TFIDFConfig             TFIDFConfig `json:"tfidf_config"`
-	IDFByIndex              []float64   `json:"idf_by_index,omitempty"`
+	ContractVersion         string         `json:"contract_version"`
+	HandcraftedFeatureCount int            `json:"handcrafted_feature_count"`
+	TFIDFFeatureCount       int            `json:"tfidf_feature_count"`
+	TotalFeatureCount       int            `json:"total_feature_count"`
+	FeatureNames            []string       `json:"feature_names"`
+	TFIDFConfig             TFIDFConfig    `json:"tfidf_config"`
+	IDFByIndex              []float64      `json:"idf_by_index,omitempty"`
+	SnapshotPolicy          SnapshotPolicy `json:"snapshot_policy,omitempty"`
+}
+
+type SnapshotPolicy struct {
+	BaseFiles               map[string]string `json:"base_files,omitempty"`
+	KeywordExtensions       []string          `json:"keyword_extensions,omitempty"`
+	BrandExtensions         []Brand           `json:"brand_extensions,omitempty"`
+	SharedHostingExtensions []string          `json:"shared_hosting_extensions,omitempty"`
 }
 
 type TFIDFConfig struct {
@@ -99,10 +108,13 @@ var mlPhishingKeywords = []string{
 // feature contracts. It is immutable after construction and safe for
 // concurrent use.
 type FeatureExtractor struct {
-	manifest FeatureManifest
-	vocab    []string
-	index    map[string]int
-	idf      []float64
+	manifest      FeatureManifest
+	vocab         []string
+	index         map[string]int
+	idf           []float64
+	keywords      []string
+	brands        []Brand
+	sharedHosting map[string]struct{}
 }
 
 func NewFeatureExtractor(manifestPath string) (*FeatureExtractor, error) {
@@ -150,11 +162,33 @@ func NewFeatureExtractor(manifestPath string) (*FeatureExtractor, error) {
 		}
 	}
 
-	return &FeatureExtractor{manifest: manifest, vocab: vocab, index: index, idf: idf}, nil
+	keywords := append([]string(nil), mlPhishingKeywords...)
+	brands := DefaultTrustedBrands()
+	sharedHosting := make(map[string]struct{}, len(sharedHostingRoots)+len(manifest.SnapshotPolicy.SharedHostingExtensions))
+	for root := range sharedHostingRoots {
+		sharedHosting[root] = struct{}{}
+	}
+	if manifest.ContractVersion == featureManifestVersionV3 {
+		keywords = append(keywords, manifest.SnapshotPolicy.KeywordExtensions...)
+		brands = append(brands, cloneBrands(manifest.SnapshotPolicy.BrandExtensions)...)
+		for _, root := range manifest.SnapshotPolicy.SharedHostingExtensions {
+			sharedHosting[root] = struct{}{}
+		}
+	}
+
+	return &FeatureExtractor{
+		manifest:      manifest,
+		vocab:         vocab,
+		index:         index,
+		idf:           idf,
+		keywords:      keywords,
+		brands:        brands,
+		sharedHosting: sharedHosting,
+	}, nil
 }
 
 func validateFeatureManifest(manifest FeatureManifest) error {
-	if manifest.ContractVersion != featureManifestVersionV1 && manifest.ContractVersion != featureManifestVersionV2 {
+	if manifest.ContractVersion != featureManifestVersionV1 && manifest.ContractVersion != featureManifestVersionV2 && manifest.ContractVersion != featureManifestVersionV3 {
 		return fmt.Errorf("unsupported feature manifest version %q", manifest.ContractVersion)
 	}
 	if manifest.HandcraftedFeatureCount != handcraftedFeatureCount ||
@@ -184,6 +218,59 @@ func validateFeatureManifest(manifest FeatureManifest) error {
 		if manifest.TFIDFConfig.InputView != tfidfInputWithoutSuffix {
 			return fmt.Errorf("v2 feature manifest requires TF-IDF input view %q", tfidfInputWithoutSuffix)
 		}
+	case featureManifestVersionV3:
+		if manifest.TFIDFConfig.InputView != tfidfInputWithoutSuffix {
+			return fmt.Errorf("v3 feature manifest requires TF-IDF input view %q", tfidfInputWithoutSuffix)
+		}
+		if err := validateV3SnapshotPolicy(manifest.SnapshotPolicy); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateV3SnapshotPolicy(policy SnapshotPolicy) error {
+	expectedFiles := map[string]string{
+		"brands":             "brands.v1.json",
+		"keywords":           "keywords.v1.json",
+		"tld_risk":           "tld_risk.v1.json",
+		"shared_hosting":     "shared_hosting.v1.json",
+		"homoglyphs":         "homoglyphs.v1.json",
+		"keyboard_adjacency": "keyboard_adjacency.v1.json",
+	}
+	if len(policy.BaseFiles) != len(expectedFiles) {
+		return errors.New("v3 feature manifest has an unsupported snapshot base-file set")
+	}
+	for name, expected := range expectedFiles {
+		if policy.BaseFiles[name] != expected {
+			return fmt.Errorf("v3 feature manifest snapshot %s must be %q", name, expected)
+		}
+	}
+	expectedKeywords := []string{"xbet", "casino", "slot"}
+	if len(policy.KeywordExtensions) != len(expectedKeywords) {
+		return errors.New("v3 feature manifest has unsupported keyword extensions")
+	}
+	for index, expected := range expectedKeywords {
+		if policy.KeywordExtensions[index] != expected {
+			return errors.New("v3 feature manifest has unsupported keyword extensions")
+		}
+	}
+	if len(policy.BrandExtensions) != 1 {
+		return errors.New("v3 feature manifest has unsupported brand extensions")
+	}
+	brand := normalizeBrandRecord(policy.BrandExtensions[0])
+	if brand.Name != "spotify" || brand.OfficialDomain != "spotify.com" ||
+		len(brand.AltDomains) != 1 || brand.AltDomains[0] != "spotifycdn.com" {
+		return errors.New("v3 feature manifest has unsupported brand extensions")
+	}
+	expectedSharedHosting := []string{"weebly.com", "weeblysite.com", "godaddysites.com"}
+	if len(policy.SharedHostingExtensions) != len(expectedSharedHosting) {
+		return errors.New("v3 feature manifest has unsupported shared-hosting extensions")
+	}
+	for index, expected := range expectedSharedHosting {
+		if policy.SharedHostingExtensions[index] != expected {
+			return errors.New("v3 feature manifest has unsupported shared-hosting extensions")
+		}
 	}
 	return nil
 }
@@ -196,6 +283,15 @@ func (e *FeatureExtractor) Manifest() FeatureManifest {
 	manifest.FeatureNames = append([]string(nil), manifest.FeatureNames...)
 	manifest.TFIDFConfig.NgramRange = append([]int(nil), manifest.TFIDFConfig.NgramRange...)
 	manifest.IDFByIndex = append([]float64(nil), manifest.IDFByIndex...)
+	manifest.SnapshotPolicy.KeywordExtensions = append([]string(nil), manifest.SnapshotPolicy.KeywordExtensions...)
+	manifest.SnapshotPolicy.BrandExtensions = cloneBrands(manifest.SnapshotPolicy.BrandExtensions)
+	manifest.SnapshotPolicy.SharedHostingExtensions = append([]string(nil), manifest.SnapshotPolicy.SharedHostingExtensions...)
+	if manifest.SnapshotPolicy.BaseFiles != nil {
+		manifest.SnapshotPolicy.BaseFiles = make(map[string]string, len(manifest.SnapshotPolicy.BaseFiles))
+		for name, path := range e.manifest.SnapshotPolicy.BaseFiles {
+			manifest.SnapshotPolicy.BaseFiles[name] = path
+		}
+	}
 	return manifest
 }
 
@@ -335,12 +431,12 @@ func (e *FeatureExtractor) ExtractCanonical(canonical canonicalDomain) []float64
 	if _, ok := suspiciousTLDs[canonical.suffix]; ok {
 		features[14] = 1
 	}
-	for _, keyword := range mlPhishingKeywords {
+	for _, keyword := range e.keywords {
 		if strings.Contains(ascii, keyword) {
 			features[15]++
 		}
 	}
-	for root := range sharedHostingRoots {
+	for root := range e.sharedHosting {
 		if canonical.registrable == root || ascii == root || strings.HasSuffix(ascii, "."+root) {
 			features[16] = 1
 			break
@@ -380,13 +476,13 @@ func (e *FeatureExtractor) extractBrandFeatures(features []float64, canonical ca
 	skeletonDomain := ToSkeleton(canonical.unicode)
 	skeletonLabels := strings.Split(skeletonDomain, ".")
 	nonTLDSkeletonLabels := skeletonLabels[:max(0, min(nonTLDCount, len(skeletonLabels)))]
-	isTrusted := IsTrustedBrandSuffix(canonical.ascii, DefaultTrustedBrands())
+	isTrusted := IsTrustedBrandSuffix(canonical.ascii, e.brands)
 	if isTrusted {
 		features[17], features[18] = 0, 0
 		return
 	}
 	isHomoglyph := skeletonDomain != canonical.unicode
-	for _, brand := range DefaultTrustedBrands() {
+	for _, brand := range e.brands {
 		brandName := strings.ToLower(brand.Name)
 		if brandName == "" || brand.OfficialDomain == "" {
 			continue

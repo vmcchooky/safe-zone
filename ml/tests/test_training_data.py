@@ -5,7 +5,48 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.training_data import prepare_training_partitions
+from src.training_data import (
+    _evaluation_group,
+    _frozen_evaluation_mask,
+    prepare_training_partitions,
+)
+
+
+def test_shared_hosting_evaluation_group_is_tenant_aware():
+    group, root = _evaluation_group(
+        "login.victim.weebly.com", "weebly.com", {"weebly.com"}
+    )
+    assert group == "victim.weebly.com"
+    assert root == "weebly.com"
+
+    nested_group, nested_root = _evaluation_group(
+        "login.victim.host.example.com",
+        "example.com",
+        {"example.com", "host.example.com"},
+    )
+    assert nested_group == "victim.host.example.com"
+    assert nested_root == "host.example.com"
+
+    frame = pd.DataFrame(
+        {
+            "domain_ascii": [
+                "login.victim.weebly.com",
+                "other.victim.weebly.com",
+                "unrelated.weebly.com",
+            ],
+            "registrable_domain": ["weebly.com", "weebly.com", "weebly.com"],
+        }
+    )
+    mask = _frozen_evaluation_mask(
+        frame,
+        {
+            "groups": {"victim.weebly.com"},
+            "shared_groups_by_root": {
+                "weebly.com": {"victim.weebly.com"}
+            },
+        },
+    )
+    assert mask.tolist() == [True, True, False]
 
 
 def _write_partition(path: Path, rows: list[dict]) -> None:
@@ -55,6 +96,14 @@ def test_hard_negative_weighting_and_frozen_challenge_exclusion(tmp_path):
                 "lexical_score": 60,
                 "is_ml_candidate": True,
                 "source": "vietnam_whitelist",
+                "partition": "train",
+            },
+            {
+                "domain": "sub.representative-malicious.test",
+                "domain_ascii": "sub.representative-malicious.test",
+                "registrable_domain": "representative-malicious.test",
+                "label": 1,
+                "source": "phishtank",
                 "partition": "train",
             },
         ],
@@ -124,11 +173,35 @@ def test_hard_negative_weighting_and_frozen_challenge_exclusion(tmp_path):
         encoding="utf-8",
     )
 
+    evaluation_labels_path = tmp_path / "representative-labels.csv"
+    with open(evaluation_labels_path, "w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["case_id", "domain", "human_label", "reviewer_id"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "case_id": "replay-1",
+                "domain": "representative-malicious.test",
+                "human_label": "malicious",
+                "reviewer_id": "reviewer.vmc",
+            }
+        )
+
+    shared_hosting_path = tmp_path / "shared_hosting.json"
+    shared_hosting_path.write_text("[]\n", encoding="utf-8")
+
     manifest = prepare_training_partitions(
         source_partitions,
         output_partitions,
         {
             "frozen_challenge_labels": str(labels_path),
+            "frozen_evaluation_labels": str(evaluation_labels_path),
+            "evaluation_group_policy": {
+                "shared_hosting_snapshot": str(shared_hosting_path),
+                "shared_hosting_extensions": [],
+            },
             "hard_negative": {
                 "source_csv": str(evidence_path),
                 "data_manifest": str(data_manifest_path),
@@ -146,4 +219,7 @@ def test_hard_negative_weighting_and_frozen_challenge_exclusion(tmp_path):
     assert train["sample_weight"].tolist() == [3.0]
     assert train["label_provenance"].tolist() == ["benign_proxy"]
     assert manifest["frozen_challenge"]["excluded_rows_by_partition"]["train"] == 1
+    assert manifest["frozen_evaluation"]["case_count"] == 1
+    assert manifest["frozen_evaluation"]["excluded_rows_by_partition"]["train"] == 1
+    assert manifest["combined_exclusions"]["excluded_rows_by_partition"]["train"] == 2
     assert manifest["hard_negative"]["counts"]["selected_rows"] == 1

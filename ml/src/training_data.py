@@ -118,6 +118,127 @@ def load_frozen_challenge(labels_path: Path) -> Dict[str, Any]:
     }
 
 
+def _evaluation_group(
+    domain_ascii: str, registrable_domain: str, shared_hosting_roots: set[str]
+) -> tuple[str, str | None]:
+    for root in sorted(shared_hosting_roots, key=lambda value: (-len(value), value)):
+        suffix = "." + root
+        if domain_ascii == root:
+            return root, root
+        if domain_ascii.endswith(suffix):
+            prefix = domain_ascii[: -len(suffix)]
+            tenant = prefix.rsplit(".", 1)[-1]
+            if tenant:
+                return tenant + suffix, root
+    return registrable_domain, None
+
+
+def load_frozen_evaluation(
+    labels_path: Path, shared_hosting_roots: set[str]
+) -> Dict[str, Any]:
+    """Load every registrable group from an immutable evaluation packet.
+
+    Evaluation rows may be benign, malicious, or unresolved.  Their labels are
+    intentionally not interpreted here; every group is excluded so that later
+    human adjudication cannot leak into train, validation, calibration, or test.
+    """
+
+    domains: set[str] = set()
+    groups: set[str] = set()
+    case_ids: set[str] = set()
+    shared_groups_by_root: Dict[str, set[str]] = {}
+    with open(labels_path, "r", encoding="utf-8-sig", newline="") as handle:
+        reader = csv.DictReader(handle)
+        required = {"case_id", "domain", "human_label", "reviewer_id"}
+        if not required.issubset(reader.fieldnames or []):
+            raise ValueError(
+                "frozen evaluation labels are missing columns: "
+                f"{sorted(required - set(reader.fieldnames or []))}"
+            )
+        for row in reader:
+            case_id = row["case_id"].strip()
+            if not case_id:
+                raise ValueError("frozen evaluation contains an empty case_id")
+            if case_id in case_ids:
+                raise ValueError(
+                    f"frozen evaluation contains duplicate case_id: {case_id}"
+                )
+            case_ids.add(case_id)
+            if not row["human_label"].strip() or not row["reviewer_id"].strip():
+                raise ValueError(
+                    f"frozen evaluation case {case_id} is not owner reviewed"
+                )
+            canonical = canonicalize_domain(row["domain"])
+            if not canonical.is_valid or not canonical.registrable_domain:
+                raise ValueError(
+                    f"invalid frozen evaluation domain: {row['domain']!r}"
+                )
+            domains.add(canonical.domain_ascii)
+            group, shared_root = _evaluation_group(
+                canonical.domain_ascii,
+                canonical.registrable_domain,
+                shared_hosting_roots,
+            )
+            groups.add(group)
+            if shared_root is not None and group != shared_root:
+                shared_groups_by_root.setdefault(shared_root, set()).add(group)
+    if not domains:
+        raise ValueError("frozen evaluation is empty")
+    return {
+        "labels_path": str(labels_path),
+        "labels_sha256": compute_file_sha256(labels_path),
+        "case_count": len(case_ids),
+        "domains": domains,
+        "groups": groups,
+        "shared_groups_by_root": shared_groups_by_root,
+    }
+
+
+def load_evaluation_group_policy(policy: Mapping[str, Any]) -> Dict[str, Any]:
+    snapshot_path = resolve_ml_path(str(policy["shared_hosting_snapshot"]))
+    with open(snapshot_path, "r", encoding="utf-8") as handle:
+        roots = json.load(handle)
+    if not isinstance(roots, list):
+        raise ValueError("shared-hosting snapshot must be a list")
+    extensions = [
+        str(value).strip().rstrip(".").lower()
+        for value in policy.get("shared_hosting_extensions", [])
+        if str(value).strip()
+    ]
+    values = [str(value).strip().rstrip(".").lower() for value in roots]
+    values.extend(extensions)
+    if any(not value or "." not in value for value in values):
+        raise ValueError("invalid shared-hosting root in evaluation group policy")
+    roots_set = set(values)
+    return {
+        "roots": roots_set,
+        "snapshot_path": str(snapshot_path),
+        "snapshot_sha256": compute_file_sha256(snapshot_path),
+        "extensions": sorted(set(extensions)),
+    }
+
+
+def _frozen_evaluation_mask(
+    frame: pd.DataFrame, frozen_evaluation: Mapping[str, Any]
+) -> pd.Series:
+    shared_groups_by_root = frozen_evaluation.get("shared_groups_by_root", {})
+    shared_groups = {
+        group for groups in shared_groups_by_root.values() for group in groups
+    }
+    ordinary_groups = set(frozen_evaluation["groups"]) - shared_groups
+    excluded = frame["registrable_domain"].isin(ordinary_groups)
+    domains = frame["domain_ascii"].astype(str)
+    for root, groups in shared_groups_by_root.items():
+        suffix = "." + root
+        related = domains.str.endswith(suffix)
+        if not related.any():
+            continue
+        prefixes = domains.loc[related].str.slice(stop=-len(suffix))
+        tenant_groups = prefixes.str.rsplit(".", n=1).str[-1] + suffix
+        excluded.loc[related] = excluded.loc[related] | tenant_groups.isin(groups)
+    return excluded
+
+
 def _iter_evidence_rows(
     source_path: Path,
     allowed_hosts: set[str],
@@ -265,15 +386,41 @@ def prepare_training_partitions(
     frozen = load_frozen_challenge(
         resolve_ml_path(str(policy["frozen_challenge_labels"]))
     )
+    frozen_evaluation = None
+    evaluation_group_policy = None
+    if policy.get("frozen_evaluation_labels"):
+        evaluation_group_policy = load_evaluation_group_policy(
+            policy.get("evaluation_group_policy", {})
+        )
+        frozen_evaluation = load_frozen_evaluation(
+            resolve_ml_path(str(policy["frozen_evaluation_labels"])),
+            set(evaluation_group_policy["roots"]),
+        )
+    excluded_groups = set(frozen["groups"])
+    if frozen_evaluation is not None:
+        excluded_groups.update(frozen_evaluation["groups"])
+    all_exclusions = {"groups": excluded_groups}
     frames: Dict[str, pd.DataFrame] = {}
     exclusion_counts: Dict[str, int] = {}
+    evaluation_exclusion_counts: Dict[str, int] = {}
+    total_exclusion_counts: Dict[str, int] = {}
     for split in ("train", "val", "cal", "test"):
         source_path = source_dir / f"{split}.parquet"
         if not source_path.exists():
             raise FileNotFoundError(f"source partition missing: {source_path}")
         frame = pd.read_parquet(source_path)
-        excluded = frame["registrable_domain"].isin(set(frozen["groups"]))
-        exclusion_counts[split] = int(excluded.sum())
+        challenge_excluded = frame["registrable_domain"].isin(
+            set(frozen["groups"])
+        )
+        evaluation_excluded = (
+            _frozen_evaluation_mask(frame, frozen_evaluation)
+            if frozen_evaluation is not None
+            else pd.Series(False, index=frame.index)
+        )
+        excluded = challenge_excluded | evaluation_excluded
+        exclusion_counts[split] = int(challenge_excluded.sum())
+        evaluation_exclusion_counts[split] = int(evaluation_excluded.sum())
+        total_exclusion_counts[split] = int(excluded.sum())
         frame = frame.loc[~excluded].copy()
         frame["sample_weight"] = 1.0
         frame["label_provenance"] = "original_partition"
@@ -281,7 +428,7 @@ def prepare_training_partitions(
         frames[split] = frame
 
     hard_negative_df, hard_negative_meta = select_hard_negatives(
-        frames["train"], policy["hard_negative"], frozen
+        frames["train"], policy["hard_negative"], all_exclusions
     )
     weights = hard_negative_df.set_index("domain_ascii")["training_weight"]
     hard_mask = frames["train"]["domain_ascii"].isin(weights.index)
@@ -307,6 +454,10 @@ def prepare_training_partitions(
     for split, frame in frames.items():
         if set(frame["registrable_domain"]) & set(frozen["groups"]):
             raise ValueError(f"frozen challenge group leaked into {split}")
+        if frozen_evaluation is not None and _frozen_evaluation_mask(
+            frame, frozen_evaluation
+        ).any():
+            raise ValueError(f"frozen evaluation group leaked into {split}")
         frame.to_parquet(target_dir / f"{split}.parquet", index=False)
 
     hard_negative_path = artifacts_dir / "hard_negatives.csv"
@@ -327,6 +478,33 @@ def prepare_training_partitions(
             "domain_count": len(frozen["domains"]),
             "registrable_group_count": len(frozen["groups"]),
             "excluded_rows_by_partition": exclusion_counts,
+            "overlap_after_exclusion": 0,
+        },
+        "frozen_evaluation": (
+            {
+                "labels_path": frozen_evaluation["labels_path"],
+                "labels_sha256": frozen_evaluation["labels_sha256"],
+                "case_count": frozen_evaluation["case_count"],
+                "domain_count": len(frozen_evaluation["domains"]),
+                "registrable_group_count": len(frozen_evaluation["groups"]),
+                "shared_tenant_group_count": sum(
+                    len(groups)
+                    for groups in frozen_evaluation["shared_groups_by_root"].values()
+                ),
+                "evaluation_group_policy": {
+                    "shared_hosting_snapshot": evaluation_group_policy["snapshot_path"],
+                    "shared_hosting_snapshot_sha256": evaluation_group_policy["snapshot_sha256"],
+                    "shared_hosting_extensions": evaluation_group_policy["extensions"],
+                },
+                "excluded_rows_by_partition": evaluation_exclusion_counts,
+                "overlap_after_exclusion": 0,
+            }
+            if frozen_evaluation is not None
+            else None
+        ),
+        "combined_exclusions": {
+            "registrable_group_count": len(excluded_groups),
+            "excluded_rows_by_partition": total_exclusion_counts,
             "overlap_after_exclusion": 0,
         },
         "hard_negative": {

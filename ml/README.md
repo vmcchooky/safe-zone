@@ -25,6 +25,19 @@ directory. The candidate is not provisioned to staging and does not authorize
 reviewed stale-domain exclusions, and the representative recall regression
 that currently blocks staging restart.
 
+The leakage-free comparison is configured by
+`ml/configs/v2-leakage-free-control.json` and
+`ml/configs/v3-leakage-free-context.json`. It excludes the 137-case reviewed
+packet from every partition and groups shared-hosting cases by tenant instead
+of excluding an entire provider. Candidate v3 keeps the 534-feature shape and
+adds bounded snapshot entries for three risk keywords, Spotify, and three
+shared-hosting providers. Both controls pass 35/35 artifact checks, but v3
+reaches only 22/34 representative malicious true positives at threshold 0.92;
+the documented gate is 26/34. The v3 bundle therefore remains private and must
+not be provisioned or used to restart local staging. See
+`docs/research/ml/representative-false-negative-analysis.md` for the A/B and
+ablation results.
+
 ## Runtime configuration
 
 ```env
@@ -86,9 +99,28 @@ python -B ml/src/evaluate_model.py --config ml/configs/v2-suffix-debiased-hard-n
 python -B ml/src/export_artifacts.py --config ml/configs/v2-suffix-debiased-hard-negatives.json
 ```
 
+Leakage-free control/v3 research uses the same sequence with the corresponding
+config. Do not run `export_artifacts.py` for v3 while its model-quality gate is
+`NO-GO`:
+
+```powershell
+python -B ml/src/build_features.py --config ml/configs/v2-leakage-free-control.json --num-workers 8
+python -B ml/src/validate_artifacts.py --derived-dir ml/data/derived/v2-leakage-free-control
+python -B ml/src/train_lightgbm.py --config ml/configs/v2-leakage-free-control.json
+python -B ml/src/calibrate_model.py --config ml/configs/v2-leakage-free-control.json
+python -B ml/src/evaluate_model.py --config ml/configs/v2-leakage-free-control.json
+
+python -B ml/src/build_features.py --config ml/configs/v3-leakage-free-context.json --num-workers 8
+python -B ml/src/validate_artifacts.py --derived-dir ml/data/derived/v3-leakage-free-context
+python -B ml/src/train_lightgbm.py --config ml/configs/v3-leakage-free-context.json
+python -B ml/src/calibrate_model.py --config ml/configs/v3-leakage-free-context.json
+python -B ml/src/evaluate_model.py --config ml/configs/v3-leakage-free-context.json
+```
+
 The current local evidence is:
 
 - artifact validation: 49/49 checks passed for v1 and 33/33 for the v2 candidate;
+- leakage-free artifact validation: 35/35 for both v2 control and v3 candidate, with identical four partition hashes, feature order, and IDF values;
 - data provenance: 15/15 raw/processed file hashes matched;
 - Go unit/integration tests: passed;
 - Go race tests for analysis and risk: passed;
