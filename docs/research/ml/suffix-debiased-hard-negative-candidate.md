@@ -159,7 +159,8 @@ Threshold sweep trên cùng representative set cho thấy `0,90` đạt `22/34` 
 ### Giới hạn và bước tối ưu tiếp theo
 
 - Bốn SAFE VN runtime candidates vượt `0,92` đã được owner xác định là chưa cấp phát/NXDOMAIN. Chúng không phải false positive đã xác nhận và không được đưa vào train; addendum giữ chúng ở trạng thái `unknown/unresolved` để audit có thể tái kiểm chứng.
-- Representative recall regression có 13 false negative tại threshold `0,92`. Vòng model tiếp theo cần phân tích các nhóm lexical/source của 13 case này và bổ sung malicious hard-positive từ source độc lập, không đưa trực tiếp frozen representative rows vào train.
+- Representative recall regression có 13 false negative tại threshold `0,92`. Contribution audit xác định 8/13 case giảm probability, 13/13 không kích hoạt phishing keyword, 13/13 nhận tín hiệu âm từ nhánh `tld_risk_score=0`, và không case nào kích hoạt brand flag. Phân tích đầy đủ nằm tại `docs/research/ml/representative-false-negative-analysis.md`.
+- Vòng model tiếp theo phải bổ sung malicious hard-positive time-forward từ source độc lập, group-disjoint với toàn bộ representative archive; 13 case này tiếp tục là frozen regression và không được đưa trực tiếp vào train.
 - `terms_review_id` của source vẫn là `pending-review`. Weight `1,5` giới hạn ảnh hưởng của tier này nhưng không giải quyết terms provenance cho production release.
 - Full-test recall giảm vì model không được gọi cho lexical non-candidates trong runtime. Model selection phải ưu tiên candidate denominator, nhưng lexical gate vẫn cần audit riêng để phát hiện malicious non-candidate false negatives.
 - Lần replay hiện dùng classifier/service objects local, chưa provision bundle vào Docker staging. Candidate mới phải đạt representative FPR/recall guardrail trước khi owner xem xét cho phép rebuild/restart staging ở `shadow`; `enforce` vẫn cần xác nhận riêng.
@@ -178,6 +179,8 @@ Threshold sweep trên cùng representative set cho thấy `0,90` đạt `22/34` 
 - Reviewed stale-domain addendum: `ml/evidence/whitelist-proxy-review/run-20260824-owner-reviewed-stale-addendum/`
 - Private representative replay report: `ml/data/derived/v2-suffix-debiased-hard-negatives/representative-replay-report-00b6bab.json` (Git-ignored; SHA-256 `de7de9f439b952505499d539337d9f9c23c8525b056dfa97ca27aa69d51b3a6a`)
 - Private representative recall audit: `ml/data/derived/v2-suffix-debiased-hard-negatives/representative-recall-audit-00b6bab.json` (Git-ignored; SHA-256 `4230f1415e098a7449b67fe7dc68757af5eaf7d92bc50efcd903edc8c56baf02`)
+- False-negative root-cause analysis: `docs/research/ml/representative-false-negative-analysis.md`
+- Private false-negative contribution report: `ml/data/derived/v2-suffix-debiased-hard-negatives/representative-fn-contributions-00b6bab.json` (Git-ignored; SHA-256 `a3fbd8638121ad638473081dd8e8afaf39d8b4cde7b8fba54f2b18b91806e088`)
 - Private generated root: `ml/data/derived/v2-suffix-debiased-hard-negatives/` (Git-ignored)
 
 ---
@@ -186,6 +189,7 @@ Threshold sweep trên cùng representative set cho thấy `0,90` đạt `22/34` 
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-24 | Liên kết contribution/Firecrawl audit của 13 representative false-negative và khóa yêu cầu hard-positive độc lập | Codex (GPT-5) |
 | 2026-08-24 | Chạy representative replay 137 case × 3 vòng; parity/runtime pass nhưng recall giảm từ 26/34 xuống 21/34, giữ NO-GO | Codex (GPT-5) |
 | 2026-08-24 | Ghi nhận 4 domain chưa cấp phát/NXDOMAIN, tách unknown/unresolved khỏi SAFE VN benign FPR và audit lại đạt 0/1.400 runtime-candidate FP | Codex (GPT-5) |
 | 2026-08-23 | Triển khai suffix-debiased TF-IDF, tiered hard-negative, frozen challenge, threshold selection và Go bundle replay | Codex (GPT-5) |
