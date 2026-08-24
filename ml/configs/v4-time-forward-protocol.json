@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "seed": 42,
+  "collection": {
+    "collected_at": "2026-08-24T08:35:04Z",
+    "phishtank_current": {
+      "path": "data/derived/time-forward-20260824/raw/phishtank-online-valid-20260824.csv",
+      "sha256": "f5bed724cc935b2b81f40005693f11ae8454924064a048487a6b9051d61893e7",
+      "source_url": "https://data.phishtank.com/data/online-valid.csv",
+      "trust_policy": "verified=yes and online=yes"
+    },
+    "openphish_current": {
+      "path": "data/derived/time-forward-20260824/raw/openphish-community-20260824.txt",
+      "sha256": "1465805a161a868e657827aa114940ff12835beaa1c9d1ddd6586605e36f4e2a",
+      "source_url": "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+      "trust_policy": "community feed membership"
+    }
+  },
+  "baseline": {
+    "data_manifest": "data/data_manifest.json",
+    "phishtank_logical_name": "verified_online.csv",
+    "source_partitions_dir": "data/derived/partitions",
+    "frozen_challenge_labels": "evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/labels.csv",
+    "frozen_evaluation_labels": "evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv",
+    "evaluation_group_policy": {
+      "shared_hosting_snapshot": "contracts/snapshots/shared_hosting.v1.json",
+      "shared_hosting_extensions": ["weebly.com", "weeblysite.com", "godaddysites.com"]
+    }
+  },
+  "windows": {
+    "baseline_verified_through": "2026-07-28T14:12:27Z",
+    "adaptation_before": "2026-08-10T00:00:00Z",
+    "development_before": "2026-08-18T00:00:00Z"
+  },
+  "hard_positive_policy": {
+    "feature_contract": "contracts/domain_feature_contract.v3.json",
+    "required_label": "malicious",
+    "one_row_per_evaluation_group": true,
+    "required_tld_risk_score": 0.0,
+    "required_phishing_keyword_count": 0,
+    "exclude_shared_hosting": true,
+    "exclude_brand_flags": true,
+    "exclude_idn_and_ip_like": true,
+    "selection_order": "verification_time_asc,domain_ascii_asc"
+  },
+  "holdout_policy": {
+    "source": "openphish_current",
+    "exclude_all_baseline_partition_groups": true,
+    "exclude_all_frozen_groups": true,
+    "exclude_all_current_phishtank_groups": true,
+    "one_row_per_evaluation_group": true,
+    "selection_order": "domain_ascii_asc"
+  },
+  "candidate_selection": {
+    "candidate_families": ["v3_time_forward_data", "v4_ternary_tld_time_forward_data"],
+    "hard_positive_weights": [1.0, 1.5, 2.0],
+    "operating_threshold": 0.92,
+    "selection_metric": "development_recall",
+    "validation_guardrail": "runtime_candidate_false_positives_not_above_v3_control",
+    "tie_breakers": ["validation_binary_logloss_asc", "hard_positive_weight_asc"],
+    "forbidden_selection_inputs": ["openphish_holdout", "frozen_representative_packet", "final_test_partition"]
+  },
+  "outputs": {
+    "derived_dir": "data/derived/time-forward-20260824",
+    "public_manifest": "experiments/v4-time-forward-snapshot.json"
+  }
+}

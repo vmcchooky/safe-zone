@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "protocol_path": "configs/v4-time-forward-protocol.json",
+  "protocol_sha256": "a69173a9474706d06212aa281022a6da74d7b42bf930723f736f71d2ce97db94",
+  "collected_at": "2026-08-24T08:35:04Z",
+  "inputs": {
+    "baseline": {
+      "manifest_path": "data/data_manifest.json",
+      "manifest_sha256": "261eb1721f06798ecc36ab6be7c3f6de32dcf12910345738ec01165d52e3c9ca",
+      "logical_name": "verified_online.csv",
+      "source_sha256": "84a3c504ca13f21d2c6f2c908fcedc958568f27eb5b25e81248a443b57f4ccb4",
+      "retrieved_at": "2026-07-28T14:52:40.937835+00:00"
+    },
+    "phishtank_current": {
+      "source_url": "https://data.phishtank.com/data/online-valid.csv",
+      "sha256": "f5bed724cc935b2b81f40005693f11ae8454924064a048487a6b9051d61893e7",
+      "bytes": 14017927,
+      "raw_rows": 73191,
+      "valid_online_verified_rows": 73191,
+      "canonical_rows": 73043,
+      "unique_evaluation_groups": 32963
+    },
+    "openphish_current": {
+      "source_url": "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+      "sha256": "1465805a161a868e657827aa114940ff12835beaa1c9d1ddd6586605e36f4e2a",
+      "bytes": 16832,
+      "raw_rows": 300,
+      "canonical_rows": 300,
+      "unique_evaluation_groups": 168
+    }
+  },
+  "exclusions": {
+    "baseline_partition_groups": 1935620,
+    "frozen_groups": 140,
+    "post_exclusion_overlap": 0
+  },
+  "windows": {
+    "baseline_verified_through": "2026-07-28T14:12:27Z",
+    "adaptation_before": "2026-08-10T00:00:00Z",
+    "development_before": "2026-08-18T00:00:00Z"
+  },
+  "hard_positive_policy": {
+    "feature_contract": "contracts/domain_feature_contract.v3.json",
+    "required_label": "malicious",
+    "one_row_per_evaluation_group": true,
+    "required_tld_risk_score": 0.0,
+    "required_phishing_keyword_count": 0,
+    "exclude_shared_hosting": true,
+    "exclude_brand_flags": true,
+    "exclude_idn_and_ip_like": true,
+    "selection_order": "verification_time_asc,domain_ascii_asc"
+  },
+  "holdout_policy": {
+    "source": "openphish_current",
+    "exclude_all_baseline_partition_groups": true,
+    "exclude_all_frozen_groups": true,
+    "exclude_all_current_phishtank_groups": true,
+    "one_row_per_evaluation_group": true,
+    "selection_order": "domain_ascii_asc"
+  },
+  "candidate_selection": {
+    "candidate_families": [
+      "v3_time_forward_data",
+      "v4_ternary_tld_time_forward_data"
+    ],
+    "hard_positive_weights": [
+      1.0,
+      1.5,
+      2.0
+    ],
+    "operating_threshold": 0.92,
+    "selection_metric": "development_recall",
+    "validation_guardrail": "runtime_candidate_false_positives_not_above_v3_control",
+    "tie_breakers": [
+      "validation_binary_logloss_asc",
+      "hard_positive_weight_asc"
+    ],
+    "forbidden_selection_inputs": [
+      "openphish_holdout",
+      "frozen_representative_packet",
+      "final_test_partition"
+    ]
+  },
+  "outputs": {
+    "adaptation": {
+      "path": "data/derived/time-forward-20260824/adaptation.parquet",
+      "rows": 1232,
+      "sha256": "17d2878f34a1bccdd7b1c76d6246f96b0605cd336203c0ac5c240a88df56dfa0"
+    },
+    "development": {
+      "path": "data/derived/time-forward-20260824/development.parquet",
+      "rows": 467,
+      "sha256": "80c8246d3204ebe699d398d7559602e9b7dd1667844e98481822d52a9e37968f"
+    },
+    "openphish_holdout": {
+      "path": "data/derived/time-forward-20260824/openphish-holdout.parquet",
+      "rows": 130,
+      "sha256": "57daaa1e427894cd3579f3af8a03c691c4911a3ad8bfe8fec0f42d1570528e62"
+    }
+  },
+  "counts": {
+    "adaptation_rows": 1232,
+    "development_rows": 467,
+    "openphish_holdout_rows": 130,
+    "openphish_holdout_ordinary_rows": 40,
+    "cross_cohort_group_overlap": 0
+  }
+}
