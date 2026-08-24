@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-24T14:17:13Z",
+  "seed": 42,
+  "objective": "retain source-balanced recall gains only where a calibration-trained precision specialist predicts malicious, while preserving every v3 control decision",
+  "architecture": {
+    "primary": "v3 control",
+    "recall_specialist": "v6 source-balanced model",
+    "precision_specialist": "regularized logistic regression on v3-v6 disagreement",
+    "combined_decision": "v3_probability >= 0.92 OR (v3_probability < 0.92 AND v6_probability >= 0.92 AND specialist_probability >= specialist_threshold)"
+  },
+  "artifacts": {
+    "v3_model": {
+      "path": "data/derived/v3-leakage-free-context/models/domain_threat_lgbm_raw.txt",
+      "sha256": "e375ec1720af854362084d509e262dd0c7e1e6e91c48a4cb50060630ab2d463a"
+    },
+    "v3_calibration": {
+      "path": "data/derived/v3-leakage-free-context/models/calibration.json",
+      "sha256": "716bd354aa1e85cb6c4179308edb3dfa376f6cfb42f2fb2673c646d003cd335b"
+    },
+    "v6_model": {
+      "path": "data/derived/v6-source-balanced-robustness/models/domain_threat_lgbm_raw.txt",
+      "sha256": "e56c37413ee4e76ca10320f9ca23e2c672939f7bf6fe4c2cc832d8cabcb5a9ec"
+    },
+    "v6_calibration": {
+      "path": "data/derived/v6-source-balanced-robustness/models/calibration.json",
+      "sha256": "ad112869e786d8a8070a21673b0d44993749cdf41c43ece1c18501aea9912ea3"
+    },
+    "v6_selection_report": {
+      "path": "experiments/v6-source-balanced-selection.json",
+      "sha256": "d25dfa22b9c743bd194bf944f201a1a02a3fa6792fb752cf9310aabb9a0ecf5a"
+    },
+    "feature_manifest": {
+      "path": "data/derived/v3-time-forward-data/feature_manifest.json",
+      "sha256": "506854a1da391209ac62fce646c388172e803a89d953eb373e48a73a5d447b49"
+    }
+  },
+  "inputs": {
+    "calibration_partition": {
+      "path": "data/derived/v3-time-forward-data/partitions/cal.parquet",
+      "sha256": "6032895eb224549ce4d359f6fed9eeec9539cdbd9da4041b3bbb3ebce7a32322"
+    },
+    "calibration_matrix": {
+      "path": "data/derived/v3-time-forward-data/matrices/X_cal.npz",
+      "sha256": "2b53db4d65654279ed1af3667eaf335032797f526549ee2ce18fed20e88a8647"
+    },
+    "validation_partition": {
+      "path": "data/derived/v3-time-forward-data/partitions/val.parquet",
+      "sha256": "f9df2892690ef74c22bf71e7ccc2318fe6394e71a416b6f97f183a0e56a4bc68"
+    },
+    "validation_matrix": {
+      "path": "data/derived/v3-time-forward-data/matrices/X_val.npz",
+      "sha256": "35b4add32d007b552a5e2aa5f71672b37a0007141d67a084ef5a8741628f5261"
+    },
+    "development": {
+      "path": "data/derived/v5-char-linear-20260824/development.parquet",
+      "sha256": "eb188ea5fda8ee63a1ea31d76a390206c7e0850c9d4ea5f1c2fd878a613d2455",
+      "rows": 349
+    },
+    "final_test_partition": {
+      "path": "data/derived/v3-time-forward-data/partitions/test.parquet",
+      "sha256": "0cce9f14877b5295835dd2137d5b16a4911467d49201e311be1bcc89a38bb78c"
+    },
+    "final_test_matrix": {
+      "path": "data/derived/v3-time-forward-data/matrices/X_test.npz",
+      "sha256": "fbe24ad96cf8a207526fd84facae620e68a84f09a59237b59f2318cdb41eb86c"
+    },
+    "phishdestroy_final_holdout": {
+      "path": "data/derived/v5-char-linear-20260824/phishdestroy-holdout.parquet",
+      "sha256": "8f8dc4b4ad03898bed8a48ba82da18f28570012b837ba1241369cb04207e27de",
+      "rows": 81528,
+      "ordinary_rows": 44419,
+      "status": "prediction-unopened before v7 selection"
+    }
+  },
+  "disagreement": {
+    "operating_threshold": 0.92,
+    "require_ml_candidate": true,
+    "condition": "v3_probability < 0.92 AND v6_probability >= 0.92"
+  },
+  "specialist_split": {
+    "source_partition": "calibration disagreement only",
+    "evaluation_group_policy": {
+      "shared_hosting_snapshot": "contracts/snapshots/shared_hosting.v1.json",
+      "shared_hosting_snapshot_sha256": "27825bf0bb206038372bd26038d46698e0fe946f0a9eaa08afea25f004f48ed2",
+      "shared_hosting_extensions": ["weebly.com", "weeblysite.com", "godaddysites.com"]
+    },
+    "hash": "sha256(seed|evaluation_group) interpreted as unsigned integer modulo 10",
+    "train_buckets": [0, 1, 2, 3, 4, 5, 6],
+    "threshold_calibration_buckets": [7, 8, 9],
+    "require_zero_group_overlap": true
+  },
+  "specialist_features": {
+    "score_features": [
+      "v3_probability",
+      "v6_probability",
+      "probability_delta",
+      "v3_logit",
+      "v6_logit"
+    ],
+    "handcrafted_feature_range": [0, 22],
+    "exclude_tfidf_features": true,
+    "fit_preprocessing_on": "specialist_train_only"
+  },
+  "specialist_model": {
+    "pipeline": ["StandardScaler", "LogisticRegression"],
+    "penalty": "l2",
+    "C": 0.1,
+    "solver": "lbfgs",
+    "max_iter": 500,
+    "class_weight": "balanced",
+    "random_state": 42,
+    "candidate_count": 1
+  },
+  "threshold_rule": {
+    "cohort": "threshold-calibration disagreement split",
+    "rule": "smallest representable probability strictly above the maximum benign specialist probability",
+    "objective": "maximize accepted malicious rows subject to zero accepted benign rows",
+    "require_benign_rows": true,
+    "require_accepted_malicious_rows_min": 1
+  },
+  "selection": {
+    "inputs": ["calibration", "validation", "v5_development"],
+    "forbidden_inputs": [
+      "final_test_partition",
+      "phishdestroy_final_holdout",
+      "openphish_v4_holdout",
+      "frozen_representative_packet",
+      "targeted_benign_packet"
+    ],
+    "eligibility_gates": {
+      "threshold_calibration_accepted_benign_max": 0,
+      "threshold_calibration_accepted_malicious_min": 1,
+      "validation_runtime_candidate_false_positives_not_above_v3": true,
+      "validation_runtime_candidate_true_positives_above_v3": true,
+      "development_true_positives_above_v3": true
+    },
+    "no_rescue_policy": "do not alter split, features, C, class_weight, threshold rule, or operating threshold after selection metrics"
+  },
+  "final_gates": {
+    "representative_malicious_true_positives_min": 26,
+    "representative_benign_false_positives_max": 0,
+    "targeted_benign_false_positives_max": 0,
+    "safe_vn_candidate_false_positives_max": 0,
+    "phishdestroy_overall_recall_not_below_v3": true,
+    "phishdestroy_ordinary_recall_not_below_v3": true,
+    "final_test_candidate_false_positives_not_above_v3": true,
+    "final_test_candidate_true_positives_above_v3": true
+  },
+  "outputs": {
+    "derived_dir": "data/derived/v7-disagreement-specialist",
+    "selection_report": "experiments/v7-disagreement-specialist-selection.json",
+    "final_report": "experiments/v7-disagreement-specialist-final-evaluation.json"
+  }
+}
