@@ -22,7 +22,8 @@ under the Git-ignored `ml/data/derived/v2-suffix-debiased-hard-negatives/`
 directory. The candidate is not provisioned to staging and does not authorize
 `enforce`; see
 `docs/research/ml/suffix-debiased-hard-negative-candidate.md` for metrics,
-reviewed stale-domain exclusions, and the remaining representative replay gate.
+reviewed stale-domain exclusions, and the representative recall regression
+that currently blocks staging restart.
 
 ## Runtime configuration
 
