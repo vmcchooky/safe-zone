@@ -5,29 +5,29 @@
 
 ## Tóm tắt (Abstract)
 
-Candidate v2 suffix-debiased giữ representative benign FPR ở `0/25` nhưng chỉ phát hiện `21/34` malicious case tại threshold `0,92`, tạo 13 false-negative. Vòng A/B ngày 2026-08-24 sửa phép loại leakage theo tenant trên shared hosting và candidate v3 tăng representative recall lên `22/34`, nhưng vẫn thấp hơn gate `26/34`. Vòng v4 pre-register PhishTank development và OpenPhish holdout source-disjoint; candidate được chọn tăng OpenPhish tổng thể từ `89/130` lên `91/130`, nhưng ordinary-looking giảm từ `6/40` xuống `5/40` và SAFE VN runtime-candidate phát sinh `1/1.400` false positive. Vòng v5 đổi representation sang suffix-stripped character TF-IDF linear model; cả ba log-odds blend giảm validation false positive nhưng mất `206–809` true positive nên bị dừng trước final inputs. Vòng v6 thử một candidate LightGBM duy nhất với inverse-square-root source balancing, giữ nguyên tổng sample-weight của từng class. Candidate tăng validation TP `11.529 → 12.003`, development TP `196/349 → 209/349` và malicious-source macro recall `57,90% → 63,17%`, nhưng validation FP tăng `238 → 333`; protocol dừng tại selection. V4–v6 đều giữ trạng thái private `NO-GO`; PhishDestroy/frozen packets không bị mở trong v5/v6 và hệ thống không export, provision, restart service, đổi traffic scope hoặc bật `enforce`.
+Candidate v2 suffix-debiased phát hiện `21/34` representative malicious case tại threshold `0,92`; leakage-safe candidate v3 tăng lên `22/34` nhưng vẫn thấp hơn gate `26/34`. V4 time-forward/TLD-state và v5 char-linear không tạo Pareto improvement nên bị giữ `NO-GO`. V6 source balancing tăng validation TP `11.529 → 12.003`, development TP `196/349 → 209/349` và malicious-source macro recall `57,90% → 63,17%`, nhưng validation FP tăng `238 → 333`. V7 giữ v3 làm primary model, dùng v6 làm recall specialist và train một logistic precision specialist chỉ trên vùng `v6 positive / v3 negative`. Selection đạt `+14 TP / +0 FP` trên validation và `+1/349` development TP. Final test tiếp tục đạt `+15 TP / +0 FP`, PhishDestroy tăng `+3` TP và toàn bộ benign gates đạt, nhưng frozen representative vẫn `22/34`; quyết định là `NO_GO_FINAL`. V4–v7 đều giữ private, không export, provision, restart service, đổi traffic scope hoặc bật `enforce`.
 
 ## Sơ đồ Tổng quan
 
 ```mermaid
 flowchart LR
-    A[/Signed labels/] -->|Replay| B[Candidate v3]
-    B -->|22/34| C[NO-GO v4]
-    C -->|Đổi representation| D[NO ELIGIBLE v5]
-    D -->|Audit source| E[Freeze v6 protocol]
-    E -->|Một candidate| F[Source balancing]
-    F -->|TP tăng 474| G[Recall tốt hơn]
-    G -->|FP tăng 95| H{FP gate đạt?}
-    H -->|Không| I[NO-GO v6]
+    A[/Candidate v3/] -->|22/34| B[Source-balanced v6]
+    B -->|474 TP và 95 FP mới| C[NO-GO v6]
+    C -->|Chỉ vùng bất đồng| D[Freeze v7 protocol]
+    D -->|Train trên calibration| E[Precision specialist]
+    E -->|Zero-benign threshold| F[Selection đạt]
+    F -->|14 TP và 0 FP mới| G[Final gates]
+    G -->|15 TP và 0 FP mới| H{Representative đạt 26?}
+    H -->|22/34| I[NO-GO v7]
 
     classDef input fill:#E9ECEF,stroke:#6C757D,color:#343A40
     classDef ai fill:#E8DAEF,stroke:#8E44AD,color:#4A235A
     classDef decision fill:#FFF3CD,stroke:#FFC107,color:#856404
     classDef blocked fill:#F8D7DA,stroke:#DC3545,color:#721C24
-    class A,E input
-    class B,F,G ai
+    class A,D input
+    class B,E,F,G ai
     class H decision
-    class C,D,I blocked
+    class C,I blocked
 ```
 
 ## Phân tích nguyên nhân và phương án remediation
@@ -418,15 +418,82 @@ Quyết định là `NO_GO_SELECTION`. Không thay exponent/clip/threshold sau k
 - Selector và unit tests: `ml/src/select_v6_source_balanced.py`, `ml/tests/test_source_balance.py`
 - Private model/calibration: `ml/data/derived/v6-source-balanced-robustness/models/` (Git-ignored; SHA-256 `e56c3741...5a9ec` và `ad112869...12ea3`)
 
+## Thử nghiệm v7 disagreement precision specialist
+
+### Mục tiêu (Objectives)
+
+- Giữ nguyên mọi quyết định positive của v3 và chỉ xem xét recall gain từ v6 trong vùng `v3 < 0,92` nhưng `v6 ≥ 0,92`.
+- Học precision gate bằng dữ liệu calibration group-disjoint, không train hoặc chọn threshold trên validation, final test hay frozen packets.
+- Chứng minh combined engine có thể thêm malicious TP mà không thêm benign FP trên validation, time-forward development và final cohorts.
+- Dừng candidate nếu representative malicious không đạt `26/34`, kể cả khi các cohort rộng đều cải thiện.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Ensemble topology | `v3 OR (v6 disagreement AND specialist accept)` | Blend probability; thay v3 bằng v6 | OR topology bảo toàn toàn bộ v3 TP/FP theo construction; specialist chỉ kiểm soát phần recall bổ sung |
+| Specialist training cohort | `623` calibration disagreement rows, split `7/3` bằng SHA-256 trên evaluation group | OOF sáu base models; train trên validation | Base boosters không train trên calibration; group split tạo train/threshold cohorts độc lập với chi phí thấp hơn OOF nhiều model |
+| Specialist features | Năm score/logit features và 22 handcrafted features; loại TF-IDF | Full 534 features; domain character tokens | Bộ 27 feature giới hạn khả năng memorize token/source artifact và tương thích runtime feature contract hiện có |
+| Specialist model | `StandardScaler + LogisticRegression`, L2, `C=0,1`, balanced class weight | Shallow LightGBM; neural meta-model | Calibration disagreement chỉ có 77 benign rows; linear regularization phù hợp hơn tree ensemble ở sample size này |
+| Threshold | Số floating-point nhỏ nhất lớn hơn max benign probability trên threshold-calibration split | Threshold `0,5`; chọn bằng validation | Quy tắc zero-benign được khóa trước fit và tối đa hóa malicious acceptance trong constraint đó |
+| Final decision | Đồng thời đạt representative, targeted benign, SAFE VN, PhishDestroy và final-test gates | Promote vì final test tăng TP | Broad non-regression không thay thế owner-approved representative release gate |
+
+### Cách thức Thực hiện (Implementation Details)
+
+Protocol v7 được commit ở `c400f48` trước specialist fit. Audit sau selection sơ bộ phát hiện selector dùng v3-time-forward matrix cho cả hai base models, làm control lệch một TP so với frozen runtime contract. Ba correction commits `f8822a4`, `2fbee2c` và `9774c76` lần lượt pin v3 control feature inputs, final-test matrix và signed evidence hashes; không commit nào thay split, feature, model, `C`, class weight hoặc threshold rule. Selection được chạy lại sau mỗi provenance correction và giữ cùng kết quả `+14 TP / +0 FP`; final inputs chỉ được mở sau protocol cuối.
+
+Calibration có `623` disagreement rows. Group hash chia `467` rows cho specialist train (`60` benign, `407` malicious) và `156` rows cho threshold calibration (`17` benign, `139` malicious), overlap bằng `0`. Logistic specialist dùng 27 features và threshold `0,9745596226`; threshold cohort chấp nhận `4` malicious, `0` benign.
+
+Final evaluator xác minh protocol/selection/artifact SHA-256 trước khi đọc final test, PhishDestroy và ba signed evidence packets. V3 và v6 luôn dùng feature manifest/matrix riêng; specialist joblib chỉ `2.209` bytes. Final evaluation chạy `301,34` giây do phải extract hai feature views cho `81.528` PhishDestroy rows; đây là offline cost, chưa phải latency benchmark cho bundle runtime.
+
+AI agent sử dụng Codex (GPT-5) với chiến lược primary-preserving architecture, pre-registered zero-benign threshold và one-time final evaluation. Số subagent là `0`; không dùng voting. Kiểm soát chất lượng gồm exact base-artifact hashes, group-disjoint specialist split, runtime feature-contract parity, unit tests cho threshold/combined decision và full ML test suite. Con người giữ quyền duyệt signed evidence và rollout; agent không sửa labels, push, deploy, restart service, đổi traffic scope hoặc bật `enforce`.
+
+### Số liệu (Metrics & Results)
+
+#### Selection tại threshold v3/v6 `0,92`
+
+| Chỉ số | V3 control | V7 combined | Delta |
+|---|---:|---:|---:|
+| Validation candidate TP / 15.324 | 11.529 | 11.543 | +14 |
+| Validation candidate FP / 11.032 | 238 | 238 | 0 |
+| Validation candidate recall | 75,23% | 75,33% | +0,09 điểm % |
+| Development TP / 349 | 196 | 197 | +1 |
+| Validation disagreement accepted | — | 14 malicious / 0 benign | — |
+| Selection wall time | — | 31,10 giây | — |
+
+#### One-time final evaluation
+
+| Chỉ số | V3 control | V7 combined | Delta |
+|---|---:|---:|---:|
+| Final-test candidate TP / 14.572 | 11.256 | 11.271 | +15 |
+| Final-test candidate FP / 9.504 | 164 | 164 | 0 |
+| Final-test candidate recall | 77,24% | 77,35% | +0,10 điểm % |
+| PhishDestroy TP / 81.528 | 46.251 | 46.254 | +3 |
+| PhishDestroy ordinary TP / 44.419 | 12.593 | 12.596 | +3 |
+| SAFE VN candidate FP / 1.400 | 0 | 0 | 0 |
+| Targeted benign FP / 3 | 0 | 0 | 0 |
+| Representative benign FP / 25 | 0 | 0 | 0 |
+| Representative malicious TP / 34 | 22 | 22 | 0 |
+
+V7 đạt bảy trong tám final gates. Precision specialist giữ zero incremental FP trên validation và final test, đồng thời thêm TP trên ba independent malicious cohorts; kết quả xác nhận disagreement gating giải quyết được precision regression của v6. Representative gate vẫn thất bại vì không case nào trong 12 residual false-negative được specialist phục hồi. Quyết định cuối là `NO_GO_FINAL`; final results không được dùng để đổi threshold hoặc train tiếp v7.
+
+### Liên kết Artifacts
+
+- Pre-registered protocol: `ml/configs/v7-disagreement-specialist-protocol.json`
+- Selection/final reports: `ml/experiments/v7-disagreement-specialist-selection.json`, `ml/experiments/v7-disagreement-specialist-final-evaluation.json`
+- Selector/final evaluator: `ml/src/select_v7_disagreement_specialist.py`, `ml/src/evaluate_v7_disagreement_specialist.py`
+- Unit tests: `ml/tests/test_disagreement_specialist.py`
+- Private precision specialist: `ml/data/derived/v7-disagreement-specialist/models/precision_specialist.joblib` (Git-ignored; SHA-256 `b8b28848...b95f0`, `2.209` bytes)
+
 ### Phương án candidate kế tiếp
 
 Candidate kế tiếp cần thực hiện ba lớp, theo thứ tự sau:
 
-1. Dừng ablation exponent/clip/threshold trên v6. Recall gain đã xuất hiện đồng thời ở aggregate, source slices và time-forward development; vấn đề còn lại là precision, không phải thiếu thêm positive weighting.
-2. Candidate kế tiếp nên dùng v3 làm primary model và xử lý riêng vùng disagreement nơi v6 dương tính nhưng v3 âm tính. Precision specialist phải train bằng counterfactual benign/malicious pairs được match theo lexical propensity, TLD và source-disjoint group, dùng out-of-fold predictions; không lấy domain hoặc token từ frozen packet.
-3. URL/path/redirect context chỉ nên nằm trong engine có URL-level query và provenance tương ứng. DNS hostname engine không được gán path-scoped evidence thành domain ground truth; threat-context preset hiện tại vẫn chỉ đạt `0/12` recovery.
+1. Dừng ablation specialist threshold, `C` hoặc feature subset trên v7. V7 đã mở final test, PhishDestroy và representative packet; tuning tiếp sẽ biến final evidence thành development signal.
+2. Broad lexical quality hiện đạt precision-preserving recall gain nhưng không tác động 12 representative residuals. Lần model research kế tiếp cần một time-forward development/final pair mới và tín hiệu khác hostname-only, hoặc một label-policy review tách rõ case nào thực sự yêu cầu URL/path/redirect context.
+3. Nếu sản phẩm cần tiến triển trước khi có dữ liệu mới, ưu tiên packaging/latency prototype ở measurement-only branch cho v7 architecture, không shadow traffic và không gọi đó là release candidate. Prototype chỉ đo chi phí hai boosters + specialist; promotion vẫn bị khóa bởi representative `22/34`.
 
-PhishDestroy holdout v5 vẫn chưa được prediction và có thể được bảo toàn cho một candidate khác biệt thực chất đã pre-register, nhưng không dùng để chọn representation. Không chọn phương án chỉ hạ threshold: sweep hiện tại cho thấy threshold `0,90` đạt `22/34` với `0/25` FP; threshold `0,85` đạt `25/34` nhưng tạo `1/25` FP. Candidate mới chỉ được xem xét cho local staging `shadow` khi đạt tối thiểu representative recall `26/34`, giữ representative benign FP `0/25`, targeted benign challenge `0/3`, cross-service probability/response parity trong tolerance `10^-6`, ML errors bằng `0` và enforce promotions bằng `0`.
+PhishDestroy holdout đã được mở một lần cho v7 và không còn là final input hợp lệ cho tuning tiếp. Không chọn phương án chỉ hạ threshold: sweep hiện tại cho thấy threshold `0,90` đạt `22/34` với `0/25` FP; threshold `0,85` đạt `25/34` nhưng tạo `1/25` FP. Candidate mới chỉ được xem xét cho local staging `shadow` khi đạt tối thiểu representative recall `26/34`, giữ representative benign FP `0/25`, targeted benign challenge `0/3`, cross-service probability/response parity trong tolerance `10^-6`, ML errors bằng `0` và enforce promotions bằng `0`.
 
 ### Liên kết Artifacts
 
@@ -449,6 +516,7 @@ PhishDestroy holdout v5 vẫn chưa được prediction và có thể được b
 - V4 selection/final reports: `ml/experiments/v4-weight-ablation-selection.json`, `ml/experiments/v4-final-evaluation.json`
 - V5 protocol/snapshot/selection reports: `ml/configs/v5-char-linear-ensemble-protocol.json`, `ml/experiments/v5-char-linear-snapshot.json`, `ml/experiments/v5-char-linear-selection.json`
 - V6 protocol/selection report: `ml/configs/v6-source-balanced-robustness-protocol.json`, `ml/experiments/v6-source-balanced-selection.json`
+- V7 protocol/selection/final reports: `ml/configs/v7-disagreement-specialist-protocol.json`, `ml/experiments/v7-disagreement-specialist-selection.json`, `ml/experiments/v7-disagreement-specialist-final-evaluation.json`
 - Threat-context protocol/report: `ml/configs/threat-context-production-free-20260824.json`, `ml/experiments/threat-context-production-free-20260824.json`
 - Threat-context R&D report: `docs/research/security/threat-context-evaluation.md`
 
@@ -458,6 +526,7 @@ PhishDestroy holdout v5 vẫn chưa được prediction và có thể được b
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-24 | Triển khai v7 disagreement precision specialist; selection đạt `+14 TP / +0 FP`, final test đạt `+15 TP / +0 FP`, nhưng giữ `NO_GO_FINAL` vì representative vẫn `22/34` | Codex (GPT-5) |
 | 2026-08-24 | Pre-register và train một v6 source-balanced candidate; ghi nhận `+474` validation TP, `+13/349` development TP nhưng `+95` validation FP, dừng `NO_GO_SELECTION` trước final inputs | Codex (GPT-5) |
 | 2026-08-24 | Pre-register v5 char-linear ensemble, freeze `349` development và `81.528` PhishDestroy holdout rows; dừng ở `NO_ELIGIBLE_CANDIDATE` trước final inputs vì cả ba blend đều giảm validation/development TP | Codex (GPT-5) |
 | 2026-08-24 | Đo production-free threat context và giữ `NO-GO` vì phục hồi `0/12` model false-negative nhưng tạo `1/25` benign collision | Codex (GPT-5) |

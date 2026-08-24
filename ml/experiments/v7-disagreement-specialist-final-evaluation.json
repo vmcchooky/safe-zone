@@ -1,0 +1,211 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "cad116878dc403c0bd783a3dc2482d5de59cd718fa5a331b84e5c04905b2c2ca",
+  "selection_report_sha256": "5d47fce92e26e87cfff0aafd867d4e2d1666099356f33db47a59f351f1ff6e95",
+  "final_inputs_opened_after_selection": [
+    "final_test_partition",
+    "phishdestroy_final_holdout",
+    "representative_binary_packet",
+    "targeted_benign_packet",
+    "reviewed_unclassifiable_packet"
+  ],
+  "wall_time_seconds": 301.34,
+  "operating_threshold": 0.92,
+  "specialist_threshold": 0.9745596225714268,
+  "final_test": {
+    "control": {
+      "rows": 286804,
+      "runtime_candidate_benign_rows": 9504,
+      "runtime_candidate_malicious_rows": 14572,
+      "runtime_candidate_false_positives": 164,
+      "runtime_candidate_true_positives": 11256,
+      "runtime_candidate_fpr": 0.017255892255892257,
+      "runtime_candidate_recall": 0.7724402964589624
+    },
+    "combined": {
+      "rows": 286804,
+      "runtime_candidate_benign_rows": 9504,
+      "runtime_candidate_malicious_rows": 14572,
+      "runtime_candidate_false_positives": 164,
+      "runtime_candidate_true_positives": 11271,
+      "runtime_candidate_fpr": 0.017255892255892257,
+      "runtime_candidate_recall": 0.7734696678561626
+    },
+    "disagreement_rows": 549,
+    "accepted_rows": 15,
+    "accepted_benign": 0,
+    "accepted_malicious": 15
+  },
+  "safe_vn": {
+    "control": {
+      "threshold": 0.92,
+      "safe_vn_raw_benign_count": 44837,
+      "safe_vn_benign_count": 44833,
+      "safe_vn_false_positives": 2,
+      "safe_vn_fpr": 4.460999710035019e-05,
+      "safe_vn_runtime_candidate_raw_count": 1404,
+      "safe_vn_runtime_candidate_count": 1400,
+      "safe_vn_runtime_candidate_false_positives": 0,
+      "safe_vn_runtime_candidate_fpr": 0.0,
+      "gov_edu_vn_raw_benign_count": 5247,
+      "gov_edu_vn_benign_count": 5247,
+      "gov_edu_vn_false_positives": 0,
+      "gov_edu_vn_fpr": 0.0,
+      "reviewed_unclassifiable": {
+        "labels_path": "D:\\Quorix\\services\\safe-zone\\ml\\evidence\\whitelist-proxy-review\\run-20260824-owner-reviewed-stale-addendum\\labels.csv",
+        "labels_sha256": "063ecc780970d92f89c2d9c1106df3babfa5310e8931288dd516f7701f7d2c7d",
+        "reviewed_cases": 4,
+        "required_human_label": "unknown",
+        "required_review_outcome": "unresolved",
+        "matched_test_cases": 4,
+        "runtime_candidate_cases": 4,
+        "would_block": 4,
+        "predictions": [
+          {
+            "domain": "wirecuttingstrippingmachine.vn",
+            "domain_ascii": "wirecuttingstrippingmachine.vn",
+            "probability": 0.9387595998280998,
+            "would_block": true
+          },
+          {
+            "domain": "oligodermieusageprofessionnel.vn",
+            "domain_ascii": "oligodermieusageprofessionnel.vn",
+            "probability": 0.930912291822494,
+            "would_block": true
+          },
+          {
+            "domain": "webmail.goldenparktower.info.vn",
+            "domain_ascii": "webmail.goldenparktower.info.vn",
+            "probability": 0.9248458546124695,
+            "would_block": true
+          },
+          {
+            "domain": "mail.goldenparktower.info.vn",
+            "domain_ascii": "mail.goldenparktower.info.vn",
+            "probability": 0.9229514980587743,
+            "would_block": true
+          }
+        ]
+      }
+    },
+    "combined": {
+      "threshold": 0.5,
+      "safe_vn_raw_benign_count": 44837,
+      "safe_vn_benign_count": 44833,
+      "safe_vn_false_positives": 0,
+      "safe_vn_fpr": 0.0,
+      "safe_vn_runtime_candidate_raw_count": 1404,
+      "safe_vn_runtime_candidate_count": 1400,
+      "safe_vn_runtime_candidate_false_positives": 0,
+      "safe_vn_runtime_candidate_fpr": 0.0,
+      "gov_edu_vn_raw_benign_count": 5247,
+      "gov_edu_vn_benign_count": 5247,
+      "gov_edu_vn_false_positives": 0,
+      "gov_edu_vn_fpr": 0.0,
+      "reviewed_unclassifiable": {
+        "labels_path": "D:\\Quorix\\services\\safe-zone\\ml\\evidence\\whitelist-proxy-review\\run-20260824-owner-reviewed-stale-addendum\\labels.csv",
+        "labels_sha256": "063ecc780970d92f89c2d9c1106df3babfa5310e8931288dd516f7701f7d2c7d",
+        "reviewed_cases": 4,
+        "required_human_label": "unknown",
+        "required_review_outcome": "unresolved",
+        "matched_test_cases": 4,
+        "runtime_candidate_cases": 4,
+        "would_block": 4,
+        "predictions": [
+          {
+            "domain": "wirecuttingstrippingmachine.vn",
+            "domain_ascii": "wirecuttingstrippingmachine.vn",
+            "probability": 1.0,
+            "would_block": true
+          },
+          {
+            "domain": "webmail.goldenparktower.info.vn",
+            "domain_ascii": "webmail.goldenparktower.info.vn",
+            "probability": 1.0,
+            "would_block": true
+          },
+          {
+            "domain": "oligodermieusageprofessionnel.vn",
+            "domain_ascii": "oligodermieusageprofessionnel.vn",
+            "probability": 1.0,
+            "would_block": true
+          },
+          {
+            "domain": "mail.goldenparktower.info.vn",
+            "domain_ascii": "mail.goldenparktower.info.vn",
+            "probability": 1.0,
+            "would_block": true
+          }
+        ]
+      }
+    }
+  },
+  "phishdestroy": {
+    "control": {
+      "all": {
+        "rows": 81528,
+        "true_positives": 46251,
+        "false_negatives": 35277,
+        "recall": 0.5673020312040036
+      },
+      "ordinary_looking": {
+        "rows": 44419,
+        "true_positives": 12593,
+        "false_negatives": 31826,
+        "recall": 0.2835048065017222
+      }
+    },
+    "combined": {
+      "all": {
+        "rows": 81528,
+        "true_positives": 46254,
+        "false_negatives": 35274,
+        "recall": 0.5673388283779806
+      },
+      "ordinary_looking": {
+        "rows": 44419,
+        "true_positives": 12596,
+        "false_negatives": 31823,
+        "recall": 0.28357234516760843
+      }
+    }
+  },
+  "representative": {
+    "control": {
+      "malicious": {
+        "rows": 34,
+        "true_positives": 22,
+        "false_negatives": 12,
+        "recall": 0.6470588235294118
+      },
+      "benign_rows": 25,
+      "benign_false_positives": 0
+    },
+    "combined": {
+      "malicious": {
+        "rows": 34,
+        "true_positives": 22,
+        "false_negatives": 12,
+        "recall": 0.6470588235294118
+      },
+      "benign_rows": 25,
+      "benign_false_positives": 0
+    }
+  },
+  "targeted_benign": {
+    "rows": 3,
+    "control_false_positives": 0,
+    "combined_false_positives": 0
+  },
+  "gates": {
+    "representative_malicious_at_least_26_of_34": false,
+    "representative_benign_zero_of_25": true,
+    "targeted_benign_zero": true,
+    "safe_vn_candidate_zero": true,
+    "phishdestroy_overall_recall_not_below_v3": true,
+    "phishdestroy_ordinary_recall_not_below_v3": true,
+    "final_test_candidate_false_positives_not_above_v3": true,
+    "final_test_candidate_true_positives_above_v3": true
+  },
+  "decision": "NO_GO_FINAL"
+}

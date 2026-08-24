@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "cad116878dc403c0bd783a3dc2482d5de59cd718fa5a331b84e5c04905b2c2ca",
+  "selection_inputs": [
+    "calibration",
+    "validation",
+    "v5_development"
+  ],
+  "forbidden_inputs_read": [],
+  "wall_time_seconds": 49.08,
+  "specialist": {
+    "features": 27,
+    "model": {
+      "pipeline": [
+        "StandardScaler",
+        "LogisticRegression"
+      ],
+      "penalty": "l2",
+      "C": 0.1,
+      "solver": "lbfgs",
+      "max_iter": 500,
+      "class_weight": "balanced",
+      "random_state": 42,
+      "candidate_count": 1
+    },
+    "threshold": 0.9745596225714268,
+    "calibration_disagreement_rows": 623,
+    "train_rows": 467,
+    "train_benign": 60,
+    "train_malicious": 407,
+    "threshold_calibration": {
+      "rows": 156,
+      "benign_rows": 17,
+      "malicious_rows": 139,
+      "accepted_benign": 0,
+      "accepted_malicious": 4,
+      "threshold": 0.9745596225714268
+    },
+    "group_overlap": 0
+  },
+  "validation": {
+    "control": {
+      "rows": 273799,
+      "runtime_candidate_benign_rows": 11032,
+      "runtime_candidate_malicious_rows": 15324,
+      "runtime_candidate_false_positives": 238,
+      "runtime_candidate_true_positives": 11529,
+      "runtime_candidate_fpr": 0.021573604060913704,
+      "runtime_candidate_recall": 0.7523492560689116
+    },
+    "combined": {
+      "rows": 273799,
+      "runtime_candidate_benign_rows": 11032,
+      "runtime_candidate_malicious_rows": 15324,
+      "runtime_candidate_false_positives": 238,
+      "runtime_candidate_true_positives": 11543,
+      "runtime_candidate_fpr": 0.021573604060913704,
+      "runtime_candidate_recall": 0.7532628556512659
+    },
+    "disagreement_rows": 749,
+    "accepted_rows": 14,
+    "accepted_benign": 0,
+    "accepted_malicious": 14
+  },
+  "development": {
+    "rows": 349,
+    "control_true_positives": 196,
+    "combined_true_positives": 197,
+    "disagreement_rows": 14,
+    "accepted_rows": 1
+  },
+  "gates": {
+    "threshold_calibration_accepted_benign_max": true,
+    "threshold_calibration_accepted_malicious_min": true,
+    "validation_runtime_candidate_false_positives_not_above_v3": true,
+    "validation_runtime_candidate_true_positives_above_v3": true,
+    "development_true_positives_above_v3": true
+  },
+  "eligible": true,
+  "artifacts": {
+    "specialist": {
+      "path": "data/derived/v7-disagreement-specialist/models/precision_specialist.joblib",
+      "sha256": "b8b288481f26328c0f021ea8f0b497b09668b98ad980aacfb8d08b83b28b95f0",
+      "bytes": 2209
+    }
+  },
+  "decision": "ELIGIBLE_FOR_FINAL_EVALUATION"
+}
