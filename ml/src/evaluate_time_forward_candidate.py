@@ -78,6 +78,7 @@ def _malicious_metrics(probabilities: np.ndarray, threshold: float) -> Dict[str,
 def run_final_evaluation(
     candidate_config_path: str | os.PathLike[str],
     protocol_path: str | os.PathLike[str],
+    prediction_output: str | os.PathLike[str] | None = None,
 ) -> Dict[str, Any]:
     candidate_config_file = Path(candidate_config_path).resolve()
     protocol_file = Path(protocol_path).resolve()
@@ -126,6 +127,7 @@ def run_final_evaluation(
     model_artifacts: Dict[str, Any] = {}
     holdout_results: Dict[str, Any] = {}
     representative_results: Dict[str, Any] = {}
+    representative_probabilities: Dict[str, np.ndarray] = {}
     holdout_domains = holdout["domain_ascii"].astype(str).tolist()
     binary_domains = binary["domain"].astype(str).tolist()
     ordinary_mask = holdout["ordinary_looking"].to_numpy() == True  # noqa: E712
@@ -138,6 +140,7 @@ def run_final_evaluation(
         representative_probability, representative_artifacts = _predict(
             config, binary_domains
         )
+        representative_probabilities[name] = representative_probability
         if holdout_artifacts != representative_artifacts:
             raise ValueError("model artifacts changed during final evaluation")
         model_artifacts[name] = holdout_artifacts
@@ -232,6 +235,20 @@ def run_final_evaluation(
     with open(output_path, "w", encoding="utf-8", newline="\n") as handle:
         json.dump(result, handle, indent=2)
         handle.write("\n")
+    if prediction_output is not None:
+        prediction_path = Path(prediction_output).resolve()
+        prediction_path.parent.mkdir(parents=True, exist_ok=True)
+        selected_probabilities = representative_probabilities["v4_selected"]
+        with open(prediction_path, "w", encoding="utf-8", newline="\n") as handle:
+            for (_, row), probability in zip(binary.iterrows(), selected_probabilities):
+                record = {
+                    "case_id": str(row["case_id"]),
+                    "domain": str(row["domain"]),
+                    "human_label": str(row["human_label"]),
+                    "probability": float(probability),
+                    "would_block": bool(probability >= threshold),
+                }
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     return result
 
 
@@ -245,6 +262,11 @@ if __name__ == "__main__":
         "--protocol",
         default=str(BASE_DIR / "configs" / "v4-time-forward-protocol.json"),
     )
+    parser.add_argument(
+        "--prediction-output",
+        default=None,
+        help="optional Git-ignored JSONL with per-case v4 predictions for context evaluation",
+    )
     args = parser.parse_args()
-    result = run_final_evaluation(args.config, args.protocol)
+    result = run_final_evaluation(args.config, args.protocol, args.prediction_output)
     print(json.dumps({"decision": result["decision"], "gates": result["gates"]}, indent=2))

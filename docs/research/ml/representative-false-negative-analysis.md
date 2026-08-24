@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-Candidate v2 suffix-debiased giữ representative benign FPR ở `0/25` nhưng chỉ phát hiện `21/34` malicious case tại threshold `0,92`, tạo 13 false-negative. Phân tích `pred_contrib` và bounded Firecrawl cho thấy model domain-only thiếu tín hiệu về redirect, cloaking, security interstitial và exact threat-feed membership; Firecrawl chỉ được dùng làm evidence transport, không làm adjudicator. Vòng A/B ngày 2026-08-24 sửa phép loại leakage theo tenant trên shared hosting và candidate v3 tăng representative recall lên `22/34`, nhưng vẫn thấp hơn gate `26/34`. Vòng v4 sau đó pre-register một PhishTank adaptation/development split và OpenPhish holdout source-disjoint trước khi train, bổ sung `1.232` hard-positive ordinary-looking và thử TLD state `unknown/known-neutral/risky` với sáu tổ hợp family/weight. Candidate được chọn tăng OpenPhish tổng thể từ `89/130` lên `91/130`, nhưng ordinary-looking giảm từ `6/40` xuống `5/40`, representative giữ nguyên `22/34` và SAFE VN runtime-candidate phát sinh `1/1.400` false positive. Kết quả xác nhận weighting cùng lexical TLD-state không khắc phục được nhóm hostname thiếu tín hiệu hành vi. Candidate v4 giữ trạng thái private `NO-GO`; không export, provision hoặc restart local staging.
+Candidate v2 suffix-debiased giữ representative benign FPR ở `0/25` nhưng chỉ phát hiện `21/34` malicious case tại threshold `0,92`, tạo 13 false-negative. Phân tích `pred_contrib` và bounded Firecrawl cho thấy model domain-only thiếu tín hiệu về redirect, cloaking, security interstitial và exact threat-feed membership; Firecrawl chỉ được dùng làm evidence transport, không làm adjudicator. Vòng A/B ngày 2026-08-24 sửa phép loại leakage theo tenant trên shared hosting và candidate v3 tăng representative recall lên `22/34`, nhưng vẫn thấp hơn gate `26/34`. Vòng v4 sau đó pre-register một PhishTank adaptation/development split và OpenPhish holdout source-disjoint trước khi train, bổ sung `1.232` hard-positive ordinary-looking và thử TLD state `unknown/known-neutral/risky` với sáu tổ hợp family/weight. Candidate được chọn tăng OpenPhish tổng thể từ `89/130` lên `91/130`, nhưng ordinary-looking giảm từ `6/40` xuống `5/40`, representative giữ nguyên `22/34` và SAFE VN runtime-candidate phát sinh `1/1.400` false positive. Production-free threat-context evaluation tiếp tục phục hồi `0/12` model false-negative và tạo `1/25` benign collision do URL indicator được collapse xuống hostname. Candidate v4 giữ trạng thái private `NO-GO`; không export, provision hoặc restart local staging.
 
 ## Sơ đồ Tổng quan
 
@@ -17,7 +17,7 @@ flowchart LR
     D --> E[Chọn bằng dev và val]
     E --> F{Final gates đạt?}
     F -->|Không| G[NO-GO v4]
-    G --> H[Runtime threat context]
+    G -->|Đo context| H[0 TP mới, 1 benign FP]
 
     classDef input fill:#E9ECEF,stroke:#6C757D,color:#343A40
     classDef ai fill:#E8DAEF,stroke:#8E44AD,color:#4A235A
@@ -26,7 +26,7 @@ flowchart LR
     class A input
     class B,D,E ai
     class F decision
-    class G blocked
+    class G,H blocked
 ```
 
 ## Phân tích nguyên nhân và phương án remediation
@@ -296,8 +296,8 @@ Candidate kế tiếp cần thực hiện đồng thời bốn lớp, theo thứ
 
 1. Ngừng ablation thêm trên OpenPhish holdout ngày 2026-08-24 vì tập này đã được mở; lần lexical experiment kế tiếp phải có một holdout time-forward mới và protocol mới.
 2. Tách hai release measurement: lexical-model generalization trên hostname và end-to-end runtime recall với exact threat-feed membership/freshness. Redirect, cloaking và security interstitial thuộc runtime/evidence context, không bị ép thành lexical ground truth.
-3. Ưu tiên threat-context evaluation harness dùng đúng production-free source set, TTL, suffix-match và trusted-brand bypass của `internal/risk`; chỉ xem xét mở rộng feed source sau review traffic scope, terms và operational cost.
-4. Nếu tiếp tục lexical research, đổi model/data representation ở mức lớn hơn weighting/TLD state, ví dụ source-adversarial validation hoặc temporal ensemble; không thêm exact 12 domain còn lại hoặc token chỉ xuất hiện trong frozen packet.
+3. Threat-context harness đã hoàn tất và cho `0/12` recovery cùng `1/25` benign collision. Không dùng preset `production-free` hiện tại làm lý do promote model; URL-level feed cần source-aware domain suitability policy trước khi mở rộng source.
+4. Nếu tiếp tục lexical research, freeze holdout mới rồi đổi model/data representation ở mức lớn hơn weighting/TLD state, ví dụ source-adversarial validation hoặc temporal ensemble; không thêm exact 12 domain còn lại hoặc token chỉ xuất hiện trong frozen packet.
 
 Không chọn phương án chỉ hạ threshold. Sweep hiện tại cho thấy threshold `0,90` đạt `22/34` recall với `0/25` FP; threshold `0,85` đạt `25/34` nhưng tạo `1/25` FP. Candidate mới chỉ được xem xét cho local staging `shadow` khi đạt tối thiểu baseline representative recall `26/34`, giữ representative benign FP `0/25`, targeted benign challenge `0/3`, cross-service probability/response parity trong tolerance `10^-6`, ML errors bằng `0` và enforce promotions bằng `0`.
 
@@ -320,6 +320,8 @@ Không chọn phương án chỉ hạ threshold. Sweep hiện tại cho thấy t
 - Private hard-positive ablation: `ml/data/derived/v2-suffix-debiased-hard-negatives/hard-positive-mining-ablation-20260824.json` (Git-ignored; SHA-256 `e6924c03d149455d5228b6b98040fb89314054ba7057c1ef84da7c75b9838b93`)
 - Time-forward public manifest: `ml/experiments/v4-time-forward-snapshot.json`
 - V4 selection/final reports: `ml/experiments/v4-weight-ablation-selection.json`, `ml/experiments/v4-final-evaluation.json`
+- Threat-context protocol/report: `ml/configs/threat-context-production-free-20260824.json`, `ml/experiments/threat-context-production-free-20260824.json`
+- Threat-context R&D report: `docs/research/security/threat-context-evaluation.md`
 
 ---
 
@@ -327,6 +329,7 @@ Không chọn phương án chỉ hạ threshold. Sweep hiện tại cho thấy t
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-24 | Đo production-free threat context và giữ `NO-GO` vì phục hồi `0/12` model false-negative nhưng tạo `1/25` benign collision | Codex (GPT-5) |
 | 2026-08-24 | Freeze time-forward cohorts, thử sáu ablation v3/v4, mở final holdout một lần và giữ v4 `NO-GO` do representative `22/34` cùng SAFE VN candidate `1/1.400` FP | Codex (GPT-5) |
 | 2026-08-24 | Sửa leakage theo shared-hosting tenant, dựng control v2 sạch, triển khai/evaluate feature contract v3 và ghi nhận quyết định `NO-GO` sau năm ablation | Codex (GPT-5) |
 | 2026-08-24 | Phân tích contribution của 13 false-negative, chạy bounded Firecrawl refresh và xác định hướng hard-positive/feature v3 không leakage | Codex (GPT-5) |

@@ -52,6 +52,14 @@ selection/final evidence is tracked in
 `ml/experiments/v4-weight-ablation-selection.json` and
 `ml/experiments/v4-final-evaluation.json`.
 
+The checksum-pinned production-free context evaluation joins the selected v4
+predictions with fresh URLhaus Recent and OpenPhish Community snapshots using
+the same parser and exact/parent-suffix matcher as the Go runtime. It recovered
+`0/12` model false negatives and introduced one representative benign hostname
+collision, so it is measurement evidence rather than a release path. The local
+whitelist state was empty and the configured Tranco snapshot endpoint was
+unavailable; the report records that limitation explicitly.
+
 ## Runtime configuration
 
 ```env
@@ -143,6 +151,14 @@ python -B ml/src/validate_artifacts.py --derived-dir ml/data/derived/v4-time-for
 python -B ml/src/select_time_forward_candidate.py --protocol ml/configs/v4-time-forward-protocol.json
 python -B ml/src/evaluate_model.py --config ml/configs/v4-time-forward-ternary-tld.json
 python -B ml/src/evaluate_time_forward_candidate.py --config ml/configs/v4-time-forward-ternary-tld.json --protocol ml/configs/v4-time-forward-protocol.json
+```
+
+After collecting the checksum-pinned raw feed snapshots, reproduce the bounded
+context join without Redis or a running service:
+
+```powershell
+python -B ml/src/evaluate_time_forward_candidate.py --config ml/configs/v4-time-forward-ternary-tld.json --protocol ml/configs/v4-time-forward-protocol.json --prediction-output ml/data/derived/threat-context-20260824/v4-representative-predictions.jsonl
+go run ./cmd/threat-context-eval --config ml/configs/threat-context-production-free-20260824.json --output ml/experiments/threat-context-production-free-20260824.json
 ```
 
 The current local evidence is:

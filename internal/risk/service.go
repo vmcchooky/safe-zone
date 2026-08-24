@@ -2030,7 +2030,7 @@ func minDuration(a, b time.Duration) time.Duration {
 }
 
 func (s *Service) matchThreatFeed(parent context.Context, domain string) (bool, error) {
-	candidates := threatFeedCandidates(domain)
+	candidates := ThreatFeedCandidates(domain)
 	return s.matchAnyThreatFeedCandidate(parent, candidates)
 }
 
@@ -2060,7 +2060,9 @@ func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates
 	return matched, nil
 }
 
-func threatFeedCandidates(domain string) []string {
+// ThreatFeedCandidates returns the exact domain followed by every parent
+// suffix considered by the runtime threat-feed matcher.
+func ThreatFeedCandidates(domain string) []string {
 	parts := strings.Split(domain, ".")
 	candidates := make([]string, 0, len(parts))
 	for i := 0; i < len(parts); i++ {
