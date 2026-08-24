@@ -6,11 +6,12 @@ Selects block_threshold meeting false-positive budget and exports model_report.j
 """
 
 import argparse
+import hashlib
 import json
 import os
 import sys
 import time
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Set, Tuple
 
 import lightgbm as lgb
 import numpy as np
@@ -34,6 +35,155 @@ if BASE_DIR not in sys.path:
 from src.calibrate_model import compute_expected_calibration_error
 from src.build_features import build_feature_matrix_from_manifest
 from src.canonicalize import canonicalize_domain
+
+
+def load_reviewed_unclassifiable_domains(labels_path: str) -> Tuple[Set[str], Dict[str, Any]]:
+    """Load human-reviewed inactive domains that cannot support a binary label."""
+    labels = pd.read_csv(labels_path, keep_default_na=False)
+    required_columns = {
+        "case_id",
+        "domain",
+        "human_label",
+        "review_outcome",
+        "reviewer_id",
+        "reviewed_at",
+        "evidence_refs",
+        "review_notes",
+    }
+    missing = sorted(required_columns - set(labels.columns))
+    if missing:
+        raise ValueError(
+            f"reviewed-unclassifiable labels missing columns: {missing}"
+        )
+    if labels.empty:
+        raise ValueError("reviewed-unclassifiable labels must not be empty")
+
+    human_labels = labels["human_label"].astype(str).str.strip().str.lower()
+    outcomes = labels["review_outcome"].astype(str).str.strip().str.lower()
+    if not (human_labels == "unknown").all():
+        raise ValueError(
+            "reviewed-unclassifiable labels must use human_label=unknown"
+        )
+    if not (outcomes == "unresolved").all():
+        raise ValueError(
+            "reviewed-unclassifiable labels must use review_outcome=unresolved"
+        )
+
+    for column in ("case_id", "reviewer_id", "reviewed_at", "evidence_refs", "review_notes"):
+        if labels[column].astype(str).str.strip().eq("").any():
+            raise ValueError(
+                f"reviewed-unclassifiable labels contain an empty {column}"
+            )
+
+    canonical_domains: List[str] = []
+    for domain in labels["domain"].astype(str):
+        result = canonicalize_domain(domain)
+        if not result.is_valid or not result.domain_ascii:
+            raise ValueError(
+                f"invalid reviewed-unclassifiable domain: {domain!r}"
+            )
+        canonical_domains.append(result.domain_ascii)
+    if len(canonical_domains) != len(set(canonical_domains)):
+        raise ValueError("reviewed-unclassifiable labels contain duplicate domains")
+
+    with open(labels_path, "rb") as handle:
+        labels_sha256 = hashlib.sha256(handle.read()).hexdigest()
+    return set(canonical_domains), {
+        "labels_path": labels_path,
+        "labels_sha256": labels_sha256,
+        "reviewed_cases": len(canonical_domains),
+        "required_human_label": "unknown",
+        "required_review_outcome": "unresolved",
+    }
+
+
+def build_benign_subset_audit(
+    df_test: pd.DataFrame,
+    calibrated_probs_test: np.ndarray,
+    candidate_mask: np.ndarray,
+    threshold: float,
+    reviewed_unclassifiable_domains: Set[str],
+    reviewed_unclassifiable_meta: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Measure SAFE VN FPR after separating reviewed inactive/unclassifiable rows."""
+    y_test = df_test["label"].to_numpy().astype(int)
+    ascii_domains = df_test["domain_ascii"].astype(str).to_numpy()
+    safe_vn_raw_mask = (
+        df_test["domain"].str.contains(r"\.vn$", regex=True).to_numpy()
+        & (y_test == 0)
+    )
+    reviewed_mask = safe_vn_raw_mask & np.isin(
+        ascii_domains, list(reviewed_unclassifiable_domains)
+    )
+    matched_domains = set(ascii_domains[reviewed_mask])
+    unmatched_domains = sorted(reviewed_unclassifiable_domains - matched_domains)
+    if unmatched_domains:
+        raise ValueError(
+            "reviewed-unclassifiable domains missing from SAFE VN benign test cohort: "
+            f"{unmatched_domains}"
+        )
+
+    safe_vn_mask = safe_vn_raw_mask & ~reviewed_mask
+    safe_vn_candidate_raw_mask = safe_vn_raw_mask & candidate_mask
+    safe_vn_candidate_mask = safe_vn_mask & candidate_mask
+    gov_edu_raw_mask = (
+        df_test["domain"].str.contains(r"\.(?:gov|edu)\.vn$", regex=True).to_numpy()
+        & (y_test == 0)
+    )
+    gov_edu_mask = gov_edu_raw_mask & ~reviewed_mask
+
+    safe_vn_total = int(np.sum(safe_vn_mask))
+    safe_vn_fp = int(
+        np.sum(calibrated_probs_test[safe_vn_mask] >= threshold)
+    )
+    safe_vn_candidate_total = int(np.sum(safe_vn_candidate_mask))
+    safe_vn_candidate_fp = int(
+        np.sum(calibrated_probs_test[safe_vn_candidate_mask] >= threshold)
+    )
+    gov_edu_total = int(np.sum(gov_edu_mask))
+    gov_edu_fp = int(
+        np.sum(calibrated_probs_test[gov_edu_mask] >= threshold)
+    )
+
+    reviewed_rows = df_test.loc[reviewed_mask, ["domain", "domain_ascii"]].copy()
+    reviewed_rows["probability"] = calibrated_probs_test[reviewed_mask]
+    reviewed_rows["would_block"] = reviewed_rows["probability"] >= threshold
+    reviewed_predictions = reviewed_rows.sort_values(
+        "probability", ascending=False
+    ).to_dict(orient="records")
+
+    return {
+        "threshold": threshold,
+        "safe_vn_raw_benign_count": int(np.sum(safe_vn_raw_mask)),
+        "safe_vn_benign_count": safe_vn_total,
+        "safe_vn_false_positives": safe_vn_fp,
+        "safe_vn_fpr": float(safe_vn_fp / safe_vn_total) if safe_vn_total else 0.0,
+        "safe_vn_runtime_candidate_raw_count": int(
+            np.sum(safe_vn_candidate_raw_mask)
+        ),
+        "safe_vn_runtime_candidate_count": safe_vn_candidate_total,
+        "safe_vn_runtime_candidate_false_positives": safe_vn_candidate_fp,
+        "safe_vn_runtime_candidate_fpr": (
+            float(safe_vn_candidate_fp / safe_vn_candidate_total)
+            if safe_vn_candidate_total
+            else 0.0
+        ),
+        "gov_edu_vn_raw_benign_count": int(np.sum(gov_edu_raw_mask)),
+        "gov_edu_vn_benign_count": gov_edu_total,
+        "gov_edu_vn_false_positives": gov_edu_fp,
+        "gov_edu_vn_fpr": float(gov_edu_fp / gov_edu_total) if gov_edu_total else 0.0,
+        "reviewed_unclassifiable": {
+            **reviewed_unclassifiable_meta,
+            "matched_test_cases": int(np.sum(reviewed_mask)),
+            "runtime_candidate_cases": int(
+                np.sum(reviewed_mask & candidate_mask)
+            ),
+            "would_block": int(
+                np.sum(calibrated_probs_test[reviewed_mask] >= threshold)
+            ),
+            "predictions": reviewed_predictions,
+        },
+    }
 
 
 def run_evaluation(config_path: str):
@@ -150,37 +300,59 @@ def run_evaluation(config_path: str):
         if os.path.exists(hard_cases_path)
         else 0
     )
-    gov_edu_mask = df_test["domain"].str.contains(r"\.(?:gov|edu)\.vn$", regex=True) & (df_test["label"] == 0)
-    gov_edu_total = int(np.sum(gov_edu_mask))
-    gov_edu_fp = int(np.sum(calibrated_probs_test[gov_edu_mask] >= recommended_threshold)) if gov_edu_total > 0 else 0
-
-    safe_vn_mask = df_test["domain"].str.contains(r"\.vn$", regex=True) & (df_test["label"] == 0)
-    safe_vn_total = int(np.sum(safe_vn_mask))
-    safe_vn_fp = int(np.sum(calibrated_probs_test[safe_vn_mask] >= recommended_threshold)) if safe_vn_total > 0 else 0
-    safe_vn_candidate_mask = safe_vn_mask.to_numpy() & cand_mask
-    safe_vn_candidate_total = int(np.sum(safe_vn_candidate_mask))
-    safe_vn_candidate_fp = int(
-        np.sum(
-            calibrated_probs_test[safe_vn_candidate_mask]
-            >= recommended_threshold
-        )
-    ) if safe_vn_candidate_total > 0 else 0
-
-    hard_cases_audit = {
-        "hard_cases_total": hard_cases_count,
-        "threshold": recommended_threshold,
-        "safe_vn_benign_count": safe_vn_total,
-        "safe_vn_false_positives": safe_vn_fp,
-        "safe_vn_fpr": float(safe_vn_fp / safe_vn_total) if safe_vn_total > 0 else 0.0,
-        "safe_vn_runtime_candidate_count": safe_vn_candidate_total,
-        "safe_vn_runtime_candidate_false_positives": safe_vn_candidate_fp,
-        "safe_vn_runtime_candidate_fpr": float(safe_vn_candidate_fp / safe_vn_candidate_total) if safe_vn_candidate_total > 0 else 0.0,
-        "gov_edu_vn_benign_count": gov_edu_total,
-        "gov_edu_vn_false_positives": gov_edu_fp,
-        "gov_edu_vn_fpr": float(gov_edu_fp / gov_edu_total) if gov_edu_total > 0 else 0.0,
+    reviewed_unclassifiable_domains: Set[str] = set()
+    reviewed_unclassifiable_meta: Dict[str, Any] = {
+        "reviewed_cases": 0,
+        "status": "not_configured",
     }
-    print(f"    SAFE VN Benign FPR: {hard_cases_audit['safe_vn_fpr']:.6f} ({safe_vn_fp}/{safe_vn_total})", flush=True)
-    print(f"    gov.vn/edu.vn Benign FPR: {hard_cases_audit['gov_edu_vn_fpr']:.6f} ({gov_edu_fp}/{gov_edu_total})", flush=True)
+    reviewed_unclassifiable_value = evaluation_cfg.get(
+        "reviewed_unclassifiable_labels"
+    )
+    if reviewed_unclassifiable_value:
+        reviewed_unclassifiable_path = (
+            reviewed_unclassifiable_value
+            if os.path.isabs(reviewed_unclassifiable_value)
+            else os.path.join(BASE_DIR, reviewed_unclassifiable_value)
+        )
+        reviewed_unclassifiable_domains, reviewed_unclassifiable_meta = (
+            load_reviewed_unclassifiable_domains(reviewed_unclassifiable_path)
+        )
+
+    hard_cases_audit = build_benign_subset_audit(
+        df_test,
+        calibrated_probs_test,
+        cand_mask,
+        recommended_threshold,
+        reviewed_unclassifiable_domains,
+        reviewed_unclassifiable_meta,
+    )
+    hard_cases_audit["hard_cases_total"] = hard_cases_count
+    print(
+        "    SAFE VN Benign FPR: "
+        f"{hard_cases_audit['safe_vn_fpr']:.6f} "
+        f"({hard_cases_audit['safe_vn_false_positives']}/"
+        f"{hard_cases_audit['safe_vn_benign_count']})",
+        flush=True,
+    )
+    print(
+        "    SAFE VN Candidate FPR: "
+        f"{hard_cases_audit['safe_vn_runtime_candidate_fpr']:.6f} "
+        f"({hard_cases_audit['safe_vn_runtime_candidate_false_positives']}/"
+        f"{hard_cases_audit['safe_vn_runtime_candidate_count']})",
+        flush=True,
+    )
+    print(
+        "    Reviewed inactive/unclassifiable exclusions: "
+        f"{hard_cases_audit['reviewed_unclassifiable']['matched_test_cases']}",
+        flush=True,
+    )
+    print(
+        "    gov.vn/edu.vn Benign FPR: "
+        f"{hard_cases_audit['gov_edu_vn_fpr']:.6f} "
+        f"({hard_cases_audit['gov_edu_vn_false_positives']}/"
+        f"{hard_cases_audit['gov_edu_vn_benign_count']})",
+        flush=True,
+    )
 
     # Human-reviewed false positives are a frozen challenge set.  Their
     # registrable groups must be absent from every train/val/cal/test partition.

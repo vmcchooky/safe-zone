@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-Model v1 đưa toàn bộ FQDN vào character TF-IDF nên vocabulary học được n-gram của public suffix và nguồn dữ liệu, trong đó feature liên quan `.vn` có contribution lớn trên ba false positive đã được owner xác nhận. Candidate v2 loại public suffix theo Mozilla Public Suffix List khỏi riêng TF-IDF input nhưng giữ nguyên 22 handcrafted features. Training bổ sung hai tầng benign proxy: 11.115 ML-candidate từ source Việt Nam checksum-pinned có weight `1,5`, trong đó 252 record có evidence host chính thức nhận weight `3,0`. Ba domain human-reviewed bị loại theo registrable-domain group khỏi train, validation, calibration và test trước khi trở thành frozen challenge. Tại operating point `0,92` chọn trên validation, held-out runtime-candidate FPR giảm từ `2,3990%` xuống `1,6835%`, còn recall tăng từ `75,3996%` lên `77,0735%`; frozen challenge giảm từ `3/3` false positive xuống `0/3`. Candidate vẫn tạo `4/1.404` false positive proxy trên SAFE VN runtime candidates, vì vậy kết quả chưa mở staging canary hoặc `enforce`.
+Model v1 đưa toàn bộ FQDN vào character TF-IDF nên vocabulary học được n-gram của public suffix và nguồn dữ liệu, trong đó feature liên quan `.vn` có contribution lớn trên ba false positive đã được owner xác nhận. Candidate v2 loại public suffix theo Mozilla Public Suffix List khỏi riêng TF-IDF input nhưng giữ nguyên 22 handcrafted features. Training bổ sung hai tầng benign proxy: 11.115 ML-candidate từ source Việt Nam checksum-pinned có weight `1,5`, trong đó 252 record có evidence host chính thức nhận weight `3,0`. Ba domain human-reviewed bị loại theo registrable-domain group khỏi train, validation, calibration và test trước khi trở thành frozen challenge. Tại operating point `0,92` chọn trên validation, held-out runtime-candidate FPR giảm từ `2,3990%` xuống `1,6835%`, còn recall tăng từ `75,3996%` lên `77,0735%`; frozen challenge giảm từ `3/3` false positive xuống `0/3`. Owner review sau đó xác định bốn SAFE VN candidate còn lại đều chưa cấp phát và trả NXDOMAIN, nên chúng được ghi `unknown/unresolved` và tách khỏi benign FPR: audit hiệu chỉnh đạt `0/1.400` runtime-candidate FP mà không retrain model. Candidate chưa mở staging hoặc `enforce`; bước còn lại là representative regression replay và phê duyệt của owner.
 
 ## Sơ đồ Tổng quan
 
@@ -21,7 +21,9 @@ flowchart LR
     H --> I[Platt calibration]
     I --> J[Validation chọn threshold 0,92]
     J --> K[Test + frozen challenge + Go replay]
-    K --> L[NO-GO: còn 4 SAFE VN candidate FP]
+    K --> L[Review 4 inactive domains]
+    L --> M[SAFE VN candidate audit: 0/1.400 FP]
+    M --> N[Chờ representative replay và owner approval]
 ```
 
 ## Candidate A+B
@@ -44,7 +46,7 @@ flowchart LR
 | Frozen challenge | Loại cả registrable-domain group khỏi bốn partition | Chỉ xóa exact row khỏi train; đưa case vào train rồi test lại | Group exclusion ngăn biến thể subdomain hoặc duplicate source rò rỉ vào model |
 | Threshold | Chọn `0,92` trên validation vì đồng thời giảm candidate FPR và tăng candidate recall so với v1/`0,85` | Giữ `0,85`; chọn threshold theo test; tối ưu accuracy tổng | Xác suất sau retraining/calibration không giữ nguyên scale; test phải tiếp tục là held-out audit |
 | Model family | Giữ LightGBM 534 features | Transformer/LLM; deep character CNN | Failure mode nằm ở input bias và label weighting; thay model family tăng latency và deployment complexity trước khi chứng minh lợi ích |
-| Trạng thái rollout | Giữ candidate private và NO-GO | Provision ngay vào local staging; bật canary | SAFE VN runtime-candidate audit còn `4/1.404` false positive proxy và threshold chưa được owner phê duyệt |
+| Trạng thái rollout | Giữ candidate private cho đến khi representative replay và owner approval hoàn tất | Provision ngay vào local staging; bật canary | SAFE VN runtime-candidate audit đã đạt `0/1.400` sau review, nhưng một proxy cohort không thay thế regression replay hoặc phê duyệt rollout |
 
 ### Cách thức Thực hiện (Implementation Details)
 
@@ -54,9 +56,11 @@ flowchart LR
 
 `ml/src/train_lightgbm.py` truyền `sample_weight` cho Logistic Regression và LightGBM, đồng thời truyền validation weights vào early stopping. `ml/src/evaluate_model.py` báo riêng full-test metrics, runtime candidate metrics, SAFE VN candidate metrics và frozen challenge; các mẫu số không bị trộn. `internal/analysis/features.go` hỗ trợ song song contract v1/v2 và có test suffix invariance giữa `.com`/`.net`.
 
+Addendum ngày 2026-08-24 ghi bốn domain theo đúng quyết định human-in-the-loop: `human_label=unknown`, `review_outcome=unresolved`, evidence là kết quả chưa cấp phát từ cổng tra cứu tên miền `.vn` và DNS NXDOMAIN. Evaluator xác minh checksum, trường review bắt buộc, canonical domain duy nhất và exact match với SAFE VN benign test cohort. Bốn row vẫn xuất hiện trong report cùng probability và `would_block`, nhưng được tách khỏi riêng SAFE VN benign denominator; candidate-cohort tổng, partition, model weights và bundle không thay đổi. Cách xử lý này tránh biến whitelist lịch sử hoặc domain chết thành ground truth benign.
+
 Exporter private từng bị Go loader từ chối vì `SHA256SUMS` băm CRLF trong khi runtime chuẩn hóa LF. `ml/src/export_artifacts.py` hiện canonicalize CRLF thành LF trước SHA-256; regression test chứng minh file CRLF và LF tạo cùng digest. Policy timestamp được pin qua candidate config nên hai lần export liên tiếp tạo cùng `SHA256SUMS`. Replay service đặt `DisableAdblockSync=true`, ngăn background feed HTTP trong phép đo local cô lập. Các thay đổi không sửa `ml/models/v1/` hoặc signed evidence.
 
-Codex (GPT-5) thực hiện khảo sát contribution, sửa feature/training/runtime contract, chạy rebuild, calibration, evaluation và replay theo chiến lược contract-first rồi leakage-first. Số lượng subagent là `0`; không áp dụng bỏ phiếu. Cơ chế kiểm soát chất lượng gồm unit test Python/Go, artifact validator, checksum gate, group-disjoint assertion, held-out evaluation và core/DNS replay. Human-in-the-loop đã cung cấp ba nhãn benign/false-positive và vẫn chịu trách nhiệm phê duyệt threshold hoặc rollout; AI agent không nâng benign proxy thành human label.
+Codex (GPT-5) thực hiện khảo sát contribution, sửa feature/training/runtime contract, chạy rebuild, calibration, evaluation và replay theo chiến lược contract-first rồi leakage-first. Số lượng subagent là `0`; không áp dụng bỏ phiếu. Cơ chế kiểm soát chất lượng gồm unit test Python/Go, artifact validator, checksum gate, group-disjoint assertion, held-out evaluation và core/DNS replay. Human-in-the-loop đã cung cấp ba nhãn benign/false-positive cùng bốn quyết định unknown/unresolved; owner vẫn chịu trách nhiệm phê duyệt threshold hoặc rollout. AI agent không nâng benign proxy hay domain bất hoạt thành human-labelled benign.
 
 Quy trình tái lập local:
 
@@ -112,8 +116,10 @@ Threshold `0,92` giảm validation candidate FPR `1,0877` điểm phần trăm v
 | Runtime-candidate recall | 10.991/14.577 = 75,3996% | 11.235/14.577 = 77,0735% | tăng 1,6739 điểm % |
 | Full-test FPR | 2,1572% | 0,9796% | giảm 1,1777 điểm % |
 | Full-test recall | 61,9551% | 52,5167% | giảm 9,4384 điểm %; không phải runtime candidate denominator |
-| SAFE VN toàn tập | 0/44.840 | 6/44.840 = 0,0134% | regression 6 proxy FP |
-| SAFE VN runtime candidates | 0/1.404 | 4/1.404 = 0,2849% | regression 4 proxy FP |
+| SAFE VN toàn tập, raw proxy | 0/44.840 | 6/44.840 = 0,0134% | gồm 4 domain bất hoạt chưa cấp phát |
+| SAFE VN toàn tập, sau review | 0/44.840 | 2/44.836 = 0,0045% | tách 4 unknown/unresolved; không đổi nhãn model |
+| SAFE VN runtime candidates, raw proxy | 0/1.404 | 4/1.404 = 0,2849% | cả 4 đều chưa cấp phát và NXDOMAIN |
+| SAFE VN runtime candidates, sau review | 0/1.404 | 0/1.400 = 0% | đạt zero-event trên cohort đủ điều kiện hiện tại |
 | `gov.vn`/`edu.vn` benign | 0/5.247 | 0/5.247 | không đổi |
 | Frozen owner-reviewed challenge | 3/3 FP | 0/3 FP | failure mode mục tiêu đã được xử lý |
 
@@ -138,10 +144,10 @@ Ba challenge probabilities của v2 lần lượt là `0,037593`, `0,034868` và
 
 ### Giới hạn và bước tối ưu tiếp theo
 
-- Bốn SAFE VN runtime candidates còn vượt `0,92`; candidate chưa đạt critical benign zero-event gate đã dùng cho v1. Cần tạo một supplement mới chỉ từ bốn case này nếu evidence/human review xác nhận benign, sau đó giữ supplement đó frozen thay vì đưa trực tiếp vào train.
+- Bốn SAFE VN runtime candidates vượt `0,92` đã được owner xác định là chưa cấp phát/NXDOMAIN. Chúng không phải false positive đã xác nhận và không được đưa vào train; addendum giữ chúng ở trạng thái `unknown/unresolved` để audit có thể tái kiểm chứng.
 - `terms_review_id` của source vẫn là `pending-review`. Weight `1,5` giới hạn ảnh hưởng của tier này nhưng không giải quyết terms provenance cho production release.
 - Full-test recall giảm vì model không được gọi cho lexical non-candidates trong runtime. Model selection phải ưu tiên candidate denominator, nhưng lexical gate vẫn cần audit riêng để phát hiện malicious non-candidate false negatives.
-- Lần replay hiện dùng classifier/service objects local, chưa provision bundle vào Docker staging. Sau khi xử lý bốn SAFE VN cases và chạy representative regression, owner mới xem xét cho phép rebuild/restart staging ở `shadow`; `enforce` vẫn cần xác nhận riêng.
+- Lần replay hiện dùng classifier/service objects local, chưa provision bundle vào Docker staging. Representative regression phải được chạy lại trên addendum và commit mới trước khi owner xem xét cho phép rebuild/restart staging ở `shadow`; `enforce` vẫn cần xác nhận riêng.
 - Model family chưa cần đổi. Nếu hard-negative feedback tiếp tục không giảm critical benign FPR, phương án tiếp theo là thêm một feature contract v3 có suffix category được regularize rõ ràng hoặc adversarial source balancing; không đưa public suffix trở lại TF-IDF vocabulary.
 
 ### Liên kết Artifacts
@@ -154,6 +160,7 @@ Ba challenge probabilities của v2 lần lượt là `0,037593`, `0,034868` và
 - Evaluation: `ml/src/evaluate_model.py`
 - Runtime transform: `internal/analysis/features.go`
 - Frozen challenge: `ml/evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/`
+- Reviewed stale-domain addendum: `ml/evidence/whitelist-proxy-review/run-20260824-owner-reviewed-stale-addendum/`
 - Private generated root: `ml/data/derived/v2-suffix-debiased-hard-negatives/` (Git-ignored)
 
 ---
@@ -162,4 +169,5 @@ Ba challenge probabilities của v2 lần lượt là `0,037593`, `0,034868` và
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-24 | Ghi nhận 4 domain chưa cấp phát/NXDOMAIN, tách unknown/unresolved khỏi SAFE VN benign FPR và audit lại đạt 0/1.400 runtime-candidate FP | Codex (GPT-5) |
 | 2026-08-23 | Triển khai suffix-debiased TF-IDF, tiered hard-negative, frozen challenge, threshold selection và Go bundle replay | Codex (GPT-5) |

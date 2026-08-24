@@ -14,6 +14,10 @@ import pytest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.calibrate_model import compute_expected_calibration_error
+from src.evaluate_model import (
+    build_benign_subset_audit,
+    load_reviewed_unclassifiable_domains,
+)
 from src.export_artifacts import compute_file_sha256
 from src.train_lightgbm import apply_training_weight_policy, evaluate_predictions
 
@@ -91,3 +95,69 @@ def test_bundle_hash_is_canonical_across_windows_and_unix_newlines(tmp_path):
     crlf.write_bytes(b'{\r\n  "ok": true\r\n}\r\n')
     lf.write_bytes(b'{\n  "ok": true\n}\n')
     assert compute_file_sha256(crlf) == compute_file_sha256(lf)
+
+
+def test_reviewed_unclassifiable_labels_require_unknown_unresolved(tmp_path):
+    labels_path = tmp_path / "labels.csv"
+    frame = pd.DataFrame(
+        [
+            {
+                "case_id": "stale-0001",
+                "domain": "Expired.Example.VN",
+                "human_label": "unknown",
+                "review_outcome": "unresolved",
+                "reviewer_id": "reviewer.test",
+                "reviewed_at": "2026-08-24T10:18:33+07:00",
+                "evidence_refs": "evidence/expired.example.vn.md",
+                "review_notes": "Registry reports unallocated and DNS returns NXDOMAIN.",
+            }
+        ]
+    )
+    frame.to_csv(labels_path, index=False)
+
+    domains, metadata = load_reviewed_unclassifiable_domains(str(labels_path))
+
+    assert domains == {"expired.example.vn"}
+    assert metadata["reviewed_cases"] == 1
+    assert len(metadata["labels_sha256"]) == 64
+
+    frame.loc[0, "human_label"] = "benign"
+    frame.to_csv(labels_path, index=False)
+    with pytest.raises(ValueError, match="human_label=unknown"):
+        load_reviewed_unclassifiable_domains(str(labels_path))
+
+
+def test_reviewed_unclassifiable_rows_are_separated_from_safe_vn_fpr():
+    frame = pd.DataFrame(
+        [
+            {"domain": "stale.vn", "domain_ascii": "stale.vn", "label": 0},
+            {"domain": "active.vn", "domain_ascii": "active.vn", "label": 0},
+            {"domain": "pass.vn", "domain_ascii": "pass.vn", "label": 0},
+            {
+                "domain": "agency.gov.vn",
+                "domain_ascii": "agency.gov.vn",
+                "label": 0,
+            },
+            {"domain": "malicious.vn", "domain_ascii": "malicious.vn", "label": 1},
+        ]
+    )
+    probabilities = np.array([0.95, 0.94, 0.10, 0.05, 0.99])
+    candidate_mask = np.array([True, True, True, True, True])
+
+    audit = build_benign_subset_audit(
+        frame,
+        probabilities,
+        candidate_mask,
+        0.92,
+        {"stale.vn"},
+        {"reviewed_cases": 1},
+    )
+
+    assert audit["safe_vn_raw_benign_count"] == 4
+    assert audit["safe_vn_benign_count"] == 3
+    assert audit["safe_vn_false_positives"] == 1
+    assert audit["safe_vn_runtime_candidate_raw_count"] == 4
+    assert audit["safe_vn_runtime_candidate_count"] == 3
+    assert audit["safe_vn_runtime_candidate_false_positives"] == 1
+    assert audit["reviewed_unclassifiable"]["matched_test_cases"] == 1
+    assert audit["reviewed_unclassifiable"]["would_block"] == 1

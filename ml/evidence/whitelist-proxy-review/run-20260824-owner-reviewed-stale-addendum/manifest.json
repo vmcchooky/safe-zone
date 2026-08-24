@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "archive_type": "owner_reviewed_whitelist_proxy_stale_domain_addendum",
+  "created_at": "2026-08-24T10:18:33+07:00",
+  "status": "audited_unclassifiable_excluded_from_safe_vn_fpr",
+  "source_commit": "f7966913b3965866d9b7f5b96ed9e0cabf582572",
+  "model": {
+    "version": "2.0.0-candidate",
+    "revision": "97b2ef1f3f6e77e043b3c26502a919f69fd2ca225140a3b13f4dfbafea3aa691",
+    "threshold": 0.92,
+    "bundle_sha256s_sha256": "216f4389f168a72828ceef5e1abcd7d5c8044e876d9651905042a4e22d328d40"
+  },
+  "review": {
+    "reviewer_id": "reviewer.vmc",
+    "owner": "Vo Manh Cuong - Chooky",
+    "reviewed_at": "2026-08-24T10:18:33+07:00",
+    "decision": "unclassifiable_currently_inactive",
+    "human_label": "unknown",
+    "review_outcome": "unresolved",
+    "case_count": 4,
+    "attestation_type": "typed_human_decision_not_cryptographic_signature"
+  },
+  "evidence": {
+    "official_registry_url": "https://tracuutenmien.gov.vn/tra-cuu-thong-tin-ten-mien",
+    "official_registry_result": "unallocated",
+    "dns_result": "NXDOMAIN",
+    "collection_method": "manual_human_review_reported_in_codex_task"
+  },
+  "audit": {
+    "private_model_report_sha256": "4d2772f5f59aca4efbd76305c3f029510b6e79b5ec3fcc4ae5ae8eea83ea14b1",
+    "safe_vn_raw_benign_count": 44840,
+    "reviewed_unclassifiable_excluded": 4,
+    "safe_vn_benign_count": 44836,
+    "safe_vn_false_positives": 2,
+    "safe_vn_fpr": 0.000044607012222321346,
+    "safe_vn_runtime_candidate_raw_count": 1404,
+    "safe_vn_runtime_candidate_count": 1400,
+    "safe_vn_runtime_candidate_false_positives": 0,
+    "safe_vn_runtime_candidate_fpr": 0.0,
+    "overall_candidate_metrics_modified": false,
+    "training_data_modified": false,
+    "model_retrained": false
+  },
+  "files": [
+    {
+      "path": "ARCHIVE.md",
+      "sha256": "2355874350a789f3b6105964742aabcbb9f01b7625201ea4f7b55e20f6a96b7c"
+    },
+    {
+      "path": "REVIEW-DECISION.md",
+      "sha256": "17c76b35bbfa65551ce45517cb818b3ea8f4f6dfb0c02d3f4199aeb46ed88efc"
+    },
+    {
+      "path": "labels.csv",
+      "sha256": "063ecc780970d92f89c2d9c1106df3babfa5310e8931288dd516f7701f7d2c7d"
+    },
+    {
+      "path": "evidence/mail.goldenparktower.info.vn.md",
+      "sha256": "2aba8ab37f7b8747e1ddd52c16f6fc945630c006b5a7381bd8cbd99689668aee"
+    },
+    {
+      "path": "evidence/oligodermieusageprofessionnel.vn.md",
+      "sha256": "51fd5d546640c1614b01a699f616eb31b9c31463bb48120b6cdc594ea5e083cb"
+    },
+    {
+      "path": "evidence/webmail.goldenparktower.info.vn.md",
+      "sha256": "0b67bd6ad845025b293437f23215bb6edf834f7c2a7ad3d9c01f2e90e4a2a801"
+    },
+    {
+      "path": "evidence/wirecuttingstrippingmachine.vn.md",
+      "sha256": "8eee04b99848f8a02bc5608e093b58188a0802fd0527dffe5eda85f73024d508"
+    }
+  ],
+  "authorization": {
+    "runtime_allow_override_created": false,
+    "prior_evidence_modified": false,
+    "deploy_authorized": false,
+    "restart_authorized": false,
+    "enforce_authorized": false
+  },
+  "remaining_gate": "run representative regression replay and obtain owner approval before any staging shadow restart"
+}

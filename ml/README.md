@@ -21,8 +21,8 @@ from every model partition. Generated matrices and the candidate bundle remain
 under the Git-ignored `ml/data/derived/v2-suffix-debiased-hard-negatives/`
 directory. The candidate is not provisioned to staging and does not authorize
 `enforce`; see
-`docs/research/ml/suffix-debiased-hard-negative-candidate.md` for metrics and
-the remaining SAFE VN false-positive blocker.
+`docs/research/ml/suffix-debiased-hard-negative-candidate.md` for metrics,
+reviewed stale-domain exclusions, and the remaining representative replay gate.
 
 ## Runtime configuration
 
