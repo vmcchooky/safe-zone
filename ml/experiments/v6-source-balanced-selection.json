@@ -1,0 +1,339 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "40571acb0555795e5f17150c1eb88f53826ef462c78c0f2115027eec1ffcbbcb",
+  "selection_inputs": [
+    "train",
+    "calibration",
+    "validation",
+    "v5_development"
+  ],
+  "forbidden_inputs_read": [],
+  "wall_time_seconds": 240.83,
+  "model": {
+    "family": "LightGBM GBDT",
+    "best_iteration": 1000,
+    "features": 534,
+    "monotone_feature_policy": {
+      "enabled": true,
+      "increasing_features": [
+        "tld_risk_score"
+      ],
+      "method": "intermediate"
+    }
+  },
+  "baseline_weighting": {
+    "source_proxy_enabled": true,
+    "source_proxy_rows": 11115,
+    "evidence_hard_negative_rows": 252,
+    "time_forward_hard_positive_enabled": true,
+    "time_forward_hard_positive_rows": 1232,
+    "time_forward_hard_positive_weight": 1.5,
+    "weighted_rows": 12347,
+    "max_weight": 3.0,
+    "effective_train_weight": 1937169.5
+  },
+  "source_balance": {
+    "exponent": 0.5,
+    "raw_factor_clip": [
+      1.0,
+      3.0
+    ],
+    "maximum_effective_weight": 10.0,
+    "effective_train_weight": 1937169.5000000002,
+    "maximum_observed_weight": 3.259704233044097,
+    "minimum_observed_weight": 0.6863751225426405,
+    "class_weight_mass": [
+      {
+        "label": 0,
+        "baseline": 957080.5,
+        "balanced": 957080.5
+      },
+      {
+        "label": 1,
+        "baseline": 980089.0,
+        "balanced": 980089.0000000002
+      }
+    ],
+    "sources": [
+      {
+        "label": 0,
+        "source": "top_1m",
+        "rows": 574032,
+        "raw_factor": 1.0,
+        "normalized_factor": 0.7966840955766173,
+        "baseline_weight_mass": 574032.0,
+        "balanced_weight_mass": 457322.1647520369
+      },
+      {
+        "label": 0,
+        "source": "tranco",
+        "rows": 68514,
+        "raw_factor": 2.8945322317006243,
+        "normalized_factor": 2.30602779312978,
+        "baseline_weight_mass": 68514.0,
+        "balanced_weight_mass": 157995.1882184937
+      },
+      {
+        "label": 0,
+        "source": "vietnam_whitelist",
+        "rows": 308599,
+        "raw_factor": 1.363863146903841,
+        "normalized_factor": 1.0865680776813658,
+        "baseline_weight_mass": 314534.5,
+        "balanced_weight_mass": 341763.1470294695
+      },
+      {
+        "label": 1,
+        "source": "hagezi",
+        "rows": 566267,
+        "raw_factor": 1.0,
+        "normalized_factor": 0.6863751225426405,
+        "baseline_weight_mass": 566267.0,
+        "balanced_weight_mass": 388671.5815168535
+      },
+      {
+        "label": 1,
+        "source": "openphish",
+        "rows": 155,
+        "raw_factor": 3.0,
+        "normalized_factor": 2.0591253676279218,
+        "baseline_weight_mass": 155.0,
+        "balanced_weight_mass": 319.1644319823278
+      },
+      {
+        "label": 1,
+        "source": "phishing_army",
+        "rows": 93349,
+        "raw_factor": 2.462951113121408,
+        "normalized_factor": 1.6905083720852394,
+        "baseline_weight_mass": 93349.0,
+        "balanced_weight_mass": 157807.26602578504
+      },
+      {
+        "label": 1,
+        "source": "phishtank",
+        "rows": 24087,
+        "raw_factor": 3.0,
+        "normalized_factor": 2.0591253676279218,
+        "baseline_weight_mass": 24087.0,
+        "balanced_weight_mass": 49598.15273005374
+      },
+      {
+        "label": 1,
+        "source": "phishtank_time_forward",
+        "rows": 1232,
+        "raw_factor": 3.0,
+        "normalized_factor": 2.0591253676279218,
+        "baseline_weight_mass": 1848.0,
+        "balanced_weight_mass": 3805.2636793763986
+      },
+      {
+        "label": 1,
+        "source": "stevenblack",
+        "rows": 7706,
+        "raw_factor": 3.0,
+        "normalized_factor": 2.0591253676279218,
+        "baseline_weight_mass": 7706.0,
+        "balanced_weight_mass": 15867.62008294076
+      },
+      {
+        "label": 1,
+        "source": "tempest_phishing",
+        "rows": 230257,
+        "raw_factor": 1.5682099521281025,
+        "normalized_factor": 1.076380298064515,
+        "baseline_weight_mass": 230257.0,
+        "balanced_weight_mass": 247844.09829144104
+      },
+      {
+        "label": 1,
+        "source": "urlhaus",
+        "rows": 1620,
+        "raw_factor": 3.0,
+        "normalized_factor": 2.0591253676279218,
+        "baseline_weight_mass": 1620.0,
+        "balanced_weight_mass": 3335.7830955572326
+      },
+      {
+        "label": 1,
+        "source": "vietnam_blacklist",
+        "rows": 54800,
+        "raw_factor": 3.0,
+        "normalized_factor": 2.0591253676279218,
+        "baseline_weight_mass": 54800.0,
+        "balanced_weight_mass": 112840.07014601008
+      }
+    ]
+  },
+  "control": {
+    "validation": {
+      "rows": 273799,
+      "binary_logloss": 0.2865261827829348,
+      "runtime_candidate_benign_rows": 11032,
+      "runtime_candidate_malicious_rows": 15324,
+      "runtime_candidate_false_positives": 238,
+      "runtime_candidate_true_positives": 11529,
+      "runtime_candidate_fpr": 0.021573604060913704,
+      "runtime_candidate_recall": 0.7523492560689116
+    },
+    "development": {
+      "rows": 349,
+      "true_positives": 196,
+      "recall": 0.5616045845272206,
+      "mean_probability": 0.824524526365347,
+      "median_probability": 0.9343876604425465
+    },
+    "malicious_sources": {
+      "minimum_source_rows": 50,
+      "eligible_source_count": 6,
+      "macro_recall": 0.579040528247844,
+      "worst_source_recall": 0.05660377358490566,
+      "per_source": [
+        {
+          "source": "hagezi",
+          "rows": 8391,
+          "true_positives": 7257,
+          "recall": 0.8648552020021452
+        },
+        {
+          "source": "openphish",
+          "rows": 4,
+          "true_positives": 2,
+          "recall": 0.5
+        },
+        {
+          "source": "phishing_army",
+          "rows": 920,
+          "true_positives": 554,
+          "recall": 0.6021739130434782
+        },
+        {
+          "source": "phishtank",
+          "rows": 373,
+          "true_positives": 260,
+          "recall": 0.6970509383378016
+        },
+        {
+          "source": "stevenblack",
+          "rows": 53,
+          "true_positives": 3,
+          "recall": 0.05660377358490566
+        },
+        {
+          "source": "tempest_phishing",
+          "rows": 3990,
+          "true_positives": 2432,
+          "recall": 0.6095238095238096
+        },
+        {
+          "source": "urlhaus",
+          "rows": 17,
+          "true_positives": 6,
+          "recall": 0.35294117647058826
+        },
+        {
+          "source": "vietnam_blacklist",
+          "rows": 1576,
+          "true_positives": 1015,
+          "recall": 0.6440355329949239
+        }
+      ]
+    }
+  },
+  "candidate": {
+    "validation": {
+      "rows": 273799,
+      "binary_logloss": 0.2999275620642119,
+      "runtime_candidate_benign_rows": 11032,
+      "runtime_candidate_malicious_rows": 15324,
+      "runtime_candidate_false_positives": 333,
+      "runtime_candidate_true_positives": 12003,
+      "runtime_candidate_fpr": 0.030184916606236404,
+      "runtime_candidate_recall": 0.783281127642913
+    },
+    "development": {
+      "rows": 349,
+      "true_positives": 209,
+      "recall": 0.5988538681948424,
+      "mean_probability": 0.8319237055000815,
+      "median_probability": 0.9479428350008144
+    },
+    "malicious_sources": {
+      "minimum_source_rows": 50,
+      "eligible_source_count": 6,
+      "macro_recall": 0.6317453820377953,
+      "worst_source_recall": 0.09433962264150944,
+      "per_source": [
+        {
+          "source": "hagezi",
+          "rows": 8391,
+          "true_positives": 7269,
+          "recall": 0.8662853056846621
+        },
+        {
+          "source": "openphish",
+          "rows": 4,
+          "true_positives": 2,
+          "recall": 0.5
+        },
+        {
+          "source": "phishing_army",
+          "rows": 920,
+          "true_positives": 596,
+          "recall": 0.6478260869565218
+        },
+        {
+          "source": "phishtank",
+          "rows": 373,
+          "true_positives": 296,
+          "recall": 0.7935656836461126
+        },
+        {
+          "source": "stevenblack",
+          "rows": 53,
+          "true_positives": 5,
+          "recall": 0.09433962264150944
+        },
+        {
+          "source": "tempest_phishing",
+          "rows": 3990,
+          "true_positives": 2712,
+          "recall": 0.6796992481203008
+        },
+        {
+          "source": "urlhaus",
+          "rows": 17,
+          "true_positives": 6,
+          "recall": 0.35294117647058826
+        },
+        {
+          "source": "vietnam_blacklist",
+          "rows": 1576,
+          "true_positives": 1117,
+          "recall": 0.708756345177665
+        }
+      ]
+    }
+  },
+  "gates": {
+    "validation_runtime_candidate_false_positives_not_above_control": false,
+    "validation_runtime_candidate_true_positives_not_below_control": true,
+    "validation_malicious_source_macro_recall_not_below_control": true,
+    "validation_malicious_source_worst_recall_not_below_control": true,
+    "development_true_positives_above_control": true
+  },
+  "eligible": false,
+  "artifacts": {
+    "model": {
+      "path": "data/derived/v6-source-balanced-robustness/models/domain_threat_lgbm_raw.txt",
+      "sha256": "e56c37413ee4e76ca10320f9ca23e2c672939f7bf6fe4c2cc832d8cabcb5a9ec",
+      "bytes": 3592494
+    },
+    "calibration": {
+      "path": "data/derived/v6-source-balanced-robustness/models/calibration.json",
+      "sha256": "ad112869e786d8a8070a21673b0d44993749cdf41c43ece1c18501aea9912ea3",
+      "bytes": 392
+    }
+  },
+  "decision": "NO_GO_SELECTION"
+}

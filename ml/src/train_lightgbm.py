@@ -133,6 +133,96 @@ def apply_training_weight_policy(
     }
 
 
+def apply_source_balance_policy(
+    df_train: pd.DataFrame,
+    baseline_weights: np.ndarray,
+    policy: Dict[str, Any],
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    """Balance sources within each label while preserving per-label weight mass."""
+
+    weights = np.asarray(baseline_weights, dtype=float)
+    if len(weights) != len(df_train):
+        raise ValueError("source-balance weights and training rows are not aligned")
+    if "label" not in df_train or "source" not in df_train:
+        raise ValueError("source balancing requires label and source columns")
+    if not np.all(np.isfinite(weights)) or np.any(weights <= 0):
+        raise ValueError("baseline source-balance weights must be finite and positive")
+
+    exponent = float(policy.get("exponent", 0.5))
+    raw_clip = policy.get("raw_factor_clip", [1.0, 3.0])
+    if not 0.0 < exponent <= 1.0:
+        raise ValueError("source-balance exponent must be in (0, 1]")
+    if len(raw_clip) != 2:
+        raise ValueError("source-balance raw_factor_clip must contain two values")
+    clip_min, clip_max = (float(raw_clip[0]), float(raw_clip[1]))
+    if not 0.0 < clip_min <= clip_max:
+        raise ValueError("invalid source-balance raw factor clip")
+    maximum_weight = float(policy.get("maximum_effective_weight", 10.0))
+
+    labels = df_train["label"].to_numpy().astype(int)
+    sources = df_train["source"].astype(str).to_numpy()
+    factors = np.ones(len(df_train), dtype=float)
+    source_rows = []
+    for label in sorted(np.unique(labels).tolist()):
+        label_mask = labels == label
+        label_sources, counts = np.unique(sources[label_mask], return_counts=True)
+        maximum_rows = int(np.max(counts))
+        raw_by_source = {
+            source: float(
+                np.clip((maximum_rows / int(count)) ** exponent, clip_min, clip_max)
+            )
+            for source, count in zip(label_sources, counts)
+        }
+        raw = np.asarray([raw_by_source[source] for source in sources[label_mask]])
+        baseline_mass = float(np.sum(weights[label_mask]))
+        normalization = baseline_mass / float(np.sum(weights[label_mask] * raw))
+        normalized = raw * normalization
+        factors[label_mask] = normalized
+        for source, count in zip(label_sources, counts):
+            source_mask = label_mask & (sources == source)
+            source_rows.append(
+                {
+                    "label": int(label),
+                    "source": str(source),
+                    "rows": int(count),
+                    "raw_factor": raw_by_source[source],
+                    "normalized_factor": float(raw_by_source[source] * normalization),
+                    "baseline_weight_mass": float(np.sum(weights[source_mask])),
+                    "balanced_weight_mass": float(
+                        np.sum(weights[source_mask] * factors[source_mask])
+                    ),
+                }
+            )
+
+    balanced = weights * factors
+    if not np.all(np.isfinite(balanced)) or np.any(balanced <= 0):
+        raise ValueError("source-balanced weights must be finite and positive")
+    if float(np.max(balanced)) > maximum_weight + 1e-12:
+        raise ValueError("source-balanced weights exceed the pre-registered maximum")
+
+    class_mass = []
+    for label in sorted(np.unique(labels).tolist()):
+        mask = labels == label
+        before = float(np.sum(weights[mask]))
+        after = float(np.sum(balanced[mask]))
+        if not np.isclose(before, after, rtol=1e-12, atol=1e-8):
+            raise ValueError("source balancing changed class weight mass")
+        class_mass.append(
+            {"label": int(label), "baseline": before, "balanced": after}
+        )
+
+    return balanced, {
+        "exponent": exponent,
+        "raw_factor_clip": [clip_min, clip_max],
+        "maximum_effective_weight": maximum_weight,
+        "effective_train_weight": float(np.sum(balanced)),
+        "maximum_observed_weight": float(np.max(balanced)),
+        "minimum_observed_weight": float(np.min(balanced)),
+        "class_weight_mass": class_mass,
+        "sources": source_rows,
+    }
+
+
 def apply_monotone_feature_policy(
     lgb_params: Dict[str, Any],
     training_cfg: Dict[str, Any],
