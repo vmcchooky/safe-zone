@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0.0",
+  "as_of": "2026-08-24T11:40:09Z",
+  "feed_ttl_hours": 336,
+  "stale_after_hours": 36,
+  "admission_mode": "corroborated-url-host-filter",
+  "whitelist_state": "not_simulated: local SQLite whitelist_domains has 0 rows and the configured Tranco snapshot endpoint was unavailable",
+  "labels": {
+    "path": "ml/evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv",
+    "sha256": "d03e698fdeaa5b4f107b09e3d1b85496c35252e318324f32b48c9e942dcc3844"
+  },
+  "model_predictions": {
+    "path": "ml/data/derived/threat-context-20260824/v4-representative-predictions.jsonl",
+    "sha256": "4fe75bcc24e2cf40c22be9d22063c37fc52694681c14115375925bd6486174cb",
+    "model_sha256": "66f07894728d7c64292f4fad9f8c75d2a35d863921c82bb82b06cfee74c4c2ce",
+    "threshold": 0.92
+  },
+  "expected_labels": {
+    "malicious": 34,
+    "benign": 25
+  },
+  "sources": [
+    {
+      "name": "urlhaus_recent",
+      "path": "ml/data/derived/threat-context-20260824/raw/urlhaus-recent.csv",
+      "sha256": "6fdec3b5739b2672136f829480d0213e52cfcceb7b40a68bd9e44680103a7681",
+      "source_url": "https://urlhaus.abuse.ch/downloads/csv_recent/",
+      "collected_at": "2026-08-24T11:40:08Z"
+    },
+    {
+      "name": "openphish_community",
+      "path": "ml/data/derived/threat-context-20260824/raw/openphish-community.txt",
+      "sha256": "1465805a161a868e657827aa114940ff12835beaa1c9d1ddd6586605e36f4e2a",
+      "source_url": "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+      "collected_at": "2026-08-24T11:40:07Z"
+    }
+  ]
+}

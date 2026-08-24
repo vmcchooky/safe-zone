@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0.0",
+  "as_of": "2026-08-24T12:16:34Z",
+  "study_type": "exploratory_post_hoc_ablation_not_release_evidence",
+  "candidate_policy": {
+    "name": "corroborated-url-host",
+    "authoritative_when": [
+      "explicit domain indicator",
+      "URL host with no path/query/fragment scope",
+      "IP URL host",
+      "same host observed with at least two distinct URL resources in one source snapshot"
+    ],
+    "contextual_otherwise": "singleton path-scoped URL host"
+  },
+  "input_integrity": {
+    "urlhaus_recent_sha256": "6fdec3b5739b2672136f829480d0213e52cfcceb7b40a68bd9e44680103a7681",
+    "openphish_community_sha256": "1465805a161a868e657827aa114940ff12835beaa1c9d1ddd6586605e36f4e2a",
+    "v4_final_test_sha256": "0cce9f14877b5295835dd2137d5b16a4911467d49201e311be1bcc89a38bb78c",
+    "representative_protocol_sha256": "7eaf535d15342fd2b8749d1c7bcfe0dbf1c9a2b4b3e4147ab97ac41ea33286fc",
+    "representative_report_sha256": "a0c7bde156b73e442a2da9b435d024c44909b2c15011039dd739e30c33dce5f2"
+  },
+  "feed_host_retention": {
+    "legacy_unique_hosts": 5493,
+    "candidate_authoritative_hosts": 5192,
+    "candidate_contextual_hosts": 301,
+    "authoritative_retention": 0.9452029856180594
+  },
+  "broad_final_test": {
+    "benign_rows": 152923,
+    "malicious_rows": 133881,
+    "legacy": {
+      "benign_matches": 1,
+      "malicious_matches": 7,
+      "candidate_benign_matches": 0,
+      "candidate_malicious_matches": 1
+    },
+    "corroborated_url_host": {
+      "benign_matches": 0,
+      "malicious_matches": 4,
+      "candidate_benign_matches": 0,
+      "candidate_malicious_matches": 1
+    },
+    "matched_malicious_retention": 0.5714285714285714
+  },
+  "representative_binary_packet": {
+    "malicious_rows": 34,
+    "benign_rows": 25,
+    "model_malicious_true_positives": 22,
+    "legacy_feed_only_benign_false_positives": 1,
+    "candidate_feed_only_benign_false_positives": 0,
+    "legacy_feed_only_malicious_recovery": 0,
+    "candidate_feed_only_malicious_recovery": 0
+  },
+  "guardrails": {
+    "zero_broad_benign_collisions": true,
+    "zero_representative_benign_collisions": true,
+    "at_least_90_percent_feed_host_retention": true,
+    "at_least_80_percent_broad_matched_malicious_retention": false
+  },
+  "runtime_policy": {
+    "legacy_remains_default": true,
+    "shadow_mode_available": true,
+    "filter_mode_dry_run_only": true,
+    "redis_or_traffic_changed": false
+  },
+  "ai_usage": {
+    "agent": "Codex (GPT-5)",
+    "subagents": 0,
+    "voting": false
+  },
+  "decision": "NO_GO_FILTER_SHADOW_ONLY"
+}

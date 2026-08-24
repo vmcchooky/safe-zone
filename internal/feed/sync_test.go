@@ -112,6 +112,74 @@ func TestSyncDryRunWithGzipFile(t *testing.T) {
 	}
 }
 
+func TestSyncAdmissionShadowReportsWithoutFiltering(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "feed.txt")
+	if err := os.WriteFile(path, []byte("https://single.test/login\nhttps://repeated.test/a\nhttps://repeated.test/b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Sync(context.Background(), SyncOptions{
+		Source:        path,
+		FileRoot:      dir,
+		DryRun:        true,
+		AdmissionMode: AdmissionShadow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Admission == nil || report.Admission.AuthoritativeHosts != 1 || report.Admission.ContextualHosts != 1 {
+		t.Fatalf("unexpected admission report: %#v", report.Admission)
+	}
+	if report.Stats.Valid != 2 {
+		t.Fatalf("expected legacy-valid count 2, got %d", report.Stats.Valid)
+	}
+}
+
+func TestSyncRejectsAdmissionFilterOutsideDryRun(t *testing.T) {
+	_, err := Sync(context.Background(), SyncOptions{
+		Source:        "unused.test",
+		AdmissionMode: AdmissionFilter,
+	})
+	if err == nil || !strings.Contains(err.Error(), "evaluation-only") {
+		t.Fatalf("expected evaluation-only admission error, got %v", err)
+	}
+}
+
+func TestSyncAdmissionShadowWritesLegacyMembership(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "feed.txt")
+	if err := os.WriteFile(path, []byte("https://single.test/login\nhttps://repeated.test/a\nhttps://repeated.test/b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Sync(context.Background(), SyncOptions{
+		Source:        path,
+		FileRoot:      dir,
+		RedisAddr:     server.Addr(),
+		Key:           DefaultThreatFeedKey,
+		AdmissionMode: AdmissionShadow,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Written != 2 {
+		t.Fatalf("expected both legacy hosts written in shadow mode, got %d", report.Written)
+	}
+	redisCache := cache.NewRedis(server.Addr(), "", 0)
+	defer redisCache.Close()
+	for _, domain := range []string{"single.test", "repeated.test"} {
+		if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, domain); err != nil {
+			t.Fatalf("expected %s in shadow membership: %v", domain, err)
+		}
+	}
+}
+
 func TestSyncWritesToRedis(t *testing.T) {
 	server, err := miniredis.Run()
 	if err != nil {

@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"safe-zone/internal/feed"
 )
 
 func TestEvaluateCombinesModelFeedAndTrustedBrandBypass(t *testing.T) {
@@ -66,7 +68,7 @@ func TestEvaluateExcludesExpiredSource(t *testing.T) {
 
 func TestLoadSourceRejectsChecksumDrift(t *testing.T) {
 	path := writeFixture(t, t.TempDir(), "feed.txt", "bad.test\n")
-	_, err := loadSource(sourceConfig{Name: "bad", Path: path, SHA256: "deadbeef", CollectedAt: "2026-08-24T09:00:00Z"}, mustTime(t, "2026-08-24T10:00:00Z"), 36*time.Hour, 336*time.Hour)
+	_, err := loadSource(sourceConfig{Name: "bad", Path: path, SHA256: "deadbeef", CollectedAt: "2026-08-24T09:00:00Z"}, feed.AdmissionLegacy, mustTime(t, "2026-08-24T10:00:00Z"), 36*time.Hour, 336*time.Hour)
 	if err == nil {
 		t.Fatal("expected checksum mismatch")
 	}

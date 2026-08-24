@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -44,6 +45,17 @@ func main() {
 	}
 	feedKey := config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey)
 	feedStaleAfter := config.DurationSeconds("SAFE_ZONE_AGENT_FEED_STALE_AFTER_SECONDS", 36*time.Hour)
+	feedAdmissionMode, err := feed.NormalizeAdmissionMode(config.String("SAFE_ZONE_AGENT_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)))
+	if err != nil || feedAdmissionMode == feed.AdmissionFilter {
+		if err == nil {
+			err = fmt.Errorf("feed admission mode %q is evaluation-only", feedAdmissionMode)
+		}
+		logjson.Error("core-api invalid feed admission configuration", map[string]any{
+			"service": "core-api",
+			"error":   err.Error(),
+		})
+		os.Exit(1)
+	}
 
 	riskService := risk.NewServiceFromEnvForRole("core-api")
 	metrics := observability.NewRegistry()
@@ -148,6 +160,7 @@ func main() {
 				ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_AGENT_FEED_DRIFT_INVALID_RATIO", 0.20),
 				ParserDriftMinInvalid:      config.Int("SAFE_ZONE_AGENT_FEED_DRIFT_MIN_INVALID", 25),
 				CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_AGENT_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
+				AdmissionMode:              feedAdmissionMode,
 			},
 		)
 		agentEngine.Register(

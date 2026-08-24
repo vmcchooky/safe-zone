@@ -16,6 +16,22 @@ phishing or malware blocking.
 The streaming parser accepts TXT, CSV, URL lists, gzip, and hosts-format lines
 such as `0.0.0.0 phishing.example`.
 
+## URL-host admission
+
+The parser preserves whether an entry is a whole-domain indicator or a
+path-scoped URL. `SAFE_ZONE_AGENT_FEED_ADMISSION_MODE` supports:
+
+- `legacy`: current authoritative host behavior; this remains the runtime default.
+- `corroborated-url-host-shadow`: calculate source-level authoritative/contextual
+  counts while writing the unchanged legacy host set.
+- `corroborated-url-host-filter`: dry-run/evaluation only. Runtime sync rejects
+  this mode because the current ablation retained only `4/7` broad malicious
+  matches and the additive Redis set cannot safely remove per-source membership.
+
+A path-scoped URL host is corroborated only by a second distinct resource in
+the same snapshot. Repeated identical lines do not count. Domain indicators,
+root URLs, and IP URLs remain authoritative in the candidate policy.
+
 ## Planned Connectors
 
 These sources need dedicated connectors instead of being placed in

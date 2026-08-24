@@ -5,17 +5,19 @@
 
 ## Tóm tắt (Abstract)
 
-Candidate v4 chỉ phát hiện `22/34` representative malicious case tại threshold `0,92`, vì vậy hệ thống cần đo phần coverage mà runtime threat context bổ sung trước khi tiếp tục thay đổi model. Evaluation ngày 2026-08-24 dùng snapshot mới của đúng hai nguồn trong preset `production-free`, parser hiện hữu, exact/parent-suffix matching, TTL `336` giờ và `analysis.DefaultTrustedBrands`. Hai feed không phục hồi case nào trong `12` model false-negative; combined malicious recall giữ nguyên `22/34`. OpenPhish lại match một representative benign case do URL indicator được collapse xuống hostname, làm combined benign false positive tăng từ `0/25` lên `1/25`. Whitelist không được giả lập vì local SQLite có `0` row và endpoint Tranco mặc định không cung cấp snapshot tại thời điểm thu thập. Kết quả chỉ là measurement evidence; candidate v4 và preset context này không đủ điều kiện release.
+Candidate v4 chỉ phát hiện `22/34` representative malicious case tại threshold `0,92`. Evaluation ngày 2026-08-24 cho thấy preset `production-free` không phục hồi case nào trong `12` model false-negative và tạo một benign collision vì URL indicator bị nâng thành domain-level block. Ablation tiếp theo bảo toàn URL scope và chỉ coi host là authoritative khi indicator mô tả toàn host, dùng IP, hoặc có ít nhất hai URL resource khác nhau. Candidate xóa cả representative collision và collision trên `152.923` benign final-test rows, đồng thời giữ `94,52%` feed hosts. Tuy nhiên, nó chỉ giữ `4/7` malicious matches trên broad final test. Filter vì vậy là `NO-GO`; runtime giữ nguyên semantics và chỉ bổ sung shadow telemetry. Whitelist không được giả lập, signed evidence không bị sửa, không có Redis write, traffic change hoặc enforce rollout.
 
 ## Sơ đồ Tổng quan
 
 ```mermaid
 flowchart LR
     A[/Signed labels/] -->|Binary cases| B[V4 predictions]
-    C[/Production-free feeds/] -->|Parse snapshots| D[Runtime matcher]
-    E[Default trusted brands] -->|Bypass policy| D
+    C[/Production-free feeds/] -->|Preserve URL scope| D[Admission plan]
+    E[Default trusted brands] -->|Bypass policy| H[Runtime matcher]
+    D -->|Legacy/shadow| H
     B -->|22 malicious TP| F{Combined gates}
-    D -->|0 recovery, 1 benign| F
+    H -->|0 recovery| F
+    D -->|Filter loses 3/7 matches| F
     F -->|Không đạt| G[Measurement only]
 
     classDef input fill:#E9ECEF,stroke:#6C757D,color:#343A40
@@ -23,8 +25,8 @@ flowchart LR
     classDef decision fill:#FFF3CD,stroke:#FFC107,color:#856404
     classDef blocked fill:#F8D7DA,stroke:#DC3545,color:#721C24
     class A,C,E input
-    class B ai
-    class F decision
+    class B,H ai
+    class D,F decision
     class G blocked
 ```
 
@@ -85,10 +87,64 @@ Quyết định là `MEASUREMENT_ONLY_MODEL_REMAINS_NO_GO`. Không sync Redis, e
 - ML false-negative analysis: `docs/research/ml/representative-false-negative-analysis.md`
 - Raw feed snapshots và case-level predictions: `ml/data/derived/threat-context-20260824/` (Git-ignored)
 
+## Ablation URL-host admission ngày 2026-08-24
+
+### Mục tiêu (Objectives)
+
+- Loại bỏ việc một URL có path mặc nhiên trở thành domain-level hard block.
+- Giữ coverage của feed đủ cao để thay đổi không chỉ cải thiện benign metric bằng cách bỏ phần lớn malicious evidence.
+- Tách evaluation/filter khỏi runtime rollout; chỉ shadow telemetry được phép đi vào đường sync ở giai đoạn này.
+- Không dùng domain hoặc case cụ thể làm allowlist/rule và không sửa signed evidence.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Phương án đã loại | Lý do |
+|---|---|---|---|
+| Evidence scope | Parser giữ `domain` so với `url`, path/query/fragment scope và distinct resource | Collapse URL ngay xuống hostname | Giữ thông tin cần thiết để admission có semantics rõ ràng |
+| Corroboration | Domain indicator, root URL, IP URL hoặc ít nhất hai resource khác nhau là authoritative | Bỏ mọi URL có path; chỉ giữ root URL | Hai phương án thay thế làm mất quá nhiều URLhaus/OpenPhish coverage |
+| Cohort benign | Toàn bộ `152.923` benign rows của frozen v4 final test và `25` signed representative benign cases | Chỉ kiểm tra collision đã biết | Tránh tối ưu rule theo một frozen case |
+| Cohort malicious | `133.881` malicious final-test rows, candidate subset và retention trên toàn feed host set | Chỉ dùng số URL được feed tự gắn nhãn | Đo cả indicator retention lẫn khả năng giữ domain matches đã có |
+| Runtime | Legacy vẫn là default; shadow ghi aggregate stats; filter chỉ chạy dry-run/evaluation | Bật filter trong agent sync | Candidate không đạt malicious-retention guardrail; sync additive cũng chưa có per-source removal an toàn |
+
+Ablation này là exploratory/post-hoc vì aggregate final-test metrics đã được xem trong lúc thiết kế policy. Nó không được dùng làm release evidence hay để chọn một ngưỡng mới. Guardrail dùng để bác bỏ filter là giữ ít nhất `80%` broad malicious matches; candidate chỉ đạt `57,14%`.
+
+### Cách thức Thực hiện (Implementation Details)
+
+`feed.ParseEachIndicator` giữ loại indicator và URL resource scope nhưng vẫn bảo toàn contract cũ của `feed.ParseEach`: callback domain chỉ nhận unique normalized domain, còn `ParseStats.Valid` và `Duplicates` không đổi. `feed.PlanAdmission` gom aggregate host state trong một source snapshot. Duplicate y hệt không được tính là corroboration; resource path/query/fragment thứ hai mới nâng host thành authoritative. IP URL được giữ authoritative vì IP đã là identity hẹp nhất mà domain engine có thể xử lý.
+
+`feed.Sync` hỗ trợ ba mode. `legacy` không đổi hành vi. `corroborated-url-host-shadow` tính và lưu aggregate admission stats trong source status nhưng vẫn ghi toàn bộ legacy host set. `corroborated-url-host-filter` bị từ chối nếu không phải dry-run. Khóa này tránh người vận hành vô tình giảm coverage và tránh giả định rằng additive multi-source Redis set có thể thu hồi an toàn membership của từng source.
+
+`cmd/threat-context-eval` dùng chính `feed.PlanAdmission`, checksum-pinned protocol và runtime matcher để replay representative packet. Broad final-test audit chỉ xuất aggregate counts; report không chứa domain/case ID. AI agent là Codex (GPT-5), dùng `0` subagent và không voting. Con người vẫn duyệt mọi push, restart, traffic scope, deploy và enforce change.
+
+### Số liệu (Metrics & Results)
+
+| Chỉ số | Legacy | Candidate | Chênh lệch |
+|---|---:|---:|---:|
+| Unique feed hosts | 5.493 | 5.192 authoritative | giữ 94,52% |
+| Contextual singleton path hosts | 0 | 301 | +301 shadow signals |
+| Broad benign matches / 152.923 | 1 | 0 | -1 |
+| Broad malicious matches / 133.881 | 7 | 4 | -3 |
+| Broad matched-malicious retention | 100% | 57,14% | -42,86 điểm % |
+| Candidate malicious matches | 1 | 1 | không đổi |
+| Representative benign feed-only FP / 25 | 1 | 0 | -1 |
+| Representative malicious TP / 34 | 22 | 22 | không đổi |
+
+Theo source snapshot, OpenPhish giữ `147/201` authoritative hosts (`73,13%`) và URLhaus giữ `5.045/5.292` (`95,33%`). Union vẫn cao vì phần lớn URLhaus IP/host evidence được giữ, nhưng domain matches mất `3/7`; chỉ số host retention vì vậy không đủ đại diện cho security coverage.
+
+Quyết định là `NO_GO_FILTER_SHADOW_ONLY`. Giá trị được đưa vào sản phẩm là provenance-aware parser, dry-run ablation và shadow telemetry không đổi verdict. Filter không được kích hoạt.
+
+### Liên kết Artifacts
+
+- Admission implementation: `internal/feed/admission.go`
+- Candidate protocol: `ml/configs/threat-context-url-admission-20260824.json`
+- Representative report: `ml/experiments/threat-context-url-admission-20260824.json`
+- Broad aggregate ablation: `ml/experiments/url-host-admission-ablation-20260824.json`
+
 ---
 
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-24 | Thêm provenance-aware URL admission, broad ablation và shadow-only decision; filter không đạt malicious-retention guardrail | Codex (GPT-5) |
 | 2026-08-24 | Thêm checksum-pinned production-free context evaluation; ghi nhận `0/12` recovery và `1/25` benign collision | Codex (GPT-5) |

@@ -2,6 +2,7 @@ package feed
 
 import (
 	"bufio"
+	"crypto/sha256"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -23,6 +24,23 @@ type ParseStats struct {
 type ParseResult struct {
 	Domains []string   `json:"domains"`
 	Stats   ParseStats `json:"stats"`
+}
+
+type IndicatorKind string
+
+const (
+	IndicatorDomain IndicatorKind = "domain"
+	IndicatorURL    IndicatorKind = "url"
+)
+
+// Indicator preserves whether a feed entry described a whole domain or only a
+// URL resource. The resource fingerprint stays private because it can contain
+// sensitive path/query material from a threat feed.
+type Indicator struct {
+	Domain              string        `json:"domain"`
+	Kind                IndicatorKind `json:"kind"`
+	PathScoped          bool          `json:"path_scoped"`
+	resourceFingerprint [sha256.Size]byte
 }
 
 // Parse parses the input stream line by line in a memory-efficient streaming manner.
@@ -49,6 +67,26 @@ func ParseEach(r io.Reader, onDomain func(domain string) error, stats *ParseStat
 		stats = &ParseStats{}
 	}
 
+	return ParseEachIndicator(r, func(indicator Indicator, duplicate bool) error {
+		if duplicate {
+			return nil
+		}
+		return onDomain(indicator.Domain)
+	}, stats)
+}
+
+// ParseEachIndicator invokes the handler for every valid feed candidate. The
+// duplicate flag reports whether the normalized domain was already observed;
+// callers that need URL corroboration can therefore distinguish repeated
+// resources without changing the legacy ParseEach deduplication contract.
+func ParseEachIndicator(r io.Reader, onIndicator func(indicator Indicator, duplicate bool) error, stats *ParseStats) error {
+	if onIndicator == nil {
+		return errors.New("indicator handler is required")
+	}
+	if stats == nil {
+		stats = &ParseStats{}
+	}
+
 	// Enforce 100MB decompression limit
 	limited := io.LimitReader(r, 100*1024*1024)
 
@@ -58,13 +96,13 @@ func ParseEach(r io.Reader, onDomain func(domain string) error, stats *ParseStat
 	seen := make(map[string]struct{})
 
 	if isProbablyCSV(peekBytes) {
-		return parseCSVStream(br, seen, stats, onDomain)
+		return parseCSVStream(br, seen, stats, onIndicator)
 	}
 
-	return parseTextStream(br, seen, stats, onDomain)
+	return parseTextStream(br, seen, stats, onIndicator)
 }
 
-func parseCSVStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, onDomain func(string) error) error {
+func parseCSVStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, onIndicator func(Indicator, bool) error) error {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1 // Allow variable fields per row to prevent drift crashes
 
@@ -83,13 +121,13 @@ func parseCSVStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, on
 			continue
 		}
 
-		domain, ok := firstDomain(row)
+		indicator, ok := firstIndicator(row)
 		if !ok {
 			stats.Invalid++
 			continue
 		}
 
-		if err := addDomain(stats, seen, domain, onDomain); err != nil {
+		if err := addIndicator(stats, seen, indicator, onIndicator); err != nil {
 			return err
 		}
 	}
@@ -97,7 +135,7 @@ func parseCSVStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, on
 	return nil
 }
 
-func parseTextStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, onDomain func(string) error) error {
+func parseTextStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, onIndicator func(Indicator, bool) error) error {
 	scanner := bufio.NewScanner(r)
 	// Enforce maximum line size of 1MB (1024*1024 bytes) as asserted by tests
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -131,14 +169,14 @@ func parseTextStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, o
 			}
 			parsedAny = true
 
-			domain, err := normalizeCandidate(field)
+			indicator, err := normalizeIndicator(field)
 			if err != nil {
 				lineInvalid++
 				continue
 			}
 
 			lineHadValid = true
-			if err := addDomain(stats, seen, domain, onDomain); err != nil {
+			if err := addIndicator(stats, seen, indicator, onIndicator); err != nil {
 				return err
 			}
 		}
@@ -165,36 +203,39 @@ func parseTextStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, o
 	return nil
 }
 
-func firstDomain(fields []string) (string, bool) {
+func firstIndicator(fields []string) (Indicator, bool) {
 	for _, field := range fields {
 		field = stripComment(strings.TrimSpace(field))
 		if field == "" {
 			continue
 		}
 
-		domain, err := normalizeCandidate(field)
+		indicator, err := normalizeIndicator(field)
 		if err == nil {
-			return domain, true
+			return indicator, true
 		}
 	}
 
-	return "", false
+	return Indicator{}, false
 }
 
-func addDomain(stats *ParseStats, seen map[string]struct{}, domain string, onDomain func(string) error) error {
-	if _, exists := seen[domain]; exists {
+func addIndicator(stats *ParseStats, seen map[string]struct{}, indicator Indicator, onIndicator func(Indicator, bool) error) error {
+	if _, exists := seen[indicator.Domain]; exists {
 		stats.Duplicates++
-		return nil
+		return onIndicator(indicator, true)
 	}
 
-	seen[domain] = struct{}{}
+	seen[indicator.Domain] = struct{}{}
 	stats.Valid++
-	return onDomain(domain)
+	return onIndicator(indicator, false)
 }
 
 func stripComment(value string) string {
 	if strings.HasPrefix(value, "#") {
 		return ""
+	}
+	if strings.Contains(value, "://") {
+		return value
 	}
 	if index := strings.Index(value, "#"); index >= 0 {
 		return strings.TrimSpace(value[:index])
@@ -204,28 +245,44 @@ func stripComment(value string) string {
 }
 
 func normalizeCandidate(value string) (string, error) {
+	indicator, err := normalizeIndicator(value)
+	return indicator.Domain, err
+}
+
+func normalizeIndicator(value string) (Indicator, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return "", errors.New("empty feed candidate")
+		return Indicator{}, errors.New("empty feed candidate")
 	}
 
-	if strings.Contains(value, "://") {
-		parsed, err := url.Parse(value)
+	indicator := Indicator{Kind: IndicatorDomain}
+	isURL := strings.Contains(value, "://") || (strings.Contains(value, "/") && !strings.HasPrefix(value, "/"))
+	if isURL {
+		parseValue := value
+		if !strings.Contains(parseValue, "://") {
+			parseValue = "http://" + parseValue
+		}
+		parsed, err := url.Parse(parseValue)
 		if err != nil || parsed.Hostname() == "" {
-			return "", errors.New("invalid feed url candidate")
+			return Indicator{}, errors.New("invalid feed url candidate")
 		}
 		value = parsed.Hostname()
+		indicator.Kind = IndicatorURL
+		indicator.PathScoped = (parsed.EscapedPath() != "" && parsed.EscapedPath() != "/") || parsed.RawQuery != "" || parsed.Fragment != ""
+		resourceKey := parsed.EscapedPath() + "?" + parsed.RawQuery + "#" + parsed.Fragment
+		indicator.resourceFingerprint = sha256.Sum256([]byte(resourceKey))
 	}
 
 	domain, err := analysis.NormalizeDomain(value)
 	if err != nil {
-		return "", err
+		return Indicator{}, err
 	}
 	if !strings.Contains(domain, ".") {
-		return "", errors.New("feed candidate must be a domain, not a single label")
+		return Indicator{}, errors.New("feed candidate must be a domain, not a single label")
 	}
 
-	return domain, nil
+	indicator.Domain = domain
+	return indicator, nil
 }
 
 func isProbablyCSV(peek []byte) bool {

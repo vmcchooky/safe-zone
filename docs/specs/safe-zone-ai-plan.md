@@ -263,6 +263,7 @@ Audit initial query window là 24 giờ. Existing admin override luôn được 
 | `SAFE_ZONE_AGENT_FEED_DRIFT_INVALID_RATIO` | `0.20` | Parser drift ratio. |
 | `SAFE_ZONE_AGENT_FEED_DRIFT_MIN_INVALID` | `25` | Minimum invalid count. |
 | `SAFE_ZONE_AGENT_FEED_CACHE_INVALIDATION_MIN_WRITES` | `1` | Revision/cache invalidation gate. |
+| `SAFE_ZONE_AGENT_FEED_ADMISSION_MODE` | `legacy` | `corroborated-url-host-shadow` adds aggregate URL-scope telemetry without changing membership; filter mode is dry-run only. |
 | `SAFE_ZONE_AGENT_OSINT_INTERVAL_SECONDS` | `3600` | OSINT audit interval. |
 | `SAFE_ZONE_AGENT_OSINT_TIMEOUT_SECONDS` | `120` | Cycle timeout. |
 | `SAFE_ZONE_AGENT_OSINT_MAX_PER_CYCLE` | `50` | Lookup cap. |

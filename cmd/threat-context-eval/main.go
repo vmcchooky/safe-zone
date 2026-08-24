@@ -43,15 +43,16 @@ type sourceConfig struct {
 }
 
 type protocol struct {
-	SchemaVersion   string         `json:"schema_version"`
-	AsOf            string         `json:"as_of"`
-	FeedTTLHours    int            `json:"feed_ttl_hours"`
-	StaleAfterHours int            `json:"stale_after_hours"`
-	WhitelistState  string         `json:"whitelist_state"`
-	Labels          fileRef        `json:"labels"`
-	Predictions     predictionRef  `json:"model_predictions"`
-	ExpectedLabels  map[string]int `json:"expected_labels"`
-	Sources         []sourceConfig `json:"sources"`
+	SchemaVersion   string             `json:"schema_version"`
+	AsOf            string             `json:"as_of"`
+	FeedTTLHours    int                `json:"feed_ttl_hours"`
+	StaleAfterHours int                `json:"stale_after_hours"`
+	WhitelistState  string             `json:"whitelist_state"`
+	AdmissionMode   feed.AdmissionMode `json:"admission_mode,omitempty"`
+	Labels          fileRef            `json:"labels"`
+	Predictions     predictionRef      `json:"model_predictions"`
+	ExpectedLabels  map[string]int     `json:"expected_labels"`
+	Sources         []sourceConfig     `json:"sources"`
 }
 
 type evaluationCase struct {
@@ -69,28 +70,30 @@ type prediction struct {
 }
 
 type loadedSource struct {
-	config  sourceConfig
-	domains map[string]struct{}
-	stats   feed.ParseStats
-	age     time.Duration
-	stale   bool
-	expired bool
+	config    sourceConfig
+	domains   map[string]struct{}
+	stats     feed.ParseStats
+	admission *feed.AdmissionStats
+	age       time.Duration
+	stale     bool
+	expired   bool
 }
 
 type sourceReport struct {
-	Name                       string          `json:"name"`
-	SourceURL                  string          `json:"source_url"`
-	SHA256                     string          `json:"sha256"`
-	CollectedAt                string          `json:"collected_at"`
-	AgeSeconds                 int64           `json:"age_seconds"`
-	Stale                      bool            `json:"stale"`
-	Expired                    bool            `json:"expired"`
-	ParseStats                 feed.ParseStats `json:"parse_stats"`
-	MatchedMalicious           int             `json:"matched_malicious"`
-	MatchedBenign              int             `json:"matched_benign"`
-	FeedOnlyRecoveredMalicious int             `json:"feed_only_recovered_malicious"`
-	ExactMatches               int             `json:"exact_matches"`
-	SuffixMatches              int             `json:"suffix_matches"`
+	Name                       string               `json:"name"`
+	SourceURL                  string               `json:"source_url"`
+	SHA256                     string               `json:"sha256"`
+	CollectedAt                string               `json:"collected_at"`
+	AgeSeconds                 int64                `json:"age_seconds"`
+	Stale                      bool                 `json:"stale"`
+	Expired                    bool                 `json:"expired"`
+	ParseStats                 feed.ParseStats      `json:"parse_stats"`
+	Admission                  *feed.AdmissionStats `json:"admission,omitempty"`
+	MatchedMalicious           int                  `json:"matched_malicious"`
+	MatchedBenign              int                  `json:"matched_benign"`
+	FeedOnlyRecoveredMalicious int                  `json:"feed_only_recovered_malicious"`
+	ExactMatches               int                  `json:"exact_matches"`
+	SuffixMatches              int                  `json:"suffix_matches"`
 }
 
 type coverageSummary struct {
@@ -165,7 +168,7 @@ func run(configPath, outputPath string) error {
 
 	sources := make([]loadedSource, 0, len(cfg.Sources))
 	for _, source := range cfg.Sources {
-		loaded, err := loadSource(source, asOf, time.Duration(cfg.StaleAfterHours)*time.Hour, time.Duration(cfg.FeedTTLHours)*time.Hour)
+		loaded, err := loadSource(source, cfg.AdmissionMode, asOf, time.Duration(cfg.StaleAfterHours)*time.Hour, time.Duration(cfg.FeedTTLHours)*time.Hour)
 		if err != nil {
 			return err
 		}
@@ -208,6 +211,9 @@ func validateProtocol(cfg protocol) error {
 	}
 	if cfg.Predictions.Threshold <= 0 || cfg.Predictions.Threshold >= 1 {
 		return errors.New("model prediction threshold must be between zero and one")
+	}
+	if _, err := feed.NormalizeAdmissionMode(string(cfg.AdmissionMode)); err != nil {
+		return err
 	}
 	seen := make(map[string]struct{}, len(cfg.Sources))
 	for _, source := range cfg.Sources {
@@ -303,7 +309,7 @@ func readPredictions(ref predictionRef, cases []evaluationCase) (map[string]pred
 	return result, hash, nil
 }
 
-func loadSource(cfg sourceConfig, asOf time.Time, staleAfter, ttl time.Duration) (loadedSource, error) {
+func loadSource(cfg sourceConfig, admissionMode feed.AdmissionMode, asOf time.Time, staleAfter, ttl time.Duration) (loadedSource, error) {
 	data, hash, err := readAndHash(cfg.Path)
 	if err != nil {
 		return loadedSource{}, fmt.Errorf("read source %s: %w", cfg.Name, err)
@@ -319,22 +325,27 @@ func loadSource(cfg sourceConfig, asOf time.Time, staleAfter, ttl time.Duration)
 	if age < 0 {
 		return loadedSource{}, fmt.Errorf("source %s was collected after as_of", cfg.Name)
 	}
-	parsed, err := feed.Parse(strings.NewReader(string(data)))
+	mode, _ := feed.NormalizeAdmissionMode(string(admissionMode))
+	plan, err := feed.PlanAdmission(strings.NewReader(string(data)), mode)
 	if err != nil {
 		return loadedSource{}, fmt.Errorf("parse source %s: %w", cfg.Name, err)
 	}
-	domains := make(map[string]struct{}, len(parsed.Domains))
-	for _, domain := range parsed.Domains {
+	selected := plan.Authoritative
+	if mode == feed.AdmissionShadow {
+		selected = append(selected, plan.Contextual...)
+	}
+	domains := make(map[string]struct{}, len(selected))
+	for _, domain := range selected {
 		domains[domain] = struct{}{}
 	}
-	return loadedSource{config: cfg, domains: domains, stats: parsed.Stats, age: age, stale: age > staleAfter, expired: age > ttl}, nil
+	return loadedSource{config: cfg, domains: domains, stats: plan.ParseStats, admission: &plan.Stats, age: age, stale: age > staleAfter, expired: age > ttl}, nil
 }
 
 func evaluate(cfg protocol, protocolHash, labelsHash, predictionsHash string, cases []evaluationCase, predictions map[string]prediction, sources []loadedSource) report {
 	coverage := map[string]coverageSummary{"malicious": {}, "benign": {}}
 	sourceReports := make([]sourceReport, len(sources))
 	for index, source := range sources {
-		sourceReports[index] = sourceReport{Name: source.config.Name, SourceURL: source.config.SourceURL, SHA256: source.config.SHA256, CollectedAt: source.config.CollectedAt, AgeSeconds: int64(source.age / time.Second), Stale: source.stale, Expired: source.expired, ParseStats: source.stats}
+		sourceReports[index] = sourceReport{Name: source.config.Name, SourceURL: source.config.SourceURL, SHA256: source.config.SHA256, CollectedAt: source.config.CollectedAt, AgeSeconds: int64(source.age / time.Second), Stale: source.stale, Expired: source.expired, ParseStats: source.stats, Admission: source.admission}
 	}
 
 	for _, item := range cases {
@@ -415,7 +426,7 @@ func evaluate(cfg protocol, protocolHash, labelsHash, predictionsHash string, ca
 		AsOf:                         cfg.AsOf,
 		ProtocolSHA256:               protocolHash,
 		Inputs:                       map[string]string{"labels_sha256": labelsHash, "model_predictions_sha256": predictionsHash, "model_sha256": cfg.Predictions.ModelSHA256},
-		Policy:                       map[string]any{"feed_ttl_hours": cfg.FeedTTLHours, "stale_after_hours": cfg.StaleAfterHours, "matching": "exact_then_parent_suffix", "feed_parser_semantics": "URL indicators collapse to hostname", "trusted_brand_policy": "analysis.DefaultTrustedBrands", "whitelist_state": cfg.WhitelistState, "source_attribution_counts_are_non_exclusive": true},
+		Policy:                       map[string]any{"feed_ttl_hours": cfg.FeedTTLHours, "stale_after_hours": cfg.StaleAfterHours, "matching": "exact_then_parent_suffix", "feed_parser_semantics": "URL scope preserved before admission", "admission_mode": cfg.AdmissionMode, "trusted_brand_policy": "analysis.DefaultTrustedBrands", "whitelist_state": cfg.WhitelistState, "source_attribution_counts_are_non_exclusive": true},
 		Sources:                      sourceReports,
 		Coverage:                     coverage,
 		RecoveryRate:                 recoveryRate,

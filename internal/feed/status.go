@@ -33,23 +33,24 @@ var productionVNSources = []string{
 }
 
 type SourceStatus struct {
-	Source            string     `json:"source"`
-	SourceID          string     `json:"source_id"`
-	FeedKey           string     `json:"feed_key"`
-	Status            string     `json:"status"`
-	LastAttemptAt     string     `json:"last_attempt_at,omitempty"`
-	LastSuccessAt     string     `json:"last_success_at,omitempty"`
-	LastFailureAt     string     `json:"last_failure_at,omitempty"`
-	LastError         string     `json:"last_error,omitempty"`
-	Stats             ParseStats `json:"stats"`
-	Written           int64      `json:"written"`
-	Replace           bool       `json:"replace"`
-	FinishedAt        string     `json:"finished_at,omitempty"`
-	ParserDrift       bool       `json:"parser_drift"`
-	ParserDriftReason string     `json:"parser_drift_reason,omitempty"`
-	CacheInvalidated  bool       `json:"cache_invalidated"`
-	FeedRevision      int64      `json:"feed_revision,omitempty"`
-	Stale             bool       `json:"stale"`
+	Source            string          `json:"source"`
+	SourceID          string          `json:"source_id"`
+	FeedKey           string          `json:"feed_key"`
+	Status            string          `json:"status"`
+	LastAttemptAt     string          `json:"last_attempt_at,omitempty"`
+	LastSuccessAt     string          `json:"last_success_at,omitempty"`
+	LastFailureAt     string          `json:"last_failure_at,omitempty"`
+	LastError         string          `json:"last_error,omitempty"`
+	Stats             ParseStats      `json:"stats"`
+	Written           int64           `json:"written"`
+	Replace           bool            `json:"replace"`
+	FinishedAt        string          `json:"finished_at,omitempty"`
+	ParserDrift       bool            `json:"parser_drift"`
+	ParserDriftReason string          `json:"parser_drift_reason,omitempty"`
+	CacheInvalidated  bool            `json:"cache_invalidated"`
+	FeedRevision      int64           `json:"feed_revision,omitempty"`
+	Admission         *AdmissionStats `json:"admission,omitempty"`
+	Stale             bool            `json:"stale"`
 }
 
 type StatusSummary struct {
@@ -292,6 +293,7 @@ func recordSyncSuccess(ctx context.Context, redisCache *cache.Redis, report Sync
 		ParserDriftReason: report.ParserDriftReason,
 		CacheInvalidated:  report.CacheInvalidated,
 		FeedRevision:      report.FeedRevision,
+		Admission:         report.Admission,
 	}
 
 	return redisCache.SetJSON(ctx, StatusKey(report.Key, report.Source), status, 0)

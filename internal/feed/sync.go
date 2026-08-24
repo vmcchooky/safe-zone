@@ -39,21 +39,23 @@ type SyncOptions struct {
 	ParserDriftMinInvalid      int
 	CacheInvalidationMinWrites int64
 	TTL                        time.Duration
+	AdmissionMode              AdmissionMode
 }
 
 type SyncReport struct {
-	Source            string     `json:"source"`
-	Key               string     `json:"key"`
-	DryRun            bool       `json:"dry_run"`
-	Replace           bool       `json:"replace"`
-	Stats             ParseStats `json:"stats"`
-	Written           int64      `json:"written"`
-	RedisAddr         string     `json:"redis_addr,omitempty"`
-	FinishedAt        string     `json:"finished_at"`
-	ParserDrift       bool       `json:"parser_drift"`
-	ParserDriftReason string     `json:"parser_drift_reason,omitempty"`
-	CacheInvalidated  bool       `json:"cache_invalidated"`
-	FeedRevision      int64      `json:"feed_revision,omitempty"`
+	Source            string          `json:"source"`
+	Key               string          `json:"key"`
+	DryRun            bool            `json:"dry_run"`
+	Replace           bool            `json:"replace"`
+	Stats             ParseStats      `json:"stats"`
+	Written           int64           `json:"written"`
+	RedisAddr         string          `json:"redis_addr,omitempty"`
+	FinishedAt        string          `json:"finished_at"`
+	ParserDrift       bool            `json:"parser_drift"`
+	ParserDriftReason string          `json:"parser_drift_reason,omitempty"`
+	CacheInvalidated  bool            `json:"cache_invalidated"`
+	FeedRevision      int64           `json:"feed_revision,omitempty"`
+	Admission         *AdmissionStats `json:"admission,omitempty"`
 }
 
 type OpenSourceResponse struct {
@@ -75,6 +77,13 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	}
 	if options.MaxBytes <= 0 {
 		options.MaxBytes = DefaultMaxFeedBytes
+	}
+	admissionMode, err := NormalizeAdmissionMode(string(options.AdmissionMode))
+	if err != nil {
+		return SyncReport{}, err
+	}
+	if admissionMode == AdmissionFilter && !options.DryRun {
+		return SyncReport{}, errors.New("corroborated URL-host filter is evaluation-only; use shadow mode for runtime sync")
 	}
 
 	ctx := parent
@@ -112,8 +121,33 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		Replace:    options.Replace,
 		FinishedAt: time.Now().UTC().Format(time.RFC3339Nano),
 	}
+	if !options.DryRun && redisCache == nil {
+		return fail(errors.New("redis address is required unless dry-run is set"))
+	}
+
+	var plannedDomains []string
+	if admissionMode != AdmissionLegacy {
+		plan, planErr := PlanAdmission(reader, admissionMode)
+		if planErr != nil {
+			return fail(planErr)
+		}
+		report.Stats = plan.ParseStats
+		report.Admission = &plan.Stats
+		plannedDomains = plan.Authoritative
+		if admissionMode == AdmissionShadow {
+			plannedDomains = append(plannedDomains, plan.Contextual...)
+		}
+	}
 
 	if options.DryRun {
+		if admissionMode != AdmissionLegacy {
+			report.ParserDrift, report.ParserDriftReason = parserDriftStatus(
+				report.Stats,
+				options.ParserDriftInvalidRatio,
+				options.ParserDriftMinInvalid,
+			)
+			return report, nil
+		}
 		var stats ParseStats
 		err := ParseEach(reader, func(string) error { return nil }, &stats)
 		if err != nil {
@@ -127,10 +161,6 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		)
 		return report, nil
 	}
-	if redisCache == nil {
-		return fail(errors.New("redis address is required unless dry-run is set"))
-	}
-
 	targetKey := options.Key
 	stagingKey := ""
 	if options.Replace {
@@ -163,18 +193,31 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		return nil
 	}
 
-	err = ParseEach(reader, func(domain string) error {
+	queueDomain := func(domain string) error {
 		batch = append(batch, redis.Z{Score: expireScore, Member: domain})
 		if len(batch) >= defaultRedisBatchSize {
 			return flush()
 		}
 		return nil
-	}, &stats)
-	if err != nil {
-		if stagingKey != "" {
-			_ = redisCache.Delete(ctx, stagingKey)
+	}
+	if admissionMode == AdmissionLegacy {
+		err = ParseEach(reader, queueDomain, &stats)
+		if err != nil {
+			if stagingKey != "" {
+				_ = redisCache.Delete(ctx, stagingKey)
+			}
+			return fail(err)
 		}
-		return fail(err)
+	} else {
+		stats = report.Stats
+		for _, domain := range plannedDomains {
+			if err := queueDomain(domain); err != nil {
+				if stagingKey != "" {
+					_ = redisCache.Delete(ctx, stagingKey)
+				}
+				return fail(err)
+			}
+		}
 	}
 	if err := flush(); err != nil {
 		if stagingKey != "" {

@@ -72,3 +72,40 @@ func TestParseHostsFileFormatIgnoresSinkholeIPs(t *testing.T) {
 		t.Fatalf("unexpected domains: %s", got)
 	}
 }
+
+func TestParseEachIndicatorPreservesURLScopeAndDuplicates(t *testing.T) {
+	var indicators []Indicator
+	var duplicates []bool
+	var stats ParseStats
+	err := ParseEachIndicator(strings.NewReader("https://evil.test/login\nhttps://evil.test/reset\nclean.test\n"), func(indicator Indicator, duplicate bool) error {
+		indicators = append(indicators, indicator)
+		duplicates = append(duplicates, duplicate)
+		return nil
+	}, &stats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(indicators) != 3 || indicators[0].Kind != IndicatorURL || !indicators[0].PathScoped {
+		t.Fatalf("unexpected indicators: %#v", indicators)
+	}
+	if !duplicates[1] || duplicates[0] || duplicates[2] {
+		t.Fatalf("unexpected duplicate flags: %#v", duplicates)
+	}
+	if stats.Valid != 2 || stats.Duplicates != 1 {
+		t.Fatalf("unexpected stats: %#v", stats)
+	}
+}
+
+func TestParseEachIndicatorPreservesURLFragmentScope(t *testing.T) {
+	var got Indicator
+	err := ParseEachIndicator(strings.NewReader("https://evil.test/#login\n"), func(indicator Indicator, _ bool) error {
+		got = indicator
+		return nil
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.PathScoped || got.resourceFingerprint == [32]byte{} {
+		t.Fatalf("expected fragment-scoped URL indicator, got %#v", got)
+	}
+}

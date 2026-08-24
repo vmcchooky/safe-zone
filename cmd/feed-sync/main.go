@@ -17,8 +17,6 @@ import (
 	"safe-zone/internal/netguard"
 )
 
-
-
 func main() {
 	buildinfo.Link()
 
@@ -31,6 +29,7 @@ func main() {
 	replace := flag.Bool("replace", false, "delete the target set before writing parsed domains")
 	timeout := flag.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
 	ttlDays := flag.Int("ttl-days", config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14), "number of days before threat domains expire")
+	admissionMode := flag.String("admission-mode", config.String("SAFE_ZONE_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)), "feed admission mode: legacy, corroborated-url-host-shadow, or corroborated-url-host-filter")
 	flag.Parse()
 
 	if strings.TrimSpace(*source) == "" {
@@ -59,6 +58,7 @@ func main() {
 		ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
 		CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
 		TTL:                        time.Duration(*ttlDays) * 24 * time.Hour,
+		AdmissionMode:              feed.AdmissionMode(*admissionMode),
 	})
 	if err != nil {
 		logjson.Error("feed sync failed", correlation.Fields(ctx, map[string]any{

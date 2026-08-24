@@ -1,0 +1,111 @@
+{
+  "schema_version": "1.0.0",
+  "as_of": "2026-08-24T11:40:09Z",
+  "protocol_sha256": "7eaf535d15342fd2b8749d1c7bcfe0dbf1c9a2b4b3e4147ab97ac41ea33286fc",
+  "input_integrity": {
+    "labels_sha256": "d03e698fdeaa5b4f107b09e3d1b85496c35252e318324f32b48c9e942dcc3844",
+    "model_predictions_sha256": "4fe75bcc24e2cf40c22be9d22063c37fc52694681c14115375925bd6486174cb",
+    "model_sha256": "66f07894728d7c64292f4fad9f8c75d2a35d863921c82bb82b06cfee74c4c2ce"
+  },
+  "policy": {
+    "admission_mode": "corroborated-url-host-filter",
+    "feed_parser_semantics": "URL scope preserved before admission",
+    "feed_ttl_hours": 336,
+    "matching": "exact_then_parent_suffix",
+    "source_attribution_counts_are_non_exclusive": true,
+    "stale_after_hours": 36,
+    "trusted_brand_policy": "analysis.DefaultTrustedBrands",
+    "whitelist_state": "not_simulated: local SQLite whitelist_domains has 0 rows and the configured Tranco snapshot endpoint was unavailable"
+  },
+  "sources": [
+    {
+      "name": "openphish_community",
+      "source_url": "https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+      "sha256": "1465805a161a868e657827aa114940ff12835beaa1c9d1ddd6586605e36f4e2a",
+      "collected_at": "2026-08-24T11:40:07Z",
+      "age_seconds": 2,
+      "stale": false,
+      "expired": false,
+      "parse_stats": {
+        "valid": 201,
+        "invalid": 0,
+        "duplicates": 99,
+        "skipped": 0
+      },
+      "admission": {
+        "mode": "corroborated-url-host-filter",
+        "authoritative_hosts": 147,
+        "contextual_hosts": 54,
+        "url_hosts": 201,
+        "path_scoped_url_hosts": 76,
+        "corroborated_url_hosts": 19,
+        "authoritative_retention": 0.7313432835820896
+      },
+      "matched_malicious": 0,
+      "matched_benign": 0,
+      "feed_only_recovered_malicious": 0,
+      "exact_matches": 0,
+      "suffix_matches": 0
+    },
+    {
+      "name": "urlhaus_recent",
+      "source_url": "https://urlhaus.abuse.ch/downloads/csv_recent/",
+      "sha256": "6fdec3b5739b2672136f829480d0213e52cfcceb7b40a68bd9e44680103a7681",
+      "collected_at": "2026-08-24T11:40:08Z",
+      "age_seconds": 1,
+      "stale": false,
+      "expired": false,
+      "parse_stats": {
+        "valid": 5292,
+        "invalid": 9,
+        "duplicates": 10842,
+        "skipped": 0
+      },
+      "admission": {
+        "mode": "corroborated-url-host-filter",
+        "authoritative_hosts": 5045,
+        "contextual_hosts": 247,
+        "url_hosts": 5292,
+        "path_scoped_url_hosts": 5278,
+        "corroborated_url_hosts": 176,
+        "authoritative_retention": 0.9533257747543462
+      },
+      "matched_malicious": 0,
+      "matched_benign": 0,
+      "feed_only_recovered_malicious": 0,
+      "exact_matches": 0,
+      "suffix_matches": 0
+    }
+  ],
+  "coverage": {
+    "benign": {
+      "cases": 25,
+      "model_would_block": 0,
+      "feed_match": 0,
+      "combined_would_block": 0,
+      "model_and_feed": 0,
+      "feed_only": 0,
+      "neither": 25,
+      "trusted_brand_bypass": 0,
+      "exact_feed_match": 0,
+      "suffix_feed_match": 0
+    },
+    "malicious": {
+      "cases": 34,
+      "model_would_block": 22,
+      "feed_match": 0,
+      "combined_would_block": 22,
+      "model_and_feed": 0,
+      "feed_only": 0,
+      "neither": 12,
+      "trusted_brand_bypass": 0,
+      "exact_feed_match": 0,
+      "suffix_feed_match": 0
+    }
+  },
+  "malicious_feed_recovery_rate_of_model_false_negatives": 0,
+  "residual_malicious": 12,
+  "combined_benign_false_positives": 0,
+  "finding": "NO_INCREMENTAL_CONTEXT_COVERAGE",
+  "decision": "MEASUREMENT_ONLY_MODEL_REMAINS_NO_GO"
+}

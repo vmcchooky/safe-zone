@@ -27,6 +27,7 @@ type FeedSyncConfig struct {
 	ParserDriftInvalidRatio    float64
 	ParserDriftMinInvalid      int
 	CacheInvalidationMinWrites int64
+	AdmissionMode              feed.AdmissionMode
 }
 
 // FeedSyncTask downloads threat feed data from multiple sources and adds
@@ -100,6 +101,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 			ParserDriftInvalidRatio:    t.config.ParserDriftInvalidRatio,
 			ParserDriftMinInvalid:      t.config.ParserDriftMinInvalid,
 			CacheInvalidationMinWrites: t.config.CacheInvalidationMinWrites,
+			AdmissionMode:              t.config.AdmissionMode,
 		})
 		if err != nil {
 			logjson.Error("agent feed sync failed", correlation.Fields(ctx, map[string]any{

@@ -30,7 +30,21 @@ func main() {
 	once := flag.Bool("once", false, "run one sync cycle and exit")
 	interval := flag.Duration("interval", config.DurationSeconds("SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS", 24*time.Hour), "time between sync cycles")
 	timeout := flag.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
+	admissionMode := flag.String("admission-mode", config.String("SAFE_ZONE_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)), "feed admission mode: legacy, corroborated-url-host-shadow, or corroborated-url-host-filter")
 	flag.Parse()
+	normalizedAdmissionMode, admissionErr := feed.NormalizeAdmissionMode(*admissionMode)
+	if admissionErr != nil || normalizedAdmissionMode == feed.AdmissionFilter {
+		message := "filter mode is evaluation-only"
+		if admissionErr != nil {
+			message = admissionErr.Error()
+		}
+		logjson.Error("invalid feed admission configuration", map[string]any{
+			"service": "feed-syncd",
+			"error":   message,
+		})
+		os.Exit(1)
+	}
+	*admissionMode = string(normalizedAdmissionMode)
 
 	if strings.TrimSpace(*source) == "" {
 		logjson.Error("feed source is required", map[string]any{
@@ -59,6 +73,7 @@ func main() {
 			ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
 			ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
 			CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
+			AdmissionMode:              feed.AdmissionMode(*admissionMode),
 		})
 		if err != nil {
 			logjson.Error("feed sync failed", correlation.Fields(runCtx, map[string]any{
