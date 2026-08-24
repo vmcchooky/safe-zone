@@ -99,10 +99,34 @@ def apply_training_weight_policy(
         .eq("weighted_hard_negative")
         .to_numpy()
     )
+    hard_positive_cfg = training_cfg.get("time_forward_hard_positive", {})
+    hard_positive_enabled = bool(hard_positive_cfg.get("enabled", False))
+    hard_positive_mask = (
+        df_train.get("training_role", pd.Series("", index=df_train.index))
+        .astype(str)
+        .eq("time_forward_hard_positive")
+        .to_numpy()
+    )
+    if hard_positive_enabled:
+        hard_positive_weight = float(hard_positive_cfg.get("weight", 1.0))
+        if not 1.0 <= hard_positive_weight <= 10.0:
+            raise ValueError("time-forward hard-positive weight must be in [1, 10]")
+        if not hard_positive_mask.any():
+            raise ValueError("time-forward hard-positive weighting matched no rows")
+        weights[hard_positive_mask] = np.maximum(
+            weights[hard_positive_mask], hard_positive_weight
+        )
     return weights, {
         "source_proxy_enabled": proxy_enabled,
         "source_proxy_rows": int(proxy_mask.sum()),
         "evidence_hard_negative_rows": int(evidence_mask.sum()),
+        "time_forward_hard_positive_enabled": hard_positive_enabled,
+        "time_forward_hard_positive_rows": int(hard_positive_mask.sum()),
+        "time_forward_hard_positive_weight": (
+            float(hard_positive_cfg.get("weight", 1.0))
+            if hard_positive_enabled
+            else 1.0
+        ),
         "weighted_rows": int(np.sum(weights != 1.0)),
         "max_weight": float(np.max(weights)),
         "effective_train_weight": float(np.sum(weights)),

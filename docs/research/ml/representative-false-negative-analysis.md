@@ -5,27 +5,26 @@
 
 ## Tóm tắt (Abstract)
 
-Candidate v2 suffix-debiased giữ representative benign FPR ở `0/25` nhưng chỉ phát hiện `21/34` malicious case tại threshold `0,92`, tạo 13 false-negative. Phân tích `pred_contrib` và bounded Firecrawl cho thấy model domain-only thiếu tín hiệu về redirect, cloaking, security interstitial và exact threat-feed membership; Firecrawl chỉ được dùng làm evidence transport, không làm adjudicator. Vòng A/B ngày 2026-08-24 phát hiện representative packet đã giao với các partition cũ và sửa phép loại leakage theo tenant trên shared hosting, tránh loại nhầm 18.173 train rows. Feature contract v3 bổ sung ba keyword, một brand và ba shared-hosting root có snapshot, đồng thời áp dụng monotone constraint cho `tld_risk_score`; candidate tăng representative recall từ `21/34` lên `22/34`, giữ benign FP `0/25` và SAFE VN runtime-candidate FP `0/1.400`. Kết quả vẫn thấp hơn gate `26/34`; các ablation positive weighting, hard-positive mining và candidate-only training cũng không đạt đồng thời recall/FPR guardrail. Candidate v3 giữ trạng thái private `NO-GO`, không được export, provision hoặc restart vào local staging.
+Candidate v2 suffix-debiased giữ representative benign FPR ở `0/25` nhưng chỉ phát hiện `21/34` malicious case tại threshold `0,92`, tạo 13 false-negative. Phân tích `pred_contrib` và bounded Firecrawl cho thấy model domain-only thiếu tín hiệu về redirect, cloaking, security interstitial và exact threat-feed membership; Firecrawl chỉ được dùng làm evidence transport, không làm adjudicator. Vòng A/B ngày 2026-08-24 sửa phép loại leakage theo tenant trên shared hosting và candidate v3 tăng representative recall lên `22/34`, nhưng vẫn thấp hơn gate `26/34`. Vòng v4 sau đó pre-register một PhishTank adaptation/development split và OpenPhish holdout source-disjoint trước khi train, bổ sung `1.232` hard-positive ordinary-looking và thử TLD state `unknown/known-neutral/risky` với sáu tổ hợp family/weight. Candidate được chọn tăng OpenPhish tổng thể từ `89/130` lên `91/130`, nhưng ordinary-looking giảm từ `6/40` xuống `5/40`, representative giữ nguyên `22/34` và SAFE VN runtime-candidate phát sinh `1/1.400` false positive. Kết quả xác nhận weighting cùng lexical TLD-state không khắc phục được nhóm hostname thiếu tín hiệu hành vi. Candidate v4 giữ trạng thái private `NO-GO`; không export, provision hoặc restart local staging.
 
 ## Sơ đồ Tổng quan
 
 ```mermaid
 flowchart LR
-    A[/Signed labels/] --> B[Loại leakage theo tenant]
-    B --> C[Control v2 sạch]
-    B --> D[Candidate v3]
-    C --> E[A/B trên cùng partition]
-    D --> E
-    E --> F{Recall đạt 26/34?}
-    F -->|Không: 22/34| G[NO-GO]
-    G --> H[Time-forward holdout và runtime context]
+    A[/Signed labels/] --> B[Candidate v3]
+    B -->|22/34| C[Freeze time-forward]
+    C --> D[6 ablation v4]
+    D --> E[Chọn bằng dev và val]
+    E --> F{Final gates đạt?}
+    F -->|Không| G[NO-GO v4]
+    G --> H[Runtime threat context]
 
     classDef input fill:#E9ECEF,stroke:#6C757D,color:#343A40
     classDef ai fill:#E8DAEF,stroke:#8E44AD,color:#4A235A
     classDef decision fill:#FFF3CD,stroke:#FFC107,color:#856404
     classDef blocked fill:#F8D7DA,stroke:#DC3545,color:#721C24
     class A input
-    class C,D,E ai
+    class B,D,E ai
     class F decision
     class G blocked
 ```
@@ -200,13 +199,105 @@ V3 đưa `1xbet-xoso.com` từ `0,900078` lên `0,966539` và Spotify compound-d
 
 Kết quả không hỗ trợ restart local staging. Signed packet vẫn là frozen regression; lần phát triển kế tiếp cần một time-forward holdout mới trước khi thử thêm model/data policy.
 
+## Thử nghiệm v4 time-forward và TLD state
+
+### Mục tiêu (Objectives)
+
+- Đóng băng một holdout mới trước model selection, tách biệt theo thời gian, source và evaluation group với toàn bộ partition/frozen packet hiện có.
+- Kiểm tra liệu hard-positive ordinary-looking cùng TLD state ba mức có giảm correlation `tld_risk_score=0 ⇒ benign` mà không tuning theo representative packet.
+- Chọn family/weight chỉ bằng PhishTank development và validation candidate FP; chỉ mở final test, OpenPhish holdout và representative packet sau selection.
+- Giữ candidate private nếu bất kỳ release gate nào không đạt.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Time-forward adaptation | PhishTank `verified=yes`, `online=yes`, sau mốc snapshot gốc; một row mỗi group | Reuse row train cũ; thêm representative false-negative | Dữ liệu mới có verification time, provenance và checksum; frozen packet không đi vào train |
+| Final holdout | OpenPhish Community snapshot, loại mọi group đã có trong partitions, frozen packet hoặc PhishTank hiện tại | Chia ngẫu nhiên PhishTank; dùng final test để chọn | Source-disjoint giảm khả năng học artifact riêng của PhishTank và giữ final test ngoài selection |
+| Hard-positive filter | Chỉ giữ neutral TLD, không keyword/brand/shared-hosting/IDN/IP flag | Weight mọi malicious; OHEM từ train | Nhắm vào ordinary-looking subgroup theo feature policy định trước, không theo token của 12 representative false-negative |
+| TLD representation | Giữ 534 chiều; `unknown=0`, `known-neutral=0,5`, `risky=1` với monotone constraint | Thêm one-hot dimensions; giữ binary | Tách trạng thái unknown khỏi neutral mà không đổi bundle width hoặc TF-IDF offset |
+| Model selection | Sáu tổ hợp: hai family × weight `1,0/1,5/2,0`; maximize development recall, validation candidate FP không vượt v3 | Chọn theo OpenPhish/representative/test | Quy tắc selection được ghi trong protocol trước train và không tiêu thụ final holdout |
+| Release decision | Áp đồng thời representative, targeted benign, SAFE VN candidate và OpenPhish non-regression | Promote vì OpenPhish tổng tăng 2 TP | Tổng recall tăng nhỏ không bù được ordinary-looking regression và targeted proxy FP mới |
+
+PhishTank cung cấp downloadable database chỉ gồm record đã verified và online; snapshot dùng đúng các cột `verified`, `online`, `verification_time` theo [developer documentation](https://phishtank.org/developer_info.php). OpenPhish Community Feed có định dạng text và chu kỳ cập nhật 12 giờ theo [official feed matrix](https://openphish.com/phishing_feeds.html). Hai source chỉ cung cấp transport/provenance cho label policy đã định nghĩa; không source nào được dùng làm adjudicator cho signed representative packet.
+
+### Cách thức Thực hiện (Implementation Details)
+
+Protocol `ml/configs/v4-time-forward-protocol.json` được commit ở `4b11f75` trước khi train hoặc đọc prediction. Snapshot PhishTank hiện tại có SHA-256 `f5bed724...61893e7`; OpenPhish có SHA-256 `1465805a...36f4e2a`. Builder canonicalize URL theo UTS #46/PSL, group shared hosting theo tenant, loại `1.935.620` baseline partition groups và `140` frozen groups, rồi xuất ba Parquet Git-ignored kèm public manifest checksum.
+
+Adaptation thêm `1.232` malicious rows vào train với provenance `verified_online_time_forward`. Hai feature family dùng cùng `1.930.618 / 273.799 / 281.212 / 286.804` rows và cùng TF-IDF vocabulary/IDF. V4 thay riêng feature index `14`; builder kiểm tra `100/100` Python parity samples và Go runtime chỉ chấp nhận exact contract `4.0.0`. Selector train/Platt-calibrate sáu tổ hợp, đọc duy nhất validation và `467` development rows, rồi chọn v4 weight `1,5`. Final evaluator sau đó mở OpenPhish `130` rows, representative binary `59` rows, final test và targeted benign challenge đúng một lần.
+
+AI agent sử dụng Codex (GPT-5) với chiến lược pre-registration, checksum-first và constraint-gated selection. Số subagent là `0`; không dùng voting. Kiểm soát chất lượng gồm unit test Python/Go, `36/36` artifact validation cho mỗi family, partition/feature ablation parity, selection input audit và one-time final evaluation. Con người giữ quyền duyệt signed labels và mọi thay đổi rollout; agent không export model, provision bundle, restart service, thay đổi traffic scope hoặc bật `enforce`.
+
+### Số liệu (Metrics & Results)
+
+#### Integrity và cohort
+
+| Chỉ số | Kết quả |
+|---|---:|
+| PhishTank raw / canonical rows | 73.191 / 73.043 |
+| Adaptation / development rows | 1.232 / 467 |
+| OpenPhish raw / source-disjoint holdout groups | 300 / 130 |
+| OpenPhish ordinary-looking subgroup | 40 |
+| Cross-cohort group overlap | 0 |
+| V3 data-only artifact checks | 36/36 pass |
+| V4 ternary-TLD artifact checks | 36/36 pass |
+| V4 single-feature Python parity | 100/100 pass |
+
+#### Model selection không dùng final inputs
+
+| Family | Weight | Development TP / 467 | Validation candidate FP / 11.032 | Eligible |
+|---|---:|---:|---:|---|
+| V3 + time-forward | 1,0 | 201 | 197 | có |
+| V3 + time-forward | 1,5 | 205 | 241 | không |
+| V3 + time-forward | 2,0 | 202 | 179 | có |
+| V4 TLD state + time-forward | 1,0 | 204 | 233 | có |
+| **V4 TLD state + time-forward** | **1,5** | **206** | **229** | **chọn** |
+| V4 TLD state + time-forward | 2,0 | 203 | 214 | có |
+| V3 control | n/a | không dùng để selection recall | 238 | guardrail |
+
+#### Final evaluation tại threshold `0,92`
+
+| Chỉ số | V3 control | V4 selected | Delta v4 − v3 |
+|---|---:|---:|---:|
+| Full-test ROC-AUC | 0,9565 | 0,9565 | xấp xỉ 0 |
+| Full-test PR-AUC | 0,9503 | 0,9504 | +0,0001 |
+| Full-test Brier | 0,081909 | 0,081934 | +0,000025 |
+| Full-test ECE | 0,008245 | 0,007829 | −0,000416 |
+| Full-test FP | 1.545 | 1.526 | −19 |
+| Full-test TP | 70.573 | 70.390 | −183 |
+| Runtime-candidate FP / 9.504 | 164 | 162 | −2 |
+| Runtime-candidate TP / 14.572 | 11.256 | 11.175 | −81 |
+| OpenPhish tổng TP / 130 | 89 | 91 | +2 |
+| OpenPhish ordinary TP / 40 | 6 | 5 | −1 |
+| Representative malicious TP / 34 | 22 | 22 | 0 |
+| Representative benign FP / 25 | 0 | 0 | 0 |
+| Targeted benign FP / 3 | 0 | 0 | 0 |
+| SAFE VN candidate FP / 1.400 | 0 | 1 | +1 |
+
+Candidate tăng OpenPhish tổng recall `1,54` điểm phần trăm nhưng giảm ordinary-looking `2,50` điểm phần trăm. Representative probability trung bình cũng giảm từ `0,896627` xuống `0,894769`; không có case bổ sung vượt threshold. Final-test runtime-candidate recall giảm từ `77,2440%` xuống `76,6882%`, trong khi FPR giảm `0,0210` điểm phần trăm. Đây là precision/recall trade-off bất lợi cho mục tiêu remediation.
+
+Hai gate thất bại: representative malicious chỉ `22/34` thay vì tối thiểu `26/34`, và SAFE VN candidate có `1/1.400` false positive thay vì `0/1.400`. OpenPhish tổng non-regression, representative benign và targeted benign đều đạt. Quyết định cuối là `NO-GO`; artifacts v4 không được export hoặc provision.
+
+### Liên kết Artifacts
+
+- Pre-registered protocol: `ml/configs/v4-time-forward-protocol.json`
+- Public snapshot manifest: `ml/experiments/v4-time-forward-snapshot.json`
+- V3 data-only config: `ml/configs/v3-time-forward-data.json`
+- V4 selected config: `ml/configs/v4-time-forward-ternary-tld.json`
+- V4 feature contract: `ml/contracts/domain_feature_contract.v4.json`
+- Selection report: `ml/experiments/v4-weight-ablation-selection.json`
+- Final report: `ml/experiments/v4-final-evaluation.json`
+- Private selected model: `ml/data/derived/v4-time-forward-ternary-tld/models/domain_threat_lgbm_raw.txt` (Git-ignored; SHA-256 `66f07894728d7c64292f4fad9f8c75d2a35d863921c82bb82b06cfee74c4c2ce`)
+
 ### Phương án candidate kế tiếp
 
-Candidate kế tiếp cần thực hiện đồng thời ba lớp, theo thứ tự sau:
+Candidate kế tiếp cần thực hiện đồng thời bốn lớp, theo thứ tự sau:
 
-1. Đóng băng một time-forward holdout mới từ OpenPhish/Phishing Army/verified-online/Hagezi có checksum và collected-at rõ ràng trước khi tiếp tục tuning; loại toàn bộ group của packet hiện tại khỏi mọi partition.
-2. Tách hai phép đo: lexical-model generalization trên hostname và end-to-end runtime recall có exact threat-feed membership. Redirect, cloaking và security interstitial thuộc runtime/evidence context, không bị ép thành lexical ground truth.
-3. Chỉ thử data/feature policy được định nghĩa trước khi mở holdout mới, ưu tiên categorical TLD state `risky/neutral/unknown` và time-forward ordinary-looking common-TLD threats. Không thêm exact 12 domain còn lại hoặc token chỉ xuất hiện trong frozen packet.
+1. Ngừng ablation thêm trên OpenPhish holdout ngày 2026-08-24 vì tập này đã được mở; lần lexical experiment kế tiếp phải có một holdout time-forward mới và protocol mới.
+2. Tách hai release measurement: lexical-model generalization trên hostname và end-to-end runtime recall với exact threat-feed membership/freshness. Redirect, cloaking và security interstitial thuộc runtime/evidence context, không bị ép thành lexical ground truth.
+3. Ưu tiên threat-context evaluation harness dùng đúng production-free source set, TTL, suffix-match và trusted-brand bypass của `internal/risk`; chỉ xem xét mở rộng feed source sau review traffic scope, terms và operational cost.
+4. Nếu tiếp tục lexical research, đổi model/data representation ở mức lớn hơn weighting/TLD state, ví dụ source-adversarial validation hoặc temporal ensemble; không thêm exact 12 domain còn lại hoặc token chỉ xuất hiện trong frozen packet.
 
 Không chọn phương án chỉ hạ threshold. Sweep hiện tại cho thấy threshold `0,90` đạt `22/34` recall với `0/25` FP; threshold `0,85` đạt `25/34` nhưng tạo `1/25` FP. Candidate mới chỉ được xem xét cho local staging `shadow` khi đạt tối thiểu baseline representative recall `26/34`, giữ representative benign FP `0/25`, targeted benign challenge `0/3`, cross-service probability/response parity trong tolerance `10^-6`, ML errors bằng `0` và enforce promotions bằng `0`.
 
@@ -227,6 +318,8 @@ Không chọn phương án chỉ hạ threshold. Sweep hiện tại cho thấy t
 - Private candidate model: `ml/data/derived/v3-leakage-free-context/models/domain_threat_lgbm_raw.txt` (Git-ignored; SHA-256 `e375ec1720af854362084d509e262dd0c7e1e6e91c48a4cb50060630ab2d463a`)
 - Private generic-weight ablation: `ml/data/derived/v2-suffix-debiased-hard-negatives/candidate-positive-ablation-20260824.json` (Git-ignored; SHA-256 `70afbaa09eb98b0b1bd89045a76c1c2afff08cc3f5695e5e485c244aa01a48ac`)
 - Private hard-positive ablation: `ml/data/derived/v2-suffix-debiased-hard-negatives/hard-positive-mining-ablation-20260824.json` (Git-ignored; SHA-256 `e6924c03d149455d5228b6b98040fb89314054ba7057c1ef84da7c75b9838b93`)
+- Time-forward public manifest: `ml/experiments/v4-time-forward-snapshot.json`
+- V4 selection/final reports: `ml/experiments/v4-weight-ablation-selection.json`, `ml/experiments/v4-final-evaluation.json`
 
 ---
 
@@ -234,5 +327,6 @@ Không chọn phương án chỉ hạ threshold. Sweep hiện tại cho thấy t
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-24 | Freeze time-forward cohorts, thử sáu ablation v3/v4, mở final holdout một lần và giữ v4 `NO-GO` do representative `22/34` cùng SAFE VN candidate `1/1.400` FP | Codex (GPT-5) |
 | 2026-08-24 | Sửa leakage theo shared-hosting tenant, dựng control v2 sạch, triển khai/evaluate feature contract v3 và ghi nhận quyết định `NO-GO` sau năm ablation | Codex (GPT-5) |
 | 2026-08-24 | Phân tích contribution của 13 false-negative, chạy bounded Firecrawl refresh và xác định hướng hard-positive/feature v3 không leakage | Codex (GPT-5) |

@@ -38,6 +38,20 @@ not be provisioned or used to restart local staging. See
 `docs/research/ml/representative-false-negative-analysis.md` for the A/B and
 ablation results.
 
+The pre-registered v4 research round is configured by
+`ml/configs/v4-time-forward-protocol.json`,
+`ml/configs/v3-time-forward-data.json`, and
+`ml/configs/v4-time-forward-ternary-tld.json`. It freezes checksum-pinned
+PhishTank adaptation/development cohorts and a source-disjoint OpenPhish final
+holdout before training. Six family/weight combinations selected v4 ternary
+TLD state with hard-positive weight `1.5`, but the one-time final evaluation
+kept representative malicious recall at `22/34` and produced `1/1,400` SAFE VN
+runtime-candidate false positive. The candidate is private `NO-GO`; its model
+must not be exported, provisioned, or used to restart staging. Aggregate
+selection/final evidence is tracked in
+`ml/experiments/v4-weight-ablation-selection.json` and
+`ml/experiments/v4-final-evaluation.json`.
+
 ## Runtime configuration
 
 ```env
@@ -115,6 +129,20 @@ python -B ml/src/validate_artifacts.py --derived-dir ml/data/derived/v3-leakage-
 python -B ml/src/train_lightgbm.py --config ml/configs/v3-leakage-free-context.json
 python -B ml/src/calibrate_model.py --config ml/configs/v3-leakage-free-context.json
 python -B ml/src/evaluate_model.py --config ml/configs/v3-leakage-free-context.json
+```
+
+The v4 negative-result reproduction keeps the raw feed snapshots and Parquet
+cohorts under Git-ignored `ml/data/derived/` while tracking their checksums:
+
+```powershell
+python -B ml/src/build_time_forward_snapshot.py --config ml/configs/v4-time-forward-protocol.json
+python -B ml/src/build_features.py --config ml/configs/v3-time-forward-data.json --num-workers 8
+python -B ml/src/validate_artifacts.py --derived-dir ml/data/derived/v3-time-forward-data
+python -B ml/src/build_tld_state_ablation.py --source-derived-dir ml/data/derived/v3-time-forward-data --config ml/configs/v4-time-forward-ternary-tld.json
+python -B ml/src/validate_artifacts.py --derived-dir ml/data/derived/v4-time-forward-ternary-tld
+python -B ml/src/select_time_forward_candidate.py --protocol ml/configs/v4-time-forward-protocol.json
+python -B ml/src/evaluate_model.py --config ml/configs/v4-time-forward-ternary-tld.json
+python -B ml/src/evaluate_time_forward_candidate.py --config ml/configs/v4-time-forward-ternary-tld.json --protocol ml/configs/v4-time-forward-protocol.json
 ```
 
 The current local evidence is:

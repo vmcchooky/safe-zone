@@ -76,23 +76,26 @@ def test_tiered_training_weights_preserve_stronger_evidence_weight():
             {"label": 0, "is_ml_candidate": True, "source": "vietnam_whitelist", "training_role": "weighted_hard_negative"},
             {"label": 1, "is_ml_candidate": True, "source": "vietnam_whitelist", "training_role": "standard"},
             {"label": 0, "is_ml_candidate": False, "source": "vietnam_whitelist", "training_role": "standard"},
+            {"label": 1, "is_ml_candidate": False, "source": "phishtank_time_forward", "training_role": "time_forward_hard_positive"},
         ]
     )
     weights, report = apply_training_weight_policy(
         frame,
-        np.array([1.0, 3.0, 1.0, 1.0]),
+        np.array([1.0, 3.0, 1.0, 1.0, 1.0]),
         {
             "source_proxy": {
                 "enabled": True,
                 "source": "vietnam_whitelist",
                 "label": 0,
                 "weight": 1.5,
-            }
+            },
+            "time_forward_hard_positive": {"enabled": True, "weight": 1.5},
         },
     )
-    assert weights.tolist() == [1.5, 3.0, 1.0, 1.0]
+    assert weights.tolist() == [1.5, 3.0, 1.0, 1.0, 1.5]
     assert report["source_proxy_rows"] == 2
     assert report["evidence_hard_negative_rows"] == 1
+    assert report["time_forward_hard_positive_rows"] == 1
 
 
 def test_named_monotone_feature_policy_uses_frozen_order():
@@ -135,6 +138,29 @@ def test_v3_snapshot_extensions_are_explicit_and_bounded():
     assert extractor.extract_features("tenant.weebly.com")[
         "is_shared_hosting"
     ] == 1
+
+
+def test_v4_tld_state_separates_known_neutral_from_unknown():
+    contract_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "contracts",
+        "domain_feature_contract.v4.json",
+    )
+    with open(contract_path, encoding="utf-8") as handle:
+        contract = json.load(handle)
+    extractor = FeatureExtractor(
+        snapshot_store=SnapshotStore(snapshot_policy=contract["snapshot_policy"])
+    )
+
+    assert extractor.extract_features("ordinary-example.com")[
+        "tld_risk_score"
+    ] == 0.5
+    assert extractor.extract_features("ordinary-example.invalidtld")[
+        "tld_risk_score"
+    ] == 0.0
+    assert extractor.extract_features("ordinary-example.xyz")[
+        "tld_risk_score"
+    ] == 1.0
 
 
 def test_bundle_hash_is_canonical_across_windows_and_unix_newlines(tmp_path):

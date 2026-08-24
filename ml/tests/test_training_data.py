@@ -4,10 +4,12 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from src.training_data import (
     _evaluation_group,
     _frozen_evaluation_mask,
+    load_time_forward_hard_positives,
     prepare_training_partitions,
 )
 
@@ -66,6 +68,51 @@ def _write_partition(path: Path, rows: list[dict]) -> None:
         "partition": "",
     }
     pd.DataFrame([{**defaults, **row} for row in rows]).to_parquet(path, index=False)
+
+
+def test_time_forward_hard_positive_rejects_registrable_overlap(tmp_path):
+    source_path = tmp_path / "adaptation.parquet"
+    frame = pd.DataFrame(
+        [
+            {
+                "domain": "tenant.shared.test",
+                "label": 1,
+                "domain_ascii": "tenant.shared.test",
+                "registrable_domain": "shared.test",
+                "source": "phishtank_time_forward",
+                "evaluation_group": "tenant.shared.test",
+            }
+        ]
+    )
+    frame.to_parquet(source_path, index=False)
+    source_sha = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "outputs": {
+                    "adaptation": {
+                        "path": str(source_path),
+                        "rows": 1,
+                        "sha256": source_sha,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="overlaps model partitions"):
+        load_time_forward_hard_positives(
+            {
+                "source_parquet": str(source_path),
+                "public_manifest": str(manifest_path),
+                "manifest_output": "adaptation",
+                "required_source": "phishtank_time_forward",
+            },
+            existing_groups={"shared.test"},
+            excluded_groups=set(),
+        )
 
 
 def test_hard_negative_weighting_and_frozen_challenge_exclusion(tmp_path):
@@ -192,6 +239,40 @@ def test_hard_negative_weighting_and_frozen_challenge_exclusion(tmp_path):
     shared_hosting_path = tmp_path / "shared_hosting.json"
     shared_hosting_path.write_text("[]\n", encoding="utf-8")
 
+    hard_positive_path = tmp_path / "adaptation.parquet"
+    _write_partition(
+        hard_positive_path,
+        [
+            {
+                "domain": "novel-threat.example",
+                "label": 1,
+                "domain_ascii": "novel-threat.example",
+                "registrable_domain": "novel-threat.example",
+                "source": "phishtank_time_forward",
+                "partition": "train",
+            }
+        ],
+    )
+    hard_positive_frame = pd.read_parquet(hard_positive_path)
+    hard_positive_frame["evaluation_group"] = "novel-threat.example"
+    hard_positive_frame.to_parquet(hard_positive_path, index=False)
+    hard_positive_sha = hashlib.sha256(hard_positive_path.read_bytes()).hexdigest()
+    time_forward_manifest_path = tmp_path / "time-forward-manifest.json"
+    time_forward_manifest_path.write_text(
+        json.dumps(
+            {
+                "outputs": {
+                    "adaptation": {
+                        "path": str(hard_positive_path),
+                        "rows": 1,
+                        "sha256": hard_positive_sha,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
     manifest = prepare_training_partitions(
         source_partitions,
         output_partitions,
@@ -210,16 +291,30 @@ def test_hard_negative_weighting_and_frozen_challenge_exclusion(tmp_path):
                 "weight": 3.0,
                 "max_samples": 10,
             },
+            "hard_positive": {
+                "source_parquet": str(hard_positive_path),
+                "public_manifest": str(time_forward_manifest_path),
+                "manifest_output": "adaptation",
+                "required_source": "phishtank_time_forward",
+            },
         },
         artifacts,
     )
 
     train = pd.read_parquet(output_partitions / "train.parquet")
-    assert train["domain_ascii"].tolist() == ["hard-example.com"]
-    assert train["sample_weight"].tolist() == [3.0]
-    assert train["label_provenance"].tolist() == ["benign_proxy"]
+    assert train["domain_ascii"].tolist() == [
+        "hard-example.com",
+        "novel-threat.example",
+    ]
+    assert train["sample_weight"].tolist() == [3.0, 1.0]
+    assert train["label_provenance"].tolist() == [
+        "benign_proxy",
+        "verified_online_time_forward",
+    ]
     assert manifest["frozen_challenge"]["excluded_rows_by_partition"]["train"] == 1
     assert manifest["frozen_evaluation"]["case_count"] == 1
     assert manifest["frozen_evaluation"]["excluded_rows_by_partition"]["train"] == 1
     assert manifest["combined_exclusions"]["excluded_rows_by_partition"]["train"] == 2
     assert manifest["hard_negative"]["counts"]["selected_rows"] == 1
+    assert manifest["hard_positive"]["selected_rows"] == 1
+    assert manifest["hard_positive"]["overlap_with_existing_partitions"] == 0

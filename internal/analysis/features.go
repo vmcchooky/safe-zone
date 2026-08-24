@@ -20,6 +20,7 @@ const (
 	featureManifestVersionV1 = "1.0.0"
 	featureManifestVersionV2 = "2.0.0"
 	featureManifestVersionV3 = "3.0.0"
+	featureManifestVersionV4 = "4.0.0"
 	handcraftedFeatureCount  = 22
 	tfidfFeatureCount        = 512
 	totalFeatureCount        = handcraftedFeatureCount + tfidfFeatureCount
@@ -53,6 +54,13 @@ type SnapshotPolicy struct {
 	KeywordExtensions       []string          `json:"keyword_extensions,omitempty"`
 	BrandExtensions         []Brand           `json:"brand_extensions,omitempty"`
 	SharedHostingExtensions []string          `json:"shared_hosting_extensions,omitempty"`
+	TLDStateEncoding        *TLDStateEncoding `json:"tld_state_encoding,omitempty"`
+}
+
+type TLDStateEncoding struct {
+	Unknown      float64 `json:"unknown"`
+	KnownNeutral float64 `json:"known_neutral"`
+	Risky        float64 `json:"risky"`
 }
 
 type TFIDFConfig struct {
@@ -71,6 +79,7 @@ type canonicalDomain struct {
 	valid           bool
 	ipLike          bool
 	suffix          string
+	suffixKnown     bool
 	registrable     string
 	mainLabel       string
 	subdomainLabels []string
@@ -168,7 +177,7 @@ func NewFeatureExtractor(manifestPath string) (*FeatureExtractor, error) {
 	for root := range sharedHostingRoots {
 		sharedHosting[root] = struct{}{}
 	}
-	if manifest.ContractVersion == featureManifestVersionV3 {
+	if manifest.ContractVersion == featureManifestVersionV3 || manifest.ContractVersion == featureManifestVersionV4 {
 		keywords = append(keywords, manifest.SnapshotPolicy.KeywordExtensions...)
 		brands = append(brands, cloneBrands(manifest.SnapshotPolicy.BrandExtensions)...)
 		for _, root := range manifest.SnapshotPolicy.SharedHostingExtensions {
@@ -188,7 +197,7 @@ func NewFeatureExtractor(manifestPath string) (*FeatureExtractor, error) {
 }
 
 func validateFeatureManifest(manifest FeatureManifest) error {
-	if manifest.ContractVersion != featureManifestVersionV1 && manifest.ContractVersion != featureManifestVersionV2 && manifest.ContractVersion != featureManifestVersionV3 {
+	if manifest.ContractVersion != featureManifestVersionV1 && manifest.ContractVersion != featureManifestVersionV2 && manifest.ContractVersion != featureManifestVersionV3 && manifest.ContractVersion != featureManifestVersionV4 {
 		return fmt.Errorf("unsupported feature manifest version %q", manifest.ContractVersion)
 	}
 	if manifest.HandcraftedFeatureCount != handcraftedFeatureCount ||
@@ -223,6 +232,13 @@ func validateFeatureManifest(manifest FeatureManifest) error {
 			return fmt.Errorf("v3 feature manifest requires TF-IDF input view %q", tfidfInputWithoutSuffix)
 		}
 		if err := validateV3SnapshotPolicy(manifest.SnapshotPolicy); err != nil {
+			return err
+		}
+	case featureManifestVersionV4:
+		if manifest.TFIDFConfig.InputView != tfidfInputWithoutSuffix {
+			return fmt.Errorf("v4 feature manifest requires TF-IDF input view %q", tfidfInputWithoutSuffix)
+		}
+		if err := validateV4SnapshotPolicy(manifest.SnapshotPolicy); err != nil {
 			return err
 		}
 	}
@@ -275,6 +291,19 @@ func validateV3SnapshotPolicy(policy SnapshotPolicy) error {
 	return nil
 }
 
+func validateV4SnapshotPolicy(policy SnapshotPolicy) error {
+	basePolicy := policy
+	basePolicy.TLDStateEncoding = nil
+	if err := validateV3SnapshotPolicy(basePolicy); err != nil {
+		return err
+	}
+	encoding := policy.TLDStateEncoding
+	if encoding == nil || encoding.Unknown != 0 || encoding.KnownNeutral != 0.5 || encoding.Risky != 1 {
+		return errors.New("v4 feature manifest has unsupported TLD state encoding")
+	}
+	return nil
+}
+
 func (e *FeatureExtractor) Manifest() FeatureManifest {
 	if e == nil {
 		return FeatureManifest{}
@@ -286,6 +315,10 @@ func (e *FeatureExtractor) Manifest() FeatureManifest {
 	manifest.SnapshotPolicy.KeywordExtensions = append([]string(nil), manifest.SnapshotPolicy.KeywordExtensions...)
 	manifest.SnapshotPolicy.BrandExtensions = cloneBrands(manifest.SnapshotPolicy.BrandExtensions)
 	manifest.SnapshotPolicy.SharedHostingExtensions = append([]string(nil), manifest.SnapshotPolicy.SharedHostingExtensions...)
+	if manifest.SnapshotPolicy.TLDStateEncoding != nil {
+		encoding := *manifest.SnapshotPolicy.TLDStateEncoding
+		manifest.SnapshotPolicy.TLDStateEncoding = &encoding
+	}
 	if manifest.SnapshotPolicy.BaseFiles != nil {
 		manifest.SnapshotPolicy.BaseFiles = make(map[string]string, len(manifest.SnapshotPolicy.BaseFiles))
 		for name, path := range e.manifest.SnapshotPolicy.BaseFiles {
@@ -347,7 +380,7 @@ func canonicalizeMLDomain(input string) (canonicalDomain, error) {
 		return canonicalDomain{ascii: ascii}, fmt.Errorf("idna_error: %w", err)
 	}
 	ascii = strings.ToLower(ascii)
-	suffix, _ := publicsuffix.PublicSuffix(ascii)
+	suffix, icann := publicsuffix.PublicSuffix(ascii)
 	registrable, err := publicsuffix.EffectiveTLDPlusOne(ascii)
 	if err != nil {
 		registrable = ""
@@ -367,6 +400,7 @@ func canonicalizeMLDomain(input string) (canonicalDomain, error) {
 		unicode:         unicodeValue,
 		valid:           true,
 		suffix:          suffix,
+		suffixKnown:     icann || strings.Contains(suffix, "."),
 		registrable:     registrable,
 		mainLabel:       mainLabel,
 		subdomainLabels: subdomainLabels,
@@ -430,6 +464,8 @@ func (e *FeatureExtractor) ExtractCanonical(canonical canonicalDomain) []float64
 	}
 	if _, ok := suspiciousTLDs[canonical.suffix]; ok {
 		features[14] = 1
+	} else if e.manifest.ContractVersion == featureManifestVersionV4 && canonical.suffixKnown {
+		features[14] = 0.5
 	}
 	for _, keyword := range e.keywords {
 		if strings.Contains(ascii, keyword) {

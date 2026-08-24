@@ -206,6 +206,26 @@ class ArtifactValidator:
                 f"selected_rows={hard_negative.get('counts', {}).get('selected_rows', 0)}",
             )
             all_ok = all_ok and hard_ok
+            hard_positive = training_data.get("hard_positive")
+            if hard_positive is not None:
+                positive_path = hard_positive.get("source_path", "")
+                positive_sha = hard_positive.get("source_sha256", "")
+                positive_ok = (
+                    bool(positive_path)
+                    and os.path.exists(positive_path)
+                    and compute_file_sha256(positive_path).lower()
+                    == str(positive_sha).lower()
+                    and hard_positive.get("selected_rows", 0) > 0
+                    and hard_positive.get("overlap_with_existing_partitions") == 0
+                    and hard_positive.get("overlap_with_frozen_groups") == 0
+                )
+                self.log_check(
+                    "Provenance",
+                    "time_forward_hard_positive_manifest",
+                    positive_ok,
+                    f"selected_rows={hard_positive.get('selected_rows', 0)}",
+                )
+                all_ok = all_ok and positive_ok
 
         return all_ok
 

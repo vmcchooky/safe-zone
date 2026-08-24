@@ -1,0 +1,153 @@
+{
+  "schema_version": 1,
+  "candidate_config": "configs/v4-time-forward-ternary-tld.json",
+  "candidate_config_sha256": "6cdb0229a50561c7ca44aa7d7eaa8a6e9a221f905f0e646113fa2b345d86c80c",
+  "protocol_sha256": "a69173a9474706d06212aa281022a6da74d7b42bf930723f736f71d2ce97db94",
+  "selection_report_sha256": "0e598a2a27eeb8900c99018fab8b9a7a2a459d9a876f7c4271d9ee48a3c76ade",
+  "final_inputs_opened_after_selection": [
+    "final_test_partition",
+    "targeted_benign_challenge",
+    "openphish_source_disjoint_holdout",
+    "representative_binary_packet"
+  ],
+  "operating_threshold": 0.92,
+  "input_integrity": {
+    "public_manifest_sha256": "8a7669aceb11f91ec52f61b517015da3f918928d1c7336cdb67ef51e7aafd768",
+    "openphish_holdout_sha256": "57daaa1e427894cd3579f3af8a03c691c4911a3ad8bfe8fec0f42d1570528e62",
+    "representative_labels_sha256": "d03e698fdeaa5b4f107b09e3d1b85496c35252e318324f32b48c9e942dcc3844",
+    "openphish_rows": 130,
+    "representative_binary_rows": 59
+  },
+  "model_artifacts": {
+    "v3_control": {
+      "feature_manifest_sha256": "7a5554828ab40dc9e6ff0ae96ae85d2f052602f4242cd3f4f0c797dbc0b1f8db",
+      "model_sha256": "e375ec1720af854362084d509e262dd0c7e1e6e91c48a4cb50060630ab2d463a",
+      "calibration_sha256": "716bd354aa1e85cb6c4179308edb3dfa376f6cfb42f2fb2673c646d003cd335b"
+    },
+    "v4_selected": {
+      "feature_manifest_sha256": "f7201f5a7ff460ff28fe698c2066af62d117f3b5881d52bd8904565643ef411c",
+      "model_sha256": "66f07894728d7c64292f4fad9f8c75d2a35d863921c82bb82b06cfee74c4c2ce",
+      "calibration_sha256": "61fd6d12b05ab52b4247e91253d0284d4e9cfcd7f54ce6fc23b58dd5be7886d1"
+    }
+  },
+  "openphish_holdout": {
+    "v3_control": {
+      "all": {
+        "rows": 130,
+        "true_positives": 89,
+        "false_negatives": 41,
+        "recall": 0.6846153846153846,
+        "mean_probability": 0.8716953874103032,
+        "median_probability": 0.9687292339090309
+      },
+      "ordinary_looking": {
+        "rows": 40,
+        "true_positives": 6,
+        "false_negatives": 34,
+        "recall": 0.15,
+        "mean_probability": 0.6690198736668806,
+        "median_probability": 0.7181522261153339
+      }
+    },
+    "v4_selected": {
+      "all": {
+        "rows": 130,
+        "true_positives": 91,
+        "false_negatives": 39,
+        "recall": 0.7,
+        "mean_probability": 0.8709584092075381,
+        "median_probability": 0.964817179683966
+      },
+      "ordinary_looking": {
+        "rows": 40,
+        "true_positives": 5,
+        "false_negatives": 35,
+        "recall": 0.125,
+        "mean_probability": 0.6634329606531029,
+        "median_probability": 0.7276646951290718
+      }
+    }
+  },
+  "representative": {
+    "v3_control": {
+      "malicious": {
+        "rows": 34,
+        "true_positives": 22,
+        "false_negatives": 12,
+        "recall": 0.6470588235294118,
+        "mean_probability": 0.8966268237993134,
+        "median_probability": 0.972556511400116
+      },
+      "benign": {
+        "rows": 25,
+        "false_positives": 0,
+        "fpr": 0.0
+      }
+    },
+    "v4_selected": {
+      "malicious": {
+        "rows": 34,
+        "true_positives": 22,
+        "false_negatives": 12,
+        "recall": 0.6470588235294118,
+        "mean_probability": 0.8947688383539516,
+        "median_probability": 0.9698914171728195
+      },
+      "benign": {
+        "rows": 25,
+        "false_positives": 0,
+        "fpr": 0.0
+      }
+    }
+  },
+  "final_test": {
+    "test_evaluation": {
+      "total_test_samples": 286804,
+      "roc_auc": 0.9565059970784415,
+      "pr_auc": 0.95037555488956,
+      "brier_score": 0.08193448114284757,
+      "ece": 0.00782931237388165
+    },
+    "candidate_cohort_evaluation": {
+      "candidate_samples": 24076,
+      "candidate_roc_auc": 0.9774626981395528,
+      "candidate_pr_auc": 0.9848641072095317,
+      "threshold": 0.92,
+      "benign_candidate_samples": 9504,
+      "malicious_candidate_samples": 14572,
+      "false_positives": 162,
+      "true_positives": 11175,
+      "runtime_candidate_fpr": 0.017045454545454544,
+      "runtime_candidate_recall": 0.7668816909140818
+    },
+    "threshold_0_92": {
+      "threshold": 0.92,
+      "precision": 0.9787807998220146,
+      "recall": 0.5257654185433333,
+      "f1": 0.6840721682045899,
+      "fpr": 0.009978878258993087,
+      "confusion_matrix": {
+        "tn": 151397,
+        "fp": 1526,
+        "fn": 63491,
+        "tp": 70390
+      }
+    },
+    "safe_vn_candidate": {
+      "rows": 1400,
+      "false_positives": 1
+    },
+    "targeted_benign": {
+      "rows": 3,
+      "false_positives": 0
+    }
+  },
+  "gates": {
+    "representative_malicious_at_least_26_of_34": false,
+    "representative_benign_zero_of_25": true,
+    "targeted_benign_zero_of_3": true,
+    "safe_vn_candidate_zero_of_1400": false,
+    "openphish_recall_not_below_v3_control": true
+  },
+  "decision": "NO-GO"
+}

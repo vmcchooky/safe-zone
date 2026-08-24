@@ -152,6 +152,22 @@ class SnapshotStore:
         self.keyboard_adjacency = self._load_json(
             str(base_files["keyboard_adjacency"])
         )
+        tld_state_encoding = policy.get("tld_state_encoding")
+        if tld_state_encoding is not None:
+            expected_encoding = {
+                "unknown": 0.0,
+                "known_neutral": 0.5,
+                "risky": 1.0,
+            }
+            normalized_encoding = {
+                str(key): float(value)
+                for key, value in dict(tld_state_encoding).items()
+            }
+            if normalized_encoding != expected_encoding:
+                raise ValueError("unsupported TLD state encoding")
+            self.tld_state_encoding = normalized_encoding
+        else:
+            self.tld_state_encoding = None
 
         keyword_extensions = [
             str(value).strip().lower()
@@ -412,7 +428,15 @@ class FeatureExtractor:
         # Lookup
         suffix_parts = canonical_res.suffix.split(".")
         tld = suffix_parts[-1] if suffix_parts else ""
-        tld_risk_score = 1.0 if self.snapshots.tld_risk.get(tld, False) else 0.0
+        if self.snapshots.tld_risk.get(tld, False):
+            tld_risk_score = 1.0
+        elif (
+            self.snapshots.tld_state_encoding is not None
+            and get_psl().is_known_suffix(canonical_res.suffix)
+        ):
+            tld_risk_score = self.snapshots.tld_state_encoding["known_neutral"]
+        else:
+            tld_risk_score = 0.0
 
         phishing_keyword_count = 0
         for kw in self.snapshots.keywords:
@@ -799,6 +823,7 @@ def build_full_features(
             "frozen_evaluation": training_data_manifest["frozen_evaluation"],
             "combined_exclusions": training_data_manifest["combined_exclusions"],
             "hard_negative": training_data_manifest["hard_negative"],
+            "hard_positive": training_data_manifest.get("hard_positive"),
         }
 
     manifest_path = os.path.join(derived_dir, "feature_manifest.json")

@@ -371,6 +371,79 @@ def select_hard_negatives(
     return selected, metadata
 
 
+def load_time_forward_hard_positives(
+    policy: Mapping[str, Any],
+    existing_groups: set[str],
+    excluded_groups: set[str],
+) -> tuple[pd.DataFrame, Dict[str, Any]]:
+    """Load a checksum-pinned malicious adaptation cohort.
+
+    The row-level Parquet remains Git-ignored. Its path, row count, and digest
+    must match the tracked public snapshot manifest produced before training.
+    """
+
+    source_path = resolve_ml_path(str(policy["source_parquet"]))
+    manifest_path = resolve_ml_path(str(policy["public_manifest"]))
+    with open(manifest_path, "r", encoding="utf-8") as handle:
+        public_manifest = json.load(handle)
+    output_name = str(policy.get("manifest_output", "adaptation"))
+    source_meta = public_manifest.get("outputs", {}).get(output_name)
+    if not isinstance(source_meta, dict):
+        raise ValueError(
+            f"time-forward manifest has no output named {output_name!r}"
+        )
+    expected_path = resolve_ml_path(str(source_meta.get("path", "")))
+    if expected_path != source_path:
+        raise ValueError("time-forward hard-positive path does not match manifest")
+    actual_sha = compute_file_sha256(source_path)
+    if actual_sha != str(source_meta.get("sha256", "")).lower():
+        raise ValueError("time-forward hard-positive SHA-256 does not match manifest")
+
+    frame = pd.read_parquet(source_path)
+    required = {
+        "domain",
+        "label",
+        "domain_ascii",
+        "registrable_domain",
+        "source",
+        "evaluation_group",
+    }
+    missing = sorted(required - set(frame.columns))
+    if missing:
+        raise ValueError(f"time-forward hard-positive rows missing columns: {missing}")
+    if len(frame) != int(source_meta.get("rows", -1)):
+        raise ValueError("time-forward hard-positive row count does not match manifest")
+    if frame.empty or not frame["label"].astype(int).eq(1).all():
+        raise ValueError("time-forward hard positives must be non-empty and malicious")
+    expected_source = str(policy.get("required_source", "phishtank_time_forward"))
+    if not frame["source"].astype(str).eq(expected_source).all():
+        raise ValueError("time-forward hard-positive source provenance mismatch")
+    if frame["evaluation_group"].astype(str).duplicated().any():
+        raise ValueError("time-forward hard-positive groups must be unique")
+
+    groups = set(frame["evaluation_group"].astype(str))
+    registrable_groups = set(frame["registrable_domain"].astype(str))
+    if (groups | registrable_groups) & existing_groups:
+        raise ValueError("time-forward hard-positive group overlaps model partitions")
+    if groups & excluded_groups:
+        raise ValueError("frozen group leaked into time-forward hard positives")
+
+    metadata = {
+        "source_path": str(source_path),
+        "source_sha256": actual_sha,
+        "public_manifest_path": str(manifest_path),
+        "public_manifest_sha256": compute_file_sha256(manifest_path),
+        "manifest_output": output_name,
+        "selected_rows": len(frame),
+        "evaluation_group_count": len(groups),
+        "required_label": 1,
+        "required_source": expected_source,
+        "overlap_with_existing_partitions": 0,
+        "overlap_with_frozen_groups": 0,
+    }
+    return frame, metadata
+
+
 def prepare_training_partitions(
     source_partitions_dir: str | os.PathLike[str],
     output_partitions_dir: str | os.PathLike[str],
@@ -439,6 +512,34 @@ def prepare_training_partitions(
     frames["train"].loc[hard_mask, "training_role"] = "weighted_hard_negative"
     if int(hard_mask.sum()) != len(hard_negative_df):
         raise ValueError("hard-negative weights did not map one-to-one to training rows")
+
+    hard_positive_meta = None
+    if policy.get("hard_positive"):
+        existing_groups = set().union(
+            *(set(frame["registrable_domain"].astype(str)) for frame in frames.values())
+        )
+        hard_positive_df, hard_positive_meta = load_time_forward_hard_positives(
+            policy["hard_positive"], existing_groups, excluded_groups
+        )
+        metadata_columns = {"sample_weight", "label_provenance", "training_role"}
+        base_columns = [
+            column
+            for column in frames["train"].columns
+            if column not in metadata_columns
+        ]
+        missing_base = sorted(set(base_columns) - set(hard_positive_df.columns))
+        if missing_base:
+            raise ValueError(
+                f"time-forward hard positives cannot populate train schema: {missing_base}"
+            )
+        appended = hard_positive_df[base_columns].copy()
+        appended["sample_weight"] = 1.0
+        appended["label_provenance"] = "verified_online_time_forward"
+        appended["training_role"] = "time_forward_hard_positive"
+        appended = appended[list(frames["train"].columns)]
+        frames["train"] = pd.concat(
+            [frames["train"], appended], ignore_index=True
+        )
 
     groups = {
         split: set(frame["registrable_domain"])
@@ -512,6 +613,7 @@ def prepare_training_partitions(
             "csv_path": str(hard_negative_path),
             "csv_sha256": compute_file_sha256(hard_negative_path),
         },
+        "hard_positive": hard_positive_meta,
         "partition_files": partition_files,
     }
     manifest_path = artifacts_dir / "training_data_manifest.json"

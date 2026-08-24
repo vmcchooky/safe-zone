@@ -177,3 +177,58 @@ func TestFeatureExtractorV3SnapshotExtensions(t *testing.T) {
 		t.Fatalf("expected v3 shared-hosting feature, got %g", sharedHosting[16])
 	}
 }
+
+func TestFeatureExtractorV4TernaryTLDState(t *testing.T) {
+	manifestPath := filepath.Join("..", "..", "ml", "models", "v1", "feature_manifest.v1.json")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest FeatureManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.ContractVersion = featureManifestVersionV4
+	manifest.TFIDFConfig.InputView = tfidfInputWithoutSuffix
+	manifest.SnapshotPolicy = SnapshotPolicy{
+		BaseFiles: map[string]string{
+			"brands": "brands.v1.json", "keywords": "keywords.v1.json",
+			"tld_risk": "tld_risk.v1.json", "shared_hosting": "shared_hosting.v1.json",
+			"homoglyphs": "homoglyphs.v1.json", "keyboard_adjacency": "keyboard_adjacency.v1.json",
+		},
+		KeywordExtensions:       []string{"xbet", "casino", "slot"},
+		BrandExtensions:         []Brand{{Name: "spotify", OfficialDomain: "spotify.com", AltDomains: []string{"spotifycdn.com"}}},
+		SharedHostingExtensions: []string{"weebly.com", "weeblysite.com", "godaddysites.com"},
+		TLDStateEncoding: &TLDStateEncoding{
+			Unknown: 0, KnownNeutral: 0.5, Risky: 1,
+		},
+	}
+	tempManifest := filepath.Join(t.TempDir(), "feature_manifest.json")
+	encoded, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tempManifest, encoded, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	extractor, err := NewFeatureExtractor(tempManifest)
+	if err != nil {
+		t.Fatalf("load v4 extractor: %v", err)
+	}
+
+	known, err := extractor.Extract("ordinary-example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown, err := extractor.Extract("ordinary-example.invalidtld")
+	if err != nil {
+		t.Fatal(err)
+	}
+	risky, err := extractor.Extract("ordinary-example.xyz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if known[14] != 0.5 || unknown[14] != 0 || risky[14] != 1 {
+		t.Fatalf("unexpected v4 TLD states: known=%g unknown=%g risky=%g", known[14], unknown[14], risky[14])
+	}
+}
