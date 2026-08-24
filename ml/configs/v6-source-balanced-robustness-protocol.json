@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-24T13:56:59Z",
+  "seed": 42,
+  "objective": "improve cross-source and time-forward malicious generalization without aggregate runtime-candidate regression",
+  "hypothesis": "class-mass-preserving inverse-sqrt source balancing reduces dependence on dominant feed artifacts while retaining the calibrated v3 feature contract",
+  "control": {
+    "config": "configs/v3-leakage-free-context.json",
+    "selection_report": "experiments/v5-char-linear-selection.json"
+  },
+  "candidate_data": {
+    "config": "configs/v3-time-forward-data.json",
+    "feature_manifest": {
+      "path": "data/derived/v3-time-forward-data/feature_manifest.json",
+      "sha256": "506854a1da391209ac62fce646c388172e803a89d953eb373e48a73a5d447b49"
+    },
+    "partitions": {
+      "train": {
+        "path": "data/derived/v3-time-forward-data/partitions/train.parquet",
+        "sha256": "ebbc61c0efa00b66d9aa92aebce602b2c11bd30d7baebe37181f6a492a6df98f"
+      },
+      "validation": {
+        "path": "data/derived/v3-time-forward-data/partitions/val.parquet",
+        "sha256": "f9df2892690ef74c22bf71e7ccc2318fe6394e71a416b6f97f183a0e56a4bc68"
+      },
+      "calibration": {
+        "path": "data/derived/v3-time-forward-data/partitions/cal.parquet",
+        "sha256": "6032895eb224549ce4d359f6fed9eeec9539cdbd9da4041b3bbb3ebce7a32322"
+      },
+      "final_test": {
+        "path": "data/derived/v3-time-forward-data/partitions/test.parquet",
+        "sha256": "0cce9f14877b5295835dd2137d5b16a4911467d49201e311be1bcc89a38bb78c"
+      }
+    },
+    "matrices": {
+      "train": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_train.npz",
+        "sha256": "16bdea0fd2cf45d4b365f58610d75e93b85f61758d837bd1a29853c2a828219f"
+      },
+      "validation": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_val.npz",
+        "sha256": "35b4add32d007b552a5e2aa5f71672b37a0007141d67a084ef5a8741628f5261"
+      },
+      "calibration": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_cal.npz",
+        "sha256": "2b53db4d65654279ed1af3667eaf335032797f526549ee2ce18fed20e88a8647"
+      },
+      "final_test": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_test.npz",
+        "sha256": "fbe24ad96cf8a207526fd84facae620e68a84f09a59237b59f2318cdb41eb86c"
+      }
+    }
+  },
+  "development": {
+    "path": "data/derived/v5-char-linear-20260824/development.parquet",
+    "sha256": "eb188ea5fda8ee63a1ea31d76a390206c7e0850c9d4ea5f1c2fd878a613d2455",
+    "rows": 349,
+    "status": "previously opened development cohort; reused for one fixed candidate, not for hyperparameter selection"
+  },
+  "final_holdout": {
+    "path": "data/derived/v5-char-linear-20260824/phishdestroy-holdout.parquet",
+    "sha256": "8f8dc4b4ad03898bed8a48ba82da18f28570012b837ba1241369cb04207e27de",
+    "rows": 81528,
+    "ordinary_rows": 44419,
+    "status": "prediction-unopened and source-disjoint from current PhishTank"
+  },
+  "source_balance": {
+    "candidate_count": 1,
+    "group_by": ["label", "source"],
+    "formula": "raw_factor=(max_source_rows_within_label/source_rows)^0.5",
+    "raw_factor_clip": [1.0, 3.0],
+    "normalization": "preserve baseline effective sample-weight mass independently within each label",
+    "order": [
+      "apply existing evidence, Vietnam source-proxy, and time-forward hard-positive weights",
+      "compute train-only source factors from row counts",
+      "normalize source factors against baseline effective mass within each label",
+      "multiply baseline weights by normalized source factors"
+    ],
+    "maximum_effective_weight": 10.0
+  },
+  "model": {
+    "feature_contract": "contracts/domain_feature_contract.v3.json",
+    "family": "LightGBM GBDT",
+    "parameters_from": "configs/v3-time-forward-data.json",
+    "monotone_increasing_features": ["tld_risk_score"],
+    "calibration": "Platt calibration on unchanged calibration partition",
+    "operating_threshold": 0.92
+  },
+  "selection": {
+    "candidate_count": 1,
+    "inputs": ["train", "calibration", "validation", "v5_development"],
+    "forbidden_inputs": [
+      "final_test_partition",
+      "phishdestroy_final_holdout",
+      "openphish_v4_holdout",
+      "frozen_representative_packet",
+      "targeted_benign_packet"
+    ],
+    "eligibility_gates": {
+      "validation_runtime_candidate_false_positives_not_above_control": true,
+      "validation_runtime_candidate_true_positives_not_below_control": true,
+      "validation_malicious_source_macro_recall_not_below_control": {
+        "minimum_source_rows": 50
+      },
+      "validation_malicious_source_worst_recall_not_below_control": {
+        "minimum_source_rows": 50
+      },
+      "development_true_positives_above_control": true
+    },
+    "no_rescue_policy": "do not alter exponent, clip, model parameters, threshold, or cohort after observing candidate selection metrics"
+  },
+  "final_gates": {
+    "representative_malicious_true_positives_min": 26,
+    "representative_benign_false_positives_max": 0,
+    "targeted_benign_false_positives_max": 0,
+    "safe_vn_candidate_false_positives_max": 0,
+    "phishdestroy_overall_recall_not_below_control": true,
+    "phishdestroy_ordinary_recall_not_below_control": true,
+    "final_test_candidate_false_positives_not_above_control": true,
+    "final_test_candidate_true_positives_not_below_control": true
+  },
+  "outputs": {
+    "derived_dir": "data/derived/v6-source-balanced-robustness",
+    "selection_report": "experiments/v6-source-balanced-selection.json",
+    "final_report": "experiments/v6-source-balanced-final-evaluation.json"
+  }
+}
