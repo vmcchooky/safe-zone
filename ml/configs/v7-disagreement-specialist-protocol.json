@@ -163,6 +163,20 @@
     "final_test_candidate_false_positives_not_above_v3": true,
     "final_test_candidate_true_positives_above_v3": true
   },
+  "final_evidence": {
+    "representative_labels": {
+      "path": "evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv",
+      "sha256": "d03e698fdeaa5b4f107b09e3d1b85496c35252e318324f32b48c9e942dcc3844"
+    },
+    "targeted_benign_labels": {
+      "path": "evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/labels.csv",
+      "sha256": "0f93be906a4da6352075634cd127ea89148dc7352df8249015c432f5ef8fcfb5"
+    },
+    "reviewed_unclassifiable_labels": {
+      "path": "evidence/whitelist-proxy-review/run-20260824-owner-reviewed-stale-addendum/labels.csv",
+      "sha256": "063ecc780970d92f89c2d9c1106df3babfa5310e8931288dd516f7701f7d2c7d"
+    }
+  },
   "outputs": {
     "derived_dir": "data/derived/v7-disagreement-specialist",
     "selection_report": "experiments/v7-disagreement-specialist-selection.json",
