@@ -30,12 +30,24 @@
       "path": "experiments/v6-source-balanced-selection.json",
       "sha256": "d25dfa22b9c743bd194bf944f201a1a02a3fa6792fb752cf9310aabb9a0ecf5a"
     },
+    "v3_feature_manifest": {
+      "path": "data/derived/v3-leakage-free-context/feature_manifest.json",
+      "sha256": "7a5554828ab40dc9e6ff0ae96ae85d2f052602f4242cd3f4f0c797dbc0b1f8db"
+    },
     "feature_manifest": {
       "path": "data/derived/v3-time-forward-data/feature_manifest.json",
       "sha256": "506854a1da391209ac62fce646c388172e803a89d953eb373e48a73a5d447b49"
     }
   },
   "inputs": {
+    "v3_calibration_matrix": {
+      "path": "data/derived/v3-leakage-free-context/matrices/X_cal.npz",
+      "sha256": "c6c469a00f9380d3fa9c4b57b2b6610ca21eb70464d1559269c561043b161eda"
+    },
+    "v3_validation_matrix": {
+      "path": "data/derived/v3-leakage-free-context/matrices/X_val.npz",
+      "sha256": "91a5c8026d390d0a92aa178dc15c6178d689e9d54e08a44bae5923dd378e8b10"
+    },
     "calibration_partition": {
       "path": "data/derived/v3-time-forward-data/partitions/cal.parquet",
       "sha256": "6032895eb224549ce4d359f6fed9eeec9539cdbd9da4041b3bbb3ebce7a32322"
