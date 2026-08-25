@@ -166,17 +166,16 @@ def _url_row(
         )
     except URLContextError:
         return None
-    canonical = canonicalize_domain(parsed.host)
-    if not canonical.is_valid or not canonical.registrable_domain:
+    if not parsed.registrable_domain:
         return None
     group, _ = _evaluation_group(
-        canonical.domain_ascii, canonical.registrable_domain, roots
+        parsed.host, parsed.registrable_domain, roots
     )
     return {
         "requested_url": parsed.normalized_url,
         "url_sha256": parsed.url_sha256,
-        "domain_ascii": canonical.domain_ascii,
-        "registrable_domain": canonical.registrable_domain,
+        "domain_ascii": parsed.host,
+        "registrable_domain": parsed.registrable_domain,
         "evaluation_group": group,
         "label": int(label),
         "source": source,
@@ -348,6 +347,7 @@ def _collect_benign_rows(
 
     rows: list[Dict[str, Any]] = []
     seen_hashes: set[str] = set()
+    blocked_groups = excluded_groups | reserved_final_groups
     failed = 0
     with open(raw_path, "w", encoding="utf-8", newline="\n") as raw_handle:
         for domain in selected_domains:
@@ -371,7 +371,7 @@ def _collect_benign_rows(
                 )
                 if row is None or row["domain_ascii"] != domain:
                     continue
-                if row["evaluation_group"] in excluded_groups | reserved_final_groups:
+                if row["evaluation_group"] in blocked_groups:
                     continue
                 if row["url_sha256"] in seen_hashes:
                     continue
@@ -418,6 +418,7 @@ def _collect_uci_benign_rows(
     ]
     rows: list[Dict[str, Any]] = []
     seen_hashes: set[str] = set()
+    blocked_groups = excluded_groups | reserved_final_groups
     for raw_url in benign[source["required_url_column"]].astype(str):
         row = _url_row(
             raw_url,
@@ -428,7 +429,7 @@ def _collect_uci_benign_rows(
         )
         if row is None:
             continue
-        if row["evaluation_group"] in excluded_groups | reserved_final_groups:
+        if row["evaluation_group"] in blocked_groups:
             continue
         if row["url_sha256"] in seen_hashes:
             continue
@@ -514,6 +515,8 @@ def build(protocol_path: str | os.PathLike[str]) -> Dict[str, Any]:
     adaptation_rows: list[Dict[str, Any]] = []
     adaptation_raw_rows = 0
     adaptation_valid_rows = 0
+    adaptation_blocked_groups = excluded_groups | final_groups | benign_groups
+    adaptation_blocked_hashes = final_hashes | benign_hashes
     for row in _read_feed_rows(
         adaptation_path,
         source=adaptation_meta["name"],
@@ -522,9 +525,12 @@ def build(protocol_path: str | os.PathLike[str]) -> Dict[str, Any]:
         product_contract=product_contract,
     ):
         adaptation_raw_rows += 1
-        if row["evaluation_group"] in excluded_groups | final_groups | benign_groups:
+        if row["evaluation_group"] in adaptation_blocked_groups:
             continue
-        if row["url_sha256"] in final_hashes | benign_hashes | adaptation_seen:
+        if (
+            row["url_sha256"] in adaptation_blocked_hashes
+            or row["url_sha256"] in adaptation_seen
+        ):
             continue
         adaptation_seen.add(row["url_sha256"])
         adaptation_rows.append(row)

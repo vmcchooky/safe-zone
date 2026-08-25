@@ -32,6 +32,7 @@ def test_query_values_are_redacted_and_host_is_excluded():
     )
 
     assert parsed.host == "example.com"
+    assert parsed.registrable_domain == "example.com"
     assert secret not in text
     assert "example.com" not in text
     assert "token=" in text

@@ -51,6 +51,7 @@ class URLContextError(ValueError):
 class ParsedURL:
     scheme: str
     host: str
+    registrable_domain: str
     port: int | None
     path: str
     query: str
@@ -129,6 +130,7 @@ def parse_url(
     return ParsedURL(
         scheme=scheme,
         host=host,
+        registrable_domain=canonical.registrable_domain,
         port=port,
         path=path,
         query=parsed.query,
