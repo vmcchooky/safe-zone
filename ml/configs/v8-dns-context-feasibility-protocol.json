@@ -59,17 +59,17 @@
   },
   "sources": {
     "malicious_train_development": {
-      "name": "phishtank_online_valid_20260825",
-      "url": "https://data.phishtank.com/data/online-valid.csv",
-      "path": "data/derived/v8-dns-context-20260825/raw/phishtank-online-valid.csv",
-      "trust_policy": "verified=yes and online=yes",
-      "download_after_protocol": true
-    },
-    "malicious_final": {
       "name": "phishing_database_active_20260825",
       "url": "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt",
       "path": "data/derived/v8-dns-context-20260825/raw/phishing-domains-ACTIVE.txt",
       "trust_policy": "project active-domain list membership",
+      "download_after_protocol": true
+    },
+    "malicious_final": {
+      "name": "phishdestroy_primary_active_20260825",
+      "url": "https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt",
+      "path": "data/derived/v8-dns-context-20260825/raw/phishdestroy-primary-active-domains.txt",
+      "trust_policy": "primary active domain membership; exclude every v5/v7 holdout group",
       "download_after_protocol": true
     },
     "benign_train": {
