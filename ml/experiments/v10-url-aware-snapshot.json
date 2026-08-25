@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "3f561627530f8aaa6f717be166329345c35cd037be347df4b0ca7db1d584a6ef",
+  "raw_sources": {
+    "malicious_adaptation": {
+      "path": "data/derived/v10-url-aware-20260825/raw/phishing-links-ACTIVE.txt",
+      "sha256": "be4a179b3ac92b7135595b459c2c9867fe681c12209489dd99517db8407a67c6",
+      "bytes": 65823890,
+      "parsed_rows": 778156,
+      "eligible_rows": 350808
+    },
+    "malicious_final": {
+      "path": "data/derived/v10-url-aware-20260825/raw/openphish-community.txt",
+      "sha256": "0e74b9da395487c08b58a755cbf8180f04985c47dd7ad9295b3c53287f6b2823",
+      "bytes": 16717,
+      "parsed_rows": 296,
+      "eligible_rows": 179
+    },
+    "benign": {
+      "path": "data/derived/v10-url-aware-20260825/raw/phiusiil-phishing-url-dataset.zip",
+      "sha256": "0a639fd03aea6308c5b1c10c92aa23c2ce1505447a9137271865cd0badc9a59a",
+      "bytes": 15376007,
+      "csv_member": "PhiUSIIL_Phishing_URL_Dataset.csv",
+      "raw_rows": 235795,
+      "raw_benign_rows": 134850,
+      "eligible_urls": 116315,
+      "license": "CC BY 4.0"
+    }
+  },
+  "exclusions": {
+    "unique_groups": 2022301,
+    "inputs": {
+      "baseline_train": {
+        "rows": 1930618,
+        "groups": 1363102
+      },
+      "baseline_validation": {
+        "rows": 273799,
+        "groups": 191891
+      },
+      "baseline_calibration": {
+        "rows": 281212,
+        "groups": 191221
+      },
+      "baseline_final_test": {
+        "rows": 286804,
+        "groups": 190699
+      },
+      "frozen_representative": {
+        "rows": 137,
+        "groups": 137
+      },
+      "frozen_targeted_benign": {
+        "rows": 3,
+        "groups": 3
+      },
+      "frozen_reviewed_unclassifiable": {
+        "rows": 4,
+        "groups": 3
+      },
+      "v4_development": {
+        "rows": 467,
+        "groups": 467
+      },
+      "v5_development": {
+        "rows": 349,
+        "groups": 349
+      },
+      "v5_phishdestroy_final": {
+        "rows": 81528,
+        "groups": 81528
+      },
+      "v8_train": {
+        "rows": 800,
+        "groups": 520
+      },
+      "v8_development": {
+        "rows": 300,
+        "groups": 300
+      },
+      "v8_final": {
+        "rows": 500,
+        "groups": 500
+      },
+      "v9_development": {
+        "rows": 2000,
+        "groups": 2000
+      }
+    },
+    "malicious_final_reserved_groups": 157,
+    "benign_proxy_groups": 116228
+  },
+  "cross_partition_group_overlap": {
+    "adaptation_train__calibration": 0,
+    "adaptation_train__threshold": 0,
+    "adaptation_train__development": 0,
+    "adaptation_train__final": 0,
+    "calibration__threshold": 0,
+    "calibration__development": 0,
+    "calibration__final": 0,
+    "threshold__development": 0,
+    "threshold__final": 0,
+    "development__final": 0
+  },
+  "outputs": {
+    "adaptation_train": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/adaptation_train.parquet",
+      "rows": 10000,
+      "labels": {
+        "0": 5000,
+        "1": 5000
+      },
+      "groups": 9209,
+      "sha256": "42e38d7941c87dbcdaa8d851dd3f665406fcb5b3d873e80977ae25b51a0441b6"
+    },
+    "calibration": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/calibration.parquet",
+      "rows": 2000,
+      "labels": {
+        "0": 1000,
+        "1": 1000
+      },
+      "groups": 1738,
+      "sha256": "7a83bc77fe8d46f4a46a3332ac81c66afde9a02cc04d2d351c7e38d1bd6576ce"
+    },
+    "threshold": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/threshold.parquet",
+      "rows": 2000,
+      "labels": {
+        "0": 1000,
+        "1": 1000
+      },
+      "groups": 1858,
+      "sha256": "8e29bdf65f9a4582746d5b76d76e8b6f05ac4a58a0431d9fe3ff9bfd6cf782c5"
+    },
+    "development": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/development.parquet",
+      "rows": 2000,
+      "labels": {
+        "0": 1000,
+        "1": 1000
+      },
+      "groups": 1767,
+      "sha256": "061ccb914c7707d61e4636fcad5fa3503155ee8e3af1547a43de2d6ed9a88527"
+    },
+    "final": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/final.parquet",
+      "rows": 679,
+      "labels": {
+        "0": 500,
+        "1": 179
+      },
+      "groups": 657,
+      "sha256": "024af962e2b1ab127071ca17fb5ac1ff391c72e679deed151adfd9dcf4150a48"
+    }
+  }
+}
