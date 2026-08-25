@@ -17,6 +17,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -86,8 +87,22 @@ def _load_exclusions(
         path = resolve_ml_path(meta["path"])
         _require_hash(path, meta["sha256"], f"exclusion {name}")
         if path.suffix.lower() == ".parquet":
-            frame = pd.read_parquet(path, columns=["evaluation_group"])
-            groups = set(frame["evaluation_group"].astype(str))
+            schema_names = set(pq.read_schema(path).names)
+            if "evaluation_group" in schema_names:
+                frame = pd.read_parquet(path, columns=["evaluation_group"])
+                groups = set(frame["evaluation_group"].astype(str))
+            elif {"domain_ascii", "registrable_domain"}.issubset(schema_names):
+                frame = pd.read_parquet(
+                    path, columns=["domain_ascii", "registrable_domain"]
+                )
+                groups = {
+                    _evaluation_group(str(domain), str(registrable), roots)[0]
+                    for domain, registrable in zip(
+                        frame["domain_ascii"], frame["registrable_domain"]
+                    )
+                }
+            else:
+                raise ValueError(f"exclusion parquet lacks group columns: {path}")
             rows = len(frame)
         else:
             groups = _generic_csv_groups(path, roots)
