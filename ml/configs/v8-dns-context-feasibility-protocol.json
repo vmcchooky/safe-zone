@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-25T01:24:28Z",
+  "seed": 42,
+  "objective": "test whether bounded DNS record metadata adds source-disjoint malicious recall without incremental benign false positives",
+  "study_scope": "offline feasibility only; no runtime integration, traffic, or enforcement",
+  "primary_model": {
+    "config": "configs/v3-leakage-free-context.json",
+    "model": {
+      "path": "data/derived/v3-leakage-free-context/models/domain_threat_lgbm_raw.txt",
+      "sha256": "e375ec1720af854362084d509e262dd0c7e1e6e91c48a4cb50060630ab2d463a"
+    },
+    "calibration": {
+      "path": "data/derived/v3-leakage-free-context/models/calibration.json",
+      "sha256": "716bd354aa1e85cb6c4179308edb3dfa376f6cfb42f2fb2673c646d003cd335b"
+    },
+    "feature_manifest": {
+      "path": "data/derived/v3-leakage-free-context/feature_manifest.json",
+      "sha256": "7a5554828ab40dc9e6ff0ae96ae85d2f052602f4242cd3f4f0c797dbc0b1f8db"
+    },
+    "operating_threshold": 0.92
+  },
+  "group_policy": {
+    "shared_hosting_snapshot": "contracts/snapshots/shared_hosting.v1.json",
+    "shared_hosting_snapshot_sha256": "27825bf0bb206038372bd26038d46698e0fe946f0a9eaa08afea25f004f48ed2",
+    "shared_hosting_extensions": ["weebly.com", "weeblysite.com", "godaddysites.com"]
+  },
+  "baseline_partitions": {
+    "train": {
+      "path": "data/derived/v3-time-forward-data/partitions/train.parquet",
+      "sha256": "ebbc61c0efa00b66d9aa92aebce602b2c11bd30d7baebe37181f6a492a6df98f"
+    },
+    "validation": {
+      "path": "data/derived/v3-time-forward-data/partitions/val.parquet",
+      "sha256": "f9df2892690ef74c22bf71e7ccc2318fe6394e71a416b6f97f183a0e56a4bc68"
+    },
+    "calibration": {
+      "path": "data/derived/v3-time-forward-data/partitions/cal.parquet",
+      "sha256": "6032895eb224549ce4d359f6fed9eeec9539cdbd9da4041b3bbb3ebce7a32322"
+    },
+    "test": {
+      "path": "data/derived/v3-time-forward-data/partitions/test.parquet",
+      "sha256": "0cce9f14877b5295835dd2137d5b16a4911467d49201e311be1bcc89a38bb78c"
+    }
+  },
+  "prior_opened_groups": {
+    "v4_development": {
+      "path": "data/derived/time-forward-20260824/development.parquet",
+      "sha256": "80c8246d3204ebe699d398d7559602e9b7dd1667844e98481822d52a9e37968f"
+    },
+    "v5_development": {
+      "path": "data/derived/v5-char-linear-20260824/development.parquet",
+      "sha256": "eb188ea5fda8ee63a1ea31d76a390206c7e0850c9d4ea5f1c2fd878a613d2455"
+    },
+    "v5_phishdestroy_final": {
+      "path": "data/derived/v5-char-linear-20260824/phishdestroy-holdout.parquet",
+      "sha256": "8f8dc4b4ad03898bed8a48ba82da18f28570012b837ba1241369cb04207e27de"
+    }
+  },
+  "sources": {
+    "malicious_train_development": {
+      "name": "phishtank_online_valid_20260825",
+      "url": "https://data.phishtank.com/data/online-valid.csv",
+      "path": "data/derived/v8-dns-context-20260825/raw/phishtank-online-valid.csv",
+      "trust_policy": "verified=yes and online=yes",
+      "download_after_protocol": true
+    },
+    "malicious_final": {
+      "name": "phishing_database_active_20260825",
+      "url": "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt",
+      "path": "data/derived/v8-dns-context-20260825/raw/phishing-domains-ACTIVE.txt",
+      "trust_policy": "project active-domain list membership",
+      "download_after_protocol": true
+    },
+    "benign_train": {
+      "name": "top_1m_train_partition",
+      "partition": "train",
+      "required_source": "top_1m"
+    },
+    "benign_development": {
+      "name": "tranco_validation_partition",
+      "partition": "validation",
+      "required_source": "tranco"
+    },
+    "benign_final": {
+      "name": "vietnam_official_trust_directory",
+      "path": "../data/whitelist/vietnam/vietnam_websites.csv",
+      "sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
+      "required_column": "domain"
+    }
+  },
+  "cohorts": {
+    "train": {"malicious_rows": 400, "benign_rows": 400},
+    "development": {"malicious_rows": 150, "benign_rows": 150},
+    "final": {"malicious_rows": 250, "benign_rows": 250},
+    "selection_order": "sha256(seed|label|evaluation_group), domain_ascii",
+    "exclude_all_baseline_partition_groups_from_external_sources": true,
+    "exclude_all_frozen_groups": true,
+    "exclude_all_prior_opened_groups": true,
+    "cross_cohort_group_overlap_max": 0
+  },
+  "dns_collection": {
+    "transport": "DNS-over-HTTPS JSON",
+    "endpoint": "https://cloudflare-dns.com/dns-query",
+    "record_types": ["A", "AAAA", "NS", "MX"],
+    "accept": "application/dns-json",
+    "timeout_seconds": 4.0,
+    "maximum_attempts": 2,
+    "maximum_concurrency": 24,
+    "retry_statuses": [429, 500, 502, 503, 504],
+    "cache": false,
+    "label_blind_collection": true,
+    "latency_excluded_from_model": true
+  },
+  "dns_features": [
+    "a_noerror",
+    "a_nxdomain",
+    "a_answer_count",
+    "a_address_count",
+    "a_cname_count",
+    "log1p_a_min_ttl",
+    "aaaa_noerror",
+    "aaaa_answer_count",
+    "aaaa_address_count",
+    "log1p_aaaa_min_ttl",
+    "ns_noerror",
+    "ns_answer_count",
+    "log1p_ns_min_ttl",
+    "mx_noerror",
+    "mx_answer_count",
+    "log1p_mx_min_ttl",
+    "resolved_any",
+    "dns_error_count"
+  ],
+  "context_model": {
+    "pipeline": ["StandardScaler", "LogisticRegression"],
+    "penalty": "l2",
+    "C": 0.1,
+    "solver": "lbfgs",
+    "max_iter": 500,
+    "class_weight": "balanced",
+    "random_state": 42,
+    "candidate_count": 1,
+    "train_threshold_split": {
+      "hash": "sha256(seed|evaluation_group) modulo 10",
+      "model_train_buckets": [0, 1, 2, 3, 4, 5, 6],
+      "threshold_buckets": [7, 8, 9]
+    },
+    "threshold_rule": "smallest representable probability strictly above maximum benign probability on threshold split"
+  },
+  "combined_decision": "v3_probability >= 0.92 OR (v3_probability < 0.92 AND dns_context_probability >= dns_context_threshold)",
+  "selection": {
+    "inputs": ["dns_train", "dns_threshold", "dns_development"],
+    "forbidden_inputs": ["dns_final", "representative_packet", "targeted_benign_packet"],
+    "coverage_gates": {
+      "domain_with_at_least_one_parsed_response_min_fraction": 0.9,
+      "maximum_label_coverage_gap": 0.1
+    },
+    "eligibility_gates": {
+      "threshold_accepted_benign_max": 0,
+      "threshold_accepted_malicious_min": 1,
+      "development_incremental_benign_false_positives_max": 0,
+      "development_combined_malicious_true_positives_above_v3": true
+    },
+    "no_rescue_policy": "do not alter cohort sizes, features, C, threshold rule, DNS endpoint, timeout, or retries after selection metrics"
+  },
+  "final_gates": {
+    "final_incremental_benign_false_positives_max": 0,
+    "final_combined_malicious_true_positives_above_v3": true,
+    "representative_malicious_true_positives_min": 26,
+    "representative_benign_false_positives_max": 0,
+    "targeted_benign_false_positives_max": 0
+  },
+  "final_evidence": {
+    "representative_labels": {
+      "path": "evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv",
+      "sha256": "d03e698fdeaa5b4f107b09e3d1b85496c35252e318324f32b48c9e942dcc3844"
+    },
+    "targeted_benign_labels": {
+      "path": "evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/labels.csv",
+      "sha256": "0f93be906a4da6352075634cd127ea89148dc7352df8249015c432f5ef8fcfb5"
+    }
+  },
+  "outputs": {
+    "derived_dir": "data/derived/v8-dns-context-20260825",
+    "snapshot_manifest": "experiments/v8-dns-context-snapshot.json",
+    "selection_report": "experiments/v8-dns-context-selection.json",
+    "final_report": "experiments/v8-dns-context-final-evaluation.json"
+  }
+}
