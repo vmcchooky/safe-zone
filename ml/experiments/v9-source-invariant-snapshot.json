@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "96fd49a45ca07cdee5519d9b6a0d4f170d1179e3386ab8ab1f57e9cf2e8078c4",
+  "raw_sources": {
+    "malicious": {
+      "path": "data/derived/v8-dns-context-20260825/raw/phishing-domains-ACTIVE.txt",
+      "sha256": "5c982897c66447201258e5811816f5b26632c2244b5cbf8f42f6520ff8a373df",
+      "raw_lines": 391753,
+      "eligible_groups": 167309
+    },
+    "benign": {
+      "path": "../data/whitelist/vietnam/vietnam_websites.csv",
+      "sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
+      "raw_rows": 656983,
+      "eligible_groups": 215402
+    }
+  },
+  "exclusions": {
+    "baseline_groups": 1936767,
+    "frozen_groups": 140,
+    "prior_opened_groups": 83664,
+    "inputs": {
+      "v4_development": {
+        "rows": 467,
+        "groups": 467
+      },
+      "v5_development": {
+        "rows": 349,
+        "groups": 349
+      },
+      "v5_phishdestroy_final": {
+        "rows": 81528,
+        "groups": 81528
+      },
+      "train": {
+        "rows": 800,
+        "groups": 520
+      },
+      "development": {
+        "rows": 300,
+        "groups": 300
+      },
+      "final": {
+        "rows": 500,
+        "groups": 500
+      }
+    }
+  },
+  "fresh_final_group_overlap": 0,
+  "output": {
+    "path": "data/derived/v9-source-invariant-round1/cohorts/development.parquet",
+    "rows": 2000,
+    "sha256": "2827eb83797e63a970c2bace5a5241f63611546f0773700eb3a4d89a09781572"
+  }
+}
