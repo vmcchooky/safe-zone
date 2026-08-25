@@ -108,6 +108,20 @@
         "sha256": "180f35929611c6ac4d93e904a6ddcd51585e06646dd77277a34e9f1213a20e35"
       }
     },
+    "exclude_prior_opened_groups": {
+      "v4_development": {
+        "path": "data/derived/time-forward-20260824/development.parquet",
+        "sha256": "80c8246d3204ebe699d398d7559602e9b7dd1667844e98481822d52a9e37968f"
+      },
+      "v5_development": {
+        "path": "data/derived/v5-char-linear-20260824/development.parquet",
+        "sha256": "eb188ea5fda8ee63a1ea31d76a390206c7e0850c9d4ea5f1c2fd878a613d2455"
+      },
+      "v5_phishdestroy_final": {
+        "path": "data/derived/v5-char-linear-20260824/phishdestroy-holdout.parquet",
+        "sha256": "8f8dc4b4ad03898bed8a48ba82da18f28570012b837ba1241369cb04207e27de"
+      }
+    },
     "group_policy": {
       "shared_hosting_snapshot": "contracts/snapshots/shared_hosting.v1.json",
       "shared_hosting_snapshot_sha256": "27825bf0bb206038372bd26038d46698e0fe946f0a9eaa08afea25f004f48ed2",
