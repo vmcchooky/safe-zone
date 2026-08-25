@@ -74,7 +74,65 @@
     "exclude_all_frozen_groups": true,
     "exclude_all_v4_through_v9_opened_groups": true,
     "exclude_cross_label_url_hash_collisions": true,
-    "cross_partition_group_overlap_max": 0
+    "cross_partition_group_overlap_max": 0,
+    "inputs": {
+      "baseline_train": {
+        "path": "data/derived/v3-time-forward-data/partitions/train.parquet",
+        "sha256": "ebbc61c0efa00b66d9aa92aebce602b2c11bd30d7baebe37181f6a492a6df98f"
+      },
+      "baseline_validation": {
+        "path": "data/derived/v3-time-forward-data/partitions/val.parquet",
+        "sha256": "f9df2892690ef74c22bf71e7ccc2318fe6394e71a416b6f97f183a0e56a4bc68"
+      },
+      "baseline_calibration": {
+        "path": "data/derived/v3-time-forward-data/partitions/cal.parquet",
+        "sha256": "6032895eb224549ce4d359f6fed9eeec9539cdbd9da4041b3bbb3ebce7a32322"
+      },
+      "baseline_final_test": {
+        "path": "data/derived/v3-time-forward-data/partitions/test.parquet",
+        "sha256": "0cce9f14877b5295835dd2137d5b16a4911467d49201e311be1bcc89a38bb78c"
+      },
+      "frozen_representative": {
+        "path": "evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv",
+        "sha256": "d03e698fdeaa5b4f107b09e3d1b85496c35252e318324f32b48c9e942dcc3844"
+      },
+      "frozen_targeted_benign": {
+        "path": "evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/labels.csv",
+        "sha256": "0f93be906a4da6352075634cd127ea89148dc7352df8249015c432f5ef8fcfb5"
+      },
+      "frozen_reviewed_unclassifiable": {
+        "path": "evidence/whitelist-proxy-review/run-20260824-owner-reviewed-stale-addendum/labels.csv",
+        "sha256": "063ecc780970d92f89c2d9c1106df3babfa5310e8931288dd516f7701f7d2c7d"
+      },
+      "v4_development": {
+        "path": "data/derived/time-forward-20260824/development.parquet",
+        "sha256": "80c8246d3204ebe699d398d7559602e9b7dd1667844e98481822d52a9e37968f"
+      },
+      "v5_development": {
+        "path": "data/derived/v5-char-linear-20260824/development.parquet",
+        "sha256": "eb188ea5fda8ee63a1ea31d76a390206c7e0850c9d4ea5f1c2fd878a613d2455"
+      },
+      "v5_phishdestroy_final": {
+        "path": "data/derived/v5-char-linear-20260824/phishdestroy-holdout.parquet",
+        "sha256": "8f8dc4b4ad03898bed8a48ba82da18f28570012b837ba1241369cb04207e27de"
+      },
+      "v8_train": {
+        "path": "data/derived/v8-dns-context-20260825/cohorts/train.parquet",
+        "sha256": "122908dc4d60f92a454f1958dca13d2f1c6642e650ba2a2fffc5498fbb0c7650"
+      },
+      "v8_development": {
+        "path": "data/derived/v8-dns-context-20260825/cohorts/development.parquet",
+        "sha256": "34e70739bb25710e423c327f93960cb49a80bab371e7cc0dd28433ffa3cad47f"
+      },
+      "v8_final": {
+        "path": "data/derived/v8-dns-context-20260825/cohorts/final.parquet",
+        "sha256": "180f35929611c6ac4d93e904a6ddcd51585e06646dd77277a34e9f1213a20e35"
+      },
+      "v9_development": {
+        "path": "data/derived/v9-source-invariant-round1/cohorts/development.parquet",
+        "sha256": "2827eb83797e63a970c2bace5a5241f63611546f0773700eb3a4d89a09781572"
+      }
+    }
   },
   "partition_policy": {
     "hash": "sha256(seed|evaluation_group) modulo 10",
