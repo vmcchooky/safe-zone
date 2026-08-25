@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "4ad63defdcbf41e46e77866933cabe9e41eb4829e8d40c56104353a5b14e32c1",
+  "snapshot_manifest_sha256": "a46b141b1a1f9a5795bf18be3a69d49f5882d2c58691f0defe6d53212fcdfb92",
+  "selection_inputs": [
+    "dns_train",
+    "dns_threshold",
+    "dns_development"
+  ],
+  "forbidden_inputs_read": [],
+  "candidate_count": 1,
+  "coverage": {
+    "train": {
+      "rows": 800,
+      "by_label": {
+        "0": {
+          "rows": 400,
+          "parsed_response_fraction": 1.0
+        },
+        "1": {
+          "rows": 400,
+          "parsed_response_fraction": 1.0
+        }
+      },
+      "label_coverage_gap": 0.0,
+      "minimum_label_coverage": 1.0
+    },
+    "development": {
+      "rows": 300,
+      "by_label": {
+        "0": {
+          "rows": 150,
+          "parsed_response_fraction": 1.0
+        },
+        "1": {
+          "rows": 150,
+          "parsed_response_fraction": 0.9933333333333333
+        }
+      },
+      "label_coverage_gap": 0.00666666666666671,
+      "minimum_label_coverage": 0.9933333333333333
+    },
+    "combined": {
+      "rows": 1100,
+      "by_label": {
+        "0": {
+          "rows": 550,
+          "parsed_response_fraction": 1.0
+        },
+        "1": {
+          "rows": 550,
+          "parsed_response_fraction": 0.9981818181818182
+        }
+      },
+      "label_coverage_gap": 0.0018181818181818299,
+      "minimum_label_coverage": 0.9981818181818182
+    }
+  },
+  "split": {
+    "model_train_rows": 542,
+    "threshold_rows": 258,
+    "group_overlap": 0
+  },
+  "threshold": {
+    "rows": 258,
+    "benign_rows": 138,
+    "malicious_rows": 120,
+    "accepted_benign": 0,
+    "accepted_malicious": 59,
+    "threshold": 0.7576234202651391
+  },
+  "development": {
+    "primary_v3": {
+      "rows": 300,
+      "benign_rows": 150,
+      "malicious_rows": 150,
+      "benign_false_positives": 7,
+      "malicious_true_positives": 78
+    },
+    "combined": {
+      "rows": 300,
+      "benign_rows": 150,
+      "malicious_rows": 150,
+      "benign_false_positives": 8,
+      "malicious_true_positives": 114
+    },
+    "incremental_benign_false_positives": 1,
+    "incremental_malicious_true_positives": 36
+  },
+  "gates": {
+    "minimum_dns_coverage": true,
+    "maximum_label_coverage_gap": true,
+    "threshold_accepted_benign_max": true,
+    "threshold_accepted_malicious_min": true,
+    "development_incremental_benign_false_positives_max": false,
+    "development_combined_malicious_true_positives_above_v3": true
+  },
+  "eligible_for_final": false,
+  "decision": "NO_ELIGIBLE_CANDIDATE",
+  "model": {
+    "path": "data/derived/v8-dns-context-20260825/models/dns_context.joblib",
+    "sha256": "d8e83552de532ffd7581c6c7b29298a1b3e656a48127855c26a67b11e5aa0eef"
+  },
+  "elapsed_seconds": 47.07968711853027
+}

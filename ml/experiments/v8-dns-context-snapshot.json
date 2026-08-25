@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "4ad63defdcbf41e46e77866933cabe9e41eb4829e8d40c56104353a5b14e32c1",
+  "raw_sources": {
+    "malicious_train_development": {
+      "path": "data/derived/v8-dns-context-20260825/raw/phishing-domains-ACTIVE.txt",
+      "sha256": "5c982897c66447201258e5811816f5b26632c2244b5cbf8f42f6520ff8a373df",
+      "bytes": 11015665,
+      "raw_lines": 391753,
+      "eligible_groups": 167860
+    },
+    "malicious_final": {
+      "path": "data/derived/v8-dns-context-20260825/raw/phishdestroy-primary-active-domains.txt",
+      "sha256": "0c1a820a41d4271cc24596caba219a7abaec03591bd8bf90ea8580d15261807c",
+      "bytes": 2731442,
+      "raw_lines": 120949,
+      "eligible_groups": 1133
+    },
+    "benign_final": {
+      "path": "../data/whitelist/vietnam/vietnam_websites.csv",
+      "sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
+      "raw_rows": 656983,
+      "eligible_groups": 215653
+    }
+  },
+  "exclusions": {
+    "baseline_groups": 1936767,
+    "frozen_groups": 140,
+    "prior_opened_groups": 82344,
+    "prior_inputs": {
+      "v4_development": {
+        "rows": 467,
+        "groups": 467
+      },
+      "v5_development": {
+        "rows": 349,
+        "groups": 349
+      },
+      "v5_phishdestroy_final": {
+        "rows": 81528,
+        "groups": 81528
+      }
+    }
+  },
+  "cross_cohort_group_overlap": {
+    "train_development": 0,
+    "train_final": 0,
+    "development_final": 0
+  },
+  "outputs": {
+    "train": {
+      "path": "data/derived/v8-dns-context-20260825/cohorts/train.parquet",
+      "rows": 800,
+      "sha256": "122908dc4d60f92a454f1958dca13d2f1c6642e650ba2a2fffc5498fbb0c7650"
+    },
+    "development": {
+      "path": "data/derived/v8-dns-context-20260825/cohorts/development.parquet",
+      "rows": 300,
+      "sha256": "34e70739bb25710e423c327f93960cb49a80bab371e7cc0dd28433ffa3cad47f"
+    },
+    "final": {
+      "path": "data/derived/v8-dns-context-20260825/cohorts/final.parquet",
+      "rows": 500,
+      "sha256": "180f35929611c6ac4d93e904a6ddcd51585e06646dd77277a34e9f1213a20e35"
+    }
+  }
+}

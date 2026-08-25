@@ -5,27 +5,27 @@
 
 ## Tóm tắt (Abstract)
 
-Candidate v2 suffix-debiased phát hiện `21/34` representative malicious case tại threshold `0,92`; leakage-safe candidate v3 tăng lên `22/34` nhưng vẫn thấp hơn gate `26/34`. V4 time-forward/TLD-state và v5 char-linear không tạo Pareto improvement nên bị giữ `NO-GO`. V6 source balancing tăng validation TP `11.529 → 12.003`, development TP `196/349 → 209/349` và malicious-source macro recall `57,90% → 63,17%`, nhưng validation FP tăng `238 → 333`. V7 giữ v3 làm primary model, dùng v6 làm recall specialist và train một logistic precision specialist chỉ trên vùng `v6 positive / v3 negative`. Selection đạt `+14 TP / +0 FP` trên validation và `+1/349` development TP. Final test tiếp tục đạt `+15 TP / +0 FP`, PhishDestroy tăng `+3` TP và toàn bộ benign gates đạt, nhưng frozen representative vẫn `22/34`; quyết định là `NO_GO_FINAL`. V4–v7 đều giữ private, không export, provision, restart service, đổi traffic scope hoặc bật `enforce`.
+Candidate v2 suffix-debiased phát hiện `21/34` representative malicious case tại threshold `0,92`; leakage-safe candidate v3 tăng lên `22/34` nhưng vẫn thấp hơn gate `26/34`. V4 time-forward/TLD-state và v5 char-linear không tạo Pareto improvement nên bị giữ `NO-GO`. V6 source balancing tăng validation TP `11.529 → 12.003`, development TP `196/349 → 209/349` và malicious-source macro recall `57,90% → 63,17%`, nhưng validation FP tăng `238 → 333`. V7 dùng precision specialist để giữ `+14 TP / +0 FP` trên validation và `+15 TP / +0 FP` trên final test, nhưng frozen representative vẫn `22/34`; quyết định là `NO_GO_FINAL`. V8 kiểm tra tín hiệu DNS ngoài hostname trên cohort mới hoàn toàn source/group-disjoint. Candidate cứu `36/150` malicious development case nhưng thêm `1/150` benign FP, nên dừng `NO_ELIGIBLE_CANDIDATE` trước khi đọc DNS final hoặc signed packets. V4–v8 đều giữ private, không export, provision, restart service, đổi traffic scope hoặc bật `enforce`.
 
 ## Sơ đồ Tổng quan
 
 ```mermaid
 flowchart LR
-    A[/Candidate v3/] -->|22/34| B[Source-balanced v6]
-    B -->|474 TP và 95 FP mới| C[NO-GO v6]
-    C -->|Chỉ vùng bất đồng| D[Freeze v7 protocol]
-    D -->|Train trên calibration| E[Precision specialist]
-    E -->|Zero-benign threshold| F[Selection đạt]
-    F -->|14 TP và 0 FP mới| G[Final gates]
-    G -->|15 TP và 0 FP mới| H{Representative đạt 26?}
-    H -->|22/34| I[NO-GO v7]
+    A[/Candidate v3/] -->|Precision specialist| B[V7 broad gain]
+    B -->|Representative 22/34| C[NO-GO v7]
+    C -->|Tín hiệu ngoài hostname| D[Freeze v8 protocol]
+    D -->|Nguồn mới| E[Cohort group-disjoint]
+    E -->|A AAAA NS MX| F[DNS context]
+    F -->|Một candidate| G[Development selection]
+    G -->|36 TP và 1 FP mới| H{Zero incremental FP?}
+    H -->|Không đạt| I[NO-GO v8 trước final]
 
     classDef input fill:#E9ECEF,stroke:#6C757D,color:#343A40
     classDef ai fill:#E8DAEF,stroke:#8E44AD,color:#4A235A
     classDef decision fill:#FFF3CD,stroke:#FFC107,color:#856404
     classDef blocked fill:#F8D7DA,stroke:#DC3545,color:#721C24
-    class A,D input
-    class B,E,F,G ai
+    class A,D,E input
+    class B,F,G ai
     class H decision
     class C,I blocked
 ```
@@ -485,13 +485,85 @@ V7 đạt bảy trong tám final gates. Precision specialist giữ zero incremen
 - Unit tests: `ml/tests/test_disagreement_specialist.py`
 - Private precision specialist: `ml/data/derived/v7-disagreement-specialist/models/precision_specialist.joblib` (Git-ignored; SHA-256 `b8b28848...b95f0`, `2.209` bytes)
 
+## Thử nghiệm v8 DNS-context feasibility
+
+### Mục tiêu (Objectives)
+
+- Kiểm tra một tín hiệu khác hostname-only: trạng thái và cấu trúc bản ghi DNS `A`, `AAAA`, `NS`, `MX` tại thời điểm thu thập.
+- Dùng cặp development/final mới, tách source và evaluation group khỏi baseline, frozen packets và mọi cohort đã mở ở v4–v7.
+- Giữ v3 làm primary; DNS specialist chỉ được thêm positive khi chứng minh zero incremental benign FP trên threshold split và development độc lập.
+- Dừng trước final nếu candidate không tạo Pareto improvement; không sửa feature, `C`, threshold, timeout, retry hoặc cohort sau khi thấy selection metrics.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Tín hiệu context | DoH JSON cho `A`, `AAAA`, `NS`, `MX`; 18 feature count/status/TTL cố định | WHOIS age; TLS certificate; HTTP redirect/content | DNS nhẹ hơn HTTP content, có schema hẹp và không đưa URL/path từ frozen cases vào model; phù hợp để kiểm tra feasibility offline trước runtime design |
+| Nguồn malicious train/development | Phishing.Database ACTIVE tải sau protocol | Reuse PhishTank/OpenPhish đã mở; synthetic domains | Feed mới tránh biến final evidence cũ thành training signal và cung cấp đủ group sau exclusion |
+| Nguồn final | PhishDestroy Primary Active mới cho malicious; danh mục trust Việt Nam cho benign | Chia ngẫu nhiên cùng feed; mở signed packets ngay | Source-disjoint final đo generalization tốt hơn random split; file final được freeze từ đầu nhưng không đọc ở selection |
+| Model | `StandardScaler + LogisticRegression`, L2, `C=0,1`, balanced class weight | LightGBM; nhiều candidate/feature subset | Một linear candidate đủ để kiểm tra signal value, hạn chế overfit và tránh hyperparameter search |
+| Threshold | Số floating-point nhỏ nhất lớn hơn max benign trên group-disjoint threshold split | Threshold `0,5`; chọn trên development | Zero-benign rule được pre-register, tách model-fit và threshold groups bằng SHA-256 `7/3` |
+| Combined decision | `v3 positive OR DNS specialist positive` | Thay v3; probability blend | OR bảo toàn v3 decision và đo trực tiếp recall/FP bổ sung của context signal |
+| Stop rule | Coverage đạt; threshold benign `0`; development incremental FP `0` và TP tăng | Chấp nhận một FP để mở final; tăng threshold sau kết quả | Release gate yêu cầu không cải lùi precision; stop rule ngăn dùng development như threshold-tuning set |
+
+### Cách thức Thực hiện (Implementation Details)
+
+Protocol v8 được commit ở `6e4092d` trước khi tải nguồn. PhishTank fresh export bị rate-limit trước khi cohort, DNS hoặc model được tạo; source train/development được thay bằng Phishing.Database ACTIVE trong correction commit `a52fb5f`. Correction giữ nguyên objective, feature, cohort size, model và gate. Hai raw feeds chỉ được tải sau protocol đã sửa.
+
+Snapshot builder xác minh hash của bốn baseline partitions, group policy, prior opened cohorts và signed-label inputs dùng làm exclusion set. Sau canonicalization, nguồn train/development còn `167.860` eligible malicious groups; nguồn final malicious còn `1.133`; final benign trust directory còn `215.653`. Builder chọn `800` train, `300` development và freeze `500` final rows; overlap giữa ba cohort bằng `0`. Final parquet được tạo và hash-pin trước selection, nhưng selector chỉ resolve/read train cùng development.
+
+Collector gửi tối đa `24` DoH requests đồng thời, timeout `4` giây, tối đa hai attempts, không cache; label không được truyền vào query path và domain order dựa trên SHA-256. Train split có `542` model-fit rows và `258` threshold rows, group overlap `0`. Logistic specialist dùng đúng 18 feature đã đăng ký; threshold `0,7576234203` chấp nhận `59/120` malicious và `0/138` benign trên threshold split.
+
+Selector ghi `selection_inputs=[dns_train,dns_threshold,dns_development]` và `forbidden_inputs_read=[]`. Candidate fail development FP gate nên không có final evaluator, không thu DNS cho `500` final rows và không đọc representative/targeted-benign packets. Private model được lưu để reproducibility, không được bundle hoặc nối vào runtime.
+
+AI agent sử dụng Codex (GPT-5) với chiến lược pre-registration, one-candidate feasibility và automatic stop trước final. Số subagent là `0`; không dùng voting. Kiểm soát chất lượng gồm source/artifact SHA-256, cross-cohort group overlap, label-blind DNS collection, fixed feature contract, unit tests cho parser/threshold/combined decision và full ML test suite. Con người giữ quyền duyệt signed evidence và rollout; agent không sửa evidence, push, deploy, restart service, đổi traffic scope hoặc bật `enforce`.
+
+### Số liệu (Metrics & Results)
+
+#### Integrity, coverage và threshold
+
+| Chỉ số | Kết quả |
+|---|---:|
+| Train / development / frozen final rows | 800 / 300 / 500 |
+| Cross-cohort evaluation-group overlap | 0 |
+| Train DNS coverage, benign / malicious | 100% / 100% |
+| Development DNS coverage, benign / malicious | 100% / 99,33% |
+| Combined label coverage gap | 0,18 điểm % |
+| Threshold accepted benign / 138 | 0 |
+| Threshold accepted malicious / 120 | 59 |
+| Candidate count | 1 |
+| Selection wall time | 47,08 giây |
+| Forbidden inputs được đọc | 0 |
+
+#### Development selection
+
+| Chỉ số / 150 mỗi class | V3 control | V8 combined | Delta |
+|---|---:|---:|---:|
+| Malicious TP | 78 | 114 | +36 |
+| Benign FP | 7 | 8 | +1 |
+| Malicious recall | 52,00% | 76,00% | +24,00 điểm % |
+| Benign FPR | 4,67% | 5,33% | +0,67 điểm % |
+
+DNS context tạo recall lift lớn trên nguồn mới, nhưng không đạt zero incremental FP. Trong `36` malicious case bổ sung, `32` đang trả `NXDOMAIN`, ba case còn address và một case không có address nhưng trả DNS status hợp lệ; benign collision duy nhất cũng không resolve đầy đủ. Pattern này cho thấy model chủ yếu học trạng thái sống/chết theo thời điểm của feed, không phải threat identity ổn định. Tín hiệu dễ drift khi domain bị takedown, resurrect hoặc thay DNS, đồng thời thêm network latency, availability dependency và attack surface nếu dùng trực tiếp tại request time.
+
+Quyết định là `NO_ELIGIBLE_CANDIDATE`. Không tăng threshold sau khi thấy benign collision, không thu final DNS và không tạo representative score mới; mốc release vẫn là v3 `22/34`. Giá trị của v8 là xác nhận DNS liveness có recall signal mạnh nhưng không đủ precision/stability để làm OR specialist độc lập.
+
+### Liên kết Artifacts
+
+- Pre-registered protocol: `ml/configs/v8-dns-context-feasibility-protocol.json`
+- Snapshot/selection reports: `ml/experiments/v8-dns-context-snapshot.json`, `ml/experiments/v8-dns-context-selection.json`
+- Cohort builder, collector và selector: `ml/src/build_v8_dns_context_snapshot.py`, `ml/src/dns_context.py`, `ml/src/select_v8_dns_context.py`
+- Unit tests: `ml/tests/test_dns_context.py`
+- Private DNS features/model: `ml/data/derived/v8-dns-context-20260825/` (Git-ignored; model SHA-256 `d8e83552...e5aa0e`)
+
 ### Phương án candidate kế tiếp
 
 Candidate kế tiếp cần thực hiện ba lớp, theo thứ tự sau:
 
-1. Dừng ablation specialist threshold, `C` hoặc feature subset trên v7. V7 đã mở final test, PhishDestroy và representative packet; tuning tiếp sẽ biến final evidence thành development signal.
-2. Broad lexical quality hiện đạt precision-preserving recall gain nhưng không tác động 12 representative residuals. Lần model research kế tiếp cần một time-forward development/final pair mới và tín hiệu khác hostname-only, hoặc một label-policy review tách rõ case nào thực sự yêu cầu URL/path/redirect context.
-3. Nếu sản phẩm cần tiến triển trước khi có dữ liệu mới, ưu tiên packaging/latency prototype ở measurement-only branch cho v7 architecture, không shadow traffic và không gọi đó là release candidate. Prototype chỉ đo chi phí hai boosters + specialist; promotion vẫn bị khóa bởi representative `22/34`.
+1. Dừng ablation threshold, `C`, feature subset hoặc DNS record set trên v8. Development đã được mở; tuning tiếp sẽ biến benign collision thành threshold-training signal và không còn là phép kiểm tra độc lập.
+2. Không đưa synchronous DNS lookup vào engine. Nếu tái sử dụng signal này, chỉ dùng snapshot-age-aware enrichment trong core retraining, kèm explicit missingness, TTL-bounded cache và training labels có observation time; candidate vẫn cần development/final pair mới.
+3. Ưu tiên thu URL/path/redirect context có provenance và privacy contract, vì đây là lớp tín hiệu còn thiếu mà hostname/DNS ablation chưa mô tả. Trước khi train cần label-policy review xác định representative case nào thực sự thuộc trách nhiệm domain-only engine và tạo packet mới không trùng 12 residuals đã mở.
+4. V7 vẫn là architecture research tốt nhất về broad precision-preserving gain, nhưng không phải release candidate. Packaging/latency prototype chỉ có ý nghĩa measurement-only; promotion vẫn bị khóa bởi representative `22/34`.
 
 PhishDestroy holdout đã được mở một lần cho v7 và không còn là final input hợp lệ cho tuning tiếp. Không chọn phương án chỉ hạ threshold: sweep hiện tại cho thấy threshold `0,90` đạt `22/34` với `0/25` FP; threshold `0,85` đạt `25/34` nhưng tạo `1/25` FP. Candidate mới chỉ được xem xét cho local staging `shadow` khi đạt tối thiểu representative recall `26/34`, giữ representative benign FP `0/25`, targeted benign challenge `0/3`, cross-service probability/response parity trong tolerance `10^-6`, ML errors bằng `0` và enforce promotions bằng `0`.
 
@@ -517,6 +589,7 @@ PhishDestroy holdout đã được mở một lần cho v7 và không còn là f
 - V5 protocol/snapshot/selection reports: `ml/configs/v5-char-linear-ensemble-protocol.json`, `ml/experiments/v5-char-linear-snapshot.json`, `ml/experiments/v5-char-linear-selection.json`
 - V6 protocol/selection report: `ml/configs/v6-source-balanced-robustness-protocol.json`, `ml/experiments/v6-source-balanced-selection.json`
 - V7 protocol/selection/final reports: `ml/configs/v7-disagreement-specialist-protocol.json`, `ml/experiments/v7-disagreement-specialist-selection.json`, `ml/experiments/v7-disagreement-specialist-final-evaluation.json`
+- V8 protocol/snapshot/selection reports: `ml/configs/v8-dns-context-feasibility-protocol.json`, `ml/experiments/v8-dns-context-snapshot.json`, `ml/experiments/v8-dns-context-selection.json`
 - Threat-context protocol/report: `ml/configs/threat-context-production-free-20260824.json`, `ml/experiments/threat-context-production-free-20260824.json`
 - Threat-context R&D report: `docs/research/security/threat-context-evaluation.md`
 
@@ -526,6 +599,7 @@ PhishDestroy holdout đã được mở một lần cho v7 và không còn là f
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-25 | Pre-register v8 DNS context, freeze ba source/group-disjoint cohorts; ghi nhận `+36/150` development TP nhưng `+1/150` benign FP và dừng trước final/signed inputs | Codex (GPT-5) |
 | 2026-08-24 | Triển khai v7 disagreement precision specialist; selection đạt `+14 TP / +0 FP`, final test đạt `+15 TP / +0 FP`, nhưng giữ `NO_GO_FINAL` vì representative vẫn `22/34` | Codex (GPT-5) |
 | 2026-08-24 | Pre-register và train một v6 source-balanced candidate; ghi nhận `+474` validation TP, `+13/349` development TP nhưng `+95` validation FP, dừng `NO_GO_SELECTION` trước final inputs | Codex (GPT-5) |
 | 2026-08-24 | Pre-register v5 char-linear ensemble, freeze `349` development và `81.528` PhishDestroy holdout rows; dừng ở `NO_ELIGIBLE_CANDIDATE` trước final inputs vì cả ba blend đều giảm validation/development TP | Codex (GPT-5) |
