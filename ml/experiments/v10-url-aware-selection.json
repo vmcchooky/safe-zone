@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "3f561627530f8aaa6f717be166329345c35cd037be347df4b0ca7db1d584a6ef",
+  "snapshot_manifest_sha256": "1a454d072eb88810e97a4c9c2b440cbef5c4fcb03cbbe6ec7c5852919ca39c2d",
+  "selection_inputs": {
+    "adaptation_train": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/adaptation_train.parquet",
+      "sha256": "42e38d7941c87dbcdaa8d851dd3f665406fcb5b3d873e80977ae25b51a0441b6"
+    },
+    "calibration": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/calibration.parquet",
+      "sha256": "7a83bc77fe8d46f4a46a3332ac81c66afde9a02cc04d2d351c7e38d1bd6576ce"
+    },
+    "threshold": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/threshold.parquet",
+      "sha256": "8e29bdf65f9a4582746d5b76d76e8b6f05ac4a58a0431d9fe3ff9bfd6cf782c5"
+    },
+    "development": {
+      "path": "data/derived/v10-url-aware-20260825/cohorts/development.parquet",
+      "sha256": "061ccb914c7707d61e4636fcad5fa3503155ee8e3af1547a43de2d6ed9a88527"
+    }
+  },
+  "forbidden_inputs_read": [],
+  "feature_contract": {
+    "handcrafted_feature_count": 18,
+    "tfidf_vocabulary_size": 8192,
+    "hostname_features_excluded": true,
+    "query_values_redacted": true
+  },
+  "url_threshold": 0.18363410163105026,
+  "threshold": {
+    "primary_v3": {
+      "rows": 2000,
+      "benign_rows": 1000,
+      "malicious_rows": 1000,
+      "benign_false_positives": 62,
+      "malicious_true_positives": 471
+    },
+    "combined": {
+      "rows": 2000,
+      "benign_rows": 1000,
+      "malicious_rows": 1000,
+      "benign_false_positives": 62,
+      "malicious_true_positives": 914
+    },
+    "incremental_benign_false_positives": 0,
+    "incremental_malicious_true_positives": 443,
+    "url_threshold_only": {
+      "accepted_benign": 0,
+      "accepted_malicious": 740
+    },
+    "incremental_accepted_malicious": 443
+  },
+  "development": {
+    "primary_v3": {
+      "rows": 2000,
+      "benign_rows": 1000,
+      "malicious_rows": 1000,
+      "benign_false_positives": 52,
+      "malicious_true_positives": 433
+    },
+    "combined": {
+      "rows": 2000,
+      "benign_rows": 1000,
+      "malicious_rows": 1000,
+      "benign_false_positives": 52,
+      "malicious_true_positives": 907
+    },
+    "incremental_benign_false_positives": 0,
+    "incremental_malicious_true_positives": 474
+  },
+  "gates": {
+    "threshold_accepted_benign_max": true,
+    "threshold_accepted_malicious_min": true,
+    "development_incremental_benign_false_positives_max": true,
+    "development_incremental_malicious_true_positives_min": true
+  },
+  "eligible_for_final": true,
+  "candidate_count": 1,
+  "artifacts": {
+    "model": {
+      "path": "data/derived/v10-url-aware-20260825/models/url_specialist.joblib",
+      "sha256": "b724d3f408ead64e8ccef508de86c948593027a4cf5f1e095eee493e2baa6c48"
+    }
+  },
+  "duration_seconds": 27.838
+}
