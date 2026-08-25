@@ -145,6 +145,9 @@
     "handcrafted_feature_count": 22,
     "always_keep_handcrafted": true,
     "tfidf_source_minimum_rows": 1000,
+    "source_family_aliases": {
+      "phishtank_time_forward": "phishtank"
+    },
     "required_malicious_source_count": 7,
     "required_benign_source_count": 3,
     "benign_reference": "maximum per-source mean TF-IDF value",

@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
-  "protocol_sha256": "96fd49a45ca07cdee5519d9b6a0d4f170d1179e3386ab8ab1f57e9cf2e8078c4",
+  "protocol_sha256": "13f1a78a1c4dbeb4297b31435c7ffaaa2acfc650e505b1a277e645a560e42af5",
+  "protocol_correction": "source-family alias added after pre-training inventory check; cohort inputs, exclusions, ordering, rows, and output hash are unchanged",
   "raw_sources": {
     "malicious": {
       "path": "data/derived/v8-dns-context-20260825/raw/phishing-domains-ACTIVE.txt",
