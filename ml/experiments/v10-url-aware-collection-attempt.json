@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "attempted_at": "2026-08-25T05:42:00Z",
+  "status": "BLOCKED_BEFORE_SNAPSHOT",
+  "source": "https://index.commoncrawl.org/CC-MAIN-2026-30-index",
+  "observations": [
+    "initial cohort build completed exclusion reconstruction but local HTTPS sockets stopped at connection establishment",
+    "independent PowerShell and curl preflight requests ended before a valid HTTP response"
+  ],
+  "data_products_created": false,
+  "model_fit": false,
+  "predictions_created": false,
+  "metrics_created": false,
+  "resolution": "replace only the unavailable benign proxy with the official UCI PhiUSIIL legitimate URL corpus; retain split, feature, model, gate, and forbidden-input policy"
+}

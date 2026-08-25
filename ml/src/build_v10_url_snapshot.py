@@ -9,6 +9,7 @@ import json
 import os
 import sys
 import time
+import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from itertools import islice
 from pathlib import Path
@@ -388,6 +389,63 @@ def _collect_benign_rows(
     }
 
 
+def _collect_uci_benign_rows(
+    protocol: Mapping[str, Any],
+    roots: set[str],
+    excluded_groups: set[str],
+    reserved_final_groups: set[str],
+) -> tuple[list[Dict[str, Any]], Dict[str, Any]]:
+    source = protocol["sources"]["benign_proxy"]
+    archive_path = resolve_ml_path(source["path"])
+    with zipfile.ZipFile(archive_path) as archive:
+        names = archive.namelist()
+        matches = [
+            name for name in names if Path(name).name == source["csv_member"]
+        ]
+        if len(matches) != 1:
+            raise ValueError(
+                f"UCI archive must contain one {source['csv_member']!r}; got {matches}"
+            )
+        with archive.open(matches[0]) as csv_handle:
+            frame = pd.read_csv(
+                csv_handle,
+                usecols=[source["required_url_column"], source["required_label_column"]],
+                keep_default_na=False,
+            )
+    benign = frame[
+        frame[source["required_label_column"]].astype(int)
+        == int(source["required_benign_label"])
+    ]
+    rows: list[Dict[str, Any]] = []
+    seen_hashes: set[str] = set()
+    for raw_url in benign[source["required_url_column"]].astype(str):
+        row = _url_row(
+            raw_url,
+            source=source["name"],
+            label=0,
+            roots=roots,
+            product_contract=protocol["product_contract"],
+        )
+        if row is None:
+            continue
+        if row["evaluation_group"] in excluded_groups | reserved_final_groups:
+            continue
+        if row["url_sha256"] in seen_hashes:
+            continue
+        seen_hashes.add(row["url_sha256"])
+        rows.append(row)
+    return rows, {
+        "path": source["path"],
+        "sha256": compute_file_sha256(archive_path),
+        "bytes": archive_path.stat().st_size,
+        "csv_member": matches[0],
+        "raw_rows": len(frame),
+        "raw_benign_rows": len(benign),
+        "eligible_urls": len(rows),
+        "license": source["license"],
+    }
+
+
 def _write_parquet(frame: pd.DataFrame, path: Path) -> Dict[str, Any]:
     path.parent.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(path, index=False)
@@ -441,9 +499,14 @@ def build(protocol_path: str | os.PathLike[str]) -> Dict[str, Any]:
     final_groups = {row["evaluation_group"] for row in final_rows}
     final_hashes = {row["url_sha256"] for row in final_rows}
 
-    benign_rows, benign_meta = _collect_benign_rows(
-        protocol, roots, excluded_groups, final_groups
-    )
+    if protocol["sources"]["benign_proxy"]["name"] == "uci_phiusiil_legitimate_urls":
+        benign_rows, benign_meta = _collect_uci_benign_rows(
+            protocol, roots, excluded_groups, final_groups
+        )
+    else:
+        benign_rows, benign_meta = _collect_benign_rows(
+            protocol, roots, excluded_groups, final_groups
+        )
     benign_groups = {row["evaluation_group"] for row in benign_rows}
     benign_hashes = {row["url_sha256"] for row in benign_rows}
 

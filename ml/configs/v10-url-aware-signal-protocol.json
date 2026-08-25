@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "created_at": "2026-08-25T05:32:00Z",
+  "protocol_correction": "benign proxy changed from Common Crawl to the official UCI PhiUSIIL URL dataset after local TLS collection failed before any snapshot, feature fit, prediction, or metric; split, features, model, gates, and forbidden inputs are unchanged",
   "seed": 42,
   "objective": "add precision-preserving URL path and query signal for caller-supplied web analysis while keeping DNS and domain-only decisions unchanged",
   "product_contract": {
@@ -48,22 +49,16 @@
       "download_after_protocol": true
     },
     "benign_proxy": {
-      "name": "common_crawl_urls_on_vietnam_trust_domains",
-      "trust_directory_path": "../data/whitelist/vietnam/vietnam_websites.csv",
-      "trust_directory_sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
-      "required_domain_column": "domain",
-      "common_crawl_index": "CC-MAIN-2026-30",
-      "common_crawl_endpoint": "https://index.commoncrawl.org/CC-MAIN-2026-30-index",
-      "required_status": "200",
-      "required_mime_prefix": "text/html",
-      "maximum_source_domains": 500,
-      "maximum_urls_per_domain": 20,
-      "maximum_concurrency": 2,
-      "timeout_seconds": 15,
-      "maximum_attempts": 2,
-      "preflight_required": true,
-      "abort_after_consecutive_failed_queries": 10,
-      "raw_output": "data/derived/v10-url-aware-20260825/raw/common-crawl-benign-urls.jsonl"
+      "name": "uci_phiusiil_legitimate_urls",
+      "url": "https://archive.ics.uci.edu/static/public/967/phiusiil%2Bphishing%2Burl%2Bdataset.zip",
+      "path": "data/derived/v10-url-aware-20260825/raw/phiusiil-phishing-url-dataset.zip",
+      "csv_member": "PhiUSIIL_Phishing_URL_Dataset.csv",
+      "required_url_column": "URL",
+      "required_label_column": "label",
+      "required_benign_label": 1,
+      "trust_policy": "UCI dataset label 1 denotes legitimate; only raw URL and label columns are read",
+      "license": "CC BY 4.0",
+      "download_after_protocol": true
     }
   },
   "group_policy": {
