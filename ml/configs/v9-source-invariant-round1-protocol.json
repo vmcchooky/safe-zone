@@ -1,0 +1,225 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-25T02:11:42Z",
+  "seed": 42,
+  "objective": "complete the offline signal-breakthrough round with a source-invariant domain model that reaches the representative release gate without incremental benign false positives",
+  "scope": "offline model research only; no URL contract change, runtime integration, traffic, shadow, canary, or enforcement",
+  "responsibility_audit": {
+    "runtime_input": "canonical domain only",
+    "url_path_redirect_candidate": "deferred because current API, DNS resolver, replay packet, and ML classifier do not provide URL/path/redirect context",
+    "naive_source_adversary": "rejected because every observed training source is label-confounded; unconditional source removal would also remove label signal",
+    "selected_method": "class-conditional cross-source lexical consensus followed by a calibration-trained precision specialist"
+  },
+  "control": {
+    "operating_threshold": 0.92,
+    "model": {
+      "path": "data/derived/v3-leakage-free-context/models/domain_threat_lgbm_raw.txt",
+      "sha256": "e375ec1720af854362084d509e262dd0c7e1e6e91c48a4cb50060630ab2d463a"
+    },
+    "calibration": {
+      "path": "data/derived/v3-leakage-free-context/models/calibration.json",
+      "sha256": "716bd354aa1e85cb6c4179308edb3dfa376f6cfb42f2fb2673c646d003cd335b"
+    },
+    "feature_manifest": {
+      "path": "data/derived/v3-leakage-free-context/feature_manifest.json",
+      "sha256": "7a5554828ab40dc9e6ff0ae96ae85d2f052602f4242cd3f4f0c797dbc0b1f8db"
+    },
+    "matrices": {
+      "calibration": {
+        "path": "data/derived/v3-leakage-free-context/matrices/X_cal.npz",
+        "sha256": "c6c469a00f9380d3fa9c4b57b2b6610ca21eb70464d1559269c561043b161eda"
+      },
+      "validation": {
+        "path": "data/derived/v3-leakage-free-context/matrices/X_val.npz",
+        "sha256": "91a5c8026d390d0a92aa178dc15c6178d689e9d54e08a44bae5923dd378e8b10"
+      },
+      "final_test": {
+        "path": "data/derived/v3-leakage-free-context/matrices/X_test.npz",
+        "sha256": "3c72dc8cb15ba339bbfdad0c362f1938b976eaf4dc2ef5bf28b68a4a66ba97ff"
+      }
+    }
+  },
+  "candidate_data": {
+    "config": "configs/v3-time-forward-data.json",
+    "feature_manifest": {
+      "path": "data/derived/v3-time-forward-data/feature_manifest.json",
+      "sha256": "506854a1da391209ac62fce646c388172e803a89d953eb373e48a73a5d447b49"
+    },
+    "partitions": {
+      "train": {
+        "path": "data/derived/v3-time-forward-data/partitions/train.parquet",
+        "sha256": "ebbc61c0efa00b66d9aa92aebce602b2c11bd30d7baebe37181f6a492a6df98f"
+      },
+      "validation": {
+        "path": "data/derived/v3-time-forward-data/partitions/val.parquet",
+        "sha256": "f9df2892690ef74c22bf71e7ccc2318fe6394e71a416b6f97f183a0e56a4bc68"
+      },
+      "calibration": {
+        "path": "data/derived/v3-time-forward-data/partitions/cal.parquet",
+        "sha256": "6032895eb224549ce4d359f6fed9eeec9539cdbd9da4041b3bbb3ebce7a32322"
+      },
+      "final_test": {
+        "path": "data/derived/v3-time-forward-data/partitions/test.parquet",
+        "sha256": "0cce9f14877b5295835dd2137d5b16a4911467d49201e311be1bcc89a38bb78c"
+      }
+    },
+    "matrices": {
+      "train": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_train.npz",
+        "sha256": "16bdea0fd2cf45d4b365f58610d75e93b85f61758d837bd1a29853c2a828219f"
+      },
+      "validation": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_val.npz",
+        "sha256": "35b4add32d007b552a5e2aa5f71672b37a0007141d67a084ef5a8741628f5261"
+      },
+      "calibration": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_cal.npz",
+        "sha256": "2b53db4d65654279ed1af3667eaf335032797f526549ee2ce18fed20e88a8647"
+      },
+      "final_test": {
+        "path": "data/derived/v3-time-forward-data/matrices/X_test.npz",
+        "sha256": "fbe24ad96cf8a207526fd84facae620e68a84f09a59237b59f2318cdb41eb86c"
+      }
+    }
+  },
+  "development_snapshot": {
+    "malicious_source": {
+      "path": "data/derived/v8-dns-context-20260825/raw/phishing-domains-ACTIVE.txt",
+      "sha256": "5c982897c66447201258e5811816f5b26632c2244b5cbf8f42f6520ff8a373df",
+      "required_rows": 1000
+    },
+    "benign_source": {
+      "path": "../data/whitelist/vietnam/vietnam_websites.csv",
+      "sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
+      "required_column": "domain",
+      "required_rows": 1000
+    },
+    "exclude_v8_cohorts": {
+      "train": {
+        "path": "data/derived/v8-dns-context-20260825/cohorts/train.parquet",
+        "sha256": "122908dc4d60f92a454f1958dca13d2f1c6642e650ba2a2fffc5498fbb0c7650"
+      },
+      "development": {
+        "path": "data/derived/v8-dns-context-20260825/cohorts/development.parquet",
+        "sha256": "34e70739bb25710e423c327f93960cb49a80bab371e7cc0dd28433ffa3cad47f"
+      },
+      "final": {
+        "path": "data/derived/v8-dns-context-20260825/cohorts/final.parquet",
+        "sha256": "180f35929611c6ac4d93e904a6ddcd51585e06646dd77277a34e9f1213a20e35"
+      }
+    },
+    "group_policy": {
+      "shared_hosting_snapshot": "contracts/snapshots/shared_hosting.v1.json",
+      "shared_hosting_snapshot_sha256": "27825bf0bb206038372bd26038d46698e0fe946f0a9eaa08afea25f004f48ed2",
+      "shared_hosting_extensions": ["weebly.com", "weeblysite.com", "godaddysites.com"]
+    },
+    "selection_order": "sha256(seed|label|evaluation_group), domain_ascii",
+    "exclude_all_baseline_groups": true,
+    "exclude_all_frozen_groups": true,
+    "exclude_all_prior_opened_groups": true,
+    "output": "data/derived/v9-source-invariant-round1/cohorts/development.parquet",
+    "manifest": "experiments/v9-source-invariant-snapshot.json"
+  },
+  "fresh_final": {
+    "path": "data/derived/v8-dns-context-20260825/cohorts/final.parquet",
+    "sha256": "180f35929611c6ac4d93e904a6ddcd51585e06646dd77277a34e9f1213a20e35",
+    "rows": 500,
+    "status": "frozen before v8 selection and never read for model prediction"
+  },
+  "source_invariant_feature_policy": {
+    "fit_scope": "train partition only",
+    "handcrafted_feature_count": 22,
+    "always_keep_handcrafted": true,
+    "tfidf_source_minimum_rows": 1000,
+    "required_malicious_source_count": 7,
+    "required_benign_source_count": 3,
+    "benign_reference": "maximum per-source mean TF-IDF value",
+    "malicious_support_condition": "per-source mean TF-IDF value strictly above benign_reference",
+    "malicious_source_support_minimum": 5,
+    "median_log_ratio_minimum_exclusive": 0.0,
+    "log_ratio_epsilon": 0.000001,
+    "candidate_count": 1
+  },
+  "recall_model": {
+    "family": "LightGBM GBDT",
+    "parameters_from": "configs/v3-time-forward-data.json",
+    "training_weights": "existing v3-time-forward evidence/source-proxy/hard-positive policy only",
+    "monotone_increasing_features": ["tld_risk_score"],
+    "calibration": "Platt calibration on unchanged calibration partition",
+    "operating_threshold": 0.92
+  },
+  "precision_specialist": {
+    "condition": "v3_probability < 0.92 AND source_invariant_probability >= 0.92",
+    "training_scope": "calibration disagreement only",
+    "split_hash": "sha256(seed|evaluation_group) modulo 10",
+    "train_buckets": [0, 1, 2, 3, 4, 5, 6],
+    "threshold_buckets": [7, 8, 9],
+    "features": [
+      "v3_probability",
+      "source_invariant_probability",
+      "probability_delta",
+      "v3_logit",
+      "source_invariant_logit",
+      "candidate_handcrafted_features_0_through_21"
+    ],
+    "pipeline": ["StandardScaler", "LogisticRegression"],
+    "penalty": "l2",
+    "C": 0.1,
+    "solver": "lbfgs",
+    "max_iter": 500,
+    "class_weight": "balanced",
+    "random_state": 42,
+    "threshold_rule": "smallest representable probability strictly above maximum benign probability on threshold split",
+    "threshold_accepted_malicious_minimum": 1,
+    "candidate_count": 1
+  },
+  "combined_decision": "v3 positive OR (source-invariant recall positive AND precision specialist positive)",
+  "selection": {
+    "inputs": ["train", "calibration", "validation", "fresh_development"],
+    "forbidden_inputs": [
+      "fresh_final",
+      "final_test_partition",
+      "representative_packet",
+      "targeted_benign_packet",
+      "reviewed_unclassifiable_packet"
+    ],
+    "eligibility_gates": {
+      "threshold_accepted_benign_max": 0,
+      "threshold_accepted_malicious_min": 1,
+      "validation_incremental_benign_false_positives_max": 0,
+      "validation_incremental_malicious_true_positives_min": 1,
+      "development_incremental_benign_false_positives_max": 0,
+      "development_incremental_malicious_true_positives_min": 1
+    },
+    "no_rescue_policy": "do not alter source support, ratio rule, model parameters, specialist split/features/C, threshold rule, operating threshold, or cohorts after selection metrics"
+  },
+  "final_gates": {
+    "fresh_final_incremental_benign_false_positives_max": 0,
+    "fresh_final_incremental_malicious_true_positives_min": 1,
+    "final_test_incremental_benign_false_positives_max": 0,
+    "final_test_incremental_malicious_true_positives_min": 1,
+    "representative_malicious_true_positives_min": 26,
+    "representative_benign_false_positives_max": 0,
+    "targeted_benign_false_positives_max": 0,
+    "safe_vn_candidate_false_positives_max": 0
+  },
+  "final_evidence": {
+    "representative_labels": {
+      "path": "evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv",
+      "sha256": "d03e698fdeaa5b4f107b09e3d1b85496c35252e318324f32b48c9e942dcc3844"
+    },
+    "targeted_benign_labels": {
+      "path": "evidence/whitelist-proxy-review/run-20260823-owner-reviewed-addendum/labels.csv",
+      "sha256": "0f93be906a4da6352075634cd127ea89148dc7352df8249015c432f5ef8fcfb5"
+    },
+    "reviewed_unclassifiable_labels": {
+      "path": "evidence/whitelist-proxy-review/run-20260824-owner-reviewed-stale-addendum/labels.csv",
+      "sha256": "063ecc780970d92f89c2d9c1106df3babfa5310e8931288dd516f7701f7d2c7d"
+    }
+  },
+  "outputs": {
+    "derived_dir": "data/derived/v9-source-invariant-round1",
+    "selection_report": "experiments/v9-source-invariant-selection.json",
+    "final_report": "experiments/v9-source-invariant-final-evaluation.json"
+  }
+}
