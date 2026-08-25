@@ -8,11 +8,25 @@ import (
 	"testing"
 	"time"
 
+	"safe-zone/internal/analysis"
 	"safe-zone/internal/config"
 	"safe-zone/internal/observability"
 	"safe-zone/internal/osint"
 	"safe-zone/internal/risk"
 )
+
+type handlerURLClassifier struct{}
+
+func (*handlerURLClassifier) Enabled() bool    { return true }
+func (*handlerURLClassifier) Revision() string { return "handler-url-revision" }
+func (*handlerURLClassifier) ClassifyURL(analysis.URLContext) (analysis.MLDecision, error) {
+	return analysis.MLDecision{
+		Probability:  0.98,
+		Action:       analysis.MLActionPromoteMalicious,
+		ModelVersion: "handler-url-v1",
+		Revision:     "handler-url-revision",
+	}, nil
+}
 
 func TestAnalyzeEndpointStillWorks(t *testing.T) {
 	ts := newHandlerTestServer(t)
@@ -111,7 +125,7 @@ func TestAnalyzeEndpointIncludesOSINTEvidence(t *testing.T) {
 func TestAnalyzeEndpointRejectsOversizedJSONBody(t *testing.T) {
 	ts := newHandlerTestServer(t)
 
-	hugePayload := `{"domain":"` + strings.Repeat("a", 5000) + `"}`
+	hugePayload := `{"domain":"` + strings.Repeat("a", 40000) + `"}`
 	resp, err := ts.Client.Post(ts.Server.URL+"/v1/analyze", "application/json", strings.NewReader(hugePayload))
 	if err != nil {
 		t.Fatal(err)
@@ -120,5 +134,55 @@ func TestAnalyzeEndpointRejectsOversizedJSONBody(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
+	}
+}
+
+func TestAnalyzePostAcceptsURLContextOnlyForShadowObservation(t *testing.T) {
+	handler := &Handler{
+		Risk: risk.NewService(risk.Options{
+			AnalysisConfig:  config.DefaultAnalysisConfig(),
+			URLMLClassifier: &handlerURLClassifier{},
+			URLMLMode:       analysis.MLModeShadow,
+		}),
+		Metrics: observability.NewRegistry(),
+		Config:  Config{DeploymentTier: "test"},
+	}
+	defer func() { _ = handler.Risk.Close() }()
+
+	body := `{"domain":"example.com","requested_url":"https://example.com/login?token=synthetic-secret","redirect_chain":[]}`
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodPost, "/v1/analyze", strings.NewReader(body))
+	handler.AnalyzeHandler(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if strings.Contains(recorder.Body.String(), "synthetic-secret") || strings.Contains(recorder.Body.String(), "requested_url") {
+		t.Fatalf("response leaked raw URL context: %s", recorder.Body.String())
+	}
+	var payload struct {
+		URLML *risk.URLMLObservation `json:"url_ml"`
+	}
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.URLML == nil || !payload.URLML.Evaluated || !payload.URLML.WouldPromote {
+		t.Fatalf("unexpected URL observation: %+v", payload.URLML)
+	}
+}
+
+func TestAnalyzeGetDoesNotAcceptURLContext(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	resp, err := ts.Client.Get(ts.Server.URL + "/v1/analyze?domain=example.com&requested_url=https://example.com/login")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := payload["url_ml"]; exists {
+		t.Fatalf("GET unexpectedly accepted URL context: %#v", payload["url_ml"])
 	}
 }

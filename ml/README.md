@@ -78,6 +78,21 @@ SAFE_ZONE_ML_BLOCK_THRESHOLD=
 
 `SAFE_ZONE_ML_REQUIRED=true` converts bundle loading errors into a startup failure. Otherwise, a missing or invalid bundle keeps the requested `shadow` mode visible as `degraded` and keeps the deterministic analyzer available. Threshold overrides must be in `(0,1)` and are included in the model-aware cache revision.
 
+URL-aware analysis is a separate core-API-only specialist. `POST /v1/analyze`
+may include `requested_url` and a caller-observed `redirect_chain`; the service
+never fetches those URLs. It defaults to disabled and currently supports
+shadow observation only:
+
+```env
+SAFE_ZONE_URL_ML_MODE=disabled
+SAFE_ZONE_URL_ML_BUNDLE_DIR=/app/models/safe-zone/url-v1
+SAFE_ZONE_URL_ML_REQUIRED=false
+```
+
+Invalid, oversized, credential-bearing, or host-mismatched URL context fails
+open to the unchanged domain-only result. Raw URL and query values are not
+returned or stored in URL ML observation telemetry.
+
 ## Phase 5 provisioning and shadow
 
 The host-side release root is `deploy/model-bundle/`; versioned bundles are

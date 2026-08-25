@@ -99,6 +99,10 @@ type Options struct {
 	MLClassifier analysis.DomainClassifier
 	MLMode       analysis.MLMode
 	MLCanary     MLCanaryConfig
+	// URL ML is an independent, shadow-only specialist for caller-supplied URL
+	// context. It never changes DNS or domain-only decisions.
+	URLMLClassifier analysis.URLClassifier
+	URLMLMode       analysis.MLMode
 }
 
 type adblockSourceMeta struct {
@@ -155,6 +159,9 @@ type Service struct {
 	mlMode            analysis.MLMode
 	mlCanary          MLCanaryConfig
 	mlTelemetry       mlTelemetry
+	urlMLClassifier   analysis.URLClassifier
+	urlMLMode         analysis.MLMode
+	urlMLTelemetry    urlMLTelemetry
 
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
 	adblockEnabled    atomic.Bool
@@ -171,9 +178,10 @@ type ClientInfo struct {
 
 type Analysis struct {
 	analysis.Result
-	CacheHit   bool             `json:"cache_hit"`
-	AnalyzedAt string           `json:"analyzed_at"`
-	Evidence   []osint.Evidence `json:"evidence,omitempty"`
+	CacheHit   bool              `json:"cache_hit"`
+	AnalyzedAt string            `json:"analyzed_at"`
+	Evidence   []osint.Evidence  `json:"evidence,omitempty"`
+	URLML      *URLMLObservation `json:"url_ml,omitempty"`
 }
 
 type Policy struct {
@@ -239,6 +247,7 @@ type analysisConfigReloadEvent struct {
 type AnalyzeOptions struct {
 	IncludeEvidence bool
 	ForceOSINT      bool
+	URLContext      *URLAnalysisContext
 }
 
 type osintLookupMode int
@@ -314,6 +323,13 @@ func NewService(options Options) *Service {
 	if mlMode == analysis.MLModeEnforce && !mlCanary.enabled() {
 		mlMode = analysis.MLModeShadow
 	}
+	urlMLMode := options.URLMLMode
+	if urlMLMode != analysis.MLModeShadow {
+		urlMLMode = analysis.MLModeDisabled
+	}
+	if options.URLMLClassifier == nil || !options.URLMLClassifier.Enabled() {
+		urlMLMode = analysis.MLModeDisabled
+	}
 
 	wl := NewWhitelist(options.Store)
 	if options.WhitelistPath != "" {
@@ -372,6 +388,8 @@ func NewService(options Options) *Service {
 		mlClassifier:     options.MLClassifier,
 		mlMode:           mlMode,
 		mlCanary:         mlCanary,
+		urlMLClassifier:  options.URLMLClassifier,
+		urlMLMode:        urlMLMode,
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -789,6 +807,9 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 	}
 	if options.IncludeEvidence {
 		a.Evidence = evidence
+	}
+	if options.URLContext != nil {
+		a.URLML = s.observeURLML(normalized, *options.URLContext)
 	}
 	s.recordTelemetry(a, client)
 	return a

@@ -76,6 +76,9 @@ services:
       SAFE_ZONE_ML_BLOCK_THRESHOLD: ${SAFE_ZONE_ML_BLOCK_THRESHOLD:-}
       SAFE_ZONE_ML_CANARY_PERCENT: ${SAFE_ZONE_ML_CANARY_PERCENT:-0}
       SAFE_ZONE_ML_CANARY_SEED: ${SAFE_ZONE_ML_CANARY_SEED:-}
+      SAFE_ZONE_URL_ML_MODE: ${SAFE_ZONE_URL_ML_MODE:-disabled}
+      SAFE_ZONE_URL_ML_BUNDLE_DIR: ${SAFE_ZONE_URL_ML_BUNDLE_DIR:-/app/models/safe-zone/url-v1}
+      SAFE_ZONE_URL_ML_REQUIRED: ${SAFE_ZONE_URL_ML_REQUIRED:-false}
       SAFE_ZONE_DASHBOARD_RECENT_LIMIT: ${SAFE_ZONE_DASHBOARD_RECENT_LIMIT:-25}
       SAFE_ZONE_SQLITE_PATH: ${SAFE_ZONE_SQLITE_PATH:-/app/data/safe-zone.db}
       SAFE_ZONE_TELEMETRY_RETENTION_DAYS: ${SAFE_ZONE_TELEMETRY_RETENTION_DAYS:-30}
@@ -97,6 +100,7 @@ services:
       - app-data:/app/data
       - ./ops/secrets:/app/ops/secrets:ro
       - ${SAFE_ZONE_ML_BUNDLE_HOST_DIR:-./deploy/model-bundle/current}:/app/models/safe-zone/current:ro
+      - ./ml/models/url-v1:/app/models/safe-zone/url-v1:ro
     depends_on:
       - redis
     restart: unless-stopped

@@ -9,17 +9,20 @@ import (
 )
 
 type analyzeRequest struct {
-	Domain string `json:"domain"`
+	Domain        string   `json:"domain"`
+	RequestedURL  string   `json:"requested_url,omitempty"`
+	RedirectChain []string `json:"redirect_chain,omitempty"`
 }
 
 func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	var domain string
+	var urlContext *risk.URLAnalysisContext
 
 	switch r.Method {
 	case http.MethodGet:
 		domain = r.URL.Query().Get("domain")
 	case http.MethodPost:
-		r.Body = http.MaxBytesReader(w, r.Body, 4096)
+		r.Body = http.MaxBytesReader(w, r.Body, 32768)
 		defer func() { _ = r.Body.Close() }()
 		var req analyzeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -27,6 +30,12 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		domain = req.Domain
+		if req.RequestedURL != "" || len(req.RedirectChain) > 0 {
+			urlContext = &risk.URLAnalysisContext{
+				RequestedURL:  req.RequestedURL,
+				RedirectChain: append([]string(nil), req.RedirectChain...),
+			}
+		}
 	default:
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -36,6 +45,7 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	response := h.Risk.AnalyzeWithOptions(r.Context(), domain, clientInfo, risk.AnalyzeOptions{
 		IncludeEvidence: r.URL.Query().Get("include_evidence") == "1",
 		ForceOSINT:      r.URL.Query().Get("force_osint") == "1",
+		URLContext:      urlContext,
 	})
 	h.Risk.RecordRecent(r.Context(), response)
 	httputil.WriteJSON(w, http.StatusOK, response)

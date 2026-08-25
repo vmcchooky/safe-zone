@@ -60,6 +60,7 @@ type MLStatus struct {
 	ProbabilityHistogram map[string]int64 `json:"probability_histogram"`
 	State                string           `json:"ml_state"`
 	Canary               MLCanaryStatus   `json:"canary"`
+	URL                  URLMLStatus      `json:"url"`
 }
 
 func (t *mlTelemetry) observeLatency(duration time.Duration) {
@@ -127,6 +128,7 @@ func (s *Service) MLStatus() MLStatus {
 			SelectedWouldPass:   s.mlTelemetry.canaryWouldPass.Load(),
 			EnforceSuppressed:   s.mlTelemetry.canarySuppressed.Load(),
 		},
+		URL: s.URLMLStatus(),
 	}
 	if status.Canary.Configured {
 		status.Canary.Algorithm = mlCanarySelectorAlgorithm

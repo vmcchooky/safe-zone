@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -104,6 +105,10 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	urlMLMode, urlMLClassifier, err := loadURLMLFromEnv()
+	if err != nil {
+		return nil, err
+	}
 
 	return NewService(Options{
 		Redis:                    redisCache,
@@ -141,7 +146,47 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 		MLClassifier:             mlClassifier,
 		MLMode:                   mlMode,
 		MLCanary:                 mlCanary,
+		URLMLClassifier:          urlMLClassifier,
+		URLMLMode:                urlMLMode,
 	}), nil
+}
+
+func loadURLMLFromEnv() (analysis.MLMode, analysis.URLClassifier, error) {
+	rawMode := strings.ToLower(strings.TrimSpace(config.String("SAFE_ZONE_URL_ML_MODE", string(analysis.MLModeDisabled))))
+	mode := analysis.MLMode(rawMode)
+	if mode != analysis.MLModeDisabled && mode != analysis.MLModeShadow {
+		return analysis.MLModeDisabled, nil, fmt.Errorf("invalid SAFE_ZONE_URL_ML_MODE %q: only disabled or shadow are supported", rawMode)
+	}
+	if mode == analysis.MLModeDisabled {
+		return mode, nil, nil
+	}
+	bundleDir := strings.TrimSpace(config.String("SAFE_ZONE_URL_ML_BUNDLE_DIR", ""))
+	required := config.Bool("SAFE_ZONE_URL_ML_REQUIRED", false)
+	if bundleDir == "" {
+		if required {
+			return analysis.MLModeDisabled, nil, errors.New("URL ML bundle is required for shadow mode")
+		}
+		logjson.Warn("URL ML bundle not configured; requested shadow mode is unavailable", map[string]any{"service": "risk"})
+		return mode, nil, nil
+	}
+	classifier, err := analysis.NewURLBundleClassifier(bundleDir)
+	if err != nil {
+		if required {
+			return analysis.MLModeDisabled, nil, fmt.Errorf("URL ML bundle load failed: %w", err)
+		}
+		logjson.Warn("URL ML bundle load failed; requested shadow mode is unavailable", map[string]any{
+			"service":     "risk",
+			"error_class": "bundle_load",
+		})
+		return mode, nil, nil
+	}
+	logjson.Info("URL ML classifier loaded", map[string]any{
+		"service":              "risk",
+		"url_ml_mode":          mode,
+		"url_ml_model_version": classifier.ModelVersion(),
+		"url_ml_revision":      classifier.Revision(),
+	})
+	return mode, classifier, nil
 }
 
 func loadMLCanaryFromEnv(mode analysis.MLMode) (MLCanaryConfig, error) {
