@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "created_at": "2026-08-25T05:32:00Z",
+  "seed": 42,
+  "objective": "add precision-preserving URL path and query signal for caller-supplied web analysis while keeping DNS and domain-only decisions unchanged",
+  "product_contract": {
+    "dns_behavior": "unchanged domain-only path",
+    "api_url_context": "optional caller-supplied requested_url and redirect_chain",
+    "server_side_fetch": false,
+    "default_runtime_mode": "disabled",
+    "allowed_schemes": ["http", "https"],
+    "maximum_url_bytes": 4096,
+    "maximum_redirects": 5,
+    "reject_credentials": true,
+    "require_requested_url_host_equals_canonical_domain": true,
+    "raw_url_logging": false,
+    "raw_query_logging": false,
+    "failure_policy": "fail open to unchanged domain-only decision"
+  },
+  "control": {
+    "operating_threshold": 0.92,
+    "model": {
+      "path": "data/derived/v3-leakage-free-context/models/domain_threat_lgbm_raw.txt",
+      "sha256": "e375ec1720af854362084d509e262dd0c7e1e6e91c48a4cb50060630ab2d463a"
+    },
+    "calibration": {
+      "path": "data/derived/v3-leakage-free-context/models/calibration.json",
+      "sha256": "716bd354aa1e85cb6c4179308edb3dfa376f6cfb42f2fb2673c646d003cd335b"
+    },
+    "feature_manifest": {
+      "path": "data/derived/v3-leakage-free-context/feature_manifest.json",
+      "sha256": "7a5554828ab40dc9e6ff0ae96ae85d2f052602f4242cd3f4f0c797dbc0b1f8db"
+    }
+  },
+  "sources": {
+    "malicious_adaptation": {
+      "name": "phishing_database_active_links_20260825",
+      "url": "https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-links-ACTIVE.txt",
+      "path": "data/derived/v10-url-aware-20260825/raw/phishing-links-ACTIVE.txt",
+      "trust_policy": "project active-link membership",
+      "download_after_protocol": true
+    },
+    "malicious_final": {
+      "name": "openphish_community_20260825",
+      "url": "https://openphish.com/feed.txt",
+      "path": "data/derived/v10-url-aware-20260825/raw/openphish-community.txt",
+      "trust_policy": "community feed membership at collection time",
+      "download_after_protocol": true
+    },
+    "benign_proxy": {
+      "name": "common_crawl_urls_on_vietnam_trust_domains",
+      "trust_directory_path": "../data/whitelist/vietnam/vietnam_websites.csv",
+      "trust_directory_sha256": "9a3cacb2f0e5884b33dfab92de277f3cc32a85bc095c2631fd18c071c8976f58",
+      "required_domain_column": "domain",
+      "common_crawl_index": "CC-MAIN-2026-30",
+      "common_crawl_endpoint": "https://index.commoncrawl.org/CC-MAIN-2026-30-index",
+      "required_status": "200",
+      "required_mime_prefix": "text/html",
+      "maximum_source_domains": 500,
+      "maximum_urls_per_domain": 20,
+      "maximum_concurrency": 2,
+      "timeout_seconds": 15,
+      "maximum_attempts": 2,
+      "raw_output": "data/derived/v10-url-aware-20260825/raw/common-crawl-benign-urls.jsonl"
+    }
+  },
+  "group_policy": {
+    "shared_hosting_snapshot": "contracts/snapshots/shared_hosting.v1.json",
+    "shared_hosting_snapshot_sha256": "27825bf0bb206038372bd26038d46698e0fe946f0a9eaa08afea25f004f48ed2",
+    "shared_hosting_extensions": ["weebly.com", "weeblysite.com", "godaddysites.com"]
+  },
+  "exclusions": {
+    "exclude_all_baseline_groups": true,
+    "exclude_all_frozen_groups": true,
+    "exclude_all_v4_through_v9_opened_groups": true,
+    "exclude_cross_label_url_hash_collisions": true,
+    "cross_partition_group_overlap_max": 0
+  },
+  "partition_policy": {
+    "hash": "sha256(seed|evaluation_group) modulo 10",
+    "adaptation_train_buckets": [0, 1, 2, 3, 4, 5],
+    "calibration_bucket": [6],
+    "threshold_bucket": [7],
+    "development_bucket": [8],
+    "benign_final_bucket": [9],
+    "maximum_rows": {
+      "adaptation_train_per_label": 5000,
+      "calibration_per_label": 1000,
+      "threshold_per_label": 1000,
+      "development_per_label": 1000,
+      "final_benign": 500,
+      "final_malicious": 250
+    },
+    "row_selection_order": "sha256(seed|label|normalized_url), normalized_url"
+  },
+  "url_feature_contract": {
+    "hostname_features_excluded": true,
+    "fragment_excluded": true,
+    "userinfo_excluded": true,
+    "normalized_text": "lowercase percent-preserving path plus sorted query parameter names and redacted value-shape tokens",
+    "query_values": "replace characters with alpha/digit/symbol shape; never persist raw values in features",
+    "handcrafted_features": [
+      "path_length",
+      "path_depth",
+      "query_length",
+      "query_parameter_count",
+      "percent_escape_count",
+      "digit_count",
+      "digit_ratio",
+      "special_character_count",
+      "path_entropy",
+      "suspicious_token_count",
+      "brand_token_count",
+      "has_ip_literal_in_path",
+      "has_double_slash_in_path",
+      "has_at_sign",
+      "has_executable_extension",
+      "redirect_count",
+      "redirect_cross_host_count",
+      "redirect_https_downgrade_count"
+    ],
+    "text_vectorizer": {
+      "type": "TfidfVectorizer",
+      "analyzer": "char",
+      "ngram_range": [2, 5],
+      "max_features": 8192,
+      "min_df": 2,
+      "sublinear_tf": true,
+      "fit_scope": "adaptation train only"
+    }
+  },
+  "model": {
+    "pipeline": ["StandardScaler handcrafted", "TF-IDF", "SGDClassifier log_loss"],
+    "alpha": 0.00001,
+    "penalty": "l2",
+    "max_iter": 1000,
+    "class_weight": "balanced",
+    "average": true,
+    "random_state": 42,
+    "calibration": "Platt calibration on group-disjoint calibration bucket",
+    "threshold_rule": "smallest representable calibrated probability strictly above maximum benign probability on threshold bucket",
+    "candidate_count": 1
+  },
+  "combined_decision": "domain_v3_positive OR (domain_v3_negative AND url_probability >= url_threshold)",
+  "selection": {
+    "inputs": ["adaptation_train", "calibration", "threshold", "development"],
+    "forbidden_inputs": ["source_disjoint_final", "old_representative_packet", "old_targeted_benign_packet"],
+    "eligibility_gates": {
+      "threshold_accepted_benign_max": 0,
+      "threshold_accepted_malicious_min": 5,
+      "development_incremental_benign_false_positives_max": 0,
+      "development_incremental_malicious_true_positives_min": 5
+    },
+    "no_rescue_policy": "do not alter source, split, features, alpha, vectorizer, calibration, threshold rule, or cohort after selection metrics"
+  },
+  "final_gates": {
+    "source_disjoint_final_incremental_benign_false_positives_max": 0,
+    "source_disjoint_final_incremental_malicious_true_positives_min": 3,
+    "domain_only_probability_and_decision_parity": true,
+    "url_parse_failure_preserves_domain_only_decision": true
+  },
+  "outputs": {
+    "derived_dir": "data/derived/v10-url-aware-20260825",
+    "snapshot_manifest": "experiments/v10-url-aware-snapshot.json",
+    "selection_report": "experiments/v10-url-aware-selection.json",
+    "final_report": "experiments/v10-url-aware-final-evaluation.json"
+  }
+}
