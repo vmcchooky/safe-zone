@@ -5,29 +5,29 @@
 
 ## Tóm tắt (Abstract)
 
-Candidate v2 suffix-debiased phát hiện `21/34` representative malicious case tại threshold `0,92`; leakage-safe candidate v3 tăng lên `22/34` nhưng vẫn thấp hơn gate `26/34`. V4 time-forward/TLD-state và v5 char-linear không tạo Pareto improvement nên bị giữ `NO-GO`. V6 source balancing tăng validation TP `11.529 → 12.003`, development TP `196/349 → 209/349` và malicious-source macro recall `57,90% → 63,17%`, nhưng validation FP tăng `238 → 333`. V7 dùng precision specialist để giữ `+14 TP / +0 FP` trên validation và `+15 TP / +0 FP` trên final test, nhưng frozen representative vẫn `22/34`; quyết định là `NO_GO_FINAL`. V8 kiểm tra tín hiệu DNS ngoài hostname trên cohort mới hoàn toàn source/group-disjoint. Candidate cứu `36/150` malicious development case nhưng thêm `1/150` benign FP, nên dừng `NO_ELIGIBLE_CANDIDATE` trước khi đọc DNS final hoặc signed packets. V4–v8 đều giữ private, không export, provision, restart service, đổi traffic scope hoặc bật `enforce`.
+Candidate v2 suffix-debiased phát hiện `21/34` representative malicious case tại threshold `0,92`; leakage-safe candidate v3 tăng lên `22/34` nhưng vẫn thấp hơn gate `26/34`. V4–v7 khảo sát time-forward data, TLD state, char-linear representation, source balancing và disagreement precision gating; v7 tạo broad gain `+15 TP / +0 FP` trên final test nhưng representative vẫn `22/34`. V8 DNS context cứu `36/150` malicious development case nhưng thêm một benign FP và có `32/36` gain gắn với NXDOMAIN. V9 hoàn tất nhánh domain-only source-invariant: train-only consensus giữ `100/534` feature, precision specialist đạt validation `+3 TP / +0 FP`, nhưng fresh development chỉ `+1 TP / +9 FP`. Vòng 1 đóng ở trạng thái `ROUND_1_CLOSED_NO_OFFLINE_CANDIDATE`; không candidate nào đủ điều kiện mở final/frozen gate mới hoặc chuyển sang shadow. V4–v9 đều giữ private, không export, provision, restart service, đổi traffic scope hoặc bật `enforce`.
 
 ## Sơ đồ Tổng quan
 
 ```mermaid
 flowchart LR
-    A[/Candidate v3/] -->|Precision specialist| B[V7 broad gain]
-    B -->|Representative 22/34| C[NO-GO v7]
-    C -->|Tín hiệu ngoài hostname| D[Freeze v8 protocol]
-    D -->|Nguồn mới| E[Cohort group-disjoint]
-    E -->|A AAAA NS MX| F[DNS context]
-    F -->|Một candidate| G[Development selection]
-    G -->|36 TP và 1 FP mới| H{Zero incremental FP?}
-    H -->|Không đạt| I[NO-GO v8 trước final]
+    A[/V3 control 22 trên 34/] -->|Data và lexical| B[V4 đến V7]
+    B -->|Không đạt gate| C[NO-GO broad models]
+    C -->|Context ngoài hostname| D[DNS v8]
+    D -->|36 TP và 1 FP mới| E[NO-GO time-variant]
+    E -->|Audit contract| F[Domain-only runtime]
+    F -->|Cross-source consensus| G[V9 source-invariant]
+    G -->|Fresh development| H[1 TP và 9 FP mới]
+    H -->|Không có Pareto gain| I[Đóng Vòng 1 chưa shadow]
 
     classDef input fill:#E9ECEF,stroke:#6C757D,color:#343A40
     classDef ai fill:#E8DAEF,stroke:#8E44AD,color:#4A235A
     classDef decision fill:#FFF3CD,stroke:#FFC107,color:#856404
     classDef blocked fill:#F8D7DA,stroke:#DC3545,color:#721C24
-    class A,D,E input
-    class B,F,G ai
+    class A,F input
+    class B,D,G ai
     class H decision
-    class C,I blocked
+    class C,E,I blocked
 ```
 
 ## Phân tích nguyên nhân và phương án remediation
@@ -556,14 +556,99 @@ Quyết định là `NO_ELIGIBLE_CANDIDATE`. Không tăng threshold sau khi th�
 - Unit tests: `ml/tests/test_dns_context.py`
 - Private DNS features/model: `ml/data/derived/v8-dns-context-20260825/` (Git-ignored; model SHA-256 `d8e83552...e5aa0e`)
 
-### Phương án candidate kế tiếp
+## Thử nghiệm v9 source-invariant và đóng Vòng 1
 
-Candidate kế tiếp cần thực hiện ba lớp, theo thứ tự sau:
+### Mục tiêu (Objectives)
 
-1. Dừng ablation threshold, `C`, feature subset hoặc DNS record set trên v8. Development đã được mở; tuning tiếp sẽ biến benign collision thành threshold-training signal và không còn là phép kiểm tra độc lập.
-2. Không đưa synchronous DNS lookup vào engine. Nếu tái sử dụng signal này, chỉ dùng snapshot-age-aware enrichment trong core retraining, kèm explicit missingness, TTL-bounded cache và training labels có observation time; candidate vẫn cần development/final pair mới.
-3. Ưu tiên thu URL/path/redirect context có provenance và privacy contract, vì đây là lớp tín hiệu còn thiếu mà hostname/DNS ablation chưa mô tả. Trước khi train cần label-policy review xác định representative case nào thực sự thuộc trách nhiệm domain-only engine và tạo packet mới không trùng 12 residuals đã mở.
-4. V7 vẫn là architecture research tốt nhất về broad precision-preserving gain, nhưng không phải release candidate. Packaging/latency prototype chỉ có ý nghĩa measurement-only; promotion vẫn bị khóa bởi representative `22/34`.
+- Hoàn tất nhánh nghiên cứu domain-only bằng một candidate giảm shortcut theo source mà không xóa tín hiệu nhãn.
+- Tạo development cohort mới `1.000 malicious + 1.000 benign`, không trùng baseline, frozen packets hoặc cohort v4–v8 đã mở.
+- Dùng source-invariant model làm recall generator và precision specialist làm zero-FP gate; không dò threshold hoặc feature subset theo development.
+- Chỉ mở fresh final, final test và representative packet nếu validation cùng fresh development đều tăng TP với zero incremental benign FP.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Responsibility boundary | Giữ input là canonical domain | Thêm URL/path/redirect vào model ngay | API `/v1/analyze`, DNS resolver, replay packet và classifier chỉ cung cấp domain; URL model không thể nâng gate hiện tại nếu không đổi product contract |
+| Source debiasing | Class-conditional cross-source consensus trên train-only TF-IDF means | Unconditional source adversary; lặp inverse-source weighting v6 | Training source bị label-confounded; unconditional adversary có thể xóa label signal, còn weighting đã chứng minh tăng FP ở v6 |
+| Feature policy | Giữ 22 handcrafted feature và TF-IDF feature vượt benign-reference ở ít nhất `5/7` malicious source families | Chọn top feature theo development; giữ đủ 534 feature | Rule dùng train-only source statistics, loại feature gắn với một feed và không sử dụng frozen/development score |
+| Recall model | LightGBM parameters và training weights của v3-time-forward | Neural contrastive encoder; char-linear model mới | Sparse matrices và Go-compatible model family đã có parity path; neural encoder thêm dependency/runtime risk khi chưa chứng minh signal value |
+| Precision layer | Logistic specialist trên calibration disagreement, group split `7/3`, zero-benign threshold | Hạ operating threshold; probability blend | Bảo toàn toàn bộ v3 positives và cô lập recall bổ sung; threshold không được chọn trên validation/development |
+| Stop rule | Validation và fresh development cùng phải đạt `+TP / +0 FP` | Chấp nhận FP rồi mở representative | Hai independent selection views ngăn precision specialist overfit calibration/validation |
+
+### Cách thức Thực hiện (Implementation Details)
+
+Protocol được pre-register tại commit `bf9cca1`; commit `0523e43` bổ sung exact hashes cho prior opened cohorts trước cohort/model. Snapshot builder canonicalize hai nguồn, loại `1.936.767` baseline groups, `140` frozen groups và `83.664` prior-opened groups. Development output có `2.000` rows, SHA-256 `2827eb83...1572`, mỗi row thuộc một evaluation group riêng và overlap với fresh final bằng `0`.
+
+Inventory check đầu tiên dừng trước training vì `phishtank_time_forward` là alias của source family `phishtank`, làm raw source count là tám thay vì bảy. Commit `8717ce6` khóa alias này và giữ support rule `5/7`; cohort rows, ordering và hash không đổi. Source consensus sau đó giữ `78/512` TF-IDF feature cùng 22 handcrafted feature, tổng `100` feature.
+
+Recall model train đủ `1.000` boosting iterations và Platt-calibrate trên calibration partition. Vùng disagreement có `500` rows; group hash phân `368` rows cho specialist train và `132` rows cho threshold. Threshold `0,9911618993` nhận `3/109` malicious và `0/23` benign. Selector chỉ đọc train, calibration, validation và fresh development; report ghi `forbidden_inputs_read=[]`.
+
+AI agent sử dụng Codex (GPT-5) với chiến lược bounded research ladder, pre-registration và automatic stop gate. Số subagent là `0`; không dùng voting. Kiểm soát chất lượng gồm SHA-256 verification, source-family inventory assertion, train-only feature statistics, group-disjoint specialist split, unit test cho consensus rule và full ML test suite `67 passed`. Con người giữ quyền thay đổi product contract, signed evidence và rollout; agent không sửa evidence, push, deploy, restart service, đổi traffic scope hoặc bật `enforce`.
+
+### Số liệu (Metrics & Results)
+
+| Chỉ số | V3 control | V9 combined | Delta |
+|---|---:|---:|---:|
+| Validation candidate TP / 15.324 | 11.529 | 11.532 | +3 |
+| Validation candidate FP / 11.032 | 238 | 238 | 0 |
+| Fresh development malicious TP / 1.000 | 604 | 605 | +1 |
+| Fresh development benign FP / 1.000 | 412 | 421 | +9 |
+| Selected feature | 534 | 100 | −434 |
+| Selection wall time | — | 234,17 giây | — |
+| Forbidden inputs được đọc | — | 0 | — |
+
+V9 chứng minh cross-source censorship có thể giữ precision trên validation cũ, nhưng specialist không tổng quát hóa sang benign source mới. Mười development disagreements được nhận gồm chín benign và một malicious; precision bổ sung chỉ `10%`. Candidate fail development FP gate nên fresh final, final test và signed packets không được đọc, đồng thời mốc representative không được đo lại.
+
+Quyết định là `NO_ELIGIBLE_CANDIDATE`. Không thay support `5/7`, threshold, `C`, feature list hoặc cohort sau kết quả.
+
+### Liên kết Artifacts
+
+- Protocol: `ml/configs/v9-source-invariant-round1-protocol.json`
+- Snapshot/selection reports: `ml/experiments/v9-source-invariant-snapshot.json`, `ml/experiments/v9-source-invariant-selection.json`
+- Builder, source-consensus policy và selector: `ml/src/build_v9_source_invariant_snapshot.py`, `ml/src/source_invariant.py`, `ml/src/select_v9_source_invariant.py`
+- Unit test: `ml/tests/test_source_invariant.py`
+- Private model/specialist/features: `ml/data/derived/v9-source-invariant-round1/` (Git-ignored; model SHA-256 `c9db51c1...e5ef`)
+
+## Kết luận Vòng 1
+
+### Mục tiêu (Objectives)
+
+- Xác định có candidate offline nào đủ precision-preserving recall để chuyển sang shadow hay không.
+- Dừng research khi các signal families có ROI hợp lý đã được kiểm tra và blocker nằm ngoài domain-only model contract.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Trạng thái Vòng 1 | `ROUND_1_CLOSED_NO_OFFLINE_CANDIDATE` | Tiếp tục ablation không giới hạn; chuyển shadow với v7 | V4–v9 đã phủ data, representation, weighting, precision gating, DNS và source invariance; không candidate nào đạt representative cùng benign gates |
+| Vòng shadow | Chưa bắt đầu | Shadow v7 để lấy thêm telemetry | Roadmap yêu cầu candidate đạt offline gate trước; v7 vẫn `22/34` |
+| Điều kiện mở lại | Product contract/context packet mới hoặc responsibility relabel | Tuning theo 12 residuals đã mở | Context mới tạo thông tin mà domain-only model chưa có; tuning residual làm mất giá trị frozen gate |
+
+### Cách thức Thực hiện (Implementation Details)
+
+Closure sử dụng decision trail v4–v9, không tạo thêm prediction. URL/path/redirect được loại khỏi Vòng 1 hiện tại vì runtime và representative evidence không chứa các trường đó. Unconditional source-adversarial learning cũng bị loại vì source-label confounding hoàn toàn; v9 đã kiểm tra biến thể class-conditional khả thi mà không thêm neural dependency.
+
+AI agent sử dụng Codex (GPT-5), `0` subagent và không voting. Closure được kiểm soát bằng protocol hashes, explicit forbidden-input audits, one-time final policies và `67` ML tests. Không có thay đổi runtime hoặc rollout.
+
+### Số liệu (Metrics & Results)
+
+| Gate kết thúc Vòng 1 | Yêu cầu | Kết quả tốt nhất | Trạng thái |
+|---|---:|---:|---|
+| Representative malicious TP | ≥26/34 | 22/34 (v3/v7) | không đạt |
+| Representative benign FP | 0/25 | 0/25 (v7) | đạt |
+| Targeted benign FP | 0/3 | 0/3 (v7) | đạt |
+| Broad final-test incremental TP/FP | >0 / 0 | +15 / 0 (v7) | đạt |
+| Candidate đủ điều kiện shadow | tất cả gate | 0 | không đạt |
+
+Vòng 1 đã hoàn tất về quy trình nghiên cứu nhưng không tạo release candidate. Vòng 2 shadow chưa được phép bắt đầu. Mở lại Vòng 1 chỉ hợp lý khi có ít nhất một trong ba thay đổi: optional URL/path/redirect contract cùng privacy/provenance policy; representative packet mới phân định rõ trách nhiệm domain-only; hoặc timestamp-aligned context dataset mới có benign/malicious observation cùng thời điểm.
+
+### Điều kiện cho bước kế tiếp
+
+1. Không tiếp tục tuning v7–v9 trên final/development inputs đã mở.
+2. Không đưa synchronous DNS lookup vào engine; nếu tái sử dụng, phải có timestamp-aligned labels, explicit missingness và TTL-bounded cache.
+3. Product owner cần chọn giữa mở rộng `/v1/analyze` bằng optional URL context hoặc giữ domain-only scope và review lại representative responsibility. Đây là thay đổi contract/label policy, không phải thêm một hyperparameter.
+4. Chỉ tạo candidate mới sau khi có fresh development/final pair phù hợp contract mới. Candidate vẫn phải đạt `26/34`, representative benign `0/25`, targeted benign `0/3`, parity tolerance `10^-6`, ML errors `0` và enforce promotions `0` trước shadow.
 
 PhishDestroy holdout đã được mở một lần cho v7 và không còn là final input hợp lệ cho tuning tiếp. Không chọn phương án chỉ hạ threshold: sweep hiện tại cho thấy threshold `0,90` đạt `22/34` với `0/25` FP; threshold `0,85` đạt `25/34` nhưng tạo `1/25` FP. Candidate mới chỉ được xem xét cho local staging `shadow` khi đạt tối thiểu representative recall `26/34`, giữ representative benign FP `0/25`, targeted benign challenge `0/3`, cross-service probability/response parity trong tolerance `10^-6`, ML errors bằng `0` và enforce promotions bằng `0`.
 
@@ -590,6 +675,7 @@ PhishDestroy holdout đã được mở một lần cho v7 và không còn là f
 - V6 protocol/selection report: `ml/configs/v6-source-balanced-robustness-protocol.json`, `ml/experiments/v6-source-balanced-selection.json`
 - V7 protocol/selection/final reports: `ml/configs/v7-disagreement-specialist-protocol.json`, `ml/experiments/v7-disagreement-specialist-selection.json`, `ml/experiments/v7-disagreement-specialist-final-evaluation.json`
 - V8 protocol/snapshot/selection reports: `ml/configs/v8-dns-context-feasibility-protocol.json`, `ml/experiments/v8-dns-context-snapshot.json`, `ml/experiments/v8-dns-context-selection.json`
+- V9 protocol/snapshot/selection reports: `ml/configs/v9-source-invariant-round1-protocol.json`, `ml/experiments/v9-source-invariant-snapshot.json`, `ml/experiments/v9-source-invariant-selection.json`
 - Threat-context protocol/report: `ml/configs/threat-context-production-free-20260824.json`, `ml/experiments/threat-context-production-free-20260824.json`
 - Threat-context R&D report: `docs/research/security/threat-context-evaluation.md`
 
@@ -599,6 +685,7 @@ PhishDestroy holdout đã được mở một lần cho v7 và không còn là f
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-25 | Hoàn tất Vòng 1 bằng v9 source-invariant candidate; validation đạt `+3 TP / +0 FP`, fresh development đạt `+1 TP / +9 FP`, dừng trước final và đóng `ROUND_1_CLOSED_NO_OFFLINE_CANDIDATE` | Codex (GPT-5) |
 | 2026-08-25 | Pre-register v8 DNS context, freeze ba source/group-disjoint cohorts; ghi nhận `+36/150` development TP nhưng `+1/150` benign FP và dừng trước final/signed inputs | Codex (GPT-5) |
 | 2026-08-24 | Triển khai v7 disagreement precision specialist; selection đạt `+14 TP / +0 FP`, final test đạt `+15 TP / +0 FP`, nhưng giữ `NO_GO_FINAL` vì representative vẫn `22/34` | Codex (GPT-5) |
 | 2026-08-24 | Pre-register và train một v6 source-balanced candidate; ghi nhận `+474` validation TP, `+13/349` development TP nhưng `+95` validation FP, dừng `NO_GO_SELECTION` trước final inputs | Codex (GPT-5) |
