@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "protocol_sha256": "3f561627530f8aaa6f717be166329345c35cd037be347df4b0ca7db1d584a6ef",
+  "snapshot_manifest_sha256": "1a454d072eb88810e97a4c9c2b440cbef5c4fcb03cbbe6ec7c5852919ca39c2d",
+  "selection_report_sha256": "12f413ef8ec9a6fe1d4cb8a6f4c41d845350d979e5ca16336b41b9919eb5c822",
+  "final_input": {
+    "path": "data/derived/v10-url-aware-20260825/cohorts/final.parquet",
+    "sha256": "024af962e2b1ab127071ca17fb5ac1ff391c72e679deed151adfd9dcf4150a48",
+    "rows": 679,
+    "labels": {
+      "0": 500,
+      "1": 179
+    }
+  },
+  "selected_model": {
+    "path": "data/derived/v10-url-aware-20260825/models/url_specialist.joblib",
+    "sha256": "b724d3f408ead64e8ccef508de86c948593027a4cf5f1e095eee493e2baa6c48"
+  },
+  "metrics": {
+    "primary_v3": {
+      "rows": 679,
+      "benign_rows": 500,
+      "malicious_rows": 179,
+      "benign_false_positives": 37,
+      "malicious_true_positives": 118
+    },
+    "combined": {
+      "rows": 679,
+      "benign_rows": 500,
+      "malicious_rows": 179,
+      "benign_false_positives": 37,
+      "malicious_true_positives": 151
+    },
+    "incremental_benign_false_positives": 0,
+    "incremental_malicious_true_positives": 33,
+    "url_only_accepted_benign": 0,
+    "url_only_accepted_malicious": 76
+  },
+  "invariants": {
+    "domain_only_probability_parity": true,
+    "domain_only_decision_parity": true,
+    "parse_failure_preserves_domain_only_decision": true
+  },
+  "gates": {
+    "source_disjoint_final_incremental_benign_false_positives_max": true,
+    "source_disjoint_final_incremental_malicious_true_positives_min": true,
+    "domain_only_probability_and_decision_parity": true,
+    "url_parse_failure_preserves_domain_only_decision": true
+  },
+  "passed": true,
+  "status": "OFFLINE_ELIGIBLE_URL_SHADOW_CANDIDATE",
+  "representative_packet_evaluated": false,
+  "representative_packet_note": "frozen representative evidence contains domains, not caller-observed URL/path context, and remains a forbidden tuning input",
+  "duration_seconds": 3.107
+}
