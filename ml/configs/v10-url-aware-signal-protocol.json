@@ -157,6 +157,19 @@
     "userinfo_excluded": true,
     "normalized_text": "lowercase percent-preserving path plus sorted query parameter names and redacted value-shape tokens",
     "query_values": "replace characters with alpha/digit/symbol shape; never persist raw values in features",
+    "query_value_shape": "Unicode alpha/digit/symbol runs represented by type and base-2 length bucket capped at 64 characters",
+    "suspicious_tokens": {
+      "path": "contracts/snapshots/keywords.v1.json",
+      "sha256": "576e7e5dc243a7e3b427999da4e84782e4779f6cd431f57e105d8bad530a241a"
+    },
+    "brand_tokens": {
+      "path": "contracts/snapshots/brands.v1.json",
+      "sha256": "306c1cc8bd8e1803ff95a552b7d15e345ca783833041481cf4e84d0c7fe03c07"
+    },
+    "executable_extensions": [
+      ".apk", ".bat", ".cmd", ".dmg", ".exe", ".jar", ".js", ".msi",
+      ".pkg", ".ps1", ".rar", ".scr", ".zip"
+    ],
     "handcrafted_features": [
       "path_length",
       "path_depth",
