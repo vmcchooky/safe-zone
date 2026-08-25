@@ -61,6 +61,8 @@
       "maximum_concurrency": 2,
       "timeout_seconds": 15,
       "maximum_attempts": 2,
+      "preflight_required": true,
+      "abort_after_consecutive_failed_queries": 10,
       "raw_output": "data/derived/v10-url-aware-20260825/raw/common-crawl-benign-urls.jsonl"
     }
   },

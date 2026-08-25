@@ -10,6 +10,7 @@ import os
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from itertools import islice
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Mapping
 from urllib.error import HTTPError, URLError
@@ -81,11 +82,33 @@ def _generic_csv_groups(path: Path, roots: set[str]) -> set[str]:
 def _load_exclusions(
     protocol: Mapping[str, Any], roots: set[str]
 ) -> tuple[set[str], Dict[str, Any]]:
+    cache_dir = resolve_ml_path(protocol["outputs"]["derived_dir"]) / "cache"
+    cache_path = cache_dir / "excluded-groups.parquet"
+    cache_manifest_path = cache_dir / "excluded-groups.json"
+    cache_key = _stable_hash(
+        protocol["group_policy"]["shared_hosting_snapshot_sha256"],
+        *(
+            f"{name}:{meta['sha256']}"
+            for name, meta in sorted(protocol["exclusions"]["inputs"].items())
+        ),
+    )
+    for name, meta in protocol["exclusions"]["inputs"].items():
+        _require_hash(resolve_ml_path(meta["path"]), meta["sha256"], f"exclusion {name}")
+    if cache_path.exists() and cache_manifest_path.exists():
+        cache_manifest = _load_json(cache_manifest_path)
+        if (
+            cache_manifest.get("cache_key") == cache_key
+            and cache_manifest.get("sha256") == compute_file_sha256(cache_path)
+        ):
+            cached = pd.read_parquet(cache_path, columns=["evaluation_group"])
+            return set(cached["evaluation_group"].astype(str)), dict(
+                cache_manifest["inputs"]
+            )
+
     excluded: set[str] = set()
     details: Dict[str, Any] = {}
     for name, meta in protocol["exclusions"]["inputs"].items():
         path = resolve_ml_path(meta["path"])
-        _require_hash(path, meta["sha256"], f"exclusion {name}")
         if path.suffix.lower() == ".parquet":
             schema_names = set(pq.read_schema(path).names)
             if "evaluation_group" in schema_names:
@@ -110,6 +133,18 @@ def _load_exclusions(
                 rows = sum(1 for _ in csv.DictReader(handle))
         excluded.update(groups)
         details[name] = {"rows": rows, "groups": len(groups)}
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame({"evaluation_group": sorted(excluded)}).to_parquet(
+        cache_path, index=False
+    )
+    _write_json(
+        cache_manifest_path,
+        {
+            "cache_key": cache_key,
+            "sha256": compute_file_sha256(cache_path),
+            "inputs": details,
+        },
+    )
     return excluded, details
 
 
@@ -225,6 +260,30 @@ def _fetch_common_crawl_domain(
     return domain, [], last_error
 
 
+def _common_crawl_preflight(config: Mapping[str, Any]) -> None:
+    if not bool(config.get("preflight_required", False)):
+        return
+    last_error: Exception | None = None
+    for attempt in range(int(config["maximum_attempts"])):
+        try:
+            request = Request(
+                str(config["common_crawl_endpoint"]),
+                headers={"User-Agent": "Safe-Zone-Research/1.0 (+local offline evaluation)"},
+            )
+            with urlopen(request, timeout=float(config["timeout_seconds"])) as response:
+                if int(response.status) != 200:
+                    raise URLContextError(
+                        f"Common Crawl preflight returned HTTP {response.status}"
+                    )
+                response.read(256)
+            return
+        except (HTTPError, URLError, TimeoutError, OSError, URLContextError) as exc:
+            last_error = exc
+            if attempt + 1 < int(config["maximum_attempts"]):
+                time.sleep(0.5 * (attempt + 1))
+    raise URLContextError(f"Common Crawl preflight failed: {last_error}")
+
+
 def _collect_benign_rows(
     protocol: Mapping[str, Any],
     roots: set[str],
@@ -259,15 +318,32 @@ def _collect_benign_rows(
 
     raw_path = resolve_ml_path(source["raw_output"])
     raw_path.parent.mkdir(parents=True, exist_ok=True)
+    _common_crawl_preflight(source)
     results: Dict[str, tuple[list[Dict[str, Any]], str | None]] = {}
-    with ThreadPoolExecutor(max_workers=int(source["maximum_concurrency"])) as executor:
-        futures = {
-            executor.submit(_fetch_common_crawl_domain, domain, source): domain
-            for domain in selected_domains
-        }
-        for future in as_completed(futures):
-            domain, records, error = future.result()
-            results[domain] = (records, error)
+    consecutive_failures = 0
+    maximum_failures = int(source["abort_after_consecutive_failed_queries"])
+    selected_iterator = iter(selected_domains)
+    concurrency = int(source["maximum_concurrency"])
+    while batch := list(islice(selected_iterator, concurrency)):
+        with ThreadPoolExecutor(max_workers=concurrency) as executor:
+            futures = {
+                executor.submit(_fetch_common_crawl_domain, domain, source): domain
+                for domain in batch
+            }
+            for future in as_completed(futures):
+                domain, records, error = future.result()
+                results[domain] = (records, error)
+        for domain in batch:
+            records, error = results[domain]
+            if error:
+                consecutive_failures += 1
+            else:
+                consecutive_failures = 0
+            if consecutive_failures >= maximum_failures:
+                raise URLContextError(
+                    "Common Crawl collection aborted after "
+                    f"{consecutive_failures} consecutive failed queries"
+                )
 
     rows: list[Dict[str, Any]] = []
     seen_hashes: set[str] = set()
