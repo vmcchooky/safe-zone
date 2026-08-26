@@ -23,10 +23,14 @@ type analyzeRequest struct {
 func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	var domain string
 	var urlContext *risk.URLAnalysisContext
+	// Structural reason for missing URL context; feeds fixed-bucket aggregate
+	// coverage telemetry only and never stores caller data.
+	missingContextReason := ""
 
 	switch r.Method {
 	case http.MethodGet:
 		domain = r.URL.Query().Get("domain")
+		missingContextReason = "get_domain_only"
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 32768)
 		defer func() { _ = r.Body.Close() }()
@@ -43,6 +47,8 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 				EventID:       req.EventID,
 				CallerClass:   req.CallerClass,
 			}
+		} else {
+			missingContextReason = "post_not_provided"
 		}
 	default:
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -51,9 +57,10 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 
 	clientInfo := httputil.ExtractClientInfo(r)
 	response := h.Risk.AnalyzeWithOptions(r.Context(), domain, clientInfo, risk.AnalyzeOptions{
-		IncludeEvidence: r.URL.Query().Get("include_evidence") == "1",
-		ForceOSINT:      r.URL.Query().Get("force_osint") == "1",
-		URLContext:      urlContext,
+		IncludeEvidence:      r.URL.Query().Get("include_evidence") == "1",
+		ForceOSINT:           r.URL.Query().Get("force_osint") == "1",
+		URLContext:           urlContext,
+		MissingContextReason: missingContextReason,
 	})
 	h.Risk.RecordRecent(r.Context(), response)
 	httputil.WriteJSON(w, http.StatusOK, response)

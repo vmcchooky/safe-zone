@@ -108,6 +108,9 @@ type Options struct {
 	// (real shadow traffic, never the offline proxy). Nil means drift
 	// monitoring falls back to the bundle reference.
 	URLOpsBaseline *URLOperationalBaseline
+	// URLMLFeedback configures durable, privacy-safe label correlation. An
+	// empty secret keeps the legacy ephemeral in-memory buffer.
+	URLMLFeedback URLMLFeedbackConfig
 }
 
 type adblockSourceMeta struct {
@@ -174,7 +177,9 @@ type Service struct {
 	urlMLOpsBaselineFailed     bool
 	urlMLOpsBaselineErrorClass string
 	// urlMLFeedback correlates opaque event fingerprints with caller labels.
-	urlMLFeedback *urlFeedbackStore
+	// Backed by memory (ephemeral) or SQLite (durable, bounded) depending on
+	// URLMLFeedbackConfig.
+	urlMLFeedback urlFeedbackBackend
 
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
 	adblockEnabled    atomic.Bool
@@ -261,6 +266,10 @@ type AnalyzeOptions struct {
 	IncludeEvidence bool
 	ForceOSINT      bool
 	URLContext      *URLAnalysisContext
+	// MissingContextReason classifies analysis requests that carry no URL
+	// context (bounded set: get_domain_only|post_not_provided). It feeds the
+	// aggregate coverage breakdown only; it never stores caller data.
+	MissingContextReason string
 }
 
 type osintLookupMode int
@@ -347,6 +356,39 @@ func NewService(options Options) *Service {
 	if err := urlMLShadow.validate(); err != nil {
 		urlMLShadow = URLMLShadowConfig{Percent: 100}
 	}
+	urlFeedback := options.URLMLFeedback
+	var urlFeedbackBackendImpl urlFeedbackBackend
+	switch {
+	case urlFeedback.Secret == "":
+		// No secret injected: keep the ephemeral in-memory buffer. Labels are
+		// best-effort diagnostics and never survive a restart.
+		urlFeedbackBackendImpl = newURLFeedbackStore(8192)
+	default:
+		if urlFeedback.KeyVersion == 0 {
+			urlFeedback.KeyVersion = 1
+		}
+		if urlFeedback.Retention == 0 {
+			urlFeedback.Retention = defaultURLFeedbackRetentionHours * time.Hour
+		}
+		if urlFeedback.MaxRows == 0 {
+			urlFeedback.MaxRows = defaultURLFeedbackMaxRows
+		}
+		if err := urlFeedback.validate(); err != nil {
+			logjson.Warn("invalid URL ML feedback configuration; feedback fails closed", map[string]any{
+				"service": "risk",
+				"error":   err.Error(),
+			})
+			urlFeedbackBackendImpl = newDurableURLFeedbackStore(nil, URLMLFeedbackConfig{
+				KeyVersion: 1,
+				Retention:  defaultURLFeedbackRetentionHours * time.Hour,
+				MaxRows:    defaultURLFeedbackMaxRows,
+			})
+		} else {
+			// Durable mode. A nil/disabled store keeps failing closed for
+			// labels while analysis stays unaffected.
+			urlFeedbackBackendImpl = newDurableURLFeedbackStore(options.Store, urlFeedback)
+		}
+	}
 
 	wl := NewWhitelist(options.Store)
 	if options.WhitelistPath != "" {
@@ -409,7 +451,7 @@ func NewService(options Options) *Service {
 		urlMLMode:        urlMLMode,
 		urlMLShadow:      urlMLShadow,
 		urlMLOpsBaseline: options.URLOpsBaseline,
-		urlMLFeedback:    newURLFeedbackStore(8192),
+		urlMLFeedback:    urlFeedbackBackendImpl,
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -739,6 +781,9 @@ func (s *Service) Analyze(ctx context.Context, domain string, client ClientInfo)
 
 func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client ClientInfo, options AnalyzeOptions) Analysis {
 	s.urlMLTelemetry.analyzeRequests.Add(1)
+	if options.URLContext == nil {
+		s.urlMLTelemetry.noteMissingContext(options.MissingContextReason)
+	}
 	normalized, err := analysis.NormalizeDomain(domain)
 	var result analysis.Result
 	var cacheHit bool

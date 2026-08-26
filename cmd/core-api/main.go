@@ -92,17 +92,20 @@ func main() {
 		dashboardLimiter := ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_DASHBOARD_RPM", 240), config.Int("SAFE_ZONE_RATELIMIT_DASHBOARD_BURST", 60))
 		overrideLimiter := ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_OVERRIDE_RPM", 20), config.Int("SAFE_ZONE_RATELIMIT_OVERRIDE_BURST", 5))
 		telemetryLimiter := ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_TELEMETRY_RPM", 30), config.Int("SAFE_ZONE_RATELIMIT_TELEMETRY_BURST", 10))
+		feedbackLimiter := ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_FEEDBACK_RPM", 30), config.Int("SAFE_ZONE_RATELIMIT_FEEDBACK_BURST", 10))
 		defaultLimiter := ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_DEFAULT_RPM", 60), config.Int("SAFE_ZONE_RATELIMIT_DEFAULT_BURST", 15))
 		defer authLimiter.Close()
 		defer analyzeLimiter.Close()
 		defer dashboardLimiter.Close()
 		defer overrideLimiter.Close()
 		defer telemetryLimiter.Close()
+		defer feedbackLimiter.Close()
 		defer defaultLimiter.Close()
 		tiered = ratelimit.NewTieredMiddleware(
 			defaultLimiter,
 			ratelimit.Tier{PathPrefix: "/v1/auth/login", Limiter: authLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/analyze", Limiter: analyzeLimiter},
+			ratelimit.Tier{PathPrefix: "/v1/url-ml/feedback", Limiter: feedbackLimiter},
 			ratelimit.Tier{PathPrefix: "/assets/", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/app", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/dashboard", Limiter: dashboardLimiter},

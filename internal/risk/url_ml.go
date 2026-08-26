@@ -95,19 +95,24 @@ type URLMLStatus struct {
 }
 
 // URLMLCoverageStatus tracks how much of total analysis traffic actually
-// carries URL context, plus a coarse non-identifying caller breakdown.
+// carries URL context, plus a coarse non-identifying caller breakdown and the
+// structural reason context was missing.
 type URLMLCoverageStatus struct {
-	AnalyzeRequests      int64            `json:"analyze_requests"`
-	URLContextRequests   int64            `json:"url_context_requests"`
-	ContextCoverageRate  float64          `json:"context_coverage_rate"`
-	RedirectChainPresent int64            `json:"redirect_chain_present"`
-	CallerBreakdown      map[string]int64 `json:"caller_breakdown"`
+	AnalyzeRequests         int64            `json:"analyze_requests"`
+	URLContextRequests      int64            `json:"url_context_requests"`
+	ContextCoverageRate     float64          `json:"context_coverage_rate"`
+	RedirectChainPresent    int64            `json:"redirect_chain_present"`
+	CallerBreakdown         map[string]int64 `json:"caller_breakdown"`
+	MissingContextBreakdown map[string]int64 `json:"missing_context_breakdown"`
 }
 
 // URLMLFeedbackStatus aggregates privacy-safe label correlation counters.
-// Calibration numbers exist only when labelled events exist.
+// Calibration numbers exist only when labelled events exist. Persistence
+// reports "memory" (ephemeral ring buffer) or "sqlite" (durable bounded
+// retention); a degraded durable store keeps failing closed for labels.
 type URLMLFeedbackStatus struct {
 	Supported                   bool    `json:"supported"`
+	Persistence                 string  `json:"persistence,omitempty"`
 	RecordedEvents              int64   `json:"recorded_events"`
 	LabelledEvents              int64   `json:"labelled_events"`
 	ConfirmedMalicious          int64   `json:"confirmed_malicious"`
@@ -115,6 +120,12 @@ type URLMLFeedbackStatus struct {
 	WouldPromoteLabelled        int64   `json:"would_promote_labelled"`
 	LabelledFalsePositiveRate   float64 `json:"labelled_false_positive_rate,omitempty"`
 	Capacity                    int     `json:"capacity,omitempty"`
+	KeyVersion                  int     `json:"key_version,omitempty"`
+	PreviousKeyVersion          int     `json:"previous_key_version,omitempty"`
+	RetentionHours              int     `json:"retention_hours,omitempty"`
+	MaxRows                     int     `json:"max_rows,omitempty"`
+	PersistenceErrors           int64   `json:"persistence_errors,omitempty"`
+	Degraded                    bool    `json:"degraded,omitempty"`
 	Note                        string  `json:"note,omitempty"`
 }
 
@@ -123,6 +134,28 @@ type URLMLFeedbackStatus struct {
 const urlMLCallerClassCount = 6
 
 var urlMLCallerClasses = [urlMLCallerClassCount]string{"unspecified", "ui", "sdk", "extension", "proxy", "other"}
+
+// urlMLMissingContextReasons enumerates the fixed, structural reasons an
+// analyze request can carry no URL context. GET analysis is domain-only by
+// contract; POST callers either did not send a URL or sent nothing at all.
+const urlMLMissingContextReasonCount = 3
+
+var urlMLMissingContextReasons = [urlMLMissingContextReasonCount]string{
+	"get_domain_only",
+	"post_not_provided",
+	"unspecified",
+}
+
+func normalizeURLMLMissingContextReason(raw string) int {
+	switch raw {
+	case "get_domain_only":
+		return 0
+	case "post_not_provided":
+		return 1
+	default:
+		return 2
+	}
+}
 
 func normalizeURLMLCallerClass(raw string) string {
 	switch raw {
@@ -159,6 +192,16 @@ type urlMLTelemetry struct {
 	urlContextRequests    atomic.Int64
 	redirectPresent       atomic.Int64
 	callerBuckets         [len(urlMLCallerClasses)]atomic.Int64
+	missingContextBuckets [len(urlMLMissingContextReasons)]atomic.Int64
+}
+
+// noteMissingContext records the structural reason an analyze request carried
+// no URL context. It is a fixed-bucket aggregate only.
+func (t *urlMLTelemetry) noteMissingContext(reason string) {
+	if t == nil {
+		return
+	}
+	t.missingContextBuckets[normalizeURLMLMissingContextReason(reason)].Add(1)
 }
 
 const urlMLSelectorAlgorithm = "sha256-domain-v1"
@@ -500,10 +543,14 @@ func classifyURLMLError(err error) string {
 }
 
 // urlMLCoverageStatus aggregates URL-context coverage over all analysis
-// traffic, plus a bounded caller-class breakdown.
+// traffic, plus a bounded caller-class breakdown and the structural reasons
+// for missing context.
 func (s *Service) urlMLCoverageStatus() URLMLCoverageStatus {
 	if s == nil {
-		return URLMLCoverageStatus{CallerBreakdown: map[string]int64{}}
+		return URLMLCoverageStatus{
+			CallerBreakdown:         map[string]int64{},
+			MissingContextBreakdown: map[string]int64{},
+		}
 	}
 	breakdown := make(map[string]int64, len(urlMLCallerClasses))
 	var total int64
@@ -512,11 +559,16 @@ func (s *Service) urlMLCoverageStatus() URLMLCoverageStatus {
 		breakdown[name] = count
 		total += count
 	}
+	missing := make(map[string]int64, len(urlMLMissingContextReasons))
+	for index, name := range urlMLMissingContextReasons {
+		missing[name] = s.urlMLTelemetry.missingContextBuckets[index].Load()
+	}
 	status := URLMLCoverageStatus{
-		AnalyzeRequests:      s.urlMLTelemetry.analyzeRequests.Load(),
-		URLContextRequests:   total,
-		RedirectChainPresent: s.urlMLTelemetry.redirectPresent.Load(),
-		CallerBreakdown:      breakdown,
+		AnalyzeRequests:         s.urlMLTelemetry.analyzeRequests.Load(),
+		URLContextRequests:      total,
+		RedirectChainPresent:    s.urlMLTelemetry.redirectPresent.Load(),
+		CallerBreakdown:         breakdown,
+		MissingContextBreakdown: missing,
 	}
 	if status.AnalyzeRequests > 0 {
 		status.ContextCoverageRate = float64(status.URLContextRequests) / float64(status.AnalyzeRequests)

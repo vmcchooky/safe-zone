@@ -157,13 +157,14 @@ func (s *urlFeedbackStore) status() URLMLFeedbackStatus {
 	defer s.mu.Unlock()
 	status := URLMLFeedbackStatus{
 		Supported:                   true,
+		Persistence:                 "memory",
 		Capacity:                    s.capacity,
 		RecordedEvents:              s.recorded,
 		LabelledEvents:              s.labelled,
 		ConfirmedMalicious:          s.confirmed,
 		ReportedBenignFalsePositive: s.falsePos,
 		WouldPromoteLabelled:        s.promoted,
-		Note:                        "opaque HMAC fingerprints only; calibration from labelled events",
+		Note:                        "opaque HMAC fingerprints only; ephemeral in-memory buffer, labels do not survive restarts",
 	}
 	if s.promoted > 0 {
 		status.LabelledFalsePositiveRate = float64(s.falsePos) / float64(s.promoted)

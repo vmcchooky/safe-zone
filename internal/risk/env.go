@@ -113,6 +113,10 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	urlFeedback, err := loadURLMLFeedbackFromEnv(readSecret)
+	if err != nil {
+		return nil, err
+	}
 	// Frozen operational drift reference: optional and strictly fail-open.
 	// A missing, corrupt or mismatched baseline never blocks the classifier;
 	// it only leaves drift monitoring on the non-operational bundle proxy.
@@ -177,7 +181,43 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 		URLMLMode:                urlMLMode,
 		URLMLShadow:              urlMLShadow,
 		URLOpsBaseline:           urlOpsBaseline,
+		URLMLFeedback:            urlFeedback,
 	}), nil
+}
+
+// loadURLMLFeedbackFromEnv reads the durable feedback configuration. The HMAC
+// secret is injected through the environment or a SAFE_ZONE_URL_ML_FEEDBACK_
+// SECRET_FILE secret under the configured secret root; it is never defaulted.
+// Without a secret the service keeps the legacy ephemeral memory buffer. A
+// previous secret/version pair optionally supports one rotation step.
+func loadURLMLFeedbackFromEnv(readSecret func(string) string) (URLMLFeedbackConfig, error) {
+	secret := strings.TrimSpace(readSecret("SAFE_ZONE_URL_ML_FEEDBACK_SECRET"))
+	if secret == "" {
+		return URLMLFeedbackConfig{}, nil
+	}
+	cfg := URLMLFeedbackConfig{
+		Secret:     secret,
+		KeyVersion: config.Int("SAFE_ZONE_URL_ML_FEEDBACK_KEY_VERSION", 1),
+		Retention:  time.Duration(config.Int("SAFE_ZONE_URL_ML_FEEDBACK_RETENTION_HOURS", defaultURLFeedbackRetentionHours)) * time.Hour,
+		MaxRows:    config.Int("SAFE_ZONE_URL_ML_FEEDBACK_MAX_ROWS", defaultURLFeedbackMaxRows),
+	}
+	if cfg.KeyVersion == 0 {
+		cfg.KeyVersion = 1
+	}
+	if cfg.Retention == 0 {
+		cfg.Retention = defaultURLFeedbackRetentionHours * time.Hour
+	}
+	if cfg.MaxRows == 0 {
+		cfg.MaxRows = defaultURLFeedbackMaxRows
+	}
+	if previous := strings.TrimSpace(readSecret("SAFE_ZONE_URL_ML_FEEDBACK_PREVIOUS_SECRET")); previous != "" {
+		cfg.PreviousSecret = previous
+		cfg.PreviousKeyVersion = config.Int("SAFE_ZONE_URL_ML_FEEDBACK_PREVIOUS_KEY_VERSION", cfg.KeyVersion-1)
+	}
+	if err := cfg.validate(); err != nil {
+		return URLMLFeedbackConfig{}, fmt.Errorf("invalid URL ML feedback configuration: %w", err)
+	}
+	return cfg, nil
 }
 
 func loadURLMLFromEnv() (analysis.MLMode, analysis.URLClassifier, error) {

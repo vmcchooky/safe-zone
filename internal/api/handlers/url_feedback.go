@@ -43,8 +43,13 @@ func (h *Handler) URLMLFeedbackHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	recorded, reason := h.Risk.RecordURLFeedback(eventID, label)
 	status := http.StatusOK
-	if !recorded && reason == "unsupported" {
+	switch reason {
+	case "unsupported":
 		status = http.StatusNotImplemented
+	case "persistence_error":
+		// Fail closed for feedback only: the durable store rejected the label,
+		// so it is not silently accepted or downgraded to ephemeral state.
+		status = http.StatusServiceUnavailable
 	}
 	httputil.WriteJSON(w, status, map[string]any{
 		"recorded": recorded,

@@ -347,6 +347,19 @@ CREATE TABLE IF NOT EXISTS whois_cache (
     expires_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_whois_cache_expires ON whois_cache(expires_at);
+
+CREATE TABLE IF NOT EXISTS url_ml_feedback (
+    fp TEXT PRIMARY KEY,
+    key_version INTEGER NOT NULL DEFAULT 1,
+    probability_bucket INTEGER NOT NULL DEFAULT -1,
+    would_promote INTEGER NOT NULL DEFAULT 0,
+    labeled INTEGER NOT NULL DEFAULT 0,
+    label_malicious INTEGER NOT NULL DEFAULT 0,
+    recorded_at TEXT NOT NULL,
+    labeled_at TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_url_ml_feedback_recorded ON url_ml_feedback(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_url_ml_feedback_labeled ON url_ml_feedback(labeled);
 `
 
 const telemetryBufferSize = 1000
