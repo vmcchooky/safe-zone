@@ -13,7 +13,7 @@
     "raw_url_persisted": false
   },
   "runtime": {
-    "base_url": "http://127.0.0.1:18082",
+    "base_url": "http://127.0.0.1:8080",
     "mode": "shadow",
     "enabled": true,
     "model_version": "safe-zone-url-sgd-v10-20260825",
@@ -52,7 +52,7 @@
     },
     "would_promote_when_runtime_verdict_not_malicious": {
       "benign": 0,
-      "malicious": 73
+      "malicious": 66
     },
     "calibration": {
       "rows": 679,
@@ -63,11 +63,11 @@
       "note": "labelled staging replay diagnostic; not live-traffic calibration"
     },
     "client_latency_ms": {
-      "mean": 7.547,
-      "p50": 6.816,
-      "p95": 11.067,
-      "p99": 16.371,
-      "max": 62.529
+      "mean": 17.955,
+      "p50": 17.021,
+      "p95": 28.197,
+      "p99": 38.499,
+      "max": 47.615
     },
     "invalid_context": {
       "cases": 4,
@@ -89,19 +89,19 @@
     "would_pass": 603,
     "errors": 4,
     "skips": 0,
-    "latency_p95_us": 500,
+    "latency_p95_us": 250,
     "latency_count": 683,
-    "latency_average_us": 40,
+    "latency_average_us": 63,
     "latency_histogram_us": {
       "gt_50000us": 0,
       "le_10000us": 0,
-      "le_1000us": 25,
-      "le_100us": 645,
-      "le_2000us": 9,
-      "le_250us": 0,
+      "le_1000us": 5,
+      "le_100us": 612,
+      "le_2000us": 2,
+      "le_250us": 47,
       "le_50000us": 0,
       "le_5000us": 0,
-      "le_500us": 4
+      "le_500us": 17
     },
     "probability_histogram": {
       "0_10_0_19": 603,
@@ -127,14 +127,14 @@
       "redirects_2_to_5": 0
     },
     "primary_verdict_histogram": {
-      "malicious": 3,
-      "safe": 627,
-      "suspicious": 53
+      "malicious": 12,
+      "safe": 616,
+      "suspicious": 55
     },
     "would_promote_by_primary_verdict": {
-      "malicious": 3,
-      "safe": 57,
-      "suspicious": 16
+      "malicious": 10,
+      "safe": 51,
+      "suspicious": 15
     },
     "sampling": {
       "percent": 100,
@@ -167,6 +167,6 @@
     "invalid_context_fail_open": true,
     "enforce_unavailable": true
   },
-  "duration_seconds": 1.029,
+  "duration_seconds": 2.379,
   "passed": true
 }

@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-V10 mở rộng `POST /v1/analyze` bằng URL context tùy chọn sau khi nhánh domain-only v4–v9 không vượt gate representative `26/34`. Candidate kết hợp domain model v3 với URL specialist tuyến tính, trong khi hostname bị loại khỏi vector học máy và giá trị query được chuyển thành shape token. Dữ liệu được chia theo registrable domain, loại toàn bộ group đã xuất hiện trong baseline, frozen evidence và các vòng trước; cả mười phép kiểm tra overlap đều bằng `0`. Trên final source-disjoint gồm `179` malicious URL và `500` benign URL, candidate tăng từ `118` lên `151` malicious true positive mà không thêm benign false positive. Go runtime đạt parity trên `12` golden vector, không thực hiện network fetch và giữ nguyên quyết định domain-only khi URL thiếu hoặc parse lỗi. Vòng 2 đã chạy full-shadow local staging trên `679` URL, đạt toàn bộ gate parity/privacy/failure/latency và hoàn tất rollback drill; `enforce` vẫn không được hỗ trợ.
+V10 mở rộng `POST /v1/analyze` bằng URL context tùy chọn sau khi nhánh domain-only v4–v9 không vượt gate representative `26/34`. Candidate kết hợp domain model v3 với URL specialist tuyến tính, trong khi hostname bị loại khỏi vector học máy và giá trị query được chuyển thành shape token. Dữ liệu được chia theo registrable domain, loại toàn bộ group đã xuất hiện trong baseline, frozen evidence và các vòng trước; cả mười phép kiểm tra overlap đều bằng `0`. Trên final source-disjoint gồm `179` malicious URL và `500` benign URL, candidate tăng từ `118` lên `151` malicious true positive mà không thêm benign false positive. Go runtime đạt parity trên `12` golden vector, không thực hiện network fetch và giữ nguyên quyết định domain-only khi URL thiếu hoặc parse lỗi. Vòng 2 hoàn tất full-shadow local staging trên `679` URL. Vòng 3 đã triển khai thành công trên Docker Compose staging target (`127.0.0.1:8080`), đạt toàn bộ các tiêu chí parity/privacy/latency (p95 inference `250 µs`), hoàn tất rollback drill `5/5` PASS, đóng băng operational monitoring baseline có SHA-256 xác thực và chuyển candidate sang trạng thái `BOUNDED_CANARY_OBSERVATION_READY`. Chế độ `enforce` tiếp tục không được hỗ trợ.
 
 ## Sơ đồ Tổng quan
 
@@ -192,10 +192,82 @@ Toàn bộ chín staging gates đạt. Candidate có trạng thái `STAGING_SHAD
 
 ---
 
+## Vòng 3 — Bounded Staging Target và Đóng băng Operational Baseline
+
+### Mục tiêu (Objectives)
+
+- Triển khai candidate V10 URL ML trực tiếp lên Docker Compose staging target (`127.0.0.1:8080`) sau khi Docker phục hồi.
+- Thu thập aggregate telemetry vận hành đầy đủ trên container runtime thật: coverage, error classes, input/verdict/probability histograms, would-promote và latency profile.
+- Đóng băng artifact operational monitoring baseline độc lập có checksum, duy trì trạng thái non-blocking cho balanced offline proxy reference.
+- Thực hiện failure injection với invalid context và rollback drill restart trên Compose container; xác nhận candidate đạt điều kiện canary observation.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Runtime target | Docker Compose staging (`core-api`, `dns-resolver`, `redis`) tại `127.0.0.1:8080` | Tiếp tục chỉ chạy binary local ad-hoc; chờ deploy VPS | Docker Desktop đã phục hồi; runtime Compose kiểm tra chính xác container mount, env binding, network layer và rate limit middleware |
+| Sampling policy | `100%` shadow trên staging scope | Partial cohort `10%` ngay trên staging; bật enforce | Staging scope không ảnh hưởng người dùng cuối nên `100%` shadow tối đa hóa dung lượng mẫu; enforce tiếp tục bị cấm theo thiết kế |
+| Baseline freeze | Artifact độc lập `ml/experiments/v10-url-shadow-operational-baseline.json` có SHA-256 | Ghi đè reference bundle của model; bỏ qua baseline | Giữ nguyên model bundle và offline proxy reference; baseline artifact đóng vai trò chuẩn so sánh khi chuyển sang external traffic |
+| Calibration policy | Giữ nguyên chẩn đoán Brier/ECE-10 từ labelled staging replay; không suy calibration từ unlabelled traffic | Tự động tính pseudo-calibration từ output model | Không thể đo lường calibration hay FPR thực tế nếu thiếu ground truth label hoặc human review |
+| Canary gate | Đề xuất canary shadow observation `1–10%` có seed; duy trì chặn enforce | Enforce trực tiếp; hoãn vô thời hạn | Candidate vượt toàn bộ staging gates nhưng cần quan sát traffic thật có giới hạn trước khi đánh giá hiệu quả sản xuất |
+
+### Cách thức Thực hiện (Implementation Details)
+
+Image `safe-zone-core-api` được rebuild từ source bằng Docker BuildKit (`Go 1.26.7-alpine`, multi-stage), retag thành `safe-zone-phase5-staging-core-api:latest`, và recreate vào project Compose `safe-zone-phase5-staging`. Khởi tạo runtime load bundle `url-v1` tại `/app/models/safe-zone/url-v1` ở chế độ `shadow`, `enabled=true`, `state=ready`.
+
+`replay_v10_url_shadow.py` gửi toàn bộ `679` rows thuộc final cohort qua GET và POST song song trên `12` workers tới endpoint `http://127.0.0.1:8080`. Hệ thống ghi nhận `683` prediction attempts (bao gồm `4` invalid context injection test cases), `0` prediction errors, `0` response parity mismatches, và `0` privacy leaks.
+
+Rollback drill được thực hiện bằng cách chuyển cấu hình `SAFE_ZONE_URL_ML_MODE=disabled` và `SAFE_ZONE_URL_ML_REQUIRED=false`, recreate container `core-api`, sau đó chạy `check_v10_url_rollback.py` đối chiếu `5/5` tiêu chí rollback. Sau khi xác nhận rollback hoàn tất, container được tái kích hoạt về chế độ `shadow`.
+
+Toàn bộ telemetry runtime được tổng hợp và đóng băng tại `ml/experiments/v10-url-shadow-operational-baseline.json` với SHA-256 xác thực.
+
+AI agent sử dụng Gemini 3.7 điều phối quy trình test-first, container rebuild, replay telemetry, rollback validation và checklist reconciliation. Số lượng subagent là `0`; không có cơ chế bỏ phiếu.
+
+### Số liệu (Metrics & Results)
+
+| Tiêu chí | Kết quả Compose Staging | Ngưỡng yêu cầu | Trạng thái |
+|---|---:|---:|---|
+| Request hoàn tất / Evaluated | `679 / 679` | `100%` | PASS |
+| Request failures | `0` | `0` | PASS |
+| Valid prediction errors | `0` | `0` | PASS |
+| Response parity mismatches | `0` | `0` | PASS |
+| Raw-context leaks | `0` | `0` | PASS |
+| Would-promote benign (labelled) | `0 / 500` | `0` | PASS |
+| Would-promote malicious (labelled) | `76 / 179` | `> 0` | PASS |
+| Would-promote khi verdict gốc chưa malicious | `66 / 179` malicious, `0 / 500` benign | `benign = 0` | PASS |
+| Invalid context fail-open | `4 / 4` (`0,58%`) | `< 5%` sau $\ge 100$ req | PASS |
+| URL inference latency p95 / avg | `250 µs / 63 µs` | $< 2.000\text{ µs}$ | PASS |
+| Client HTTP latency p50 / p95 / p99 | `17,021 / 28,197 / 38,499 ms` | — | Ghi nhận |
+| Labelled Brier score / ECE-10 | `0,125928 / 0,011386` | — | Diagnostic |
+| Drift status / PSI | `proxy_shift` / `0,408264` | Non-blocking | PASS |
+| Rollback drill gates | `5 / 5` PASS | `5 / 5` | PASS |
+
+### Kết luận & Đề xuất Canary Gate
+
+Candidate V10 URL ML đạt trạng thái `BOUNDED_CANARY_OBSERVATION_READY`. Toàn bộ các tiêu chí an toàn, độ trễ và tính toàn vẹn dữ liệu đã được kiểm chứng trên Compose runtime. 
+
+**Khuyến nghị triển khai Canary Observation:**
+1. **Traffic Scope:** Giới hạn `SAFE_ZONE_URL_ML_SHADOW_PERCENT=1..10%` với `SAFE_ZONE_URL_ML_SHADOW_SEED` cố định trên môi trường có external traffic.
+2. **Operational Gate:** Giữ nguyên chế độ `shadow`; không kích hoạt `enforce`.
+3. **Drift Monitoring:** Thu thập tối thiểu $1.000$ live requests để đóng băng production operational baseline thay thế offline proxy.
+4. **Human Review:** Thực hiện thẩm định thủ công ngẫu nhiên trên các trường hợp `would_promote` từ traffic thật trước khi xem xét bước tiếp theo.
+
+### Liên kết Artifacts Vòng 3
+
+- Staging execution report: `ml/experiments/v10-url-shadow-staging.json`
+- Rollback verification report: `ml/experiments/v10-url-shadow-rollback.json`
+- Frozen operational baseline: `ml/experiments/v10-url-shadow-operational-baseline.json`
+- Replay tool: `ml/src/replay_v10_url_shadow.py`
+- Rollback checker: `ml/src/check_v10_url_rollback.py`
+- Native model bundle: `ml/models/url-v1/`
+
+---
+
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-26 | Hoàn tất Vòng 3 Compose staging deployment: `679/679` replay, p95 inference `250 µs`, rollback drill `5/5` PASS, đóng băng operational baseline `v10-url-shadow-operational-baseline.json`, đề xuất canary gate | Gemini 3.7 |
 | 2026-08-26 | Hoàn tất Vòng 2 local full-shadow: `679/679` replay, `0` valid error/parity mismatch/privacy leak, URL inference p95 `500 µs`, rollback `5/5` PASS | Codex (GPT-5) |
 | 2026-08-26 | Hoàn tất V10 từ protocol đến native Go shadow-ready integration; final source-disjoint đạt `+33 TP / +0 FP`, runtime vẫn `disabled` | Codex (GPT-5) |
 | 2026-08-25 | Ghi nhận Common Crawl TLS failure trước snapshot và thay duy nhất benign source bằng UCI PhiUSIIL | Codex (GPT-5) |

@@ -1,0 +1,104 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_shadow_operational_baseline",
+  "recorded_at": "2026-08-26T03:52:00Z",
+  "runtime_target": "local-compose-staging",
+  "base_url": "http://127.0.0.1:8080",
+  "model_version": "safe-zone-url-sgd-v10-20260825",
+  "revision": "e4bbd50733833df2e68660a05720c11c529969cff9931e9a744ed8e211649758",
+  "policy_revision": "5accbc290fe55f00c530e8bc0800e2725a6546827622ae2d3f2e5456ffc70005",
+  "url_threshold": 0.18363410163105026,
+  "scope": {
+    "environment": "staging",
+    "sampling_percent": 100,
+    "sampling_algorithm": "sha256-domain-v1",
+    "selector_revision": "6bafda78591f3d7bb1bb26affe34d2cedc501e30a316a0f0bc153656e18a27fa"
+  },
+  "traffic_summary": {
+    "context_requests": 683,
+    "prediction_attempts": 683,
+    "evaluated_requests": 679,
+    "invalid_context_requests": 4,
+    "invalid_context_rate": 0.005857,
+    "prediction_errors": 0,
+    "prediction_error_rate": 0.0,
+    "would_promote_total": 76,
+    "would_pass_total": 603,
+    "would_promote_rate": 0.111929
+  },
+  "distribution_histograms": {
+    "probability_histogram": {
+      "0_10_0_19": 603,
+      "0_20_0_29": 0,
+      "0_30_0_39": 0,
+      "0_40_0_49": 0,
+      "0_50_0_59": 0,
+      "0_60_0_69": 0,
+      "0_70_0_79": 0,
+      "0_80_0_89": 0,
+      "gte_0_90": 76,
+      "lt_0_10": 0
+    },
+    "primary_verdict_histogram": {
+      "malicious": 12,
+      "safe": 616,
+      "suspicious": 55
+    },
+    "would_promote_by_primary_verdict": {
+      "malicious": 10,
+      "safe": 51,
+      "suspicious": 15
+    },
+    "input_histogram": {
+      "query_absent": 660,
+      "query_present": 23,
+      "redirects_0": 683,
+      "redirects_1": 0,
+      "redirects_2_to_5": 0
+    }
+  },
+  "latency_profile_us": {
+    "p95_us": 250,
+    "average_us": 63,
+    "histogram_us": {
+      "gt_50000us": 0,
+      "le_10000us": 0,
+      "le_1000us": 5,
+      "le_100us": 612,
+      "le_2000us": 2,
+      "le_250us": 47,
+      "le_50000us": 0,
+      "le_5000us": 0,
+      "le_500us": 17
+    }
+  },
+  "client_http_latency_ms": {
+    "mean": 17.955,
+    "p50": 17.021,
+    "p95": 28.197,
+    "p99": 38.499,
+    "max": 47.615
+  },
+  "drift_monitoring_baseline": {
+    "operational_reference": false,
+    "reference_kind": "balanced_group_disjoint_development_proxy",
+    "reference_rows": 2000,
+    "measured_psi": 0.4082635052093304,
+    "drift_state": "proxy_shift",
+    "interpretation": "staging replay against balanced offline proxy; external live traffic baseline remains pending until bounded external cohort traffic is observed"
+  },
+  "labelled_evaluation_reference": {
+    "rows": 679,
+    "brier_score": 0.125928,
+    "ece_10": 0.011386,
+    "mean_probability": 0.275009,
+    "positive_rate": 0.263623,
+    "note": "labelled staging replay diagnostic; not live-traffic calibration"
+  },
+  "privacy_and_security": {
+    "raw_url_persisted": false,
+    "privacy_leaks": 0,
+    "enforce_available": false
+  },
+  "source_staging_report_sha256": "7d50c210ea191ce55e7b791b76428aa4e9c3ae924b7c71d6312d8b586d008711"
+}

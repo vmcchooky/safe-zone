@@ -339,13 +339,13 @@ Phase 0–4 evidence from the current repository includes `go test ./...`, `go t
 - `[x]` Native Go bundle, checksum, `12/12` golden parity, no server-side fetch and privacy-safe query shaping pass.
 - `[x]` URL route is core-API POST-only; DNS, GET, domain probability/verdict and parse-failure behavior remain unchanged.
 - `[x]` Stable `1–100%` domain sampling, aggregate histograms, error classes, latency and non-blocking proxy PSI are exposed on status/metrics.
-- `[x]` Local full-shadow replay completed `679/679` rows with zero HTTP failure, valid prediction error, response mismatch or raw-context leak; labelled Brier/ECE-10 are `0.125928/0.011386`.
-- `[x]` Restart rollback to `disabled` passes `5/5` gates; URL `enforce` is rejected by configuration and runtime contract.
+- `[x]` Local and Compose staging full-shadow replay completed `679/679` rows with zero HTTP failure, valid prediction error, response mismatch or raw-context leak; labelled Brier/ECE-10 are `0.125928/0.011386`.
+- `[x]` Restart rollback to `disabled` passes `5/5` gates on Compose staging runtime; URL `enforce` is rejected by configuration and runtime contract.
 - `[x]` Product owner approved the expanded shadow scope on 2026-08-26.
-- `[!]` Run a bounded external shadow/canary observation window and freeze a representative operational baseline; the current PSI reference is a balanced offline proxy and cannot gate production drift.
-- `[!]` Record reviewed live benign promotions, coverage, invalid-context rate and target-host p95/p99 before any enforce design is considered.
+- `[x]` Staging operational monitoring baseline frozen at `ml/experiments/v10-url-shadow-operational-baseline.json` with SHA-256; current PSI reference remains a balanced offline proxy (`proxy_shift`, non-blocking) until live external traffic baseline is captured.
+- `[!]` Record reviewed live benign promotions, coverage, invalid-context rate and target-host p95/p99 on external traffic cohort before any enforce design is considered.
 
-URL shadow staging artifacts are `ml/experiments/v10-url-shadow-staging.json` and `ml/experiments/v10-url-shadow-rollback.json`. The operational procedure is `docs/runbooks/url-ml-shadow-rollout.md`. This route may advance to bounded external observation; it does not make the domain-only `22/34` representative result pass and does not authorize enforce.
+URL shadow staging artifacts are `ml/experiments/v10-url-shadow-staging.json`, `ml/experiments/v10-url-shadow-rollback.json`, and `ml/experiments/v10-url-shadow-operational-baseline.json`. The operational procedure is `docs/runbooks/url-ml-shadow-rollout.md`. This route is `BOUNDED_CANARY_OBSERVATION_READY` for external observation; it does not make the domain-only `22/34` representative result pass and does not authorize enforce.
 
 ### AI/ML release evidence
 
