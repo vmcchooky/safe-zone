@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_external_pilot_window",
+  "recorded_at": "2026-08-26T12:28:48.559154+00:00",
+  "traffic_kind": "synthetic",
+  "honesty_note": "synthetic probe window; NOT production evidence",
+  "window": {
+    "started_at": "2026-08-26T12:28:22.480160+00:00",
+    "ended_at": "2026-08-26T12:28:46.509102+00:00",
+    "duration_seconds": 26.079
+  },
+  "scope_observed": {
+    "percent": 5,
+    "selector_revision": "ebbc8a3d3cbd2c9aceb274415b41de82ebce42d97c7bda78a695515520320e75",
+    "policy_revision": "a2ffa55e5633e11e0239a6b93c66af27b1c16b8a4a11c75d902794baeb600b69",
+    "mode": "shadow",
+    "state": "ready"
+  },
+  "deltas": {
+    "prediction_attempts": 49,
+    "invalid_url_context": 0,
+    "prediction_errors": 0,
+    "evaluated": 49,
+    "would_promote": 49,
+    "selected": 49,
+    "excluded": 951,
+    "context_requests": 1000
+  },
+  "caller_breakdown_delta": {
+    "extension": 0,
+    "other": 0,
+    "proxy": 0,
+    "sdk": 1000,
+    "ui": 0,
+    "unspecified": 0
+  },
+  "coverage_totals_at_end": {
+    "analyze_requests": 1000,
+    "url_context_requests": 1000,
+    "context_coverage_rate": 1,
+    "redirect_chain_present": 0,
+    "caller_breakdown": {
+      "extension": 0,
+      "other": 0,
+      "proxy": 0,
+      "sdk": 1000,
+      "ui": 0,
+      "unspecified": 0
+    },
+    "missing_context_breakdown": {
+      "get_domain_only": 0,
+      "post_not_provided": 0,
+      "unspecified": 0
+    }
+  },
+  "missing_context_breakdown_at_end": {
+    "get_domain_only": 0,
+    "post_not_provided": 0,
+    "unspecified": 0
+  },
+  "gates": {
+    "zero_prediction_errors": {
+      "pass": true,
+      "observed": 0
+    },
+    "invalid_context_rate_below_5pct": {
+      "pass": false,
+      "observed_exact": 0.0,
+      "observed_rounded": 0.0,
+      "attempts": 49,
+      "note": "insufficient attempts (<100); gate inconclusive"
+    },
+    "latency_p95_under_2000us": {
+      "pass": true,
+      "observed_cumulative_p95_us": 250,
+      "note": "cumulative process p95; conservative bound for the window"
+    },
+    "external_volume_minimum": {
+      "pass": false,
+      "observed": 49,
+      "required": 1000
+    },
+    "shadow_mode_unchanged": {
+      "pass": true,
+      "observed_mode": "shadow"
+    },
+    "all_pass": false
+  },
+  "scope_advancement": {
+    "requested": false
+  },
+  "driven_traffic": {
+    "requests_sent": 1000,
+    "evaluated": 49,
+    "errors": 0,
+    "would_promote": 49,
+    "latency_ms": {
+      "p50": 15.24,
+      "p95": 32.096,
+      "p99": 46.328,
+      "mean": 18.501
+    },
+    "sample_event_ids": [
+      "0aa455ae384142938a68a500c6bd660e",
+      "12830835fd90450ab6f08f240f1871ab",
+      "11caf63a42eb40ad9da7347db5ad866b",
+      "6eea8726af9a45fd85c10a58723d2905",
+      "74d6c77d5c61462ebba40946221d0df7",
+      "3394ac23a2884883aab7495401811920",
+      "544ac10db0f0459aaaf90b206c17b5d4",
+      "c46d85050d5d4071a9440d51a1bcadb6",
+      "e60fa211dfb746d39e0fd0f9093c1503",
+      "229cd498bfdc49548726579fd1f61e5d",
+      "6da1678df3534217827f72335e37e850",
+      "40e03ed0512c4a1ea12259e58c935505",
+      "8d445b3db723426b885bbb3a91899bbc",
+      "dcde9a250a064ab688120fd728f6d591",
+      "5391d879c288478e8c84007b614fc620",
+      "bf57775fce5a401389677c12a4501504",
+      "c42546cc3f764d0fa37a044b2766537b",
+      "305160c7517d47e5acb3f283f10518e6",
+      "1e9cd8fee9dc4f9a8fe2ff5cad89e8e6",
+      "36821cc5732f4b87be2d3aeacd09c0fd"
+    ]
+  },
+  "feedback_status_at_end": {
+    "supported": true,
+    "persistence": "sqlite",
+    "recorded_events": 61,
+    "labelled_events": 2,
+    "confirmed_malicious": 1,
+    "reported_benign_false_positive": 1,
+    "would_promote_labelled": 2,
+    "labelled_false_positive_rate": 0.5,
+    "key_version": 1,
+    "retention_hours": 168,
+    "max_rows": 65536,
+    "persistence_errors": 3,
+    "note": "opaque HMAC fingerprints only; durable bounded SQLite retention"
+  },
+  "drift_at_end": {
+    "state": "insufficient_data",
+    "psi": 0,
+    "live_samples": 49,
+    "minimum_live_samples": 100,
+    "reference_kind": "frozen_operational_shadow_traffic",
+    "reference_rows": 34,
+    "operational_reference": true,
+    "watch_threshold": 0.1,
+    "alert_threshold": 0.25,
+    "interpretation": "population shift only; calibration requires labels"
+  },
+  "operational_baseline_at_end": {
+    "loaded": true,
+    "path": "/app/models/safe-zone/url-baseline/operational-baseline.json",
+    "sha256": "29b8bb723cc6f9e0cac0aac81c264efb4462f7eee358d7e47b70d512992445f1",
+    "model_version": "safe-zone-url-sgd-v10-20260825",
+    "revision": "e4bbd50733833df2e68660a05720c11c529969cff9931e9a744ed8e211649758",
+    "reference_kind": "frozen_operational_shadow_traffic",
+    "reference_rows": 34,
+    "traffic_scope": "compose-staging seeded canary 5pct; synthetic-driven sdk probes (no frozen-cohort domains); external UI traffic integrated but not yet volume-bearing",
+    "operational_reference": true,
+    "minimum_live_samples": 100,
+    "watch_threshold": 0.1,
+    "alert_threshold": 0.25,
+    "recorded_at": "2026-08-26T06:38:00.231660+00:00"
+  },
+  "container_resources": {
+    "before": {
+      "cpu_percent": 0.0,
+      "mem_usage": "25.11MiB / 7.668GiB"
+    },
+    "after": {
+      "cpu_percent": 0.0,
+      "mem_usage": "33.91MiB / 7.668GiB"
+    }
+  },
+  "baseline_provenance_rule": "this window alone does not create a production baseline; freeze an operational baseline only from a completed external window with stated sample count, observation time and confidence",
+  "aggregate_only": true
+}

@@ -40,5 +40,61 @@
     "before_policy_revision": "16c0295dc7d27a6625d1b2aad6c38ee617ed872f25ebb70c2188797f0d003cb3",
     "after_policy_revision": "a4bb81a9f03b91e5b337c9e0cfaf31908c8ac66a37d610e9e40619d3e261ef4b",
     "verified": true
+  },
+  {
+    "schema_version": 1,
+    "kind": "url_ml_canary_scope_change",
+    "at": "2026-08-26T12:25:56.843747+00:00",
+    "reason": "round5 pilot start from round4 10pct state",
+    "from_percent": 10,
+    "to_percent": 1,
+    "seed": "url-canary-v5-r5-20260826",
+    "before_selector_revision": "b586aefd72fd3e992019a2b155285b0b9d2a021b76b6ed2e00c962785cb5e083",
+    "after_selector_revision": "3cf97f5d45abcddecd1b765298324658d5b2d0a30b204e2cf8ebd4b89eeb47ee",
+    "before_policy_revision": "a4bb81a9f03b91e5b337c9e0cfaf31908c8ac66a37d610e9e40619d3e261ef4b",
+    "after_policy_revision": "bc26a9c1e2a02202759e21a2305c652ef8e1a57764b952f983cd51cc99f0f4f7",
+    "verified": true
+  },
+  {
+    "schema_version": 1,
+    "kind": "url_ml_canary_scope_change",
+    "at": "2026-08-26T12:28:15.461313+00:00",
+    "reason": "round5: 1pct window green (12 evaluated, 0 errors)",
+    "from_percent": 1,
+    "to_percent": 5,
+    "seed": "url-canary-v5-r5-20260826",
+    "before_selector_revision": "3cf97f5d45abcddecd1b765298324658d5b2d0a30b204e2cf8ebd4b89eeb47ee",
+    "after_selector_revision": "ebbc8a3d3cbd2c9aceb274415b41de82ebce42d97c7bda78a695515520320e75",
+    "before_policy_revision": "bc26a9c1e2a02202759e21a2305c652ef8e1a57764b952f983cd51cc99f0f4f7",
+    "after_policy_revision": "a2ffa55e5633e11e0239a6b93c66af27b1c16b8a4a11c75d902794baeb600b69",
+    "verified": true
+  },
+  {
+    "schema_version": 1,
+    "kind": "url_ml_canary_scope_change",
+    "at": "2026-08-26T12:29:12.327373+00:00",
+    "reason": "round5: mechanics validation only; volume gate NOT met at 1/5pct synthetic windows",
+    "from_percent": 5,
+    "to_percent": 10,
+    "seed": "url-canary-v5-r5-20260826",
+    "before_selector_revision": "ebbc8a3d3cbd2c9aceb274415b41de82ebce42d97c7bda78a695515520320e75",
+    "after_selector_revision": "d3940d3b71d646d484b31d2124c35f1b2b63709284dd0f5d51d95f1993f07a20",
+    "before_policy_revision": "a2ffa55e5633e11e0239a6b93c66af27b1c16b8a4a11c75d902794baeb600b69",
+    "after_policy_revision": "8c8e03544de530ec371fdaf32a512a1b3d64c6d9cd518bfe29992d9b68a96830",
+    "verified": true
+  },
+  {
+    "schema_version": 1,
+    "kind": "url_ml_canary_scope_change",
+    "at": "2026-08-26T12:31:02.775657+00:00",
+    "reason": "round5: restore shadow 10pct after rollback drill",
+    "from_percent": 10,
+    "to_percent": 10,
+    "seed": "url-canary-v5-r5-20260826",
+    "before_selector_revision": "d3940d3b71d646d484b31d2124c35f1b2b63709284dd0f5d51d95f1993f07a20",
+    "after_selector_revision": "d3940d3b71d646d484b31d2124c35f1b2b63709284dd0f5d51d95f1993f07a20",
+    "before_policy_revision": "8c8e03544de530ec371fdaf32a512a1b3d64c6d9cd518bfe29992d9b68a96830",
+    "after_policy_revision": "8c8e03544de530ec371fdaf32a512a1b3d64c6d9cd518bfe29992d9b68a96830",
+    "verified": true
   }
 ]

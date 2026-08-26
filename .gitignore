@@ -55,6 +55,7 @@ __pycache__/
 !ml/src/canary_failure_injection.py
 !ml/src/canary_rollback_drill.py
 !ml/src/freeze_url_canary_baseline.py
+!ml/src/run_external_pilot.py
 !ml/tests/test_replay_tools.py
 *.bak
 .idea/

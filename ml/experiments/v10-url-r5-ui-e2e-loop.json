@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_r5_ui_end_to_end_loop_evidence",
+  "recorded_at": "2026-08-26T12:38:38.371327+00:00",
+  "traffic_kind": "synthetic",
+  "honesty_note": "operator-driven browser session against local compose staging; validates the integration path only, NOT external traffic evidence",
+  "steps": [
+    {
+      "step": "login operator dashboard",
+      "result": "PASS"
+    },
+    {
+      "step": "POST /v1/analyze from AnalysisPage with requested_url+event_id+caller_class=ui",
+      "result": "PASS",
+      "note": "unsampled domain: feedback block correctly hidden after fix"
+    },
+    {
+      "step": "sampled domain analysis renders would_promote observation feedback prompt",
+      "result": "PASS"
+    },
+    {
+      "step": "click benign/malicious label -> POST /v1/url-ml/feedback -> recorded=true toast",
+      "result": "PASS"
+    }
+  ],
+  "fixes_validated": [
+    "feedback prompt now gated on url_ml.sampled (was shown for excluded domains causing unknown_event)"
+  ],
+  "feedback_status_at_end": {
+    "supported": true,
+    "persistence": "sqlite",
+    "recorded_events": 137,
+    "labelled_events": 3,
+    "confirmed_malicious": 2,
+    "reported_benign_false_positive": 1,
+    "would_promote_labelled": 3,
+    "labelled_false_positive_rate": 0.3333333333333333,
+    "key_version": 1,
+    "retention_hours": 168,
+    "max_rows": 65536,
+    "note": "opaque HMAC fingerprints only; durable bounded SQLite retention"
+  },
+  "coverage_at_end": {
+    "analyze_requests": 1,
+    "url_context_requests": 1,
+    "context_coverage_rate": 1,
+    "redirect_chain_present": 0,
+    "caller_breakdown": {
+      "extension": 0,
+      "other": 0,
+      "proxy": 0,
+      "sdk": 0,
+      "ui": 1,
+      "unspecified": 0
+    },
+    "missing_context_breakdown": {
+      "get_domain_only": 0,
+      "post_not_provided": 0,
+      "unspecified": 0
+    }
+  },
+  "aggregate_only": true
+}

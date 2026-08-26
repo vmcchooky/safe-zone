@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_canary_failure_injection",
+  "recorded_at": "2026-08-26T12:30:44.555716+00:00",
+  "base_url": "http://127.0.0.1:8080",
+  "cases": [
+    {
+      "case": "missing_baseline_fail_open",
+      "passed": true,
+      "detail": {
+        "healthy": true,
+        "url_ml_enabled": true,
+        "operational_baseline": {
+          "loaded": false,
+          "operational_reference": false
+        },
+        "drift_state": "insufficient_data"
+      }
+    },
+    {
+      "case": "corrupt_baseline_fail_open",
+      "passed": true,
+      "detail": {
+        "healthy": true,
+        "url_ml_enabled": true,
+        "operational_baseline": {
+          "loaded": false,
+          "operational_reference": false
+        }
+      }
+    },
+    {
+      "case": "malformed_context_rejected",
+      "passed": true,
+      "detail": {
+        "cases": 4,
+        "unexpectedly_accepted": 0,
+        "fail_open": 4,
+        "error_class": "invalid_url_context",
+        "scope_percent": 10
+      }
+    },
+    {
+      "case": "restart_with_valid_baseline_loaded",
+      "passed": true,
+      "detail": {
+        "healthy": true,
+        "operational_baseline": {
+          "loaded": true,
+          "sha256": "29b8bb723cc6f9e0cac0aac81c264efb4462f7eee358d7e47b70d512992445f1",
+          "reference_rows": 34,
+          "traffic_scope": "compose-staging seeded canary 5pct; synthetic-driven sdk probes (no frozen-cohort domains); external UI traffic integrated but not yet volume-bearing",
+          "operational_reference": true
+        },
+        "drift_state": "insufficient_data",
+        "drift_operational": true
+      }
+    }
+  ],
+  "passed": true,
+  "aggregate_only": true
+}

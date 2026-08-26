@@ -1,0 +1,152 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_canary_window_evidence",
+  "recorded_at": "2026-08-26T12:26:42.625006+00:00",
+  "traffic_kind": "synthetic",
+  "window": {
+    "started_at": "2026-08-26T12:26:10.505847+00:00",
+    "ended_at": "2026-08-26T12:26:40.512320+00:00",
+    "duration_seconds": 32.119,
+    "workers": 12,
+    "concurrency": 8
+  },
+  "scope_observed": {
+    "percent": 1,
+    "selector_revision": "3cf97f5d45abcddecd1b765298324658d5b2d0a30b204e2cf8ebd4b89eeb47ee",
+    "policy_revision": "bc26a9c1e2a02202759e21a2305c652ef8e1a57764b952f983cd51cc99f0f4f7",
+    "mode": "shadow",
+    "state": "ready"
+  },
+  "deltas": {
+    "selected": 12,
+    "excluded": 1188,
+    "prediction_attempts": 12,
+    "evaluated": 12,
+    "invalid_url_context": 0,
+    "prediction_errors": 0,
+    "would_promote": 12,
+    "would_pass": 0,
+    "analyze_requests_total": 1200,
+    "url_context_requests_total": 1200
+  },
+  "rates": {
+    "invalid_context_exact": 0.0,
+    "invalid_context_rounded": 0.0,
+    "would_promote_exact": 1.0,
+    "context_coverage_exact": 1,
+    "rounding_rule": "round-half-up at 4 decimals; exact value always included"
+  },
+  "histogram_deltas": {
+    "probability": {
+      "gte_0_90": 12
+    },
+    "latency_us": {
+      "le_100us": 6,
+      "le_250us": 6
+    },
+    "input": {
+      "query_present": 12,
+      "redirects_0": 12
+    },
+    "primary_verdict": {
+      "safe": 12
+    },
+    "would_promote_by_verdict": {
+      "safe": 12
+    }
+  },
+  "latency_p95_us": 250,
+  "coverage_caller_breakdown": {
+    "extension": 0,
+    "other": 0,
+    "proxy": 0,
+    "sdk": 1200,
+    "ui": 0,
+    "unspecified": 0
+  },
+  "feedback": {
+    "supported": true,
+    "persistence": "sqlite",
+    "recorded_events": 12,
+    "labelled_events": 0,
+    "confirmed_malicious": 0,
+    "reported_benign_false_positive": 0,
+    "would_promote_labelled": 0,
+    "key_version": 1,
+    "retention_hours": 168,
+    "max_rows": 65536,
+    "note": "opaque HMAC fingerprints only; durable bounded SQLite retention"
+  },
+  "operational_baseline": {
+    "loaded": true,
+    "path": "/app/models/safe-zone/url-baseline/operational-baseline.json",
+    "sha256": "29b8bb723cc6f9e0cac0aac81c264efb4462f7eee358d7e47b70d512992445f1",
+    "model_version": "safe-zone-url-sgd-v10-20260825",
+    "revision": "e4bbd50733833df2e68660a05720c11c529969cff9931e9a744ed8e211649758",
+    "reference_kind": "frozen_operational_shadow_traffic",
+    "reference_rows": 34,
+    "traffic_scope": "compose-staging seeded canary 5pct; synthetic-driven sdk probes (no frozen-cohort domains); external UI traffic integrated but not yet volume-bearing",
+    "operational_reference": true,
+    "minimum_live_samples": 100,
+    "watch_threshold": 0.1,
+    "alert_threshold": 0.25,
+    "recorded_at": "2026-08-26T06:38:00.231660+00:00"
+  },
+  "drift": {
+    "state": "insufficient_data",
+    "psi": 0,
+    "live_samples": 12,
+    "minimum_live_samples": 100,
+    "reference_kind": "frozen_operational_shadow_traffic",
+    "reference_rows": 34,
+    "operational_reference": true,
+    "watch_threshold": 0.1,
+    "alert_threshold": 0.25,
+    "interpretation": "population shift only; calibration requires labels"
+  },
+  "container_resources": {
+    "before": {
+      "cpu_percent": 0.0,
+      "mem_usage": "26.05MiB / 7.668GiB"
+    },
+    "after": {
+      "cpu_percent": 0.0,
+      "mem_usage": "35.35MiB / 7.668GiB"
+    }
+  },
+  "driven_traffic": {
+    "requests_sent": 1200,
+    "evaluated": 12,
+    "errors": 0,
+    "would_promote": 12,
+    "latency_ms": {
+      "p50": 12.243,
+      "p95": 26.691,
+      "p99": 35.214,
+      "mean": 14.87
+    },
+    "sample_event_ids": [
+      "05f13934ee4a4db28316d0b1243ec4b3",
+      "fcf00ded5614466883cc9f287bb6ebf9",
+      "664d33d0e8d44c86823daecd07bb2c07",
+      "1e4942aaa11b470284bb8ddfade76ec2",
+      "c57380b811214e4985bfe88f02c46003",
+      "2f54eacf669c44349483a393b17372e1",
+      "43ed2b5d72ee449ba94ba4c699958cf8",
+      "c280d097a8354168a2bc9a9d42fe2e9c",
+      "9699e4bc63c14b08bd9875bb9b57697c",
+      "13e1b64ebb744f659058a9174422312b",
+      "655744e814704d59a8ee2d91babc78b9",
+      "cda5f64ce2e9420d9d5caa7d1d61a984",
+      "f3243bf6f97844119b9fb62b4a6dfe97",
+      "2ae531215f884a19821998d0651943ec",
+      "0a62177e4f2e480bb6660609ac46906f",
+      "fcaa7758793249d58f572127ef99440f",
+      "b0714938b3434440aa7bfff3537acba0",
+      "e979932ac0d64b5a948bc0f8045f0f26",
+      "dd653f23da664d0c8e1885732ffdd03e",
+      "8ac92405d640447094f7b76e4ade5702"
+    ]
+  },
+  "aggregate_only": true
+}
