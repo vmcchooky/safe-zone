@@ -81,4 +81,3 @@ rules:
     severity: warning
     condition: core_api_status.json.ml.url.operational_baseline.loaded == false and core_api_status.json.ml.url.enabled == true for 30m
     action: check SAFE_ZONE_URL_ML_BASELINE_PATH mount and artifact checksum; runtime stays fail-open but drift monitoring is non-operational until restored
-

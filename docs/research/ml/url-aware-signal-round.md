@@ -244,7 +244,7 @@ AI agent sử dụng Gemini 3.7 điều phối quy trình test-first, container 
 
 ### Kết luận & Đề xuất Canary Gate
 
-Candidate V10 URL ML đạt trạng thái `BOUNDED_CANARY_OBSERVATION_READY`. Toàn bộ các tiêu chí an toàn, độ trễ và tính toàn vẹn dữ liệu đã được kiểm chứng trên Compose runtime. 
+Candidate V10 URL ML đạt trạng thái `BOUNDED_CANARY_OBSERVATION_READY`. Toàn bộ các tiêu chí an toàn, độ trễ và tính toàn vẹn dữ liệu đã được kiểm chứng trên Compose runtime.
 
 **Khuyến nghị triển khai Canary Observation:**
 1. **Traffic Scope:** Giới hạn `SAFE_ZONE_URL_ML_SHADOW_PERCENT=1..10%` với `SAFE_ZONE_URL_ML_SHADOW_SEED` cố định trên môi trường có external traffic.
