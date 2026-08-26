@@ -244,11 +244,6 @@ func stripComment(value string) string {
 	return value
 }
 
-func normalizeCandidate(value string) (string, error) {
-	indicator, err := normalizeIndicator(value)
-	return indicator.Domain, err
-}
-
 func normalizeIndicator(value string) (Indicator, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {

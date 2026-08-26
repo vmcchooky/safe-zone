@@ -358,8 +358,8 @@ func NewService(options Options) *Service {
 	}
 	urlFeedback := options.URLMLFeedback
 	var urlFeedbackBackendImpl urlFeedbackBackend
-	switch {
-	case urlFeedback.Secret == "":
+	switch urlFeedback.Secret {
+	case "":
 		// No secret injected: keep the ephemeral in-memory buffer. Labels are
 		// best-effort diagnostics and never survive a restart.
 		urlFeedbackBackendImpl = newURLFeedbackStore(8192)

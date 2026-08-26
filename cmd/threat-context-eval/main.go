@@ -182,7 +182,7 @@ func run(configPath, outputPath string) error {
 	}
 	encoded = append(encoded, '\n')
 	if outputPath != "" {
-		if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(outputPath), 0o750); err != nil {
 			return err
 		}
 		if err := os.WriteFile(outputPath, encoded, 0o600); err != nil {

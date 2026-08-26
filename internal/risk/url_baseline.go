@@ -53,6 +53,8 @@ func loadURLOperationalBaseline(path, modelVersion, revision string) (*URLOperat
 	if path == "" {
 		return nil, fmt.Errorf("baseline path is empty")
 	}
+	// #nosec G304 -- baseline path comes from operator configuration
+	// (SAFE_ZONE_URL_ML_BASELINE_PATH), same trust level as the bundle dir.
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("read baseline: %w", err)
