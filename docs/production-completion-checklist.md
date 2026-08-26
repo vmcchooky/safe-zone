@@ -293,6 +293,7 @@ Every staging/production evidence bundle must declare one profile:
 | Agent-assisted | `SAFE_ZONE_AGENT_ENABLED=true` plus explicit per-task settings | Background audit/feed/OSINT/alert/whitelist automation. |
 | Custom ML shadow | `SAFE_ZONE_ML_MODE=shadow` with approved bundle | Prediction/evidence only; no verdict change. |
 | Custom ML enforce | `SAFE_ZONE_ML_MODE=enforce` with approved bundle | Malicious-only promotion at calibrated policy threshold. |
+| URL ML shadow | `SAFE_ZONE_URL_ML_MODE=shadow` on `core-api` with URL bundle | Caller-supplied URL observation only; no DNS use, server fetch or verdict change. |
 
 Profiles can be combined, but every enabled component adds its corresponding gates below.
 
@@ -332,6 +333,20 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 
 Phase 0–4 evidence from the current repository includes `go test ./...`, `go test -race ./internal/analysis ./internal/risk`, CGO-disabled tests, `go vet ./...`, artifact validation `49/49`, provenance hash validation `15/15`, and matching model-bundle `SHA256SUMS`. Candidate v2 artifacts additionally pass `33/33` matrix/provenance/leakage checks and a local Go core/DNS replay with zero parity mismatch. Leakage-free v2/v3 pass their artifact checks; v4 data-only and ternary-TLD families each pass `36/36`, but v4 fails two final gates and has not been exported or provisioned. Phase 5 has a checksum-gated versioned provisioner, validated private artifact activation, read-only Compose mounts, shadow evidence status fields, a clean staging golden-vector observation window, and a policy-only rollback mechanics drill. The default release profile remains Deterministic (`SAFE_ZONE_ML_MODE=disabled`) until model-quality, canary, and approval gates are complete.
 
+### URL-aware ML shadow gates
+
+- `[x]` Fresh group/source-disjoint V10 evidence excludes baseline, frozen packet and prior experiment groups; final đạt `+33 TP / +0 FP`.
+- `[x]` Native Go bundle, checksum, `12/12` golden parity, no server-side fetch and privacy-safe query shaping pass.
+- `[x]` URL route is core-API POST-only; DNS, GET, domain probability/verdict and parse-failure behavior remain unchanged.
+- `[x]` Stable `1–100%` domain sampling, aggregate histograms, error classes, latency and non-blocking proxy PSI are exposed on status/metrics.
+- `[x]` Local full-shadow replay completed `679/679` rows with zero HTTP failure, valid prediction error, response mismatch or raw-context leak; labelled Brier/ECE-10 are `0.125928/0.011386`.
+- `[x]` Restart rollback to `disabled` passes `5/5` gates; URL `enforce` is rejected by configuration and runtime contract.
+- `[x]` Product owner approved the expanded shadow scope on 2026-08-26.
+- `[!]` Run a bounded external shadow/canary observation window and freeze a representative operational baseline; the current PSI reference is a balanced offline proxy and cannot gate production drift.
+- `[!]` Record reviewed live benign promotions, coverage, invalid-context rate and target-host p95/p99 before any enforce design is considered.
+
+URL shadow staging artifacts are `ml/experiments/v10-url-shadow-staging.json` and `ml/experiments/v10-url-shadow-rollback.json`. The operational procedure is `docs/runbooks/url-ml-shadow-rollout.md`. This route may advance to bounded external observation; it does not make the domain-only `22/34` representative result pass and does not authorize enforce.
+
 ### AI/ML release evidence
 
 Archive with the release:
@@ -343,6 +358,7 @@ Archive with the release:
 - model bundle revision/checksum/policy/report when Custom ML enabled;
 - artifact validation result, data-manifest linkage and raw/processed provenance checksum result;
 - Python–Go parity report and candidate-cohort metrics for ML release;
+- URL shadow staging/rollback reports, sampling policy revision and aggregate drift/calibration evidence when URL ML is enabled;
 - target VPS latency/RSS/load results for every selected profile;
 - rollback commands and last-known-good provider/model revision.
 

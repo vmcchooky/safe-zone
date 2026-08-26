@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-V10 mở rộng `POST /v1/analyze` bằng URL context tùy chọn sau khi nhánh domain-only v4–v9 không vượt gate representative `26/34`. Candidate kết hợp domain model v3 với URL specialist tuyến tính, trong khi hostname bị loại khỏi vector học máy và giá trị query được chuyển thành shape token. Dữ liệu được chia theo registrable domain, loại toàn bộ group đã xuất hiện trong baseline, frozen evidence và các vòng trước; cả mười phép kiểm tra overlap đều bằng `0`. Trên final source-disjoint gồm `179` malicious URL và `500` benign URL, candidate tăng từ `118` lên `151` malicious true positive mà không thêm benign false positive. Go runtime đạt parity trên `12` golden vector, không thực hiện network fetch và giữ nguyên quyết định domain-only khi URL thiếu hoặc parse lỗi. Candidate mang trạng thái `OFFLINE_ELIGIBLE_URL_SHADOW_CANDIDATE`; cấu hình runtime vẫn mặc định `disabled`, chưa restart service, chưa đổi traffic scope và chưa bật `enforce`.
+V10 mở rộng `POST /v1/analyze` bằng URL context tùy chọn sau khi nhánh domain-only v4–v9 không vượt gate representative `26/34`. Candidate kết hợp domain model v3 với URL specialist tuyến tính, trong khi hostname bị loại khỏi vector học máy và giá trị query được chuyển thành shape token. Dữ liệu được chia theo registrable domain, loại toàn bộ group đã xuất hiện trong baseline, frozen evidence và các vòng trước; cả mười phép kiểm tra overlap đều bằng `0`. Trên final source-disjoint gồm `179` malicious URL và `500` benign URL, candidate tăng từ `118` lên `151` malicious true positive mà không thêm benign false positive. Go runtime đạt parity trên `12` golden vector, không thực hiện network fetch và giữ nguyên quyết định domain-only khi URL thiếu hoặc parse lỗi. Vòng 2 đã chạy full-shadow local staging trên `679` URL, đạt toàn bộ gate parity/privacy/failure/latency và hoàn tất rollback drill; `enforce` vẫn không được hỗ trợ.
 
 ## Sơ đồ Tổng quan
 
@@ -127,11 +127,75 @@ Vòng đột phá tín hiệu đã hoàn tất offline. Bước kế tiếp là 
 - Tests: `ml/tests/test_url_context.py`, `ml/tests/test_v10_url_selection.py`, `internal/analysis/url_classifier_test.go`, `internal/risk/url_ml_test.go`, `internal/api/handlers/analysis_test.go`
 - Official data sources: [UCI PhiUSIIL](https://archive.ics.uci.edu/dataset/967/phiusil-phishing-url-dataset), [Phishing.Database](https://github.com/Phishing-Database/Phishing.Database), [OpenPhish feeds](https://openphish.com/phishing_feeds.html), [Common Crawl URL Index](https://commoncrawl.org/url-index)
 
+## Vòng 2 — Shadow Mở rộng và Operational Evidence
+
+### Mục tiêu (Objectives)
+
+- Chạy URL specialist qua HTTP contract thật cùng domain ML shadow mà không đổi verdict, score hoặc cache behavior.
+- Mở rộng telemetry đủ để phát hiện lỗi bundle/runtime, input-contract drift, latency regression và population shift mà không lưu raw URL.
+- Tạo labelled staging replay có calibration diagnostic, privacy test và failure injection; hoàn tất restart rollback drill.
+- Chuẩn bị traffic sampling cùng alert/runbook để chuyển nhanh sang phạm vi vận hành mà vẫn có kill switch rõ ràng.
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Shadow scope | `100%` trên frozen labelled staging replay; hỗ trợ stable `1–99%` theo SHA-256 domain | Random sampling mỗi request; bật enforce nhỏ | Stable domain cohort tái lập qua restart; enforce không cần thiết để đo model và bị runtime từ chối |
+| Telemetry | Aggregate probability/input/verdict/error/latency histograms | Lưu per-request raw URL; chỉ đếm total | Aggregate đủ cho vận hành và tránh lưu path/query/redirect nhạy cảm; total đơn lẻ không phát hiện distribution change |
+| Drift | PSI với bundled balanced-development proxy, đánh dấu `operational_reference=false` | Coi proxy là production baseline; bỏ drift | Proxy cung cấp diagnostic nhưng prevalence khác traffic thật; trạng thái `proxy_shift` không blocking tránh false alarm |
+| Calibration | Brier và ECE-10 trên labelled staging replay | Tuyên bố calibration từ traffic không nhãn | Chỉ evidence có label mới đo calibration; live shadow chỉ đo distribution/behavior |
+| Runtime validation | Direct Go staging, domain ML và URL ML cùng ở `shadow` | Chỉ unit benchmark; chờ Docker vô hạn | Direct staging kiểm tra HTTP path thật; Docker Linux engine không phản hồi trong cửa sổ bounded nên không chặn evidence |
+| Rollback | Restart URL route về `disabled`, giữ domain ML shadow | Chỉ kiểm tra config parser | Restart drill xác nhận runtime state, response parity và privacy sau khi tắt classifier |
+
+### Cách thức Thực hiện (Implementation Details)
+
+`URLMLShadowConfig` thêm phần trăm và seed. Mức `100%` không cần seed; mức `1–99%` bắt buộc seed và chọn cohort bằng `SHA-256(seed || normalized_domain)`, nhờ đó một domain không đổi nhóm qua restart. `policy_revision` bao gồm selector revision để metric không trộn hai traffic policy.
+
+Runtime ghi các aggregate sau: context requests, selected/excluded, evaluated/pass/promote, error class, query-presence, redirect-count bucket, primary-verdict bucket, would-promote theo verdict gốc, probability histogram và latency histogram/average/p95. Bundle bổ sung monitoring reference `2.000` development rows; Jeffreys smoothing loại zero division khi tính PSI. Reference này cân bằng `1.000/1.000` label nên được đóng dấu `operational_reference=false`; runtime chỉ trả `proxy_shift`, không phát alert blocking.
+
+`replay_v10_url_shadow.py` gửi từng final row qua GET domain-only và POST URL-aware trên `12` worker, đối chiếu domain/verdict/score/confidence, kiểm tra response không chứa full URL hoặc query value, và chạy bốn invalid contexts gồm scheme, credentials, host mismatch và oversized URL. Report chỉ lưu aggregate. Domain ML v3 và URL ML cùng chạy `shadow`; không layer nào thay đổi response.
+
+Rollback drill restart core-api với `SAFE_ZONE_URL_ML_MODE=disabled`, sau đó `check_v10_url_rollback.py` xác nhận classifier tắt, URL không được evaluate, domain response parity và zero raw-context leak. Local staging process được dừng sau drill. `.env` local được chuẩn bị cho full URL shadow ở lần Compose recreate kế tiếp; Docker Desktop đã được khởi động thử nhưng Linux engine không phản hồi bounded health check, nên Compose deployment không được tuyên bố thành công.
+
+AI agent sử dụng Codex (GPT-5), `0` subagent và không voting. Chiến lược kiểm soát chất lượng kết hợp test-first telemetry, native golden parity, labelled HTTP replay, invalid-input injection, bounded infrastructure retry và explicit rollback. Người dùng cho phép mở rộng shadow/restart/traffic local; `enforce` vẫn bị loại khỏi runtime contract.
+
+### Số liệu (Metrics & Results)
+
+| Metric | Kết quả |
+|---|---:|
+| Frozen staging rows hoàn tất | `679/679` |
+| Sampled / evaluated | `679 / 679` |
+| HTTP failures / valid prediction errors | `0 / 0` |
+| Response parity mismatch / raw-context leak | `0 / 0` |
+| URL would-promote benign / malicious | `0 / 76` |
+| Would-promote khi runtime verdict chưa malicious | benign `0`, malicious `73` |
+| Invalid context fail-open | `4/4` |
+| Native URL inference average / p95 | `40 µs / 500 µs` |
+| HTTP client latency mean / p95 / p99 / max | `7,547 / 11,067 / 16,371 / 62,529 ms` |
+| Labelled replay Brier / ECE-10 | `0,125928 / 0,011386` |
+| Labelled replay mean probability / positive rate | `0,275009 / 0,263623` |
+| Domain ML concurrent attempts / would-block / errors | `106 / 76 / 0` |
+| Offline-proxy PSI | `0,408264`, trạng thái `proxy_shift`, non-blocking |
+| Rollback gates | `5/5` PASS |
+
+Toàn bộ chín staging gates đạt. Candidate có trạng thái `STAGING_SHADOW_PASSED_LIVE_BASELINE_PENDING`: đủ điều kiện mở bounded external shadow/canary observation, nhưng chưa có representative live traffic để freeze operational baseline hoặc đo false positive thực tế.
+
+### Liên kết Artifacts Vòng 2
+
+- Shadow staging report: `ml/experiments/v10-url-shadow-staging.json`
+- Rollback report: `ml/experiments/v10-url-shadow-rollback.json`
+- Replay/rollback tools: `ml/src/replay_v10_url_shadow.py`, `ml/src/check_v10_url_rollback.py`
+- Runtime telemetry/sampling: `internal/risk/url_ml.go`, `internal/risk/url_ml_test.go`
+- Monitoring bundle/exporter: `ml/models/url-v1/`, `ml/src/export_v10_url_bundle.py`
+- Operator runbook: `docs/runbooks/url-ml-shadow-rollout.md`
+- Alert policy: `ops/alerts/safe-zone-alert-rules.yaml`
+
 ---
 
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-26 | Hoàn tất Vòng 2 local full-shadow: `679/679` replay, `0` valid error/parity mismatch/privacy leak, URL inference p95 `500 µs`, rollback `5/5` PASS | Codex (GPT-5) |
 | 2026-08-26 | Hoàn tất V10 từ protocol đến native Go shadow-ready integration; final source-disjoint đạt `+33 TP / +0 FP`, runtime vẫn `disabled` | Codex (GPT-5) |
 | 2026-08-25 | Ghi nhận Common Crawl TLS failure trước snapshot và thay duy nhất benign source bằng UCI PhiUSIIL | Codex (GPT-5) |

@@ -87,11 +87,26 @@ shadow observation only:
 SAFE_ZONE_URL_ML_MODE=disabled
 SAFE_ZONE_URL_ML_BUNDLE_DIR=/app/models/safe-zone/url-v1
 SAFE_ZONE_URL_ML_REQUIRED=false
+SAFE_ZONE_URL_ML_SHADOW_PERCENT=100
+SAFE_ZONE_URL_ML_SHADOW_SEED=
 ```
 
 Invalid, oversized, credential-bearing, or host-mismatched URL context fails
 open to the unchanged domain-only result. Raw URL and query values are not
-returned or stored in URL ML observation telemetry.
+returned or stored in URL ML observation telemetry. Shadow metrics include
+stable traffic sampling, probability/input/verdict histograms, error classes,
+latency and diagnostic PSI against the bundled offline proxy. Partial shadow
+percentages require a seed. The proxy is not an operational drift baseline.
+
+Replay and rollback verification:
+
+```powershell
+python ml/src/replay_v10_url_shadow.py --base-url http://127.0.0.1:8080 --workers 12
+python ml/src/check_v10_url_rollback.py --base-url http://127.0.0.1:8080
+```
+
+Both reports contain aggregate evidence only. See
+`docs/runbooks/url-ml-shadow-rollout.md` for rollout gates and alerts.
 
 ## Phase 5 provisioning and shadow
 

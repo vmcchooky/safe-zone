@@ -12,6 +12,9 @@ Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert ru
 - high HTTP 5xx rate
 - upstream DoH failure
 - high DoH latency
+- URL ML shadow degraded state
+- URL ML prediction/input errors and high inference latency
+- URL ML distribution drift after an operational baseline exists
 
 ## Data sources
 
@@ -43,6 +46,14 @@ Upstream DoH failure count:
 ```sh
 curl -fsS http://127.0.0.1:8081/metrics | jq '.upstream_doh.failures_total'
 ```
+
+URL ML shadow health:
+
+```sh
+curl -fsS http://127.0.0.1:8080/metrics | jq '.ml.url | {state, prediction_attempts, error_histogram, latency_p95_us, sampling, drift}'
+```
+
+`drift.state=proxy_shift` is diagnostic only because the bundled reference is a balanced offline cohort. The drift alert becomes blocking only when `operational_reference=true` after a representative live baseline has been frozen.
 
 ## Log retention
 

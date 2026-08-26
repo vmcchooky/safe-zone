@@ -46,3 +46,28 @@ rules:
     severity: warning
     condition: average request_summary["POST /dns-query 200"].total_duration_ms / count > 150 over 10m
     action: inspect upstream latency, Redis, and TLS/WHOIS enrichment settings
+
+  - id: url-ml-shadow-degraded
+    severity: critical
+    condition: core_api_status.json.ml.url.mode == "shadow" and core_api_status.json.ml.url.state != "ready" for 2m
+    action: return SAFE_ZONE_URL_ML_MODE to disabled, restart core-api, and verify the bundle mount/checksum
+
+  - id: url-ml-prediction-errors
+    severity: warning
+    condition: core_api_metrics.json.ml.url.error_histogram.prediction_error increases by > 0 over 5m
+    action: inspect bundle/runtime errors; URL ML remains fail-open and must not be promoted to canary
+
+  - id: url-ml-invalid-context-rate
+    severity: warning
+    condition: core_api_metrics.json.ml.url.prediction_attempts >= 100 and invalid_url_context / prediction_attempts > 0.05 for 15m
+    action: inspect caller contract compliance without logging raw URL or query values
+
+  - id: url-ml-high-latency
+    severity: warning
+    condition: core_api_metrics.json.ml.url.latency_p95_us > 2000 for 10m
+    action: reduce SAFE_ZONE_URL_ML_SHADOW_PERCENT or disable URL ML and inspect CPU/allocation pressure
+
+  - id: url-ml-operational-drift
+    severity: warning
+    condition: core_api_metrics.json.ml.url.drift.operational_reference == true and core_api_metrics.json.ml.url.drift.state == "alert" for 30m
+    action: hold canary progression and compare the live aggregate histogram with the frozen operational baseline
