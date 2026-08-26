@@ -11,18 +11,36 @@ from typing import Any, Dict, Mapping, Sequence
 
 import joblib
 import numpy as np
+import pandas as pd
 from scipy.sparse import csr_matrix, hstack
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from src.select_v10_url_aware import _load_json, _load_token_contract, _require_hash
+from src.select_v10_url_aware import (
+    _load_json,
+    _load_token_contract,
+    _require_hash,
+    _url_matrices,
+)
 from src.training_data import compute_file_sha256, resolve_ml_path
 from src.url_context import URLContextError, build_url_features
 
 
 MODEL_VERSION = "safe-zone-url-sgd-v10-20260825"
+PROBABILITY_BUCKETS = [
+    "lt_0_10",
+    "0_10_0_19",
+    "0_20_0_29",
+    "0_30_0_39",
+    "0_40_0_49",
+    "0_50_0_59",
+    "0_60_0_69",
+    "0_70_0_79",
+    "0_80_0_89",
+    "gte_0_90",
+]
 
 
 def _canonical_json(path: Path, value: Mapping[str, Any] | Sequence[Any]) -> None:
@@ -48,6 +66,55 @@ def _probability(
         bundle["platt"].predict_proba(np.asarray([[raw]], dtype=np.float64))[0, 1]
     )
     return raw, probability
+
+
+def _monitoring_reference(
+    selection: Mapping[str, Any],
+    selected: Mapping[str, Any],
+    protocol: Mapping[str, Any],
+) -> Dict[str, Any]:
+    development_meta = selection["selection_inputs"]["development"]
+    development_path = resolve_ml_path(development_meta["path"])
+    _require_hash(
+        development_path,
+        development_meta["sha256"],
+        "v10 monitoring development cohort",
+    )
+    frame = pd.read_parquet(development_path)
+    suspicious_tokens, brand_tokens = _load_token_contract(protocol)
+    texts, handcrafted = _url_matrices(
+        frame, protocol, suspicious_tokens, brand_tokens
+    )
+    text_matrix = selected["vectorizer"].transform(texts)
+    hand_matrix = selected["scaler"].transform(handcrafted)
+    matrix = hstack([csr_matrix(hand_matrix), text_matrix], format="csr")
+    raw = selected["model"].decision_function(matrix)
+    probability = selected["platt"].predict_proba(
+        np.asarray(raw).reshape(-1, 1)
+    )[:, 1]
+    indexes = np.minimum((probability * 10).astype(int), 9)
+    counts = np.bincount(indexes, minlength=10).astype(int)
+    # Jeffreys smoothing avoids zero-probability PSI divisions at runtime.
+    distribution = (counts.astype(float) + 0.5) / (len(frame) + 5.0)
+    labels = frame["label"].to_numpy(int)
+    return {
+        "reference_kind": "balanced_group_disjoint_development_proxy",
+        "reference_operational": False,
+        "reference_rows": int(len(frame)),
+        "reference_labels": {
+            "benign": int(np.sum(labels == 0)),
+            "malicious": int(np.sum(labels == 1)),
+        },
+        "probability_buckets": PROBABILITY_BUCKETS,
+        "probability_counts": counts.tolist(),
+        "probability_distribution_smoothed": distribution.tolist(),
+        "psi": {
+            "minimum_live_samples": 100,
+            "watch_threshold": 0.10,
+            "alert_threshold": 0.25,
+            "interpretation": "population shift against a balanced development proxy; not a live-label calibration score",
+        },
+    }
 
 
 def export(
@@ -129,6 +196,7 @@ def export(
             "url_threshold": float(selected["url_threshold"]),
             "failure_policy": "fail_open_to_domain_only",
         },
+        "monitoring": _monitoring_reference(selection, selected, protocol),
     }
 
     output = Path(output_dir).resolve()

@@ -109,6 +109,10 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	urlMLShadow, err := loadURLMLShadowFromEnv(urlMLMode)
+	if err != nil {
+		return nil, err
+	}
 
 	return NewService(Options{
 		Redis:                    redisCache,
@@ -148,6 +152,7 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 		MLCanary:                 mlCanary,
 		URLMLClassifier:          urlMLClassifier,
 		URLMLMode:                urlMLMode,
+		URLMLShadow:              urlMLShadow,
 	}), nil
 }
 
@@ -187,6 +192,25 @@ func loadURLMLFromEnv() (analysis.MLMode, analysis.URLClassifier, error) {
 		"url_ml_revision":      classifier.Revision(),
 	})
 	return mode, classifier, nil
+}
+
+func loadURLMLShadowFromEnv(mode analysis.MLMode) (URLMLShadowConfig, error) {
+	if mode == analysis.MLModeDisabled {
+		return URLMLShadowConfig{Percent: 100}, nil
+	}
+	rawPercent := strings.TrimSpace(config.String("SAFE_ZONE_URL_ML_SHADOW_PERCENT", "100"))
+	percent, err := strconv.Atoi(rawPercent)
+	if err != nil {
+		return URLMLShadowConfig{}, fmt.Errorf("invalid SAFE_ZONE_URL_ML_SHADOW_PERCENT %q", rawPercent)
+	}
+	shadow := URLMLShadowConfig{
+		Percent: percent,
+		Seed:    strings.TrimSpace(config.String("SAFE_ZONE_URL_ML_SHADOW_SEED", "")),
+	}
+	if err := shadow.validate(); err != nil {
+		return URLMLShadowConfig{}, err
+	}
+	return shadow, nil
 }
 
 func loadMLCanaryFromEnv(mode analysis.MLMode) (MLCanaryConfig, error) {

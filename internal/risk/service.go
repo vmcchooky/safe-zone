@@ -103,6 +103,7 @@ type Options struct {
 	// context. It never changes DNS or domain-only decisions.
 	URLMLClassifier analysis.URLClassifier
 	URLMLMode       analysis.MLMode
+	URLMLShadow     URLMLShadowConfig
 }
 
 type adblockSourceMeta struct {
@@ -161,6 +162,7 @@ type Service struct {
 	mlTelemetry       mlTelemetry
 	urlMLClassifier   analysis.URLClassifier
 	urlMLMode         analysis.MLMode
+	urlMLShadow       URLMLShadowConfig
 	urlMLTelemetry    urlMLTelemetry
 
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
@@ -327,8 +329,12 @@ func NewService(options Options) *Service {
 	if urlMLMode != analysis.MLModeShadow {
 		urlMLMode = analysis.MLModeDisabled
 	}
-	if options.URLMLClassifier == nil || !options.URLMLClassifier.Enabled() {
-		urlMLMode = analysis.MLModeDisabled
+	urlMLShadow := options.URLMLShadow
+	if urlMLShadow.Percent == 0 {
+		urlMLShadow.Percent = 100
+	}
+	if err := urlMLShadow.validate(); err != nil {
+		urlMLShadow = URLMLShadowConfig{Percent: 100}
 	}
 
 	wl := NewWhitelist(options.Store)
@@ -390,6 +396,7 @@ func NewService(options Options) *Service {
 		mlCanary:         mlCanary,
 		urlMLClassifier:  options.URLMLClassifier,
 		urlMLMode:        urlMLMode,
+		urlMLShadow:      urlMLShadow,
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -809,7 +816,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		a.Evidence = evidence
 	}
 	if options.URLContext != nil {
-		a.URLML = s.observeURLML(normalized, *options.URLContext)
+		a.URLML = s.observeURLML(normalized, result.Verdict, *options.URLContext)
 	}
 	s.recordTelemetry(a, client)
 	return a

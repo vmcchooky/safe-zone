@@ -148,3 +148,11 @@ run_windows = "pwsh -NoProfile -File scripts/ops/ml-bundle.ps1 validate"
 description = "Activate a previously provisioned ML bundle version"
 run = "sh ./scripts/ops/ml-bundle.sh rollback"
 run_windows = "pwsh -NoProfile -File scripts/ops/ml-bundle.ps1 rollback"
+
+[tasks."ml:url-shadow-replay"]
+description = "Replay frozen labelled URL evidence through a running shadow core API"
+run = "python ml/src/replay_v10_url_shadow.py --base-url http://127.0.0.1:8080 --workers 12"
+
+[tasks."ml:url-shadow-rollback-check"]
+description = "Verify that URL ML rollback is disabled and domain-response safe"
+run = "python ml/src/check_v10_url_rollback.py --base-url http://127.0.0.1:8080"

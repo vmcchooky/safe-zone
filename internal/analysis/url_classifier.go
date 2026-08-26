@@ -42,6 +42,21 @@ type URLClassifierMetadata interface {
 	URLThreshold() float64
 }
 
+type URLMonitoringReference struct {
+	ReferenceKind           string
+	ReferenceRows           int
+	Operational             bool
+	ProbabilityBuckets      []string
+	ProbabilityDistribution []float64
+	MinimumLiveSamples      int
+	PSIWatchThreshold       float64
+	PSIAlertThreshold       float64
+}
+
+type URLMonitoringReferenceProvider interface {
+	URLMonitoringReference() URLMonitoringReference
+}
+
 type urlModelBundle struct {
 	SchemaVersion int    `json:"schema_version"`
 	ModelVersion  string `json:"model_version"`
@@ -91,6 +106,18 @@ type urlModelBundle struct {
 		URLThreshold          float64  `json:"url_threshold"`
 		FailurePolicy         string   `json:"failure_policy"`
 	} `json:"policy"`
+	Monitoring struct {
+		ReferenceKind                 string    `json:"reference_kind"`
+		ReferenceRows                 int       `json:"reference_rows"`
+		ReferenceOperational          bool      `json:"reference_operational"`
+		ProbabilityBuckets            []string  `json:"probability_buckets"`
+		ProbabilityDistributionSmooth []float64 `json:"probability_distribution_smoothed"`
+		PSI                           struct {
+			MinimumLiveSamples int     `json:"minimum_live_samples"`
+			WatchThreshold     float64 `json:"watch_threshold"`
+			AlertThreshold     float64 `json:"alert_threshold"`
+		} `json:"psi"`
+	} `json:"monitoring"`
 }
 
 type URLBundleClassifier struct {
@@ -209,6 +236,24 @@ func validateURLModelBundle(bundle urlModelBundle) error {
 		bundle.Policy.FailurePolicy != "fail_open_to_domain_only" {
 		return errors.New("unsupported URL calibration or policy contract")
 	}
+	if bundle.Monitoring.ReferenceRows <= 0 ||
+		len(bundle.Monitoring.ProbabilityBuckets) != 10 ||
+		len(bundle.Monitoring.ProbabilityDistributionSmooth) != 10 ||
+		bundle.Monitoring.PSI.MinimumLiveSamples <= 0 ||
+		bundle.Monitoring.PSI.WatchThreshold <= 0 ||
+		bundle.Monitoring.PSI.AlertThreshold <= bundle.Monitoring.PSI.WatchThreshold {
+		return errors.New("invalid URL monitoring reference")
+	}
+	distributionSum := 0.0
+	for _, value := range bundle.Monitoring.ProbabilityDistributionSmooth {
+		if value <= 0 || math.IsNaN(value) || math.IsInf(value, 0) {
+			return errors.New("invalid URL monitoring probability distribution")
+		}
+		distributionSum += value
+	}
+	if math.Abs(distributionSum-1) > 1e-9 {
+		return errors.New("URL monitoring probability distribution does not sum to one")
+	}
 	for _, value := range append(append(append([]float64{}, bundle.Vectorizer.IDF...), bundle.Scaler.Mean...), bundle.Scaler.Scale...) {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			return errors.New("URL model contains non-finite value")
@@ -262,6 +307,22 @@ func (c *URLBundleClassifier) URLThreshold() float64 {
 		return 0
 	}
 	return c.bundle.Policy.URLThreshold
+}
+
+func (c *URLBundleClassifier) URLMonitoringReference() URLMonitoringReference {
+	if c == nil {
+		return URLMonitoringReference{}
+	}
+	return URLMonitoringReference{
+		ReferenceKind:           c.bundle.Monitoring.ReferenceKind,
+		ReferenceRows:           c.bundle.Monitoring.ReferenceRows,
+		Operational:             c.bundle.Monitoring.ReferenceOperational,
+		ProbabilityBuckets:      append([]string(nil), c.bundle.Monitoring.ProbabilityBuckets...),
+		ProbabilityDistribution: append([]float64(nil), c.bundle.Monitoring.ProbabilityDistributionSmooth...),
+		MinimumLiveSamples:      c.bundle.Monitoring.PSI.MinimumLiveSamples,
+		PSIWatchThreshold:       c.bundle.Monitoring.PSI.WatchThreshold,
+		PSIAlertThreshold:       c.bundle.Monitoring.PSI.AlertThreshold,
+	}
 }
 
 func (c *URLBundleClassifier) ClassifyURL(context URLContext) (MLDecision, error) {
@@ -598,3 +659,4 @@ func (c *URLBundleClassifier) tfidf(text string) []sparseURLValue {
 
 var _ URLClassifier = (*URLBundleClassifier)(nil)
 var _ URLClassifierMetadata = (*URLBundleClassifier)(nil)
+var _ URLMonitoringReferenceProvider = (*URLBundleClassifier)(nil)

@@ -8318,6 +8318,57 @@
     "loss": "log_loss"
   },
   "model_version": "safe-zone-url-sgd-v10-20260825",
+  "monitoring": {
+    "probability_buckets": [
+      "lt_0_10",
+      "0_10_0_19",
+      "0_20_0_29",
+      "0_30_0_39",
+      "0_40_0_49",
+      "0_50_0_59",
+      "0_60_0_69",
+      "0_70_0_79",
+      "0_80_0_89",
+      "gte_0_90"
+    ],
+    "probability_counts": [
+      0,
+      1252,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      748
+    ],
+    "probability_distribution_smoothed": [
+      0.00024937655860349125,
+      0.6246882793017456,
+      0.00024937655860349125,
+      0.00024937655860349125,
+      0.00024937655860349125,
+      0.00024937655860349125,
+      0.00024937655860349125,
+      0.00024937655860349125,
+      0.00024937655860349125,
+      0.3733167082294264
+    ],
+    "psi": {
+      "alert_threshold": 0.25,
+      "interpretation": "population shift against a balanced development proxy; not a live-label calibration score",
+      "minimum_live_samples": 100,
+      "watch_threshold": 0.1
+    },
+    "reference_kind": "balanced_group_disjoint_development_proxy",
+    "reference_labels": {
+      "benign": 1000,
+      "malicious": 1000
+    },
+    "reference_operational": false,
+    "reference_rows": 2000
+  },
   "policy": {
     "failure_policy": "fail_open_to_domain_only",
     "mode_default": "disabled",
