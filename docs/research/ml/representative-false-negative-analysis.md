@@ -641,7 +641,7 @@ AI agent sử dụng Codex (GPT-5), `0` subagent và không voting. Closure đư
 | Broad final-test incremental TP/FP | >0 / 0 | +15 / 0 (v7) | đạt |
 | Candidate đủ điều kiện shadow | tất cả gate | 0 | không đạt |
 
-Vòng 1 đã hoàn tất về quy trình nghiên cứu nhưng không tạo release candidate. Vòng 2 shadow chưa được phép bắt đầu. Mở lại Vòng 1 chỉ hợp lý khi có ít nhất một trong ba thay đổi: optional URL/path/redirect contract cùng privacy/provenance policy; representative packet mới phân định rõ trách nhiệm domain-only; hoặc timestamp-aligned context dataset mới có benign/malicious observation cùng thời điểm.
+Vòng 1 domain-only đã hoàn tất về quy trình nghiên cứu nhưng không tạo release candidate. Tại thời điểm closure, Vòng 2 shadow chưa được phép bắt đầu. Mở lại research chỉ hợp lý khi có ít nhất một trong ba thay đổi: optional URL/path/redirect contract cùng privacy/provenance policy; representative packet mới phân định rõ trách nhiệm domain-only; hoặc timestamp-aligned context dataset mới có benign/malicious observation cùng thời điểm.
 
 ### Điều kiện cho bước kế tiếp
 
@@ -651,6 +651,12 @@ Vòng 1 đã hoàn tất về quy trình nghiên cứu nhưng không tạo relea
 4. Chỉ tạo candidate mới sau khi có fresh development/final pair phù hợp contract mới. Candidate vẫn phải đạt `26/34`, representative benign `0/25`, targeted benign `0/3`, parity tolerance `10^-6`, ML errors `0` và enforce promotions `0` trước shadow.
 
 PhishDestroy holdout đã được mở một lần cho v7 và không còn là final input hợp lệ cho tuning tiếp. Không chọn phương án chỉ hạ threshold: sweep hiện tại cho thấy threshold `0,90` đạt `22/34` với `0/25` FP; threshold `0,85` đạt `25/34` nhưng tạo `1/25` FP. Candidate mới chỉ được xem xét cho local staging `shadow` khi đạt tối thiểu representative recall `26/34`, giữ representative benign FP `0/25`, targeted benign challenge `0/3`, cross-service probability/response parity trong tolerance `10^-6`, ML errors bằng `0` và enforce promotions bằng `0`.
+
+### Cập nhật V10 URL-aware ngày 2026-08-26
+
+Product owner đã phê duyệt contract mới gồm caller-observed URL/path/redirect context. V10 sử dụng fresh source-disjoint evidence, loại toàn bộ group của baseline, frozen packet và các vòng trước; final đạt `+33 TP / +0 FP` so với domain v3 trên `179` malicious và `500` benign URL. Domain-only probability/decision parity cùng parse-failure fallback đều đạt, nên candidate có trạng thái `OFFLINE_ELIGIBLE_URL_SHADOW_CANDIDATE` và native Go integration đã sẵn sàng ở chế độ mặc định `disabled`.
+
+Kết quả này không thay mốc representative `22/34`. Frozen packet chỉ có domain, không có caller-observed path/query/redirect context, đồng thời vẫn là forbidden tuning input; áp gate `26/34` của domain-only contract cho URL specialist sẽ đo sai trách nhiệm sản phẩm. Shadow hiện chưa được bật và vẫn cần phê duyệt riêng trước khi thay đổi cấu hình, restart service hoặc mở traffic scope. Chi tiết protocol, data provenance, privacy policy, metrics và runtime nằm tại `docs/research/ml/url-aware-signal-round.md`.
 
 ### Liên kết Artifacts
 
@@ -685,6 +691,7 @@ PhishDestroy holdout đã được mở một lần cho v7 và không còn là f
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-26 | Mở lại research bằng contract URL-aware đã được phê duyệt; V10 final source-disjoint đạt `+33 TP / +0 FP`, giữ domain-only representative ở `22/34` và chuẩn bị shadow integration mặc định `disabled` | Codex (GPT-5) |
 | 2026-08-25 | Hoàn tất Vòng 1 bằng v9 source-invariant candidate; validation đạt `+3 TP / +0 FP`, fresh development đạt `+1 TP / +9 FP`, dừng trước final và đóng `ROUND_1_CLOSED_NO_OFFLINE_CANDIDATE` | Codex (GPT-5) |
 | 2026-08-25 | Pre-register v8 DNS context, freeze ba source/group-disjoint cohorts; ghi nhận `+36/150` development TP nhưng `+1/150` benign FP và dừng trước final/signed inputs | Codex (GPT-5) |
 | 2026-08-24 | Triển khai v7 disagreement precision specialist; selection đạt `+14 TP / +0 FP`, final test đạt `+15 TP / +0 FP`, nhưng giữ `NO_GO_FINAL` vì representative vẫn `22/34` | Codex (GPT-5) |

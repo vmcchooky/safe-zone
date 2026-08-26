@@ -123,6 +123,8 @@ tls://127.0.0.1:1853
 
 Safe Zone keeps deterministic analysis available and can optionally refine ambiguous results through `none`, `gemini`, `ollama`, or Ollama-first `hybrid` provider modes. The Custom Domain ML classifier is implemented as a separate local scoring layer with `disabled`, `shadow`, and controlled `enforce` rollout modes; it remains `disabled` by default until human-labelled rollout evidence, canary approval, and product/security gates are complete. Phase 5 provisioning, staging shadow observation, and rollback mechanics have been validated.
 
+`POST /v1/analyze` also supports optional caller-observed URL and redirect context for the native URL specialist. This route is independently configured, accepts only `disabled` or `shadow`, performs no server-side URL fetch, and remains `disabled` by default. Its V10 offline source-disjoint evaluation gained `33` malicious true positives with `0` incremental benign false positives; DNS and domain-only behavior are unchanged. See [url-aware-signal-round.md](research/ml/url-aware-signal-round.md) for data provenance, privacy limits, gates, and trade-offs.
+
 AI/ML/provider failures remain fail-open unless an operator explicitly makes a validated model bundle a startup requirement. For the complete architecture, configuration matrix, data/ML lifecycle, Agent workflow, deployment procedure and incident response, see [specs/safe-zone-ai-plan.md](specs/safe-zone-ai-plan.md). Release status and required evidence are tracked only in [production-completion-checklist.md](production-completion-checklist.md).
 
 Custom ML runtime configuration:
@@ -135,6 +137,10 @@ SAFE_ZONE_ML_REQUIRED=false
 SAFE_ZONE_ML_BLOCK_THRESHOLD=
 SAFE_ZONE_ML_CANARY_PERCENT=0
 SAFE_ZONE_ML_CANARY_SEED=
+
+SAFE_ZONE_URL_ML_MODE=disabled
+SAFE_ZONE_URL_ML_BUNDLE_DIR=/app/models/safe-zone/url-v1
+SAFE_ZONE_URL_ML_REQUIRED=false
 ```
 
 The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. Provisioning is performed with `mise run ops:ml-provision`; the active release is mounted read-only into both services. `shadow` records aggregate prediction evidence without changing verdicts. A configured canary observes the deterministic normalized-domain cohort in `shadow`; `enforce` is rejected at startup unless a percentage and stable seed bound the eligible cohort. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
