@@ -26,6 +26,11 @@ export interface AnalysisResult {
   cache_hit: boolean;
   analyzed_at: string;
   evidence?: Evidence[];
+  url_ml?: {
+    sampled?: boolean;
+    evaluated?: boolean;
+    would_promote?: boolean;
+  };
 }
 
 export interface RawDNS {
@@ -77,6 +82,9 @@ interface ToastMessage {
 export function AnalysisPage() {
   const [domain, setDomain] = useState('');
   const [urlContext, setUrlContext] = useState('');
+  // lastEventId keeps the opaque correlation ID of the most recent
+  // URL-context analysis so the operator can label it via /v1/url-ml/feedback.
+  const [lastEventId, setLastEventId] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showRawData, setShowRawData] = useState(false);
@@ -123,13 +131,14 @@ export function AnalysisPage() {
       // context. The event ID is opaque and generated client-side; the
       // server never stores the raw URL in feedback correlation.
       if (urlContext.trim()) {
+        const eventId = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
         const res = await fetch('/v1/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             domain: domain.trim(),
             requested_url: urlContext.trim(),
-            event_id: (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`),
+            event_id: eventId,
             caller_class: 'ui',
           }),
         });
@@ -138,6 +147,10 @@ export function AnalysisPage() {
         }
         const data = await res.json();
         setResult(data);
+        // Only offer label feedback when this observation was actually
+        // sampled into the shadow cohort; otherwise the server has no
+        // fingerprint to correlate and would reject the label.
+        setLastEventId(data.url_ml?.sampled ? eventId : '');
         fetchRecentAnalyses();
         return;
       }
@@ -147,11 +160,36 @@ export function AnalysisPage() {
       }
       const data = await res.json();
       setResult(data);
+      setLastEventId('');
       fetchRecentAnalyses();
     } catch (err: any) {
       setError(err.message || 'An error occurred');
     } finally {
       setIsScanning(false);
+    }
+  };
+
+  // submitUrlLabel reports the caller's ground-truth label for the most
+  // recent URL-context analysis. Labels only feed privacy-safe shadow
+  // calibration aggregates; they never change any verdict.
+  const submitUrlLabel = async (label: 'benign' | 'malicious') => {
+    if (!lastEventId) return;
+    try {
+      const res = await fetch('/v1/url-ml/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event_id: lastEventId, label }),
+      });
+      if (!res.ok) throw new Error(`Feedback failed: ${res.status}`);
+      const data = await res.json();
+      if (data.recorded) {
+        addToast('Cảm ơn bạn! Nhãn đã được ghi nhận cho quan sát URL.', 'success');
+        setLastEventId('');
+      } else {
+        addToast(`Nhãn chưa ghi nhận: ${data.reason || 'unknown'}`, 'info');
+      }
+    } catch (err: any) {
+      addToast(err.message || 'Không gửi được phản hồi URL', 'error');
     }
   };
 
@@ -409,6 +447,25 @@ export function AnalysisPage() {
                           Score: {result.score}/100
                         </span>
                       </div>
+                      {lastEventId && (
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+                          <span className="text-slate-500 font-medium">URL quan sát có đúng không?</span>
+                          <button
+                            type="button"
+                            onClick={() => submitUrlLabel('benign')}
+                            className="px-3 py-1 rounded-full text-xs font-bold bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition-colors"
+                          >
+                            An toàn (benign)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => submitUrlLabel('malicious')}
+                            className="px-3 py-1 rounded-full text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-colors"
+                          >
+                            Lừa đảo/độc hại (malicious)
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
