@@ -26,9 +26,14 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR / "ml"))
+sys.path.insert(0, str(BASE_DIR))
 
-from src.canary_override import compose_files  # noqa: E402
-from src.replay_v10_url_shadow import _invalid_context_checks  # noqa: E402
+try:
+    from canary_override import compose_files  # noqa: E402
+    from replay_v10_url_shadow import _invalid_context_checks, _json_request  # noqa: E402
+except ModuleNotFoundError:
+    from src.canary_override import compose_files  # type: ignore  # noqa: E402
+    from src.replay_v10_url_shadow import _invalid_context_checks, _json_request  # type: ignore  # noqa: E402
 
 BASELINE_HOST_PATH = (
     BASE_DIR / "ml" / "models" / "url-baseline" / "operational-baseline.json"

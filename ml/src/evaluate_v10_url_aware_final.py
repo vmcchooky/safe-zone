@@ -19,18 +19,32 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from src.select_v10_url_aware import (
-    _decision_metrics,
-    _load_json,
-    _load_primary,
-    _load_token_contract,
-    _primary_probability,
-    _require_hash,
-    _url_matrices,
-    _write_json,
-)
-from src.training_data import compute_file_sha256, resolve_ml_path
-from src.url_context import URLContextError, build_url_features
+try:
+    from select_v10_url_aware import (  # noqa: E402
+        _decision_metrics,
+        _load_json,
+        _load_primary,
+        _load_token_contract,
+        _primary_probability,
+        _require_hash,
+        _url_matrices,
+        _write_json,
+    )
+    from training_data import compute_file_sha256, resolve_ml_path  # noqa: E402
+    from url_context import URLContextError, build_url_features  # noqa: E402
+except ModuleNotFoundError:
+    from src.select_v10_url_aware import (  # type: ignore  # noqa: E402
+        _decision_metrics,
+        _load_json,
+        _load_primary,
+        _load_token_contract,
+        _primary_probability,
+        _require_hash,
+        _url_matrices,
+        _write_json,
+    )
+    from src.training_data import compute_file_sha256, resolve_ml_path  # type: ignore  # noqa: E402
+    from src.url_context import URLContextError, build_url_features  # type: ignore  # noqa: E402
 
 
 def combine_optional_url(

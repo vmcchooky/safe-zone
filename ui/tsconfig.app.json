@@ -9,7 +9,6 @@
     ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "allowImportingTsExtensions": false,
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
@@ -26,8 +25,7 @@
       "@/*": [
         "./src/*"
       ]
-    },
-    "ignoreDeprecations": "6.0"
+    }
   },
   "include": [
     "src"

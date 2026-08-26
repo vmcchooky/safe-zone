@@ -13,9 +13,10 @@ dependencies = [
     "scikit-learn==1.6.1",
     "numpy==2.2.2",
     "pandas==2.2.3",
-    "scipy==1.15.1",
+    "scipy==1.16.3",
     "pyarrow==19.0.0",
     "lightgbm==4.5.0",
+    "httpx==0.28.1",
     "pytest==8.3.4",
 ]
 
@@ -30,4 +31,3 @@ python_files = ["test_*.py"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

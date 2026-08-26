@@ -1,9 +1,14 @@
 import hashlib
 import json
 
-from ml.src.replay_labels import OPTIONAL_COLUMNS, REQUIRED_COLUMNS, validate_rows
-from ml.src.regenerate_labels import QUEUE_COLUMNS, normalize_rows, write_queue
-from ml.src.report_fp import calculate_metrics, main as report_main
+try:
+    from replay_labels import OPTIONAL_COLUMNS, REQUIRED_COLUMNS, validate_rows  # noqa: E402
+    from regenerate_labels import QUEUE_COLUMNS, normalize_rows, write_queue  # noqa: E402
+    from report_fp import calculate_metrics, main as report_main  # noqa: E402
+except ModuleNotFoundError:
+    from ml.src.replay_labels import OPTIONAL_COLUMNS, REQUIRED_COLUMNS, validate_rows  # type: ignore  # noqa: E402
+    from ml.src.regenerate_labels import QUEUE_COLUMNS, normalize_rows, write_queue  # type: ignore  # noqa: E402
+    from ml.src.report_fp import calculate_metrics, main as report_main  # type: ignore  # noqa: E402
 
 
 def _case(case_id, label="", would_block="false", **overrides):

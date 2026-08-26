@@ -42,6 +42,8 @@ blob-report/
 *.py
 *.pyc
 __pycache__/
+*.egg-info/
+.pytest_cache/
 !scripts/build_domain_dataset.py
 !ml/src/replay_labels.py
 !ml/src/regenerate_labels.py

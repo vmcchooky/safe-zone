@@ -27,8 +27,12 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE_DIR / "ml"))
+sys.path.insert(0, str(BASE_DIR))
 
-from src.canary_override import compose_files, write  # noqa: E402
+try:
+    from canary_override import compose_files, write  # noqa: E402
+except ModuleNotFoundError:
+    from src.canary_override import compose_files, write  # type: ignore  # noqa: E402
 
 ENV_PATH = BASE_DIR / ".env"
 SCOPE_LOG = (

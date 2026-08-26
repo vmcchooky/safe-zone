@@ -19,8 +19,12 @@ from pathlib import Path
 
 BASE = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(BASE / "ml"))
+sys.path.insert(0, str(BASE))
 
-from src.canary_override import compose_files, write  # noqa: E402
+try:
+    from canary_override import compose_files, write  # noqa: E402
+except ModuleNotFoundError:
+    from src.canary_override import compose_files, write  # type: ignore  # noqa: E402
 
 PROJECT = "safe-zone-phase5-staging"
 CHECKER_OUTPUT = (
