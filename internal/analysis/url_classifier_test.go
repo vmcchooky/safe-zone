@@ -100,3 +100,26 @@ func TestURLBundleRejectsTamperedModel(t *testing.T) {
 		t.Fatal("expected tampered URL bundle to fail checksum verification")
 	}
 }
+
+func BenchmarkURLBundleClassifier(b *testing.B) {
+	bundleDir := filepath.Join("..", "..", "ml", "models", "url-v1")
+	classifier, err := NewURLBundleClassifier(bundleDir)
+	if err != nil {
+		b.Fatal(err)
+	}
+	context := URLContext{
+		RequestedURL: "https://example.test/account/verify?token=AbC123456&page=12",
+		ExpectedHost: "example.test",
+		RedirectChain: []string{
+			"https://example.test/continue",
+			"http://other.example/login",
+		},
+	}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		if _, err := classifier.ClassifyURL(context); err != nil {
+			b.Fatal(err)
+		}
+	}
+}

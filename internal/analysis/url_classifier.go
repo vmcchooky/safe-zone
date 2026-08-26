@@ -17,7 +17,6 @@ import (
 	"sort"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 )
 
 const urlFeatureCount = 18
@@ -106,6 +105,11 @@ type parsedURLContext struct {
 	path       string
 	rawQuery   string
 	queryPairs [][2]string
+}
+
+type sparseURLValue struct {
+	index int
+	value float64
 }
 
 func NewURLBundleClassifier(bundleDir string) (*URLBundleClassifier, error) {
@@ -276,8 +280,8 @@ func (c *URLBundleClassifier) ClassifyURL(context URLContext) (MLDecision, error
 		scaled := (value - c.bundle.Scaler.Mean[index]) / c.bundle.Scaler.Scale[index]
 		margin += scaled * c.bundle.Linear.Coefficients[index]
 	}
-	for index, value := range c.tfidf(text) {
-		margin += value * c.bundle.Linear.Coefficients[urlFeatureCount+index]
+	for _, item := range c.tfidf(text) {
+		margin += item.value * c.bundle.Linear.Coefficients[urlFeatureCount+item.index]
 	}
 	if math.IsNaN(margin) || math.IsInf(margin, 0) {
 		return decision, errors.New("URL model margin is not finite")
@@ -551,7 +555,7 @@ func hasURLSuffix(value string, suffixes []string) bool {
 	return false
 }
 
-func (c *URLBundleClassifier) tfidf(text string) []float64 {
+func (c *URLBundleClassifier) tfidf(text string) []sparseURLValue {
 	if c.bundle.Vectorizer.Lowercase {
 		text = strings.ToLower(text)
 	}
@@ -566,28 +570,30 @@ func (c *URLBundleClassifier) tfidf(text string) []float64 {
 			}
 		}
 	}
-	result := make([]float64, len(c.bundle.Vectorizer.Vocabulary))
+	indexes := make([]int, 0, len(counts))
+	for index := range counts {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	result := make([]sparseURLValue, 0, len(indexes))
 	normSquared := 0.0
-	for index, count := range counts {
+	for _, index := range indexes {
+		count := counts[index]
 		tf := float64(count)
 		if c.bundle.Vectorizer.SublinearTF {
 			tf = 1 + math.Log(tf)
 		}
 		value := tf * c.bundle.Vectorizer.IDF[index]
-		result[index] = value
+		result = append(result, sparseURLValue{index: index, value: value})
 		normSquared += value * value
 	}
 	if normSquared > 0 {
 		norm := math.Sqrt(normSquared)
 		for index := range result {
-			result[index] /= norm
+			result[index].value /= norm
 		}
 	}
 	return result
-}
-
-func validUTF8(value string) bool {
-	return utf8.ValidString(value)
 }
 
 var _ URLClassifier = (*URLBundleClassifier)(nil)
