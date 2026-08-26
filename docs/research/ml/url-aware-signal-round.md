@@ -359,10 +359,110 @@ workflow, rồi refreeze operational baseline từ window external đó trước
 
 ---
 
+---
+
+## Vòng 5 — Release Convergence & Shadow Launch Candidate (2026-08-26)
+
+### Trạng thái mới: `RELEASE_CANDIDATE_SHADOW_READY`
+
+Toàn bộ Safe-Zone đạt trạng thái release candidate với URL ML giữ vai trò
+observer shadow thuần túy. Vòng 5 tách rời hoàn toàn hai gate: sản phẩm
+deterministic/domain đủ điều kiện phát hành, còn việc cân nhắc enforce URL ML
+chỉ tiến khi có external traffic evidence — hai trục này không còn chặn nhau.
+
+### Hai gate độc lập
+
+Định nghĩa chính thức nằm tại `docs/runbooks/release-gate.md` Section 8:
+
+- **Gate A — Product Release**: 11 tiêu chí phát hành cho engine
+  deterministic/domain (config/secret, TLS edge, health/startup, load,
+  rollback/backup, telemetry, docs, UI/API compat).
+- **Gate B — URL ML Promotion**: 10 tiêu chí riêng cho shadow → enforce
+  consideration; thất bại Gate B không bao giờ chặn Gate A.
+- **Safe release profile**: URL ML mặc định disabled/shadow theo môi trường,
+  không có đường cấu hình vô tình bật enforce (env loader + runtime cùng từ
+  chối), tắt URL ML chỉ cần restart `core-api` (DNS không tải bundle), và mọi
+  lỗi model/baseline/telemetry đều fail-open khỏi verdict chính. Không xây
+  hot-reload — đánh đổi được ghi nhận rõ.
+
+### Feedback persistence bền vững nhưng tối giản
+
+Thay buffer chỉ-in-memory của Vòng 4 bằng backend SQLite bounded tái dùng
+store sẵn có (`internal/store/url_feedback.go`,
+`internal/risk/url_feedback_durable.go`):
+
+- Opaque HMAC-SHA256(event_id) cắt 16 byte keyed bằng secret inject từ env
+  hoặc `*_FILE` (`SAFE_ZONE_URL_ML_FEEDBACK_SECRET_FILE`); không lưu URL,
+  query, hostname hay dữ liệu khôi phục được URL.
+- Key version có xoay một bước: `_KEY_VERSION=2` + secret mới, giữ
+  `_PREVIOUS_SECRET/_PREVIOUS_KEY_VERSION` để event cũ correlate được đến hết
+  TTL; không cấu hình previous → event trước xoay trả `unknown_event`.
+- TTL 168h mặc định (`_RETENTION_HOURS`, 1–8760) và cap 65.536 dòng
+  (`_MAX_ROWS`, 100–1M); prune lúc khởi động và mỗi ~10 phút.
+- Dedupe idempotent (UPSERT giữ nguyên trạng thái nhãn), anti-replay một
+  nhãn/event (`already_labeled`), payload bound 4KB, rate-limit tier riêng
+  (`SAFE_ZONE_RATELIMIT_FEEDBACK_RPM/BURST`, mặc định 30/10).
+- Fail closed cho riêng feedback: store nil/lỗi → HTTP 503
+  `persistence_error`, status `degraded=true`; analyze không đi qua đường
+  này. Không secret → memory mode cũ với nhãn rõ `persistence:"memory"`.
+- Migration tự động qua schema `CREATE TABLE IF NOT EXISTS`; restart test,
+  rotation test, privacy scan (DB file không chứa marker) trong
+  `internal/risk/url_feedback_durable_test.go`.
+
+### Caller URL-context thực tế
+
+- UI AnalysisPage (Vòng 4) được hoàn thiện thành vòng lặp khép kín: sau kết
+  quả phân tích có URL context, UI hiển thị prompt gán nhãn benign/malicious
+  và gửi đúng `event_id` đã dùng tới `/v1/url-ml/feedback`. Lỗi UX thật phát
+  hiện khi browser e2e — nút feedback hiện cả khi quan sát KHÔNG được chọn
+  mẫu (`unknown_event`) — đã sửa: prompt chỉ hiện khi `url_ml.sampled=true`.
+- Coverage telemetry bổ sung `missing_context_breakdown`
+  (`get_domain_only|post_not_provided|unspecified`) giải thích lý do thiếu
+  context theo cấu trúc request.
+- Phân biệt traffic: mọi tool evidence bắt buộc khai báo
+  `traffic_kind=external|synthetic`; window external bị cấm `--drive-count`.
+
+### External pilot kit + bounded staging pilot
+
+Tool mới `ml/src/run_external_pilot.py`: xác minh runtime shadow-ready trước
+khi quan sát, thu window snapshot-delta, chấm gate B khả dụng (prediction
+error 0; invalid-rate <5% sau ≥100 attempts; p95 <2.000 µs; volume ≥ ngưỡng;
+shadow unchanged) và CHỈ nâng seeded scope khi toàn bộ gate PASS trên window
+external. Các guardrail trung thực: synthetic không bao giờ authorize nâng
+scope; window nhỏ trả "inconclusive" thay vì PASS.
+
+Pilot compose staging (seed `url-canary-v5-r5-20260826`, shadow tuyệt đối):
+
+| Window | Driven | Evaluated | Prediction errors | Invalid rate | Gate verdict |
+|---|---:|---:|---:|---:|---|
+| 1% | 1.200 | 12 | 0 | 0.0000 | cơ chế OK; volume FAIL (đúng thiết kế) |
+| 5% | 1.000 | 49 | 0 | 0.0000 | volume FAIL + rate inconclusive (<100 attempts) |
+| 10% | 800 | 73 | 0 | 0.0000 | volume FAIL (đúng thiết kế) |
+
+Feedback E2E trên deployment thật: record 137 events, nhãn 3 events
+(anti-replay PASS), nhãn sống qua nhiều lần restart container
+(`labelled_events=3` sau recreate). Failure injection 4/4 PASS; rollback drill
+5/5 PASS rồi khôi phục shadow 10%.
+
+**Baseline Vòng 4 (`29b8bb72…`, 34 mẫu) được ghi rõ là STAGING operational
+baseline từ synthetic-driven canary traffic — không phải production baseline.**
+Không freeze external operational baseline nào ở Vòng 5 vì chưa đủ mẫu/thời
+gian quan sát external có ý nghĩa; freeze chỉ hợp lệ qua
+`freeze_url_canary_baseline.py` với provenance sample count + confidence.
+
+### Kết luận hai gate
+
+- **Gate A Product Release: READY** (với `[!]` môi trường: load test và port/
+  firewall check cần chạy trên VPS class thật — blocker vận hành, không phải
+  code).
+- **Gate B URL ML Promotion: SHADOW_OBSERVER_ONLY** — thiếu external volume
+  là blocker duy nhất, không ảnh hưởng Gate A.
+
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-26 | Vòng 5: hai gate độc lập (release-gate §8); feedback durable SQLite bounded (HMAC keyed, key-version rotation, TTL+cap, dedupe+anti-replay, fail-closed); missing-context breakdown; UI feedback loop fix theo url_ml.sampled; external pilot kit `run_external_pilot.py` chống trộn synthetic/external; pilot 1→5→10% seeded với gate từ chối volume thiếu; baseline Vòng 4 được dán nhãn staging; kết luận `RELEASE_CANDIDATE_SHADOW_READY` | ox-alpha (Claude) |
 | 2026-08-26 | Vòng 4: canary 1%→5%→10% seeded có policy revision audit trail, UI caller URL-context, snapshot-delta collector, operational baseline thật (fail-open), feedback HMAC privacy-safe, failure injection trên runtime thật; kết luận `HOLD_WITH_SPECIFIC_BLOCKER` (thiếu external volume) | ox-alpha (Claude) |
 | 2026-08-26 | Hoàn tất Vòng 3 Compose staging deployment: `679/679` replay, p95 inference `250 µs`, rollback drill `5/5` PASS, đóng băng operational baseline `v10-url-shadow-operational-baseline.json`, đề xuất canary gate | Gemini 3.7 |
 | 2026-08-26 | Hoàn tất Vòng 2 local full-shadow: `679/679` replay, `0` valid error/parity mismatch/privacy leak, URL inference p95 `500 µs`, rollback `5/5` PASS | Codex (GPT-5) |

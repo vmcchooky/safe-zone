@@ -220,6 +220,18 @@ Round-4 adds the operational tooling for the V10 URL shadow canary
 - `canary_failure_injection.py` — missing/corrupt baseline fail-open,
   malformed-context rejection (cohort-aware probe domains), restart with
   valid baseline.
+- `run_external_pilot.py` (Round 5) — gated external pilot windows: verifies
+  shadow-only runtime, records snapshot-delta evidence, evaluates the
+  observable promotion gates and only then advances the seeded scope;
+  refuses `--drive-count` with `--traffic-kind external` so generated
+  requests can never be counted as external evidence.
+
+Durable label feedback (Round 5): when
+`SAFE_ZONE_URL_ML_FEEDBACK_SECRET` (env or `_FILE`) is injected,
+fingerprints become stable HMACs keyed by version and labels persist in the
+bounded `url_ml_feedback` SQLite table (TTL + row cap + dedupe + one-label
+anti-replay). Persistence failures fail closed for feedback alone (HTTP 503)
+and never touch analysis.
 
 Privacy invariants: no raw URL/query/redirect target is ever persisted;
 label feedback (`POST /v1/url-ml/feedback`) correlates only HMAC

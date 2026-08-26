@@ -138,3 +138,38 @@ Server chỉ lưu HMAC fingerprint (salt per-process) + bucket xác suất + c�
 would-promote. Calibration/FPR chỉ tính trên event đã nhãn; không suy
 calibration từ traffic không nhãn.
 
+
+## Durable label feedback (Vòng 5)
+
+Feedback không còn chỉ-in-memory. Khi `SAFE_ZONE_URL_ML_FEEDBACK_SECRET` được
+inject (env hoặc `*_FILE` dưới secret root), fingerprint HMAC trở nên ổn định
+giữa các restart và nhãn được lưu vào bảng bounded `url_ml_feedback` trong
+SQLite sẵn có:
+
+- Chỉ lưu: HMAC-SHA256(event_id) cắt 16 byte (hex), key version, bucket xác
+  suất (0–9), cờ would-promote, cờ nhãn. Không URL, query, hostname hay dữ
+  liệu khôi phục được URL.
+- TTL mặc định 168 giờ (`..._RETENTION_HOURS`), trần 65.536 dòng
+  (`..._MAX_ROWS`); prune chạy lúc khởi động và mỗi ~10 phút.
+- Dedupe: cùng event_id ghi đè bản ghi cũ (không nhân đôi). Anti-replay:
+  một event chỉ nhận đúng một nhãn; nhãn lại trả `already_labeled`.
+- Xoay key có version: đặt `..._KEY_VERSION=2` + secret mới; giữ
+  `..._PREVIOUS_SECRET` + `..._PREVIOUS_KEY_VERSION=1` trong thời gian chuyển
+  tiếp để event cũ vẫn correlate được, rồi tháo biến khi hết TTL.
+- Fail closed cho riêng feedback: thiếu store/secret lỗi runtime → nhãn bị
+  từ chối HTTP 503 (`reason=persistence_error`) và status báo
+  `degraded=true,persistence_errors>0`; analyze không bao giờ đi qua đường
+  này. Không có secret → buffer in-memory cũ (ephemeral, ghi rõ trong
+  `persistence:"memory"`).
+- Rate limit riêng `/v1/url-ml/feedback` qua
+  `SAFE_ZONE_RATELIMIT_FEEDBACK_RPM/BURST`; payload giới hạn 4 KB.
+
+Kiểm chứng: restart test, rotation test, privacy scan (DB file không chứa
+marker) nằm trong `internal/risk/url_feedback_durable_test.go`.
+
+## Promotion gate
+
+URL ML promotion (shadow → cân nhắc enforce) tuân theo Gate B trong
+`docs/runbooks/release-gate.md#8-two-independent-release-gates-round-5`.
+Gate này độc lập với Product Release Gate; chưa đạt Gate B không chặn phát
+hành sản phẩm.

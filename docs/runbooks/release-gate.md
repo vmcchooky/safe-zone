@@ -187,3 +187,74 @@ Always record:
 - any exception or deviation from the pre-release checklist
 
 If any production verification step fails, use `docs/runbooks/release-rollback.md`.
+
+## 8. Two independent release gates (Round 5)
+
+Safe Zone separates product readiness from URL ML readiness. The URL ML
+specialist is an observer-only shadow route; its promotion status can never
+block or gate the deterministic/domain product release, and conversely a
+product release never implies URL ML enforce approval.
+
+### Gate A — Product Release Gate (deterministic/domain engine)
+
+Evaluates whether Safe-Zone core is releasable. URL ML state is irrelevant to
+this gate except for the safety profile checks below.
+
+| # | Criterion | Evidence source |
+|---|---|---|
+| A1 | Deterministic analysis path passes full `go test ./...`, race and vet on the release SHA | release preflight |
+| A2 | Production config fails startup on missing/weak admin secrets (`SAFE_ZONE_ENV=production`) | startup check |
+| A3 | TLS/reverse proxy: only Caddy public; internal ports loopback-only | `check-production-ports.sh` |
+| A4 | Health/readiness endpoints and Compose startup ordering verified after restart | `/healthz`, `/readyz` |
+| A5 | Image tags pinned / build provenance recorded; rollback target known | preflight metadata |
+| A6 | Load test within thresholds on target VPS class (`performance-proof.sh`) | benchmark archive |
+| A7 | Restart, rollback, backup/restore drills pass; dependency failure (Redis down) degrades without verdict impact | drill records |
+| A8 | Minimal operational telemetry/alerts configured from existing JSON metrics | alert rules file |
+| A9 | Installation/upgrade/rollback/privacy docs current | runbooks index |
+| A10 | UI/API compatibility: dashboard works against the release API; degraded mode (no Redis/OSINT/AI) shows usable UX | manual QA checklist |
+| A11 | Safe URL ML profile holds (see below) even while URL ML stays shadow | `/v1/status → ml.url` |
+
+### Gate B — URL ML Promotion Gate (shadow → enforce consideration)
+
+Evaluates only whether the URL specialist may be *considered* for enforcement
+in a later, separately approved round. Failure of Gate B never blocks Gate A.
+
+| # | Criterion | Threshold |
+|---|---|---|
+| B1 | Shadow parity: zero response parity mismatch over the observation window | 0 mismatches |
+| B2 | Raw-context leak (response, log, telemetry, reports) | 0 leaks |
+| B3 | Valid prediction errors during window | 0 errors |
+| B4 | Invalid-context rate | < 5% after ≥ 100 attempts |
+| B5 | URL inference latency p95 | < 2.000 µs |
+| B6 | External URL-context volume from real callers (`ui/sdk/extension`), not `.example`/replay probes | ≥ 1.000 evaluated or a representative external window with stated sample count and confidence |
+| B7 | Reviewed benign would-promotions on external traffic | 0 confirmed false promotions |
+| B8 | External operational baseline frozen from that window (sample count + observation time stated); staging baseline explicitly non-production | artifact with provenance |
+| B9 | Rollback/disable drill passes on the deployed runtime | all gates PASS |
+| B10 | Product owner approval for any scope/enforce change | recorded approval |
+
+### Safe release profile (URL ML)
+
+A release satisfies the safe profile when ALL of these hold regardless of
+Gate B progress:
+
+- `SAFE_ZONE_URL_ML_MODE` defaults to `disabled`; only `disabled`/`shadow`
+  parse — `enforce` is rejected at startup by both env loader and runtime.
+- No configuration surface (compose defaults, examples, overrides) enables
+  enforce implicitly.
+- Disabling URL ML requires only a `core-api` restart (DNS never loads the
+  bundle). No hot-reload machinery is required or provided.
+- Model bundle load failure, operational-baseline load failure and telemetry
+  failures are fail-open: they degrade monitoring only and never alter a
+  verdict.
+- Feedback persistence failures fail closed for feedback alone (HTTP 503)
+  while analysis continues unaffected.
+
+Record the outcome of each gate separately in the release manifest:
+
+```text
+Gate A (Product Release):    READY | HOLD_WITH_SPECIFIC_BLOCKER | NO_GO
+Gate B (URL ML Promotion):   SHADOW_OBSERVER_ONLY | PROMOTION_REVIEW_READY | ENFORCE_APPROVED
+```
+
+The overall round status is derived from Gate A; Gate B is reported as its own
+line so shadow evidence work is visible without being able to block release.
