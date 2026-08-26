@@ -1,0 +1,43 @@
+{
+  "distribution_histograms": {
+    "probability_histogram": {
+      "0_10_0_19": 0,
+      "0_20_0_29": 0,
+      "0_30_0_39": 0,
+      "0_40_0_49": 0,
+      "0_50_0_59": 0,
+      "0_60_0_69": 0,
+      "0_70_0_79": 0,
+      "0_80_0_89": 0,
+      "gte_0_90": 34,
+      "lt_0_10": 0
+    }
+  },
+  "kind": "url_ml_operational_baseline",
+  "minimum_live_samples": 100,
+  "model_version": "safe-zone-url-sgd-v10-20260825",
+  "observation_window": {
+    "excluded": 566,
+    "sample_count": 34,
+    "seeded_scope_percent": 5,
+    "selector_algorithm": "sha256-domain-v1",
+    "selector_revision": "dbba521c296de0fe329cec0abbcbf0c45415c2601b2f78f14d125302c0a04192",
+    "window_seconds": 20
+  },
+  "policy_revision": "16c0295dc7d27a6625d1b2aad6c38ee617ed872f25ebb70c2188797f0d003cb3",
+  "provenance": {
+    "aggregate_only": true,
+    "collector": "freeze_url_canary_baseline.py",
+    "note": "frozen from live shadow canary telemetry on the compose staging runtime; supersedes the offline balanced proxy as the drift reference once loaded",
+    "raw_url_persisted": false,
+    "source_runtime": "http://127.0.0.1:8080"
+  },
+  "psi_thresholds": {
+    "alert": 0.25,
+    "watch": 0.1
+  },
+  "recorded_at": "2026-08-26T06:38:00.231660+00:00",
+  "revision": "e4bbd50733833df2e68660a05720c11c529969cff9931e9a744ed8e211649758",
+  "schema_version": 1,
+  "traffic_scope": "compose-staging seeded canary 5pct; synthetic-driven sdk probes (no frozen-cohort domains); external UI traffic integrated but not yet volume-bearing"
+}

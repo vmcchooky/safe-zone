@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_canary_window_evidence",
+  "recorded_at": "2026-08-26T06:36:32.573723+00:00",
+  "traffic_kind": "synthetic",
+  "window": {
+    "started_at": "2026-08-26T06:36:10.329270+00:00",
+    "ended_at": "2026-08-26T06:36:30.340979+00:00",
+    "duration_seconds": 22.244,
+    "workers": 12,
+    "concurrency": 6
+  },
+  "scope_observed": {
+    "percent": 5,
+    "selector_revision": "dbba521c296de0fe329cec0abbcbf0c45415c2601b2f78f14d125302c0a04192",
+    "policy_revision": "16c0295dc7d27a6625d1b2aad6c38ee617ed872f25ebb70c2188797f0d003cb3",
+    "mode": "shadow",
+    "state": "ready"
+  },
+  "deltas": {
+    "selected": 34,
+    "excluded": 566,
+    "prediction_attempts": 34,
+    "evaluated": 34,
+    "invalid_url_context": 0,
+    "prediction_errors": 0,
+    "would_promote": 34,
+    "would_pass": 0,
+    "analyze_requests_total": 600,
+    "url_context_requests_total": 600
+  },
+  "rates": {
+    "invalid_context_exact": 0.0,
+    "invalid_context_rounded": 0.0,
+    "would_promote_exact": 1.0,
+    "context_coverage_exact": 1,
+    "rounding_rule": "round-half-up at 4 decimals; exact value always included"
+  },
+  "histogram_deltas": {
+    "probability": {
+      "gte_0_90": 34
+    },
+    "latency_us": {
+      "le_100us": 7,
+      "le_250us": 25,
+      "le_500us": 2
+    },
+    "input": {
+      "query_present": 34,
+      "redirects_0": 34
+    },
+    "primary_verdict": {
+      "safe": 34
+    },
+    "would_promote_by_verdict": {
+      "safe": 34
+    }
+  },
+  "latency_p95_us": 500,
+  "coverage_caller_breakdown": {
+    "extension": 0,
+    "other": 0,
+    "proxy": 0,
+    "sdk": 600,
+    "ui": 0,
+    "unspecified": 0
+  },
+  "feedback": {
+    "supported": true,
+    "recorded_events": 34,
+    "labelled_events": 0,
+    "confirmed_malicious": 0,
+    "reported_benign_false_positive": 0,
+    "would_promote_labelled": 0,
+    "capacity": 8192,
+    "note": "opaque HMAC fingerprints only; calibration from labelled events"
+  },
+  "operational_baseline": {
+    "loaded": false,
+    "operational_reference": false
+  },
+  "drift": {
+    "state": "insufficient_data",
+    "psi": 0,
+    "live_samples": 34,
+    "minimum_live_samples": 100,
+    "reference_kind": "balanced_group_disjoint_development_proxy",
+    "reference_rows": 2000,
+    "operational_reference": false,
+    "watch_threshold": 0.1,
+    "alert_threshold": 0.25,
+    "interpretation": "population shift only; calibration requires labels"
+  },
+  "container_resources": {
+    "before": {
+      "cpu_percent": 0.0,
+      "mem_usage": "25.99MiB / 7.668GiB"
+    },
+    "after": {
+      "cpu_percent": 0.14,
+      "mem_usage": "33.38MiB / 7.668GiB"
+    }
+  },
+  "driven_traffic": {
+    "requests_sent": 600,
+    "evaluated": 34,
+    "errors": 0,
+    "would_promote": 34,
+    "latency_ms": {
+      "p50": 14.558,
+      "p95": 30.029,
+      "p99": 34.224,
+      "mean": 16.33
+    },
+    "sample_event_ids": [
+      "f3ddbdb5e3b54985951803d811686d09",
+      "2aba528c7e514be28dd2f0d51b3145fb",
+      "2af3f4ded1554461a05afc6e2d6e8fcf",
+      "2140d9e275fb4422bd3fcf002bcb775a",
+      "51c451caacaf476cb1c8a6a792e98734",
+      "8428079d93204612a64c917a96c209ae",
+      "248bedc9b8304570b48d52b4660ae5d6",
+      "1c49c8dd8bb14fd087e213b7cca97e20",
+      "a802103f38ce428e8f1868f1d415cdc2",
+      "f10264ecec564b34b75fd34318d56425",
+      "393285748dee4c5b9b51fc0c27af184f",
+      "aba919f57a1e4048aa8bf84bc0e5ece2",
+      "270f55fc0a544328bc189410776ed294",
+      "5c4baa60917842108c7d70776c2741da",
+      "93de09fb62264e56afa224d7bdf33699",
+      "080c1e363fa348588c7fa42d80eaa45e",
+      "d22b53e987814a1081dc0b702b0a44fb",
+      "2eebbc1a23d0412da622b2362faa8424",
+      "594b851cc99f4d5b87e419cf7172f57f",
+      "1ceeef9c500646fcb8f3bad49c2a9fe9"
+    ]
+  },
+  "aggregate_only": true
+}

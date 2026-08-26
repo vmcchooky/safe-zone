@@ -1,0 +1,151 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_canary_window_evidence",
+  "recorded_at": "2026-08-26T06:45:25.286963+00:00",
+  "traffic_kind": "synthetic",
+  "window": {
+    "started_at": "2026-08-26T06:44:39.017783+00:00",
+    "ended_at": "2026-08-26T06:45:24.044301+00:00",
+    "duration_seconds": 46.271,
+    "workers": 12,
+    "concurrency": 8
+  },
+  "scope_observed": {
+    "percent": 10,
+    "selector_revision": "b586aefd72fd3e992019a2b155285b0b9d2a021b76b6ed2e00c962785cb5e083",
+    "policy_revision": "a4bb81a9f03b91e5b337c9e0cfaf31908c8ac66a37d610e9e40619d3e261ef4b",
+    "mode": "shadow",
+    "state": "ready"
+  },
+  "deltas": {
+    "selected": 84,
+    "excluded": 716,
+    "prediction_attempts": 84,
+    "evaluated": 84,
+    "invalid_url_context": 0,
+    "prediction_errors": 0,
+    "would_promote": 84,
+    "would_pass": 0,
+    "analyze_requests_total": 800,
+    "url_context_requests_total": 800
+  },
+  "rates": {
+    "invalid_context_exact": 0.0,
+    "invalid_context_rounded": 0.0,
+    "would_promote_exact": 1.0,
+    "context_coverage_exact": 1,
+    "rounding_rule": "round-half-up at 4 decimals; exact value always included"
+  },
+  "histogram_deltas": {
+    "probability": {
+      "gte_0_90": 84
+    },
+    "latency_us": {
+      "le_100us": 31,
+      "le_250us": 47,
+      "le_500us": 5,
+      "le_1000us": 1
+    },
+    "input": {
+      "query_present": 84,
+      "redirects_0": 84
+    },
+    "primary_verdict": {
+      "safe": 84
+    },
+    "would_promote_by_verdict": {
+      "safe": 84
+    }
+  },
+  "latency_p95_us": 500,
+  "coverage_caller_breakdown": {
+    "extension": 0,
+    "other": 0,
+    "proxy": 0,
+    "sdk": 800,
+    "ui": 0,
+    "unspecified": 0
+  },
+  "feedback": {
+    "supported": true,
+    "recorded_events": 84,
+    "labelled_events": 0,
+    "confirmed_malicious": 0,
+    "reported_benign_false_positive": 0,
+    "would_promote_labelled": 0,
+    "capacity": 8192,
+    "note": "opaque HMAC fingerprints only; calibration from labelled events"
+  },
+  "operational_baseline": {
+    "loaded": true,
+    "path": "/app/models/safe-zone/url-baseline/operational-baseline.json",
+    "sha256": "29b8bb723cc6f9e0cac0aac81c264efb4462f7eee358d7e47b70d512992445f1",
+    "model_version": "safe-zone-url-sgd-v10-20260825",
+    "revision": "e4bbd50733833df2e68660a05720c11c529969cff9931e9a744ed8e211649758",
+    "reference_kind": "frozen_operational_shadow_traffic",
+    "reference_rows": 34,
+    "traffic_scope": "compose-staging seeded canary 5pct; synthetic-driven sdk probes (no frozen-cohort domains); external UI traffic integrated but not yet volume-bearing",
+    "operational_reference": true,
+    "minimum_live_samples": 100,
+    "watch_threshold": 0.1,
+    "alert_threshold": 0.25,
+    "recorded_at": "2026-08-26T06:38:00.231660+00:00"
+  },
+  "drift": {
+    "state": "insufficient_data",
+    "psi": 0,
+    "live_samples": 84,
+    "minimum_live_samples": 100,
+    "reference_kind": "frozen_operational_shadow_traffic",
+    "reference_rows": 34,
+    "operational_reference": true,
+    "watch_threshold": 0.1,
+    "alert_threshold": 0.25,
+    "interpretation": "population shift only; calibration requires labels"
+  },
+  "container_resources": {
+    "before": {
+      "cpu_percent": 0.11,
+      "mem_usage": "24.49MiB / 7.668GiB"
+    },
+    "after": {
+      "cpu_percent": 5.11,
+      "mem_usage": "34.73MiB / 7.668GiB"
+    }
+  },
+  "driven_traffic": {
+    "requests_sent": 800,
+    "evaluated": 84,
+    "errors": 0,
+    "would_promote": 84,
+    "latency_ms": {
+      "p50": 21.328,
+      "p95": 44.537,
+      "p99": 70.457,
+      "mean": 24.685
+    },
+    "sample_event_ids": [
+      "45b1aeff244e4f2ea1e0f172b9af881c",
+      "d03e9f651a4e44dfbca9e5ed34229e54",
+      "8e292e77ac6846ac8da17b33aef22341",
+      "9b8287fb340e450f9cb48d05ffeea37a",
+      "e880fcbd9d264784a1003e46b6026a6d",
+      "d91c7104294046e89aa58ad9bf8a63c6",
+      "ff8c2135a4d042d18090e595e55bf01c",
+      "6771d5ba2c814ce3b7d48182eb42ba26",
+      "41cc9c676c6741dfa78c8971d0a0e3b9",
+      "a99b5c4e99c949359d9d37db04a1ccb9",
+      "db08fda09a0e4411918ed7cd35d2f54d",
+      "79dc6b54780f42029ce2b058a6d7f95e",
+      "3f4a25a57cdc4b3483ba9f82cfa878b5",
+      "c155722180a04b83b4a65b05d1cf5342",
+      "c327b373f5454ebc91f69a1a56393cfc",
+      "8c9ded312f6f40f28b610c95706aa137",
+      "0181f99c5c144ce8b5da563afa131b4a",
+      "bdc23695fad74ac6b906fa723cbc26d9",
+      "2725890a49c9457ba7c9a2c1dfcd8e1a",
+      "898c78ae8b2d495198a88d4ab283d7a9"
+    ]
+  },
+  "aggregate_only": true
+}

@@ -47,6 +47,12 @@ __pycache__/
 !ml/src/regenerate_labels.py
 !ml/src/validate_labels.py
 !ml/src/report_fp.py
+!ml/src/canary_scope.py
+!ml/src/canary_override.py
+!ml/src/canary_snapshot_delta.py
+!ml/src/canary_failure_injection.py
+!ml/src/canary_rollback_drill.py
+!ml/src/freeze_url_canary_baseline.py
 !ml/tests/test_replay_tools.py
 *.bak
 .idea/
