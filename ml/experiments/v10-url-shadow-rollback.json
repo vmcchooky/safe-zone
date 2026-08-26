@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_shadow_rollback_drill",
+  "runtime": {
+    "base_url": "http://127.0.0.1:18082",
+    "mode": "disabled",
+    "enabled": false,
+    "state": "disabled"
+  },
+  "gates": {
+    "mode_disabled": true,
+    "classifier_disabled": true,
+    "url_not_evaluated": true,
+    "domain_response_parity": true,
+    "raw_context_leaks_zero": true
+  },
+  "passed": true,
+  "raw_url_persisted": false
+}

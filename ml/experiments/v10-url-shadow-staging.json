@@ -1,0 +1,172 @@
+{
+  "schema_version": 1,
+  "kind": "url_ml_shadow_staging_replay",
+  "protocol_sha256": "3f561627530f8aaa6f717be166329345c35cd037be347df4b0ca7db1d584a6ef",
+  "snapshot_manifest_sha256": "1a454d072eb88810e97a4c9c2b440cbef5c4fcb03cbbe6ec7c5852919ca39c2d",
+  "input": {
+    "rows": 679,
+    "labels": {
+      "0": 500,
+      "1": 179
+    },
+    "sha256": "024af962e2b1ab127071ca17fb5ac1ff391c72e679deed151adfd9dcf4150a48",
+    "raw_url_persisted": false
+  },
+  "runtime": {
+    "base_url": "http://127.0.0.1:18082",
+    "mode": "shadow",
+    "enabled": true,
+    "model_version": "safe-zone-url-sgd-v10-20260825",
+    "revision": "e4bbd50733833df2e68660a05720c11c529969cff9931e9a744ed8e211649758",
+    "sampling": {
+      "percent": 100,
+      "algorithm": "sha256-domain-v1",
+      "selector_revision": "6bafda78591f3d7bb1bb26affe34d2cedc501e30a316a0f0bc153656e18a27fa",
+      "selected": 683,
+      "excluded": 0
+    },
+    "drift": {
+      "state": "proxy_shift",
+      "psi": 0.4082635052093304,
+      "live_samples": 679,
+      "minimum_live_samples": 100,
+      "reference_kind": "balanced_group_disjoint_development_proxy",
+      "reference_rows": 2000,
+      "operational_reference": false,
+      "watch_threshold": 0.1,
+      "alert_threshold": 0.25,
+      "interpretation": "diagnostic shift against a balanced offline proxy; non-blocking until a representative live baseline is frozen"
+    }
+  },
+  "results": {
+    "completed": 679,
+    "request_failures": 0,
+    "sampled": 679,
+    "evaluated": 679,
+    "prediction_errors": 0,
+    "response_parity_mismatches": 0,
+    "privacy_leaks": 0,
+    "would_promote": {
+      "benign": 0,
+      "malicious": 76
+    },
+    "would_promote_when_runtime_verdict_not_malicious": {
+      "benign": 0,
+      "malicious": 73
+    },
+    "calibration": {
+      "rows": 679,
+      "brier_score": 0.125928,
+      "ece_10": 0.011386,
+      "mean_probability": 0.275009,
+      "positive_rate": 0.263623,
+      "note": "labelled staging replay diagnostic; not live-traffic calibration"
+    },
+    "client_latency_ms": {
+      "mean": 7.547,
+      "p50": 6.816,
+      "p95": 11.067,
+      "p99": 16.371,
+      "max": 62.529
+    },
+    "invalid_context": {
+      "cases": 4,
+      "unexpectedly_accepted": 0,
+      "fail_open": 4
+    }
+  },
+  "runtime_telemetry": {
+    "mode": "shadow",
+    "enabled": true,
+    "state": "ready",
+    "model_version": "safe-zone-url-sgd-v10-20260825",
+    "revision": "e4bbd50733833df2e68660a05720c11c529969cff9931e9a744ed8e211649758",
+    "policy_revision": "5accbc290fe55f00c530e8bc0800e2725a6546827622ae2d3f2e5456ffc70005",
+    "url_threshold": 0.18363410163105026,
+    "context_requests": 683,
+    "prediction_attempts": 683,
+    "would_promote": 76,
+    "would_pass": 603,
+    "errors": 4,
+    "skips": 0,
+    "latency_p95_us": 500,
+    "latency_count": 683,
+    "latency_average_us": 40,
+    "latency_histogram_us": {
+      "gt_50000us": 0,
+      "le_10000us": 0,
+      "le_1000us": 25,
+      "le_100us": 645,
+      "le_2000us": 9,
+      "le_250us": 0,
+      "le_50000us": 0,
+      "le_5000us": 0,
+      "le_500us": 4
+    },
+    "probability_histogram": {
+      "0_10_0_19": 603,
+      "0_20_0_29": 0,
+      "0_30_0_39": 0,
+      "0_40_0_49": 0,
+      "0_50_0_59": 0,
+      "0_60_0_69": 0,
+      "0_70_0_79": 0,
+      "0_80_0_89": 0,
+      "gte_0_90": 76,
+      "lt_0_10": 0
+    },
+    "error_histogram": {
+      "invalid_url_context": 4,
+      "prediction_error": 0
+    },
+    "input_histogram": {
+      "query_absent": 660,
+      "query_present": 23,
+      "redirects_0": 683,
+      "redirects_1": 0,
+      "redirects_2_to_5": 0
+    },
+    "primary_verdict_histogram": {
+      "malicious": 3,
+      "safe": 627,
+      "suspicious": 53
+    },
+    "would_promote_by_primary_verdict": {
+      "malicious": 3,
+      "safe": 57,
+      "suspicious": 16
+    },
+    "sampling": {
+      "percent": 100,
+      "algorithm": "sha256-domain-v1",
+      "selector_revision": "6bafda78591f3d7bb1bb26affe34d2cedc501e30a316a0f0bc153656e18a27fa",
+      "selected": 683,
+      "excluded": 0
+    },
+    "drift": {
+      "state": "proxy_shift",
+      "psi": 0.4082635052093304,
+      "live_samples": 679,
+      "minimum_live_samples": 100,
+      "reference_kind": "balanced_group_disjoint_development_proxy",
+      "reference_rows": 2000,
+      "operational_reference": false,
+      "watch_threshold": 0.1,
+      "alert_threshold": 0.25,
+      "interpretation": "diagnostic shift against a balanced offline proxy; non-blocking until a representative live baseline is frozen"
+    }
+  },
+  "gates": {
+    "all_requests_completed": true,
+    "all_selected_requests_evaluated": true,
+    "valid_prediction_errors_zero": true,
+    "domain_response_parity": true,
+    "raw_context_leaks_zero": true,
+    "benign_non_malicious_verdict_promotions_zero": true,
+    "malicious_non_malicious_verdict_promotions_positive": true,
+    "invalid_context_fail_open": true,
+    "enforce_unavailable": true
+  },
+  "duration_seconds": 1.029,
+  "passed": true
+}
