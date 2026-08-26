@@ -200,6 +200,32 @@ The current local evidence is:
 - Go race tests for analysis and risk: passed;
 - model bundle `SHA256SUMS`: all entries matched using canonical LF text hashing, so Windows CRLF and Linux LF checkouts produce the same bundle revision.
 
+## URL-aware canary tooling (Vòng 4)
+
+Round-4 adds the operational tooling for the V10 URL shadow canary
+(`ml/src/`):
+
+- `canary_scope.py` — seeded scope stepper (1% → 5% → 10%). Writes a literal
+  Compose override (`docker-compose.canary.yml`, via `canary_override.py`)
+  so shell env vars cannot defeat the intended scope; appends every change
+  with selector/policy revisions to `ml/experiments/v10-url-canary-scope-changes.json`.
+- `canary_snapshot_delta.py` — observation-window collector. All metrics are
+  start/end deltas of `/v1/status` (never cumulative); records workers,
+  concurrency, duration, request counts, exact + round-half-up rates,
+  histogram deltas and container CPU/RSS. Aggregate-only.
+- `freeze_url_canary_baseline.py` — freezes the live canary probability
+  histogram into an operational drift baseline artifact
+  (`ml/models/url-baseline/operational-baseline.json`); loaded by core-api
+  via `SAFE_ZONE_URL_ML_BASELINE_PATH`, strictly fail-open.
+- `canary_failure_injection.py` — missing/corrupt baseline fail-open,
+  malformed-context rejection (cohort-aware probe domains), restart with
+  valid baseline.
+
+Privacy invariants: no raw URL/query/redirect target is ever persisted;
+label feedback (`POST /v1/url-ml/feedback`) correlates only HMAC
+fingerprints of opaque caller event IDs; calibration/FPR numbers exist only
+over labelled events.
+
 ## Artifact layout
 
 ```text

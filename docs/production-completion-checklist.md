@@ -344,8 +344,9 @@ Phase 0–4 evidence from the current repository includes `go test ./...`, `go t
 - `[x]` Product owner approved the expanded shadow scope on 2026-08-26.
 - `[x]` Staging operational monitoring baseline frozen at `ml/experiments/v10-url-shadow-operational-baseline.json` with SHA-256; current PSI reference remains a balanced offline proxy (`proxy_shift`, non-blocking) until live external traffic baseline is captured.
 - `[!]` Record reviewed live benign promotions, coverage, invalid-context rate and target-host p95/p99 on external traffic cohort before any enforce design is considered.
+- `[x]` Vòng 4 (2026-08-26): seeded canary stepper `1% → 5% → 10%` với policy-revision audit trail (`v10-url-canary-scope-changes.json`, override `docker-compose.canary.yml` chống shell-env drift); UI caller gửi `requested_url` + opaque `event_id` + `caller_class=ui`; snapshot-delta collector sửa cả hai audit gap Vòng 3 (workers, exact+round-half-up rates); operational baseline thật từ canary traffic (`29b8bb72…`, fail-open loader, `operational_reference=true` verified); feedback HMAC privacy-safe; failure injection `4/4` PASS và rollback drill `5/5` PASS trên deployment thật.
 
-URL shadow staging artifacts are `ml/experiments/v10-url-shadow-staging.json`, `ml/experiments/v10-url-shadow-rollback.json`, and `ml/experiments/v10-url-shadow-operational-baseline.json`. The operational procedure is `docs/runbooks/url-ml-shadow-rollout.md`. This route is `BOUNDED_CANARY_OBSERVATION_READY` for external observation; it does not make the domain-only `22/34` representative result pass and does not authorize enforce.
+Round-4 canary artifacts are `ml/experiments/v10-url-canary-scope-changes.json`, `v10-url-canary-window-{1,5,10}pct.json`, `v10-url-canary-operational-baseline.json`, `v10-url-canary-failure-injection.json`, and `v10-url-canary-rollback-drill.json`. This route is now `HOLD_WITH_SPECIFIC_BLOCKER` (BLOCKER-1: external URL-context volume, 119 synthetic-driven evaluated so far vs gate >=1.000 or a representative external window); it does not make the domain-only `22/34` representative result pass and does not authorize enforce.
 
 ### AI/ML release evidence
 

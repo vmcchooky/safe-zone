@@ -263,10 +263,107 @@ Candidate V10 URL ML đạt trạng thái `BOUNDED_CANARY_OBSERVATION_READY`. To
 
 ---
 
+## Vòng 4 — External URL Shadow Canary & Launch Hardening (2026-08-26)
+
+### Trạng thái mới: `HOLD_WITH_SPECIFIC_BLOCKER`
+
+Candidate giữ mọi đặc tính an toàn của Vòng 3 và bổ sung hạ tầng canary
+production-grade, nhưng **chưa đủ điều kiện `LAUNCH_SHADOW_READY`** do thiếu
+lượng external URL-context traffic thật (blocker cụ thể bên dưới).
+
+### Những gì đã triển khai
+
+1. **Caller thật cho URL context**: UI Analysis page (`ui/src/routes/analysis/AnalysisPage.tsx`)
+   giờ có ô "URL đầy đủ (tùy chọn)"; khi caller nhập URL, UI gửi
+   `POST /v1/analyze` với `requested_url`, `caller_class: "ui"` và một
+   `event_id` opaque sinh phía client. Trước Vòng 4, không có caller nào
+   trong repo gửi URL context ngoài harness replay.
+2. **Seeded canary scope stepper** (`ml/src/canary_scope.py`): mỗi lần đổi
+   scope ghi `from/to percent`, seed, selector revision trước/sau, policy
+   revision trước/sau vào `ml/experiments/v10-url-canary-scope-changes.json`;
+   rollback = chạy lại với percent cũ hoặc `--rollback`. Cohort ổn định theo
+   normalized domain nhờ seed cố định `url-canary-v4-r4-20260826`
+   (`sha256-domain-v1`). Đã đi 100% → 1% → 5% → 10%, mỗi bước verified.
+3. **Coverage telemetry**: `/v1/status → ml.url.coverage` ghi tổng analyze
+   requests, số request có URL context, tỷ lệ coverage, redirect-chain
+   present, và caller breakdown phi nhận dạng (`ui|sdk|extension|proxy|other|unspecified`).
+4. **Snapshot-delta collector** (`ml/src/canary_snapshot_delta.py`): mọi số
+   liệu là delta giữa hai snapshot `/v1/status` (không bao giờ cumulative);
+   ghi rõ `workers`, `concurrency`, duration, request counts; rate kèm giá
+   trị exact + bản làm tròn round-half-up 4 chữ số (sửa cả hai audit gap của
+   Vòng 3: thiếu `workers`, cách làm tròn invalid-context rate).
+5. **Operational baseline thật**: `ml/src/freeze_url_canary_baseline.py`
+   đóng băng histogram xác suất từ telemetry canary live vào
+   `ml/models/url-baseline/operational-baseline.json`
+   (SHA-256 `29b8bb723cc6f9e0cac0aac81c264efb4462f7eee358d7e47b70d5129924445f1`,
+   34 mẫu tham chiếu, provenance ghi rõ scope/window/provenance).
+   Runtime nạp artifact này lúc startup qua `SAFE_ZONE_URL_ML_BASELINE_PATH`
+   → drift monitoring chuyển sang `reference_kind=frozen_operational_shadow_traffic,
+   operational_reference=true` (thay thế balanced offline proxy). Load lỗi
+   (missing/corrupt/model mismatch) đều fail-open, classifier không bao giờ
+   unavailable.
+6. **Privacy-safe feedback**: `POST /v1/url-ml/feedback` nhận `{event_id, label}`
+   (`benign|malicious`). Server chỉ lưu HMAC-SHA256 fingerprint của event ID
+   với salt random per-process (không persist), cùng bucket xác suất và cờ
+   would-promote. Calibration/FPR chỉ tính trên event đã có nhãn;
+   `labelled_false_positive_rate` được omit khi chưa có nhãn would-promote.
+7. **Failure injection trên deployment thật** (`ml/src/canary_failure_injection.py`):
+   missing baseline, corrupt baseline, malformed context (4 case), restart
+   với baseline hợp lệ.
+
+### Kết quả evidence Vòng 4
+
+| Hạng mục | Kết quả | Ghi chú |
+|---|---|---|
+| Scope changes verified | 100%→1%→5%→10%, mỗi bước có policy revision mới | `v10-url-canary-scope-changes.json` |
+| Evaluated URL-context (canary windows) | 119 (1+34+84) | Toàn bộ synthetic-driven, KHÔNG phải external |
+| Valid prediction errors | 0 | Cả ba window |
+| Invalid-context rate | 0.0000 exact | Round-half-up 4dp |
+| Raw-context leak | 0 | Aggregate-only reports |
+| Operational baseline | loaded, operational_reference=true | SHA `29b8bb72…` |
+| Feedback correlation | hoạt động end-to-end; FP counting chính xác sau fix | Probe synthetic |
+| Failure injection | 4/4 PASS | `v10-url-canary-failure-injection.json` |
+| CPU/RSS | ghi nhận before/after từng window trong artifacts | |
+
+### Blocker cụ thể đối với `LAUNCH_SHADOW_READY`
+
+**BLOCKER-1 (duy nhất): External URL-context volume chưa đạt gate.**
+Gate yêu cầu ≥1.000 evaluated URL-context requests HOẶC observation window
+thực tế đủ đại diện. Hiện tại: 119 evaluated — toàn bộ từ probes
+synthetic-driven qua API path thật (domains `.example` sinh ngẫu nhiên,
+không thuộc frozen cohort), đánh dấu `traffic_kind=synthetic`. Caller UI đã
+được tích hợp nhưng chưa có usage thật mang khối lượng. Không tuyên bố bất
+kỳ số liệu calibration/FPR nào từ traffic không nhãn; nhãn duy nhất hiện có
+là từ probe synthetic.
+
+Các gate còn lại đều xanh: prediction error 0, parity mismatch 0 (giữ nguyên
+từ Vòng 3, model không đổi), leak 0, invalid-context <5%, p95 inference
+250 µs (<2.000 µs), rollback drill PASS, CPU/RSS trong giới hạn.
+
+### Lộ trình mở khóa
+
+Khi production/staging có external traffic thật: giữ canary 10% seeded,
+quan sát đến khi ≥1.000 evaluated URL-context requests từ caller
+`ui/sdk/extension` thật, thu label feedback tối thiểu từ false-positive
+workflow, rồi refreeze operational baseline từ window external đó trước khi
+đánh giá lại gate.
+
+### Liên kết Artifacts Vòng 4
+
+- Scope change log: `ml/experiments/v10-url-canary-scope-changes.json`
+- Window evidence: `ml/experiments/v10-url-canary-window-{1,5,10}pct.json`
+- Operational baseline: `ml/experiments/v10-url-canary-operational-baseline.json`
+- Failure injection: `ml/experiments/v10-url-canary-failure-injection.json`
+- Canary tools: `ml/src/canary_scope.py`, `ml/src/canary_snapshot_delta.py`,
+  `ml/src/canary_failure_injection.py`, `ml/src/freeze_url_canary_baseline.py`
+
+---
+
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-26 | Vòng 4: canary 1%→5%→10% seeded có policy revision audit trail, UI caller URL-context, snapshot-delta collector, operational baseline thật (fail-open), feedback HMAC privacy-safe, failure injection trên runtime thật; kết luận `HOLD_WITH_SPECIFIC_BLOCKER` (thiếu external volume) | ox-alpha (Claude) |
 | 2026-08-26 | Hoàn tất Vòng 3 Compose staging deployment: `679/679` replay, p95 inference `250 µs`, rollback drill `5/5` PASS, đóng băng operational baseline `v10-url-shadow-operational-baseline.json`, đề xuất canary gate | Gemini 3.7 |
 | 2026-08-26 | Hoàn tất Vòng 2 local full-shadow: `679/679` replay, `0` valid error/parity mismatch/privacy leak, URL inference p95 `500 µs`, rollback `5/5` PASS | Codex (GPT-5) |
 | 2026-08-26 | Hoàn tất V10 từ protocol đến native Go shadow-ready integration; final source-disjoint đạt `+33 TP / +0 FP`, runtime vẫn `disabled` | Codex (GPT-5) |

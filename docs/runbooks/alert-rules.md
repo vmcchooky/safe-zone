@@ -15,6 +15,8 @@ Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert ru
 - URL ML shadow degraded state
 - URL ML prediction/input errors and high inference latency
 - URL ML distribution drift after an operational baseline exists
+- URL ML context coverage drop (Vòng 4: gates canary conclusions)
+- URL ML operational baseline unavailable (fail-open, drift non-operational)
 
 ## Data sources
 

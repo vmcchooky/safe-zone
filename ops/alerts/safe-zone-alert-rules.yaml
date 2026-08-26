@@ -71,3 +71,14 @@ rules:
     severity: warning
     condition: core_api_metrics.json.ml.url.drift.operational_reference == true and core_api_metrics.json.ml.url.drift.state == "alert" for 30m
     action: hold canary progression and compare the live aggregate histogram with the frozen operational baseline
+
+  - id: url-ml-context-coverage-drop
+    severity: info
+    condition: core_api_status.json.ml.url.coverage.analyze_requests >= 100 and core_api_status.json.ml.url.coverage.context_coverage_rate < 0.01 for 60m
+    action: verify the UI/SDK URL-context integration is deployed and callers send requested_url; coverage gates canary conclusions
+
+  - id: url-ml-operational-baseline-unavailable
+    severity: warning
+    condition: core_api_status.json.ml.url.operational_baseline.loaded == false and core_api_status.json.ml.url.enabled == true for 30m
+    action: check SAFE_ZONE_URL_ML_BASELINE_PATH mount and artifact checksum; runtime stays fail-open but drift monitoring is non-operational until restored
+

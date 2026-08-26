@@ -70,3 +70,71 @@ python ml/src/check_v10_url_rollback.py --base-url http://127.0.0.1:8080
 ```
 
 The check requires `mode=disabled`, classifier disabled, URL not evaluated, domain response parity and zero raw-context leakage. No DNS restart is required because DNS never loads the URL bundle.
+
+## Canary scope stepping (Vòng 4)
+
+Scope thay đổi luôn qua tool để có audit trail và policy revision mới:
+
+```sh
+python ml/src/canary_scope.py --percent 1 --seed url-canary-v4-r4-20260826 --reason initial
+python ml/src/canary_scope.py --percent 5 --reason gates_green
+python ml/src/canary_scope.py --rollback            # về percent trước đó
+```
+
+Mỗi bước ghi `from/to percent`, selector revision và policy revision vào
+`ml/experiments/v10-url-canary-scope-changes.json`. Giữ nguyên seed giữa các
+bước để cohort ổn định theo normalized domain. Không đổi scope trực tiếp
+trong `.env` mà không đi qua tool (hoặc tự append entry tương đương).
+
+## Operational drift baseline
+
+Baseline operational thật được đóng băng từ telemetry canary live:
+
+```sh
+python ml/src/freeze_url_canary_baseline.py \
+  --traffic-scope "<mô tả trung thực về traffic scope>" \
+  --window-seconds 60 --min-samples 25
+```
+
+File ghi tại `ml/models/url-baseline/operational-baseline.json` (mount ro
+vào core-api) và bản evidence tại `ml/experiments/`. Set env:
+
+```env
+SAFE_ZONE_URL_ML_BASELINE_PATH=/app/models/safe-zone/url-baseline/operational-baseline.json
+```
+
+Sau khi restart `core-api`, kiểm tra `/v1/status → ml.url`:
+
+- `operational_baseline.loaded=true`, `sha256` khớp artifact;
+- `drift.operational_reference=true`,
+  `reference_kind=frozen_operational_shadow_traffic`.
+
+Lỗi load (missing/corrupt/model mismatch) đều fail-open: classifier vẫn
+ready, chỉ drift monitoring quay về reference phi-operational.
+
+## Evidence window (snapshot-delta)
+
+```sh
+python ml/src/canary_snapshot_delta.py --window-seconds 45 \
+  --workers 12 --concurrency 8 [--drive-count N] \
+  --traffic-kind external|synthetic \
+  --output ml/experiments/<ten-window>.json
+```
+
+Mọi số liệu là delta giữa hai snapshot `/v1/status`; report chỉ chứa
+aggregate, kèm `workers`, duration và rate exact + round-half-up 4dp.
+
+## Privacy-safe label feedback
+
+Caller gửi label mà server không cần giữ raw URL:
+
+```sh
+curl -fsS -X POST http://127.0.0.1:8080/v1/url-ml/feedback \
+  -H 'Content-Type: application/json' \
+  -d '{"event_id":"<opaque-id-tu-client>","label":"benign"}'
+```
+
+Server chỉ lưu HMAC fingerprint (salt per-process) + bucket xác suất + cờ
+would-promote. Calibration/FPR chỉ tính trên event đã nhãn; không suy
+calibration từ traffic không nhãn.
+
