@@ -104,6 +104,10 @@ type Options struct {
 	URLMLClassifier analysis.URLClassifier
 	URLMLMode       analysis.MLMode
 	URLMLShadow     URLMLShadowConfig
+	// URLOpsBaseline is an optional frozen operational monitoring reference
+	// (real shadow traffic, never the offline proxy). Nil means drift
+	// monitoring falls back to the bundle reference.
+	URLOpsBaseline *URLOperationalBaseline
 }
 
 type adblockSourceMeta struct {
@@ -164,6 +168,13 @@ type Service struct {
 	urlMLMode         analysis.MLMode
 	urlMLShadow       URLMLShadowConfig
 	urlMLTelemetry    urlMLTelemetry
+	// urlMLOpsBaseline is an optional frozen operational drift reference
+	// loaded from real shadow traffic. Load failures are fail-open.
+	urlMLOpsBaseline           *URLOperationalBaseline
+	urlMLOpsBaselineFailed     bool
+	urlMLOpsBaselineErrorClass string
+	// urlMLFeedback correlates opaque event fingerprints with caller labels.
+	urlMLFeedback *urlFeedbackStore
 
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
 	adblockEnabled    atomic.Bool
@@ -397,6 +408,8 @@ func NewService(options Options) *Service {
 		urlMLClassifier:  options.URLMLClassifier,
 		urlMLMode:        urlMLMode,
 		urlMLShadow:      urlMLShadow,
+		urlMLOpsBaseline: options.URLOpsBaseline,
+		urlMLFeedback:    newURLFeedbackStore(8192),
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -725,6 +738,7 @@ func (s *Service) Analyze(ctx context.Context, domain string, client ClientInfo)
 }
 
 func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client ClientInfo, options AnalyzeOptions) Analysis {
+	s.urlMLTelemetry.analyzeRequests.Add(1)
 	normalized, err := analysis.NormalizeDomain(domain)
 	var result analysis.Result
 	var cacheHit bool

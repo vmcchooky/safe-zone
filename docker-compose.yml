@@ -81,6 +81,8 @@ services:
       SAFE_ZONE_URL_ML_REQUIRED: ${SAFE_ZONE_URL_ML_REQUIRED:-false}
       SAFE_ZONE_URL_ML_SHADOW_PERCENT: ${SAFE_ZONE_URL_ML_SHADOW_PERCENT:-100}
       SAFE_ZONE_URL_ML_SHADOW_SEED: ${SAFE_ZONE_URL_ML_SHADOW_SEED:-}
+      SAFE_ZONE_URL_ML_BASELINE_PATH: ${SAFE_ZONE_URL_ML_BASELINE_PATH:-}
+
       SAFE_ZONE_DASHBOARD_RECENT_LIMIT: ${SAFE_ZONE_DASHBOARD_RECENT_LIMIT:-25}
       SAFE_ZONE_SQLITE_PATH: ${SAFE_ZONE_SQLITE_PATH:-/app/data/safe-zone.db}
       SAFE_ZONE_TELEMETRY_RETENTION_DAYS: ${SAFE_ZONE_TELEMETRY_RETENTION_DAYS:-30}
@@ -103,6 +105,7 @@ services:
       - ./ops/secrets:/app/ops/secrets:ro
       - ${SAFE_ZONE_ML_BUNDLE_HOST_DIR:-./deploy/model-bundle/current}:/app/models/safe-zone/current:ro
       - ./ml/models/url-v1:/app/models/safe-zone/url-v1:ro
+      - ./ml/models/url-baseline:/app/models/safe-zone/url-baseline:ro
     depends_on:
       - redis
     restart: unless-stopped

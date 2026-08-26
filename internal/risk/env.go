@@ -113,6 +113,29 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Frozen operational drift reference: optional and strictly fail-open.
+	// A missing, corrupt or mismatched baseline never blocks the classifier;
+	// it only leaves drift monitoring on the non-operational bundle proxy.
+	var urlOpsBaseline *URLOperationalBaseline
+	if urlMLClassifier != nil && urlMLClassifier.Enabled() {
+		baselinePath := strings.TrimSpace(config.String("SAFE_ZONE_URL_ML_BASELINE_PATH", ""))
+		if baselinePath != "" {
+			modelVersion := ""
+			if meta, ok := urlMLClassifier.(analysis.URLClassifierMetadata); ok {
+				modelVersion = meta.ModelVersion()
+			}
+			urlOpsBaseline, err = loadURLOperationalBaseline(baselinePath, modelVersion, urlMLClassifier.Revision())
+			if err != nil {
+				logjson.Warn("URL ML operational baseline unavailable; drift monitoring stays fail-open", map[string]any{
+					"service":     "risk",
+					"path":        baselinePath,
+					"error_class": "baseline_load",
+					"error":       err.Error(),
+				})
+				urlOpsBaseline = nil
+			}
+		}
+	}
 
 	return NewService(Options{
 		Redis:                    redisCache,
@@ -153,6 +176,7 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 		URLMLClassifier:          urlMLClassifier,
 		URLMLMode:                urlMLMode,
 		URLMLShadow:              urlMLShadow,
+		URLOpsBaseline:           urlOpsBaseline,
 	}), nil
 }
 

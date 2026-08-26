@@ -12,6 +12,12 @@ type analyzeRequest struct {
 	Domain        string   `json:"domain"`
 	RequestedURL  string   `json:"requested_url,omitempty"`
 	RedirectChain []string `json:"redirect_chain,omitempty"`
+	// EventID is an opaque caller-generated correlation ID used for
+	// privacy-safe label feedback. The server never persists it in the clear.
+	EventID string `json:"event_id,omitempty"`
+	// CallerClass is a coarse non-identifying integration category
+	// (ui|sdk|extension|proxy|other) used only for aggregate coverage.
+	CallerClass string `json:"caller_class,omitempty"`
 }
 
 func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +40,8 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 			urlContext = &risk.URLAnalysisContext{
 				RequestedURL:  req.RequestedURL,
 				RedirectChain: append([]string(nil), req.RedirectChain...),
+				EventID:       req.EventID,
+				CallerClass:   req.CallerClass,
 			}
 		}
 	default:

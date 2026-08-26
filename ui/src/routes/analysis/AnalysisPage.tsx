@@ -76,6 +76,7 @@ interface ToastMessage {
 
 export function AnalysisPage() {
   const [domain, setDomain] = useState('');
+  const [urlContext, setUrlContext] = useState('');
   const [isScanning, setIsScanning] = useState(false);
   const [result, setResult] = useState<AnalysisResult | null>(null);
   const [showRawData, setShowRawData] = useState(false);
@@ -117,6 +118,29 @@ export function AnalysisPage() {
     setError('');
 
     try {
+      // When an optional full URL context is supplied, use the POST path so
+      // the shadow-only URL ML specialist can evaluate caller-supplied URL
+      // context. The event ID is opaque and generated client-side; the
+      // server never stores the raw URL in feedback correlation.
+      if (urlContext.trim()) {
+        const res = await fetch('/v1/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            domain: domain.trim(),
+            requested_url: urlContext.trim(),
+            event_id: (crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`),
+            caller_class: 'ui',
+          }),
+        });
+        if (!res.ok) {
+          throw new Error(`Analysis failed: ${res.statusText}`);
+        }
+        const data = await res.json();
+        setResult(data);
+        fetchRecentAnalyses();
+        return;
+      }
       const res = await fetch(`/v1/analyze?domain=${encodeURIComponent(domain)}&include_evidence=1`);
       if (!res.ok) {
          throw new Error(`Analysis failed: ${res.statusText}`);
@@ -214,6 +238,17 @@ export function AnalysisPage() {
               spellCheck="false"
               autoComplete="off"
               required
+            />
+          </div>
+          <div className="flex-1 relative">
+            <input
+              type="url"
+              value={urlContext}
+              onChange={(e) => setUrlContext(e.target.value)}
+              placeholder="URL đầy đủ (tùy chọn, ví dụ https://example.com/login)"
+              className="w-full bg-slate-50/70 border border-slate-200 rounded-2xl !py-4 !px-4 text-slate-900 font-medium placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-sky-500/20 focus:border-sky-500/40 hover:border-slate-300 transition-all duration-300"
+              spellCheck="false"
+              autoComplete="off"
             />
           </div>
           <button 

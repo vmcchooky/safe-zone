@@ -16,6 +16,13 @@ import (
 type URLAnalysisContext struct {
 	RequestedURL  string
 	RedirectChain []string
+	// EventID is an opaque, caller-generated correlation ID. The server only
+	// ever stores an HMAC fingerprint of it (see url_feedback.go).
+	EventID string
+	// CallerClass is a coarse, non-identifying caller category supplied by
+	// the integration (ui|sdk|extension|proxy|other). It is used solely for
+	// aggregate coverage breakdowns.
+	CallerClass string
 }
 
 type URLMLObservation struct {
@@ -58,30 +65,74 @@ type URLMLDriftStatus struct {
 }
 
 type URLMLStatus struct {
-	Mode                  analysis.MLMode     `json:"mode"`
-	Enabled               bool                `json:"enabled"`
-	State                 string              `json:"state"`
-	ModelVersion          string              `json:"model_version,omitempty"`
-	Revision              string              `json:"revision,omitempty"`
-	PolicyRevision        string              `json:"policy_revision,omitempty"`
-	URLThreshold          float64             `json:"url_threshold,omitempty"`
-	ContextRequests       int64               `json:"context_requests"`
-	PredictionAttempts    int64               `json:"prediction_attempts"`
-	WouldPromote          int64               `json:"would_promote"`
-	WouldPass             int64               `json:"would_pass"`
-	Errors                int64               `json:"errors"`
-	Skips                 int64               `json:"skips"`
-	LatencyP95Micros      int64               `json:"latency_p95_us"`
-	LatencyCount          int64               `json:"latency_count"`
-	LatencyAverageMicros  int64               `json:"latency_average_us"`
-	LatencyHistogram      map[string]int64    `json:"latency_histogram_us"`
-	ProbabilityHistogram  map[string]int64    `json:"probability_histogram"`
-	ErrorHistogram        map[string]int64    `json:"error_histogram"`
-	InputHistogram        map[string]int64    `json:"input_histogram"`
-	VerdictHistogram      map[string]int64    `json:"primary_verdict_histogram"`
-	WouldPromoteByVerdict map[string]int64    `json:"would_promote_by_primary_verdict"`
-	Sampling              URLMLSamplingStatus `json:"sampling"`
-	Drift                 URLMLDriftStatus    `json:"drift"`
+	Mode                  analysis.MLMode        `json:"mode"`
+	Enabled               bool                   `json:"enabled"`
+	State                 string                 `json:"state"`
+	ModelVersion          string                 `json:"model_version,omitempty"`
+	Revision              string                 `json:"revision,omitempty"`
+	PolicyRevision        string                 `json:"policy_revision,omitempty"`
+	URLThreshold          float64                `json:"url_threshold,omitempty"`
+	ContextRequests       int64                  `json:"context_requests"`
+	PredictionAttempts    int64                  `json:"prediction_attempts"`
+	WouldPromote          int64                  `json:"would_promote"`
+	WouldPass             int64                  `json:"would_pass"`
+	Errors                int64                  `json:"errors"`
+	Skips                 int64                  `json:"skips"`
+	LatencyP95Micros      int64                  `json:"latency_p95_us"`
+	LatencyCount          int64                  `json:"latency_count"`
+	LatencyAverageMicros  int64                  `json:"latency_average_us"`
+	LatencyHistogram      map[string]int64       `json:"latency_histogram_us"`
+	ProbabilityHistogram  map[string]int64       `json:"probability_histogram"`
+	ErrorHistogram        map[string]int64       `json:"error_histogram"`
+	InputHistogram        map[string]int64       `json:"input_histogram"`
+	VerdictHistogram      map[string]int64       `json:"primary_verdict_histogram"`
+	WouldPromoteByVerdict map[string]int64       `json:"would_promote_by_primary_verdict"`
+	Sampling              URLMLSamplingStatus    `json:"sampling"`
+	Drift                 URLMLDriftStatus       `json:"drift"`
+	Coverage              URLMLCoverageStatus    `json:"coverage"`
+	Feedback              URLMLFeedbackStatus    `json:"feedback"`
+	Baseline              URLMLOpsBaselineStatus `json:"operational_baseline"`
+}
+
+// URLMLCoverageStatus tracks how much of total analysis traffic actually
+// carries URL context, plus a coarse non-identifying caller breakdown.
+type URLMLCoverageStatus struct {
+	AnalyzeRequests      int64            `json:"analyze_requests"`
+	URLContextRequests   int64            `json:"url_context_requests"`
+	ContextCoverageRate  float64          `json:"context_coverage_rate"`
+	RedirectChainPresent int64            `json:"redirect_chain_present"`
+	CallerBreakdown      map[string]int64 `json:"caller_breakdown"`
+}
+
+// URLMLFeedbackStatus aggregates privacy-safe label correlation counters.
+// Calibration numbers exist only when labelled events exist.
+type URLMLFeedbackStatus struct {
+	Supported                   bool    `json:"supported"`
+	RecordedEvents              int64   `json:"recorded_events"`
+	LabelledEvents              int64   `json:"labelled_events"`
+	ConfirmedMalicious          int64   `json:"confirmed_malicious"`
+	ReportedBenignFalsePositive int64   `json:"reported_benign_false_positive"`
+	WouldPromoteLabelled        int64   `json:"would_promote_labelled"`
+	LabelledFalsePositiveRate   float64 `json:"labelled_false_positive_rate,omitempty"`
+	Capacity                    int     `json:"capacity,omitempty"`
+	Note                        string  `json:"note,omitempty"`
+}
+
+// urlMLCallerClasses enumerates the fixed, bounded set of coarse caller
+// categories tracked for coverage. Nothing here identifies an end user.
+const urlMLCallerClassCount = 6
+
+var urlMLCallerClasses = [urlMLCallerClassCount]string{"unspecified", "ui", "sdk", "extension", "proxy", "other"}
+
+func normalizeURLMLCallerClass(raw string) string {
+	switch raw {
+	case "ui", "sdk", "extension", "proxy", "other":
+		return raw
+	case "":
+		return "unspecified"
+	default:
+		return "other"
+	}
 }
 
 type urlMLTelemetry struct {
@@ -104,6 +155,10 @@ type urlMLTelemetry struct {
 	redirectBuckets       [3]atomic.Int64
 	verdictBuckets        [3]atomic.Int64
 	promoteVerdictBuckets [3]atomic.Int64
+	analyzeRequests       atomic.Int64
+	urlContextRequests    atomic.Int64
+	redirectPresent       atomic.Int64
+	callerBuckets         [len(urlMLCallerClasses)]atomic.Int64
 }
 
 const urlMLSelectorAlgorithm = "sha256-domain-v1"
@@ -172,11 +227,25 @@ func urlMLVerdictIndex(verdict analysis.Verdict) int {
 
 func (s *Service) urlMLDriftStatus() URLMLDriftStatus {
 	status := URLMLDriftStatus{State: "unavailable"}
-	provider, ok := s.urlMLClassifier.(analysis.URLMonitoringReferenceProvider)
-	if !ok {
-		return status
+	var reference analysis.URLMonitoringReference
+	if s.urlMLOpsBaseline != nil {
+		reference = analysis.URLMonitoringReference{
+			ReferenceKind:           s.urlMLOpsBaseline.ReferenceKind,
+			ReferenceRows:           s.urlMLOpsBaseline.ReferenceRows,
+			Operational:             true,
+			ProbabilityBuckets:      s.urlMLOpsBaseline.BucketNames,
+			ProbabilityDistribution: s.urlMLOpsBaseline.Distribution,
+			MinimumLiveSamples:      s.urlMLOpsBaseline.MinimumLiveSamples,
+			PSIWatchThreshold:       s.urlMLOpsBaseline.WatchThreshold,
+			PSIAlertThreshold:       s.urlMLOpsBaseline.AlertThreshold,
+		}
+	} else {
+		provider, ok := s.urlMLClassifier.(analysis.URLMonitoringReferenceProvider)
+		if !ok {
+			return status
+		}
+		reference = provider.URLMonitoringReference()
 	}
-	reference := provider.URLMonitoringReference()
 	status.ReferenceKind = reference.ReferenceKind
 	status.ReferenceRows = reference.ReferenceRows
 	status.OperationalReference = reference.Operational
@@ -297,6 +366,9 @@ func (s *Service) URLMLStatus() URLMLStatus {
 		},
 		Drift: s.urlMLDriftStatus(),
 	}
+	status.Coverage = s.urlMLCoverageStatus()
+	status.Feedback = s.urlMLFeedback.status()
+	status.Baseline = s.urlMLOpsBaselineStatus()
 	if status.LatencyCount > 0 {
 		status.LatencyAverageMicros = s.urlMLTelemetry.latencyTotalMicros.Load() / status.LatencyCount
 	}
@@ -332,6 +404,11 @@ func (s *Service) observeURLML(domain string, primaryVerdict analysis.Verdict, c
 	}
 	observation := &URLMLObservation{Mode: s.urlMLMode}
 	s.urlMLTelemetry.contextRequests.Add(1)
+	s.urlMLTelemetry.urlContextRequests.Add(1)
+	s.urlMLTelemetry.callerBuckets[urlMLCallerIndex(context.CallerClass)].Add(1)
+	if len(context.RedirectChain) > 0 {
+		s.urlMLTelemetry.redirectPresent.Add(1)
+	}
 	if s.urlMLMode != analysis.MLModeShadow || s.urlMLClassifier == nil || !s.urlMLClassifier.Enabled() {
 		if s != nil {
 			s.urlMLTelemetry.skips.Add(1)
@@ -389,7 +466,27 @@ func (s *Service) observeURLML(domain string, primaryVerdict analysis.Verdict, c
 	} else {
 		s.urlMLTelemetry.wouldPass.Add(1)
 	}
+	s.urlMLFeedback.record(context.EventID, decision.Probability, observation.WouldPromote)
 	return observation
+}
+
+// RecordURLFeedback correlates a caller label with an earlier shadow event.
+// It only ever touches HMAC fingerprints; raw URLs are never involved.
+func (s *Service) RecordURLFeedback(eventID, label string) (bool, string) {
+	if s == nil || s.urlMLFeedback == nil {
+		return false, "unsupported"
+	}
+	return s.urlMLFeedback.apply(eventID, label)
+}
+
+func urlMLCallerIndex(raw string) int {
+	class := normalizeURLMLCallerClass(raw)
+	for index, name := range urlMLCallerClasses {
+		if name == class {
+			return index
+		}
+	}
+	return 0
 }
 
 func classifyURLMLError(err error) string {
@@ -400,4 +497,47 @@ func classifyURLMLError(err error) string {
 		return "invalid_url_context"
 	}
 	return "prediction_error"
+}
+
+// urlMLCoverageStatus aggregates URL-context coverage over all analysis
+// traffic, plus a bounded caller-class breakdown.
+func (s *Service) urlMLCoverageStatus() URLMLCoverageStatus {
+	if s == nil {
+		return URLMLCoverageStatus{CallerBreakdown: map[string]int64{}}
+	}
+	breakdown := make(map[string]int64, len(urlMLCallerClasses))
+	var total int64
+	for index, name := range urlMLCallerClasses {
+		count := s.urlMLTelemetry.callerBuckets[index].Load()
+		breakdown[name] = count
+		total += count
+	}
+	status := URLMLCoverageStatus{
+		AnalyzeRequests:      s.urlMLTelemetry.analyzeRequests.Load(),
+		URLContextRequests:   total,
+		RedirectChainPresent: s.urlMLTelemetry.redirectPresent.Load(),
+		CallerBreakdown:      breakdown,
+	}
+	if status.AnalyzeRequests > 0 {
+		status.ContextCoverageRate = float64(status.URLContextRequests) / float64(status.AnalyzeRequests)
+	}
+	return status
+}
+
+// urlMLOpsBaselineStatus reports the frozen operational baseline state. A
+// load failure is surfaced as fail_open with an error class; it never blocks
+// the classifier.
+func (s *Service) urlMLOpsBaselineStatus() URLMLOpsBaselineStatus {
+	if s == nil {
+		return URLMLOpsBaselineStatus{}
+	}
+	if s.urlMLOpsBaseline != nil {
+		return s.urlMLOpsBaseline.status()
+	}
+	return URLMLOpsBaselineStatus{
+		Loaded:      false,
+		Operational: false,
+		FailOpen:    s.urlMLOpsBaselineFailed,
+		ErrorClass:  s.urlMLOpsBaselineErrorClass,
+	}
 }
