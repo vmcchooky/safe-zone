@@ -73,9 +73,9 @@ Recommended minimum alert rule:
    - Redis availability
    - certificate expiry if HTTPS just broke
 4. If the service is not recovering quickly, follow:
-   - [release-rollback.md](D:/Quorix/services/safe-zone/docs/runbooks/release-rollback.md)
-   - [redis-outage.md](D:/Quorix/services/safe-zone/docs/runbooks/redis-outage.md)
-   - [certificate-renewal.md](D:/Quorix/services/safe-zone/docs/runbooks/certificate-renewal.md)
+   - [release-rollback.md](release-rollback.md)
+   - [redis-outage.md](redis-outage.md)
+   - [certificate-renewal.md](certificate-renewal.md)
 
 ## Minimum production expectation
 

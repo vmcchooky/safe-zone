@@ -303,8 +303,8 @@ Why `SAFE_ZONE_AI_PROVIDER=none` first:
 Make scripts executable and start the production profile:
 
 ```sh
-chmod +x scripts/safe-zone.sh scripts/duckdns-update.sh scripts/bench.sh
-scripts/safe-zone.sh deploy
+chmod +x scripts/ops/safe-zone.sh scripts/ops/duckdns-update.sh scripts/ops/bench.sh
+scripts/ops/safe-zone.sh deploy
 ```
 
 This will start:
@@ -320,7 +320,7 @@ On the VPS:
 
 ```sh
 docker compose --profile production-edge ps
-scripts/safe-zone.sh status
+scripts/ops/safe-zone.sh status
 docker compose --profile production-edge logs -f --tail=100
 ```
 
@@ -391,14 +391,14 @@ SAFE_ZONE_AGENT_FEED_SOURCES=https://urlhaus.abuse.ch/downloads/csv_recent/,http
 Then run:
 
 ```sh
-scripts/safe-zone.sh feed-sync
+scripts/ops/safe-zone.sh feed-sync
 ```
 
 ## Step 17: optionally install cron jobs
 
 There is an example file:
 
-- [safe-zone-production.cron.example](D:/Quorix/services/safe-zone/ops/cron/safe-zone-production.cron.example:1)
+- [safe-zone-production.cron.example](../../ops/cron/safe-zone-production.cron.example)
 
 On the VPS:
 
@@ -415,13 +415,13 @@ For your case, if you are not using DuckDNS, remove or comment out the DuckDNS j
 Manual backup:
 
 ```sh
-scripts/safe-zone.sh backup
+scripts/ops/safe-zone.sh backup
 ```
 
 Manual restore:
 
 ```sh
-scripts/safe-zone.sh restore /full/path/to/redis-dump.rdb
+scripts/ops/safe-zone.sh restore /full/path/to/redis-dump.rdb
 ```
 
 ## If deployment fails, collect these first

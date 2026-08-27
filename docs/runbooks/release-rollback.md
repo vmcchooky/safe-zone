@@ -37,7 +37,7 @@ Record these before every production deployment:
 3. Redeploy:
 
 ```sh
-scripts/safe-zone.sh deploy
+scripts/ops/safe-zone.sh deploy
 ```
 
 4. Verify:
@@ -45,13 +45,13 @@ scripts/safe-zone.sh deploy
 ```sh
 curl -fsS https://$SAFE_ZONE_PUBLIC_HOST/healthz
 curl -fsS https://$SAFE_ZONE_PUBLIC_HOST/v1/version
-scripts/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
+scripts/ops/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
 ```
 
 5. If `sinkhole` blocking is enabled, also run:
 
 ```sh
-scripts/check-block-page.sh "$SAFE_ZONE_PUBLIC_HOST" "$SAFE_ZONE_BLOCK_PAGE_IP" blocked.example.test
+scripts/ops/check-block-page.sh "$SAFE_ZONE_PUBLIC_HOST" "$SAFE_ZONE_BLOCK_PAGE_IP" blocked.example.test
 ```
 
 ## Shared-host-edge rollback
@@ -87,7 +87,7 @@ Only restore Redis or SQLite when:
 
 If data restore is required, use the existing backup/restore helpers and record the reason:
 
-- Linux: `scripts/safe-zone.sh restore`
-- Windows: `pwsh ./scripts/safe-zone.ps1 restore`
+- Linux: `scripts/ops/safe-zone.sh restore`
+- Windows: `pwsh ./scripts/ops/safe-zone.ps1 restore`
 
 After any data restore, rerun health, version, and smoke checks before closing the incident.

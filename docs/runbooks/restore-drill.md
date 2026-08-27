@@ -48,13 +48,13 @@ The backup helpers now capture:
 Linux helper:
 
 ```sh
-scripts/safe-zone.sh backup
+scripts/ops/safe-zone.sh backup
 ```
 
 Windows helper:
 
 ```powershell
-pwsh ./scripts/safe-zone.ps1 backup
+pwsh ./scripts/ops/safe-zone.ps1 backup
 ```
 
 ## Drill procedure
@@ -68,13 +68,13 @@ pwsh ./scripts/safe-zone.ps1 backup
    Linux:
 
    ```sh
-   SAFE_ZONE_STACK=production scripts/safe-zone.sh restore backups/<timestamp>
+   SAFE_ZONE_STACK=production scripts/ops/safe-zone.sh restore backups/<timestamp>
    ```
 
    Windows:
 
    ```powershell
-   pwsh ./scripts/safe-zone.ps1 restore -BackupPath backups\<timestamp>
+   pwsh ./scripts/ops/safe-zone.ps1 restore -BackupPath backups\<timestamp>
    ```
 
 6. After restore, verify:

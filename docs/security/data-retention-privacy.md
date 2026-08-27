@@ -20,11 +20,19 @@ This document defines how long Safe Zone should keep telemetry and cache-derived
 
 ## SQLite policy
 
-Telemetry retention policy:
+Telemetry retention and write sampling policy:
 
-- Keep `analysis_log` for 30 days by default.
+- Keep `analysis_log` for 30 days by default (`SAFE_ZONE_TELEMETRY_RETENTION_DAYS=30`).
 - Do not increase beyond 90 days without explicit approval.
 - For stricter privacy environments, reduce to 7 or 14 days.
+- **Telemetry Write Sampling:** Production override defaults `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` to **5%** (overridable to **1%** under sustained high-load) to prevent unbounded SQLite disk growth.
+- **Unsampled Writers:** Security audit log (`agent_audit_log`), URL ML durable feedback (`url_ml_feedback`), overrides, and brand tables are dedicated writers and are **never sampled**.
+
+URL ML feedback retention & privacy policy:
+
+- **No raw URL context:** No requested URL, query string, credential, or redirect target is ever persisted.
+- **HMAC fingerprinting:** Only a 16-byte truncated HMAC-SHA256 of the caller-supplied `event_id` is recorded.
+- **Retention & Cap:** Bounded retention of 168 hours (7 days, `SAFE_ZONE_URL_ML_FEEDBACK_RETENTION_HOURS`) and capped at 65,536 rows (`SAFE_ZONE_URL_ML_FEEDBACK_MAX_ROWS`). Pruned on startup and periodically every ~10 minutes.
 
 Operational data policy:
 
@@ -58,14 +66,17 @@ Therefore:
 
 ## Recommended production defaults
 
-| Setting | Recommended value |
-| --- | --- |
-| `SAFE_ZONE_TELEMETRY_RETENTION_DAYS` | `30` |
-| `SAFE_ZONE_RECENT_ANALYSIS_TTL_SECONDS` | `86400` |
-| `SAFE_ZONE_DASHBOARD_RECENT_LIMIT` | `25` |
-| `SAFE_ZONE_CACHE_TTL_ALLOWED_SECONDS` | `10800` |
-| `SAFE_ZONE_CACHE_TTL_SUSPICIOUS_SECONDS` | `3600` |
-| `SAFE_ZONE_CACHE_TTL_BLOCKED_SECONDS` | `21600` |
+| Setting | Recommended value | Purpose |
+| --- | --- | --- |
+| `SAFE_ZONE_TELEMETRY_RETENTION_DAYS` | `30` | Telemetry row retention |
+| `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `5` (override down to `1`) | Production write sampling percentage |
+| `SAFE_ZONE_URL_ML_FEEDBACK_RETENTION_HOURS` | `168` | Durable feedback TTL (7 days) |
+| `SAFE_ZONE_URL_ML_FEEDBACK_MAX_ROWS` | `65536` | Table row ceiling for feedback |
+| `SAFE_ZONE_RECENT_ANALYSIS_TTL_SECONDS` | `86400` | In-memory recent cache TTL |
+| `SAFE_ZONE_DASHBOARD_RECENT_LIMIT` | `25` | Dashboard recent list size |
+| `SAFE_ZONE_CACHE_TTL_ALLOWED_SECONDS` | `10800` | Cache TTL for safe domains (3h) |
+| `SAFE_ZONE_CACHE_TTL_SUSPICIOUS_SECONDS` | `3600` | Cache TTL for suspicious domains (1h) |
+| `SAFE_ZONE_CACHE_TTL_BLOCKED_SECONDS` | `21600` | Cache TTL for blocked domains (6h) |
 
 ## Deletion expectations
 

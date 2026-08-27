@@ -503,8 +503,8 @@ Ctrl + X
 ## 16. Deploy production-edge profile
 
 ```sh
-chmod +x scripts/safe-zone.sh scripts/duckdns-update.sh scripts/bench.sh
-scripts/safe-zone.sh deploy
+chmod +x scripts/ops/safe-zone.sh scripts/ops/duckdns-update.sh scripts/ops/bench.sh
+scripts/ops/safe-zone.sh deploy
 ```
 
 Nếu script dùng Docker Compose profile `production-edge`, nó sẽ khởi động các thành phần như:
@@ -520,7 +520,7 @@ Kiểm tra:
 
 ```sh
 docker compose --profile production-edge ps
-scripts/safe-zone.sh status
+scripts/ops/safe-zone.sh status
 ```
 
 Xem log:
@@ -640,7 +640,7 @@ SAFE_ZONE_AGENT_FEED_SOURCES=https://urlhaus.abuse.ch/downloads/csv_recent/,http
 Chạy sync:
 
 ```sh
-scripts/safe-zone.sh feed-sync
+scripts/ops/safe-zone.sh feed-sync
 ```
 
 Nếu lỗi, xem log:
@@ -656,13 +656,13 @@ docker compose --profile production-edge logs --tail=200
 Backup thủ công:
 
 ```sh
-scripts/safe-zone.sh backup
+scripts/ops/safe-zone.sh backup
 ```
 
 Restore:
 
 ```sh
-scripts/safe-zone.sh restore /full/path/to/redis-dump.rdb
+scripts/ops/safe-zone.sh restore /full/path/to/redis-dump.rdb
 ```
 
 Khi đang test free/trial, backup rất quan trọng vì nền tảng free có thể bị suspend/reclaim/xóa nếu vượt limit.
@@ -924,8 +924,8 @@ SAFE_ZONE_AI_PROVIDER=none
 Chạy stack:
 
 ```sh
-chmod +x scripts/safe-zone.sh scripts/duckdns-update.sh scripts/bench.sh
-scripts/safe-zone.sh deploy
+chmod +x scripts/ops/safe-zone.sh scripts/ops/duckdns-update.sh scripts/ops/bench.sh
+scripts/ops/safe-zone.sh deploy
 ```
 
 Kiểm tra local:

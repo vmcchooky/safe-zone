@@ -19,7 +19,7 @@ curl -Iv https://$SAFE_ZONE_PUBLIC_HOST/healthz
 ## Mitigate
 
 ```sh
-scripts/safe-zone.sh duckdns
+scripts/ops/safe-zone.sh duckdns
 docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production-edge restart caddy
 ```
 
@@ -34,7 +34,7 @@ If they are empty, the resolver generates a temporary self-signed certificate fo
 After a renewal, refresh the mounted DoT pair and restart only the resolver:
 
 ```sh
-scripts/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem
+scripts/ops/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem
 docker compose -f docker-compose.yml -f docker-compose.production.yml restart dns-resolver
-scripts/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
+scripts/ops/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
 ```

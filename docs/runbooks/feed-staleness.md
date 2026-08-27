@@ -16,7 +16,7 @@ When the agent is enabled, feed sync events are recorded in SQLite agent events.
 
 ```sh
 . ./.env
-scripts/safe-zone.sh feed-sync
+scripts/ops/safe-zone.sh feed-sync
 ```
 
 Recommended free source preset:

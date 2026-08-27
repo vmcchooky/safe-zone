@@ -92,6 +92,21 @@ Choose `SAFE_ZONE_DNS_BLOCK_STRATEGY` based on the desired user experience:
 
 Direct HTTPS access to an arbitrary blocked third-party domain will still hit a browser certificate warning before any block page can render when `sinkhole` is selected. That is an expected TLS hostname-validation limit, not an application bug.
 
+## Telemetry write sampling & storage sizing
+
+In production, raw analysis logging without write sampling produces ~71 bytes per request into SQLite, which can consume hundreds of gigabytes over 30 days under sustained traffic.
+
+Safe Zone bounds disk growth using write sampling at the single choke point `RecordAnalysis`:
+
+- **Production default:** `docker-compose.production.yml` defaults `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` to **5%** (a 20x write reduction).
+- **High-traffic override:** Operators can explicitly override `SAFE_ZONE_TELEMETRY_WRITE_PERCENT=1` (1%) for sustained high-volume environments or VPS hosts with limited disk space.
+- **Base/development default:** Unsampled at **100%** in `docker-compose.yml`.
+- **Separate unsampled writers:** Security audit log (`agent_audit_log`), URL ML durable feedback (`url_ml_feedback`), local overrides, and brand lists use separate dedicated writers and are **never sampled**.
+- **Sizing formula:**
+  $$\text{Dung lượng steady-state} \approx W \times 71\text{ B} \times \text{RPS} \times 86.400 \times \text{retention\_days}$$
+  *(Ví dụ: Tại 1.000 RPS liên tục với 30 ngày retention: 100% tốn ~184 GB; 5% tốn ~9.2 GB; 1% tốn ~1.8 GB)*.
+- **Budget policy:** Projected telemetry in the retention window should not exceed **20–25%** of the available disk space allocated to Safe-Zone. Higher sampling (10–100%) should only be used temporarily during bounded investigation windows with close disk monitoring.
+
 ## DuckDNS
 
 Set `SAFE_ZONE_DUCKDNS_DOMAIN` and `SAFE_ZONE_DUCKDNS_TOKEN`, then run:
@@ -103,6 +118,7 @@ scripts/ops/safe-zone.sh duckdns
 `SAFE_ZONE_DUCKDNS_TOKEN_FILE` is also supported for file-based or Docker-secret-style setups.
 
 Install `ops/cron/safe-zone-production.cron.example` to keep the record fresh.
+
 
 ## DoT certificates
 

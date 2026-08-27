@@ -5,7 +5,7 @@ Safe Zone is designed to fail open when Redis is unavailable. Domain analysis an
 ## Detect
 
 ```sh
-scripts/safe-zone.sh status
+scripts/ops/safe-zone.sh status
 docker compose logs redis --tail=100
 ```
 
@@ -21,11 +21,11 @@ docker compose exec redis redis-cli ping
 If Redis data is corrupt, restore the newest known-good RDB:
 
 ```sh
-scripts/safe-zone.sh restore backups/<timestamp>/redis-dump.rdb
+scripts/ops/safe-zone.sh restore backups/<timestamp>/redis-dump.rdb
 ```
 
 ## Follow-up
 
 - Confirm `/v1/analyze` works.
-- Run `scripts/safe-zone.sh feed-sync` to repopulate threat feeds if needed.
+- Run `scripts/ops/safe-zone.sh feed-sync` to repopulate threat feeds if needed.
 - Check memory pressure against `SAFE_ZONE_REDIS_MAXMEMORY`.

@@ -35,13 +35,13 @@ Run one manual feed sync and confirm the system reports feed freshness:
 Linux:
 
 ```sh
-scripts/safe-zone.sh feed-sync
+scripts/ops/safe-zone.sh feed-sync
 ```
 
 Windows:
 
 ```powershell
-pwsh ./scripts/safe-zone.ps1 feed-sync
+pwsh ./scripts/ops/safe-zone.ps1 feed-sync
 ```
 
 Then review feed status from `/` or the dashboard.
@@ -53,7 +53,7 @@ Then review feed status from `/` or the dashboard.
 3. Re-run analysis and confirm the result shows `admin override`.
 4. Delete the test override after verification.
 
-For false positives, use [false-positive-workflow.md](D:/Quorix/services/safe-zone/docs/runbooks/false-positive-workflow.md).
+For false positives, use [false-positive-workflow.md](false-positive-workflow.md).
 
 ## 5. First backup
 
@@ -62,14 +62,14 @@ Run one manual backup:
 Linux:
 
 ```sh
-SAFE_ZONE_BACKUP_ENCRYPT=1 scripts/safe-zone.sh backup
+SAFE_ZONE_BACKUP_ENCRYPT=1 scripts/ops/safe-zone.sh backup
 ```
 
 Windows:
 
 ```powershell
 $env:SAFE_ZONE_BACKUP_ENCRYPT='1'
-pwsh ./scripts/safe-zone.ps1 backup
+pwsh ./scripts/ops/safe-zone.ps1 backup
 ```
 
 Confirm the backup directory contains:
@@ -82,21 +82,22 @@ Confirm the backup directory contains:
 
 ## 6. First restore reference
 
-Do not restore on production first. Read and follow [restore-drill.md](D:/Quorix/services/safe-zone/docs/runbooks/restore-drill.md) on a staging target.
+Do not restore on production first. Read and follow [restore-drill.md](restore-drill.md) on a staging target.
 
 The standard commands are:
 
 Linux:
 
 ```sh
-scripts/safe-zone.sh restore backups/<timestamp>
+scripts/ops/safe-zone.sh restore backups/<timestamp>
 ```
 
 Windows:
 
 ```powershell
-pwsh ./scripts/safe-zone.ps1 restore -BackupPath backups\<timestamp>
+pwsh ./scripts/ops/safe-zone.ps1 restore -BackupPath backups\<timestamp>
 ```
+
 
 ## 7. First periodic reviews
 

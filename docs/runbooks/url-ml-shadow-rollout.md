@@ -134,42 +134,36 @@ curl -fsS -X POST http://127.0.0.1:8080/v1/url-ml/feedback \
   -d '{"event_id":"<opaque-id-tu-client>","label":"benign"}'
 ```
 
-Server chỉ lưu HMAC fingerprint (salt per-process) + bucket xác suất + cờ
-would-promote. Calibration/FPR chỉ tính trên event đã nhãn; không suy
-calibration từ traffic không nhãn.
+- Server chỉ lưu HMAC fingerprint (salt per-process hoặc keyed SQLite) + bucket xác suất + cờ would-promote.
+- Calibration/FPR chỉ tính trên event đã nhãn; không suy calibration từ traffic không nhãn.
 
+## Durable label feedback & Error-Path Correlation (Vòng 5)
 
-## Durable label feedback (Vòng 5)
+Feedback hỗ trợ cả in-memory buffer và backend lưu trữ SQLite bền vững. Khi `SAFE_ZONE_URL_ML_FEEDBACK_SECRET` được inject (qua env hoặc `*_FILE` dưới secret root), fingerprint HMAC trở nên ổn định qua các lần restart và nhãn được lưu vào bảng bounded `url_ml_feedback` trong SQLite:
 
-Feedback không còn chỉ-in-memory. Khi `SAFE_ZONE_URL_ML_FEEDBACK_SECRET` được
-inject (env hoặc `*_FILE` dưới secret root), fingerprint HMAC trở nên ổn định
-giữa các restart và nhãn được lưu vào bảng bounded `url_ml_feedback` trong
-SQLite sẵn có:
+### Cơ chế ghi nhận sự kiện & Error-Path Sentinel:
+- **Ghi nhận đồng bộ trước khi trả response:** Với mọi observation được chọn mẫu (`sampled=true`) và có `event_id`, fingerprint của sự kiện được ghi vào store trước khi request analyze hoàn tất.
+- **Bảo đảm tương quan trên nhánh lỗi (Error-Path):** Cơ chế này áp dụng cả khi phân loại thành công lẫn khi gặp lỗi:
+  - `invalid_url_context` (ví dụ hostname mismatch, scheme không hợp lệ, URL dị dạng);
+  - `prediction_error` (lỗi nội bộ của classifier).
+- **Probability Sentinel `-1`:** Trên nhánh lỗi, xác suất được ghi nhận bằng giá trị sentinel `-1` (biểu thị không có prediction), hoàn toàn tách biệt khỏi bucket $[0, 0.1)$. Caller có thể gán nhãn ngay sau khi quan sát mà không gặp lỗi `unknown_event` giả mạo.
+- **Fail-Open cho phân tích, Fail-Closed cho feedback:** Lỗi phân loại URL classifier luôn fail-open (kết quả phân tích tên miền chính vẫn trả về bình thường). Ngược lại, nếu lưu trữ feedback lỗi (database lỗi hoặc nạp secret thất bại), chỉ riêng route feedback fail-closed (trả về HTTP 503 `persistence_error`); analyze hoàn toàn không bị ảnh hưởng.
 
-- Chỉ lưu: HMAC-SHA256(event_id) cắt 16 byte (hex), key version, bucket xác
-  suất (0–9), cờ would-promote, cờ nhãn. Không URL, query, hostname hay dữ
-  liệu khôi phục được URL.
-- TTL mặc định 168 giờ (`..._RETENTION_HOURS`), trần 65.536 dòng
-  (`..._MAX_ROWS`); prune chạy lúc khởi động và mỗi ~10 phút.
-- Dedupe: cùng event_id ghi đè bản ghi cũ (không nhân đôi). Anti-replay:
-  một event chỉ nhận đúng một nhãn; nhãn lại trả `already_labeled`.
-- Xoay key có version: đặt `..._KEY_VERSION=2` + secret mới; giữ
-  `..._PREVIOUS_SECRET` + `..._PREVIOUS_KEY_VERSION=1` trong thời gian chuyển
-  tiếp để event cũ vẫn correlate được, rồi tháo biến khi hết TTL.
-- Fail closed cho riêng feedback: thiếu store/secret lỗi runtime → nhãn bị
-  từ chối HTTP 503 (`reason=persistence_error`) và status báo
-  `degraded=true,persistence_errors>0`; analyze không bao giờ đi qua đường
-  này. Không có secret → buffer in-memory cũ (ephemeral, ghi rõ trong
-  `persistence:"memory"`).
-- Rate limit riêng `/v1/url-ml/feedback` qua
-  `SAFE_ZONE_RATELIMIT_FEEDBACK_RPM/BURST`; payload giới hạn 4 KB.
-
-Kiểm chứng: restart test, rotation test, privacy scan (DB file không chứa
-marker) nằm trong `internal/risk/url_feedback_durable_test.go`.
+### Đặc tả lưu trữ & Vận hành:
+- **Dữ liệu lưu trữ:** Chỉ lưu HMAC-SHA256(event_id) cắt 16 byte (hex), key version, bucket xác suất (0–9 hoặc sentinel -1), cờ would-promote, cờ nhãn. Không lưu URL, query, credentials, hay redirect target.
+- **Retention & Bound:** TTL mặc định 168 giờ (`SAFE_ZONE_URL_ML_FEEDBACK_RETENTION_HOURS`), trần 65.536 dòng (`SAFE_ZONE_URL_ML_FEEDBACK_MAX_ROWS`); tác vụ dọn dẹp (prune) chạy lúc khởi động và định kỳ mỗi ~10 phút.
+- **Dedupe & Anti-replay:** Cùng `event_id` sẽ ghi đè bản ghi cũ; mỗi sự kiện chỉ nhận đúng một nhãn hợp lệ duy nhất (`malicious` hoặc `benign`), nhãn lặp lại trả lỗi `already_labeled`.
+- **Key Rotation một bước:** Đổi sang key mới bằng cách đặt `..._KEY_VERSION=2` và secret mới, đồng thời giữ `..._PREVIOUS_SECRET` cùng `..._PREVIOUS_KEY_VERSION=1` trong thời gian chuyển tiếp để các event cũ vẫn correlate được cho tới khi hết TTL.
+- **Ý nghĩa mã `unknown_event`:** Mã này hoàn toàn hợp lệ và chỉ xuất hiện khi:
+  1. Sự kiện thực sự không tồn tại;
+  2. Observation không được chọn mẫu (`sampled=false`) hoặc client không truyền `event_id`;
+  3. Sự kiện đã quá hạn TTL (168h);
+  4. Secret đã bị xoay ra ngoài rotation window (sau khi gỡ bỏ previous secret).
+  *(Lưu ý lịch sử: Bug `unknown_event` trước đây do UI hiển thị nút feedback khi `sampled=false`, kết hợp lỗi thiếu lệnh record trên nhánh classifier error-path. Cả hai lỗi này đã được khắc phục triệt để).*
+- **Rate Limit:** Áp dụng rate limit riêng cho `/v1/url-ml/feedback` qua `SAFE_ZONE_RATELIMIT_FEEDBACK_RPM/BURST` (mặc định 30/10); payload giới hạn tối đa 4 KB.
 
 ## Promotion gate
 
 URL ML promotion (shadow → cân nhắc enforce) tuân theo Gate B trong
-`docs/runbooks/release-gate.md#8-two-independent-release-gates-round-5`.
-Gate này độc lập với Product Release Gate; chưa đạt Gate B không chặn phát
-hành sản phẩm.
+[docs/runbooks/release-gate.md#8-two-independent-release-gates-round-5](release-gate.md#8-two-independent-release-gates-round-5).
+Gate này độc lập với Product Release Gate; việc URL ML duy trì `SHADOW_OBSERVER_ONLY` (do thiếu external URL-context evidence) không bao giờ chặn phát hành sản phẩm.

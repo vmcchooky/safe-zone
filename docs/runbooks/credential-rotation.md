@@ -55,7 +55,7 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml restart fe
 For DuckDNS token changes:
 
 ```sh
-scripts/safe-zone.sh duckdns
+scripts/ops/safe-zone.sh duckdns
 ```
 
 ## Verification
@@ -63,10 +63,10 @@ scripts/safe-zone.sh duckdns
 Run the basics:
 
 ```sh
-scripts/check-production-ports.sh
+scripts/ops/check-production-ports.sh
 curl -fsS https://$SAFE_ZONE_PUBLIC_HOST/healthz
 curl -fsS "https://$SAFE_ZONE_PUBLIC_HOST/v1/analyze?domain=example.com"
-scripts/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
+scripts/ops/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
 ```
 
 Then verify the rotated capability specifically:
@@ -74,7 +74,7 @@ Then verify the rotated capability specifically:
 - Admin password: log in to `/app/` with the new password. Use `/dashboard` only for legacy compatibility checks.
 - Admin API key: call an authenticated endpoint with `Authorization: Bearer <new key>`.
 - Gemini key: trigger an analysis path that may use AI and confirm no provider auth error appears.
-- DuckDNS token: run `scripts/safe-zone.sh duckdns`.
+- DuckDNS token: run `scripts/ops/safe-zone.sh duckdns`.
 - Webhook or alert secrets: manually trigger the `alert` task from the dashboard or `POST /v1/agent/trigger?task=alert`.
 
 ## Rollback

@@ -803,15 +803,15 @@ SAFE_ZONE_DUCKDNS_TOKEN=
 ### 13.8 Deploy
 
 ```sh
-chmod +x scripts/safe-zone.sh scripts/duckdns-update.sh scripts/bench.sh
-scripts/safe-zone.sh deploy
+chmod +x scripts/ops/safe-zone.sh scripts/ops/duckdns-update.sh scripts/ops/bench.sh
+scripts/ops/safe-zone.sh deploy
 ```
 
 ### 13.9 Verify
 
 ```sh
 docker compose --profile production-edge ps
-scripts/safe-zone.sh status
+scripts/ops/safe-zone.sh status
 docker compose --profile production-edge logs --tail=100
 ```
 
