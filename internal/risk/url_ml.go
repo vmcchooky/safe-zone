@@ -453,9 +453,7 @@ func (s *Service) observeURLML(domain string, primaryVerdict analysis.Verdict, c
 		s.urlMLTelemetry.redirectPresent.Add(1)
 	}
 	if s.urlMLMode != analysis.MLModeShadow || s.urlMLClassifier == nil || !s.urlMLClassifier.Enabled() {
-		if s != nil {
-			s.urlMLTelemetry.skips.Add(1)
-		}
+		s.urlMLTelemetry.skips.Add(1)
 		return observation
 	}
 	if !s.urlMLShadow.eligible(domain) {
@@ -494,6 +492,11 @@ func (s *Service) observeURLML(domain string, primaryVerdict analysis.Verdict, c
 		} else {
 			s.urlMLTelemetry.predictionErrors.Add(1)
 		}
+		// Record the fingerprint even when classification failed so a caller who
+		// observed sampled=true can label it without a spurious unknown_event.
+		// The caller opted into feedback via event_id; without this the label
+		// would be rejected even though the event was legitimately observed.
+		s.urlMLFeedback.record(context.EventID, -1, false)
 		return observation
 	}
 	observation.Evaluated = true

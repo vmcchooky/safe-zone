@@ -5,6 +5,11 @@ services:
       - "443:443"
 
   core-api:
+    environment:
+      # Bound detailed SQLite growth in production while retaining an explicit
+      # operator override for lower sampling on sustained high-volume hosts.
+      # Audit and URL-ML feedback use separate unsampled writers.
+      SAFE_ZONE_TELEMETRY_WRITE_PERCENT: ${SAFE_ZONE_TELEMETRY_WRITE_PERCENT:-5}
     ports:
       - "127.0.0.1:8080:8080"
 

@@ -69,30 +69,79 @@ func TestURLMLShadowObservesWithoutChangingDomainVerdict(t *testing.T) {
 	}
 }
 
-func TestURLMLFailureFailsOpenWithoutRawContext(t *testing.T) {
-	service := NewService(Options{
-		AnalysisConfig: config.DefaultAnalysisConfig(),
-		URLMLClassifier: &fakeURLClassifier{
-			err: errors.New("invalid_url_context: host_mismatch"),
+func TestURLMLFailuresFailOpenAndRemainCorrelatable(t *testing.T) {
+	tests := []struct {
+		name       string
+		classifier error
+		errorClass string
+		eventID    string
+	}{
+		{
+			name:       "invalid URL context",
+			classifier: errors.New("invalid_url_context: host_mismatch"),
+			errorClass: "invalid_url_context",
+			eventID:    "fail-open-invalid-event-001",
 		},
-		URLMLMode: analysis.MLModeShadow,
-	})
-	defer func() { _ = service.Close() }()
-
-	result := service.AnalyzeWithOptions(
-		context.Background(),
-		"safe.example",
-		ClientInfo{},
-		AnalyzeOptions{URLContext: &URLAnalysisContext{
-			RequestedURL: "https://evil.example/login?token=do-not-log",
-		}},
-	)
-
-	if result.URLML == nil || result.URLML.Evaluated || result.URLML.ErrorClass != "invalid_url_context" {
-		t.Fatalf("unexpected fail-open observation: %+v", result.URLML)
+		{
+			name:       "generic classifier failure",
+			classifier: errors.New("classifier unavailable"),
+			errorClass: "prediction_error",
+			eventID:    "fail-open-generic-event-001",
+		},
 	}
-	if result.URLML.ModelVersion != "" || result.URLML.Revision != "" {
-		t.Fatalf("error response exposed unexpected model fields: %+v", result.URLML)
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			service := NewService(Options{
+				AnalysisConfig: config.DefaultAnalysisConfig(),
+				URLMLClassifier: &fakeURLClassifier{
+					err: test.classifier,
+				},
+				URLMLMode: analysis.MLModeShadow,
+			})
+			defer func() { _ = service.Close() }()
+
+			result := service.AnalyzeWithOptions(
+				context.Background(),
+				"safe.example",
+				ClientInfo{},
+				AnalyzeOptions{URLContext: &URLAnalysisContext{
+					RequestedURL: "https://evil.example/login?token=do-not-log",
+					EventID:      test.eventID,
+				}},
+			)
+
+			if result.URLML == nil || result.URLML.Evaluated || result.URLML.ErrorClass != test.errorClass {
+				t.Fatalf("unexpected fail-open observation: %+v", result.URLML)
+			}
+			if result.URLML.ModelVersion != "" || result.URLML.Revision != "" {
+				t.Fatalf("error response exposed unexpected model fields: %+v", result.URLML)
+			}
+
+			feedback, ok := service.urlMLFeedback.(*urlFeedbackStore)
+			if !ok {
+				t.Fatalf("expected in-memory feedback store, got %T", service.urlMLFeedback)
+			}
+			key := feedback.fingerprint(test.eventID)
+			feedback.mu.Lock()
+			slot, found := feedback.index[key]
+			if !found {
+				feedback.mu.Unlock()
+				t.Fatal("sampled failing event was not recorded")
+			}
+			entry := feedback.entries[slot]
+			feedback.mu.Unlock()
+			if entry.probabilityPct != -1 {
+				t.Fatalf("expected no-prediction sentinel, got probability bucket %d", entry.probabilityPct)
+			}
+
+			// The sampled event must be recorded before the response returns, even
+			// when classification fails, so immediate feedback remains reliable.
+			recorded, reason := service.RecordURLFeedback(test.eventID, "benign")
+			if !recorded || reason != "" {
+				t.Fatalf("expected sampled failing event to remain correlatable, got recorded=%v reason=%q", recorded, reason)
+			}
+		})
 	}
 }
 
