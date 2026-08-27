@@ -3,8 +3,12 @@ package resolver
 import (
 	"context"
 	"net"
+	"strings"
 
 	"github.com/miekg/dns"
+	"safe-zone/internal/correlation"
+	"safe-zone/internal/dns/doh"
+	"safe-zone/internal/logjson"
 	"safe-zone/internal/observability"
 	"safe-zone/internal/ratelimit"
 	"safe-zone/internal/risk"
@@ -24,15 +28,19 @@ type Config struct {
 	DeploymentTier string
 }
 
+// Resolver là tầng chính sách trung tâm: mọi transport (DoH, DoT) đều gọi
+// ResolveQuery thay vì tự triển khai logic chặn/forward/uncloak riêng.
 type Resolver struct {
-	Risk       *risk.Service
-	Metrics    *observability.Registry
-	Upstreams  *UpstreamResolver
-	Config     Config
+	Risk      *risk.Service
+	Metrics   *observability.Registry
+	Upstreams *doh.UpstreamResolver
+	Config    Config
+	// DotLimiter giới hạn tần suất riêng cho transport DoT; DoH đi qua
+	// TieredMiddleware ở cạnh HTTP.
 	DotLimiter *ratelimit.Limiter
 }
 
-func New(riskService *risk.Service, metrics *observability.Registry, upstreams *UpstreamResolver, cfg Config, dotLimiter *ratelimit.Limiter) *Resolver {
+func New(riskService *risk.Service, metrics *observability.Registry, upstreams *doh.UpstreamResolver, cfg Config, dotLimiter *ratelimit.Limiter) *Resolver {
 	if cfg.BlockStrategy == "" {
 		cfg.BlockStrategy = BlockStrategySinkhole
 	}
@@ -43,6 +51,57 @@ func New(riskService *risk.Service, metrics *observability.Registry, upstreams *
 		Config:     cfg,
 		DotLimiter: dotLimiter,
 	}
+}
+
+// ResolveQuery thực thi pipeline xử lý truy vấn dùng chung cho mọi transport:
+// đánh giá policy theo client → chặn theo block strategy → forward upstream
+// DoH → uncloaking CNAME. Trả về response hoàn chỉnh, hoặc error khi upstream
+// thất bại (transport sẽ phản hồi SERVFAIL theo đúng chuẩn của từng giao thức).
+func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.ClientInfo) (*dns.Msg, error) {
+	questionDomain := strings.TrimSuffix(query.Question[0].Name, ".")
+	riskClient := risk.ClientInfo{IP: client.IP, ClientID: client.ClientID}
+
+	policy := r.Risk.Policy(ctx, questionDomain, riskClient)
+	if policy.Policy == "block" {
+		return r.BlockedDNSMessage(query)
+	}
+
+	wire, err := query.Pack()
+	if err != nil {
+		return nil, err
+	}
+
+	responseWire, err := r.ForwardDoH(ctx, wire)
+	if err != nil {
+		if r.Metrics != nil {
+			r.Metrics.IncCounter("upstream_doh_failures_total")
+		}
+		logjson.Warn("upstream DoH failed", correlation.Fields(ctx, map[string]any{
+			"service": "dns-resolver",
+			"domain":  questionDomain,
+			"error":   err.Error(),
+		}))
+		return nil, err
+	}
+
+	responseMsg := new(dns.Msg)
+	if err := responseMsg.Unpack(responseWire); err != nil {
+		return nil, err
+	}
+
+	// CNAME Uncloaking: chính sách cũng phải áp lên đích cuối cùng của CNAME.
+	for _, answer := range responseMsg.Answer {
+		cname, ok := answer.(*dns.CNAME)
+		if !ok || cname.Target == "" {
+			continue
+		}
+		cnamePolicy := r.Risk.Policy(ctx, strings.TrimSuffix(cname.Target, "."), riskClient)
+		if cnamePolicy.Policy == "block" {
+			return r.BlockedDNSMessage(query)
+		}
+	}
+
+	return responseMsg, nil
 }
 
 func (r *Resolver) EffectiveBlockStrategy() string {
@@ -112,13 +171,7 @@ func (r *Resolver) ForwardDoH(ctx context.Context, wire []byte) ([]byte, error) 
 	return response, err
 }
 
-func ServfailDNSResponse(query *dns.Msg) ([]byte, error) {
-	response := new(dns.Msg)
-	response.SetRcode(query, dns.RcodeServerFailure)
-	response.RecursionAvailable = true
-	return response.Pack()
-}
-
+// SendServfail trả lời SERVFAIL trực tiếp trên transport DNS (DoT).
 func SendServfail(w dns.ResponseWriter, req *dns.Msg) {
 	response := new(dns.Msg)
 	response.SetRcode(req, dns.RcodeServerFailure)

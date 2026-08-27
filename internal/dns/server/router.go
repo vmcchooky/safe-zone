@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"safe-zone/internal/dns/doh"
 	"safe-zone/internal/dns/resolver"
 	"safe-zone/internal/ratelimit"
 )
@@ -14,8 +15,8 @@ func NewRouter(r *resolver.Resolver, tiered *ratelimit.TieredMiddleware) *http.S
 	mux.HandleFunc("/v1/version", r.VersionHandler)
 	mux.HandleFunc("/metrics", r.MetricsHandler)
 	mux.HandleFunc("/v1/policy", r.PolicyHandler)
-	mux.HandleFunc("/dns-query", r.DoHHandler)
-	mux.HandleFunc("/dns-query/", r.DoHHandler)
+	mux.Handle("/dns-query", doh.NewHandler(r))
+	mux.Handle("/dns-query/", doh.NewHandler(r))
 
 	return mux
 }
