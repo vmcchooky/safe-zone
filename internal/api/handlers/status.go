@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"runtime"
 	"time"
 
 	"safe-zone/internal/api/httputil"
@@ -98,9 +99,21 @@ func (h *Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cheap runtime observability for capacity/soak tooling. ReadMemStats stops
+	// the world briefly; call sites poll this endpoint at most ~1 Hz.
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+	runtimeStatus := map[string]any{
+		"goroutines":    runtime.NumGoroutine(),
+		"heap_alloc_mb": float64(ms.HeapAlloc) / (1 << 20),
+		"sys_mb":        float64(ms.Sys) / (1 << 20),
+		"num_gc":        ms.NumGC,
+	}
+
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
 		"service":                "core-api",
 		"status":                 "ok",
+		"runtime":                runtimeStatus,
 		"metrics":                h.Metrics.Snapshot(),
 		"feed_sync":              h.FeedStatus(r.Context()),
 		"adblock":                h.Risk.AdblockStatus(),

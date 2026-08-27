@@ -578,6 +578,26 @@ func (d *DB) Enabled() bool {
 
 // --- Telemetry ---
 
+// sampleAccept reports whether sequence number seq should be persisted for
+// the given write percentage (0-100). Pure function so the distribution can
+// be unit-tested exhaustively; uses a splitmix64-style finalizer so that
+// consecutive sequence numbers scatter uniformly across the acceptance range.
+func sampleAccept(seq uint64, percent int) bool {
+	if percent >= 100 {
+		return true
+	}
+	if percent <= 0 {
+		return false
+	}
+	h := seq
+	h ^= h >> 30
+	h *= 0xbf58476d1ce4e5b9
+	h ^= h >> 27
+	h *= 0x94d049bb133111eb
+	h ^= h >> 31
+	return int(h%10000) < percent*100
+}
+
 // RecordAnalysis enqueues a telemetry entry for async writing.
 // Non-blocking: if the buffer is full, the entry is silently dropped.
 // When write sampling is enabled (SAFE_ZONE_TELEMETRY_WRITE_PERCENT < 100),
@@ -587,9 +607,7 @@ func (d *DB) RecordAnalysis(entry TelemetryEntry) {
 		return
 	}
 	if d.writePercent < 100 {
-		seq := d.sampleSeq.Add(1)
-		bucket := int(((seq * 1103515245) >> 16) % uint64(10000))
-		if bucket >= int(d.writePercent)*100 {
+		if !sampleAccept(d.sampleSeq.Add(1), int(d.writePercent)) {
 			return
 		}
 	}

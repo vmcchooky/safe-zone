@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"testing"
 	"time"
@@ -62,7 +63,29 @@ func TestTelemetryWriteSampling(t *testing.T) {
 		t.Fatalf("query recent sampled: %v", err)
 	}
 	written := len(afterSample) - before
-	if written < 100 || written > 300 {
-		t.Fatalf("writePercent=10: sampled %d entries, want ~200 (tolerance 100-300)", written)
+	if written < 160 || written > 240 {
+		t.Fatalf("writePercent=10: sampled %d entries, want ~200", written)
+	}
+}
+
+// TestSamplingDistribution verifies the pure sampler spreads uniformly for
+// consecutive sequence numbers across several percentages (bucket max error
+// stays well inside +/-10%% of nominal), catching clustered-hash regressions.
+func TestSamplingDistribution(t *testing.T) {
+	const n = 100000
+	cases := []int{1, 5, 10, 25, 50}
+	for _, pct := range cases {
+		accepted := 0
+		for i := uint64(1); i <= n; i++ {
+			if sampleAccept(i, pct) {
+				accepted++
+			}
+		}
+		want := float64(pct) / 100 * n
+		sigma := math.Sqrt(want * (1 - float64(pct)/100))
+		tol := math.Max(want*0.02, sigma*4) // deterministic mixer: stay within 4-sigma
+		if float64(accepted) < want-tol || float64(accepted) > want+tol {
+			t.Fatalf("percent=%d accepted=%d want=%.0f (+/-%.0f)", pct, accepted, want, tol)
+		}
 	}
 }

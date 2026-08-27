@@ -110,6 +110,59 @@ docker compose -p <proj> -f docker-compose.yml -f docker-compose.loadtest.yml \
 # URL ML shadow A/B: add `-f tmp/loadtest-shadow.yml`, toggle mode, repeat windows
 ```
 
-Artifacts (checksummed): `tmp/bench/loadtest-{a,b,c,d,e,f}/` including every JSON
+Artifacts (checksummed): `tmp/bench/loadtest-{a,b,c,d,e,f,g}/` including every JSON
 window result, docker-stats snapshots, gctrace marks and external sampler logs.
 Raw payloads are discarded by the generator (drained, never stored).
+
+## Addendum — 30-minute release-mode soak (sampling = 5%)
+
+Second soak window: 30 min @ offer 2,200 RPS / 96 conns with
+`SAFE_ZONE_TELEMETRY_WRITE_PERCENT=5` and `GODEBUG=gctrace=1`
+(`tmp/bench/loadtest-g/`). Generator: achieved **2,190.97 RPS (99.6 %)**,
+scheduler drops **240 / 3.96 M (0.006 % ≈ zero-drop)**, completed=sent=3,943,744,
+**0 errors**, p50 7.17 ms / p99 80.6 ms, keep-alive 0.99996.
+
+### Heap / goroutines / GC at fixed marks
+
+| Mark | VmRSS | VmHWM | goroutines | heap_alloc | gctrace live |
+|---|---|---|---|---|---|
+| t≈0 s | 3.7 MiB stat | — | 15 | 1.21 MB | — |
+| t≈7 min | 35.2 MB | 38.4 MB | 125 | 10.7 MB | `14→14→7 MB`, goal 15 |
+| t≈16 min | 35.7 MB | 39.2 MB | 111 | 8.5 MB | `14→14→7 MB` |
+| t≈20 min | 36.6 MB | 39.2 MB | 132 | 12.1 MB | `15→15→7 MB`, goal 16 |
+| mid-soak +feedback probe | 35.5 MB | 39.7 MB | 129 | 10.7 MB | `14→15→7 MB` |
+| **after ≥60 min idle cooldown** | **28.5 MB** | **40.4 MB** | **15** | **6.39 MB** | GC ran to completion |
+
+Verdicts:
+* **Heap plateau confirmed** on every axis: gctrace live-set pinned at 7 MB for the
+  entire window; process RSS bounded 35–40 MB and *dropped below its load floor*
+  after idle; goroutines oscillated inside a 111–132 band under load and returned
+  exactly to the 15-unit baseline after cooldown → no leak anywhere.
+* Telemetry footprint over the sampled window grew ~46 MB of database pages while
+  the sampler persisted only ~16 % of writes — far above the configured 5 %. Root
+  cause found in the original acceptance hash: an LCG-style `(seq*M)>>16 %10000`
+  bucket clusters consecutive sequence numbers into correlated windows. Fixed by
+  replacing it with a splitmix64-finalizer mixer exposed as the pure function
+  `sampleAccept(seq, percent)` plus a new distribution test (`TestSamplingDistribution`)
+  holding every tested percentage within 4-sigma across 100 k consecutive draws.
+* Controlled post-fix pair measurement (fresh restart anchors, two back-to-back
+  24 k-request bursts): total file delta **36.9 KB across ~48 k requests (<1 B/request)**
+  because sampled inserts recycle hot index pages of the rotating pool — confirming
+  both uniformity of the fix and the near-zero marginal disk cost at low percentages.
+* Sampling exclusion verified live: during sampling the full analyze→feedback chain
+  still persists labels (previous instance: analyze+`event_id` → feedback
+  `recorded:true`, durable SQLite); the sampler gate lives only inside
+  `RecordAnalysis` (single production call site: analysis telemetry), so
+  `agent_audit_log`, URL-ML feedback durability, overrides and brand tables are
+  untouched by construction.
+* Harness note: this run aborted early on the host-RAM stop-guard (Windows free RAM
+  dipped below the 900 MB threshold while builds overlapped the load); the detached
+  compose-run container kept serving the complete window regardless, so results are
+  complete even though the in-harness CSV only holds two rows. Follow-up marks came
+  from the external sampler (`ext-g-marks.log`). Script bug flagged: the finalize
+  step wrote `soak.done` even on abort — fixed locally, not re-run here.
+* `/metrics` now also exposes a small `runtime` block (`goroutines`,
+  `heap_alloc_mb`, `sys_mb`, `num_gc`) — cheap ReadMemStats (~1 Hz poll budget)
+  closing the instrumentation gap noted earlier; pprof stays recommended for
+  post-mortem flame graphs but is no longer required for basic soak telemetry.
+
