@@ -1,0 +1,3 @@
+# Go sources must always be LF in the working tree so `gofmt -l` stays quiet
+# regardless of core.autocrlf (see ADR 0006 layout conventions / repo hygiene).
+*.go text eol=lf

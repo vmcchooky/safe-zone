@@ -1,11 +1,8 @@
-package resolver
+package doh
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -15,31 +12,8 @@ import (
 	"github.com/miekg/dns"
 )
 
-func DoDoH(ctx context.Context, client *http.Client, upstreamURL string, wire []byte) ([]byte, error) {
-	if client == nil {
-		client = http.DefaultClient
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, upstreamURL, bytes.NewReader(wire))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/dns-message")
-	req.Header.Set("Content-Type", "application/dns-message")
-
-	// #nosec G107 G704 -- URL is from trusted server configuration.
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("upstream returned HTTP %d", resp.StatusCode)
-	}
-
-	return io.ReadAll(io.LimitReader(resp.Body, 65535))
-}
-
+// UpstreamResolver maintains the pool of upstream DoH endpoints with
+// latency-ordered failover and background health probing.
 type UpstreamResolver struct {
 	mu        sync.RWMutex
 	endpoints []UpstreamEndpoint
@@ -129,11 +103,13 @@ func (u *UpstreamResolver) orderedEndpoints() []UpstreamEndpoint {
 	return endpoints
 }
 
+// Forward sends the DNS wire message to the first healthy upstream,
+// falling over to the remaining endpoints on failure.
 func (u *UpstreamResolver) Forward(ctx context.Context, wire []byte) ([]byte, string, error) {
 	var lastErr error
 	for _, endpoint := range u.orderedEndpoints() {
 		started := time.Now()
-		response, err := DoDoH(ctx, u.client, endpoint.URL, wire)
+		response, err := Exchange(ctx, u.client, endpoint.URL, wire)
 		if err == nil {
 			u.markSuccess(endpoint.URL, time.Since(started))
 			return response, endpoint.URL, nil
@@ -177,6 +153,8 @@ func (u *UpstreamResolver) markFailure(endpointURL string, err error) {
 	}
 }
 
+// ProbeLoop re-checks every endpoint health on a fixed interval until the
+// context is cancelled, so failed-over endpoints recover automatically.
 func (u *UpstreamResolver) ProbeLoop(ctx context.Context, interval time.Duration) {
 	u.probeAll(ctx)
 	ticker := time.NewTicker(interval)
@@ -201,7 +179,7 @@ func (u *UpstreamResolver) probeAll(ctx context.Context) {
 	for _, endpoint := range u.orderedEndpoints() {
 		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 		started := time.Now()
-		_, err := DoDoH(probeCtx, u.client, endpoint.URL, wire)
+		_, err := Exchange(probeCtx, u.client, endpoint.URL, wire)
 		cancel()
 		if err != nil {
 			u.markFailure(endpoint.URL, err)

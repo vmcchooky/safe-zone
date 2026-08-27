@@ -23,6 +23,7 @@ import (
 
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/config"
+	"safe-zone/internal/dns/doh"
 	"safe-zone/internal/dns/resolver"
 	"safe-zone/internal/dns/server"
 	"safe-zone/internal/logjson"
@@ -68,7 +69,7 @@ func main() {
 	}
 	upstreamURLs := config.String("SAFE_ZONE_UPSTREAM_DOH_URLS",
 		config.String("SAFE_ZONE_UPSTREAM_DOH_URL", "https://cloudflare-dns.com/dns-query"))
-	upstreams := resolver.NewUpstreamResolver(upstreamURLs, upstreamClient)
+	upstreams := doh.NewUpstreamResolver(upstreamURLs, upstreamClient)
 	probeInterval := config.DurationMillis("SAFE_ZONE_UPSTREAM_DOH_PROBE_INTERVAL_MS", 30*time.Second)
 	probeCtx, stopProbes := context.WithCancel(context.Background())
 	defer stopProbes()

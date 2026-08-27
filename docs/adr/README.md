@@ -8,3 +8,5 @@ These ADRs capture production-relevant decisions that future maintainers should 
 - [ADR 0004: Caddy as the public HTTP edge](0004-caddy-public-http-edge.md)
 
 - [ADR 0006: Repository naming and layout conventions](0006-repository-naming-and-layout-conventions.md)
+
+- [ADR 0007: Dedicated DoH (RFC 8484) protocol module](0007-doh-rfc8484-dedicated-module.md)
