@@ -76,5 +76,5 @@ chính sách vừa né lệnh chặn.
 - Header HSTS vẫn do Caddy edge phát hành (ADR 0004); resolver không nhân bản.
 - JSON status/metrics endpoint giữ nguyên shape (`upstream_doh_failures_total`,
   `upstream_doh.endpoints`...).
-- Tệp `resolver_test.go` cũ vẫn `//go:build ignore`; phạm vi test sống nằm ở
-  `doh/server_test.go`, `doh/client_test.go`, `resolver/pipeline_test.go`.
+- Test `resolver_test.go` cũ từng bị tắt bằng `//go:build ignore` vì lệch kiến trúc; đã được hồi sinh trên API hiện tại (status/version/metrics/policy handler, block strategy, DoT rate limit/concurrency/panic recovery/IPv6). Phạm vi test sống:
+  `resolver/resolver_test.go`, `resolver/pipeline_test.go`, `doh/server_test.go`, `doh/client_test.go`, `cmd/dns-resolver/main_test.go`.

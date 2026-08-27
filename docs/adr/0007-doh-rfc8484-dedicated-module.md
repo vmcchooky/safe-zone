@@ -26,7 +26,7 @@ Separating the protocol from the policy mirrors how RFC 7858 (DoT) support was i
 
 ## Consequences
 
-- `DoHHandler`, `readDNSMessage`, `writeDNSMessage` and `UpstreamResolver` no longer exist in `internal/dns/resolver`; imports move to `internal/dns/doh`.
+- `DoHHandler`, `readDNSMessage`, `writeDNSMessage`, `UpstreamResolver` and `DoDoH` no longer exist in `internal/dns/resolver`; imports move to `internal/dns/doh`.
 - Response `Cache-Control` headers are observable in production; any intermediary added in front of the resolver must respect `private`.
-- The legacy `resolver_test.go` remains build-ignored; live coverage now sits in `internal/dns/doh/server_test.go`, `internal/dns/doh/client_test.go` and `internal/dns/resolver/pipeline_test.go`.
+- The legacy build-ignored `resolver_test.go` was revived against the current architecture (status/version/metrics/policy handlers, block strategies, DoT rate limiting, concurrency, panic recovery, IPv6 sanitization); live coverage sits in `internal/dns/resolver/resolver_test.go`, `internal/dns/resolver/pipeline_test.go`, `internal/dns/doh/server_test.go` and `internal/dns/doh/client_test.go`.
 - No new environment variables or configuration are introduced; existing `SAFE_ZONE_UPSTREAM_DOH_URLS`, rate limiting and block strategy settings behave unchanged.
