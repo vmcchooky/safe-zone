@@ -368,6 +368,10 @@ func remainingTokens(ch chan struct{}) int64 {
 var bodyDiscardLimit = 16 << 10
 
 func nextIndex(cursor *atomic.Uint64, pool int) int {
+	if pool <= 0 {
+		return 0
+	}
+	// #nosec G115 -- pool is positive and modulo bounds result within [0, pool)
 	return int((cursor.Add(1) - 1) % uint64(pool))
 }
 
