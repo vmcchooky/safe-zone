@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -199,9 +200,14 @@ type DB struct {
 	dbPath        string
 	telemetryCh   chan TelemetryEntry
 	retentionDays int
-	configMu      sync.RWMutex
-	done          chan struct{}
-	wg            sync.WaitGroup
+	// writePercent controls what fraction of analysis telemetry entries are
+	// actually persisted (0-100). Defaults to 100 so behavior is unchanged;
+	// high-traffic deployments can lower it to bound SQLite growth.
+	writePercent int32
+	sampleSeq    atomic.Uint64
+	configMu     sync.RWMutex
+	done         chan struct{}
+	wg           sync.WaitGroup
 
 	// CIDR Cache
 	cidrMu    sync.RWMutex
@@ -506,11 +512,22 @@ func New(path string, retentionDays int) (*DB, error) {
 		}
 	}
 
+	// Telemetry write sampling: persist only a fraction of analysis records.
+	// Defaults to 100% (unchanged behavior); bounded-traffic deployments can
+	// lower it to cap SQLite growth at high request rates.
+	writePercent := 100
+	if v := os.Getenv("SAFE_ZONE_TELEMETRY_WRITE_PERCENT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 && n <= 100 {
+			writePercent = n
+		}
+	}
+
 	d := &DB{
 		db:            sqlDB,
 		dbPath:        path,
 		telemetryCh:   make(chan TelemetryEntry, telemetryBufferSize),
 		retentionDays: retentionDays,
+		writePercent:  int32(writePercent),
 		done:          make(chan struct{}),
 	}
 
@@ -539,6 +556,7 @@ func New(path string, retentionDays int) (*DB, error) {
 		"service":        "store",
 		"path":           path,
 		"retention_days": retentionDays,
+		"write_percent":  writePercent,
 	})
 	return d, nil
 }
@@ -562,9 +580,18 @@ func (d *DB) Enabled() bool {
 
 // RecordAnalysis enqueues a telemetry entry for async writing.
 // Non-blocking: if the buffer is full, the entry is silently dropped.
+// When write sampling is enabled (SAFE_ZONE_TELEMETRY_WRITE_PERCENT < 100),
+// entries are uniformly skipped so sustained high traffic cannot outgrow disk.
 func (d *DB) RecordAnalysis(entry TelemetryEntry) {
 	if !d.Enabled() {
 		return
+	}
+	if d.writePercent < 100 {
+		seq := d.sampleSeq.Add(1)
+		bucket := int(((seq * 1103515245) >> 16) % uint64(10000))
+		if bucket >= int(d.writePercent)*100 {
+			return
+		}
 	}
 	select {
 	case d.telemetryCh <- entry:
@@ -1855,6 +1882,9 @@ func (d *DB) loadCIDRCache() error {
 				})
 			}
 		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
 	}
 
 	sort.Slice(cache, func(i, j int) bool {

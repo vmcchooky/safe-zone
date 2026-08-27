@@ -1,0 +1,42 @@
+# Local capacity-test override (project: safe-zone-loadtest).
+# Isolates load testing from staging: separate compose project => separate
+# volumes/SQLite; rate limiting, enrichment, OSINT, AI and adblock sync are
+# disabled so no request path can leave the local Docker network.
+# Traffic is generated in-network by the loadgen service (cmd/load-ramp);
+# nothing here publishes a public port.
+services:
+  core-api:
+    environment:
+      SAFE_ZONE_RATELIMIT_ENABLED: "false"
+      SAFE_ZONE_ENRICH_ENABLED: "false"
+      SAFE_ZONE_OSINT_ENABLED: "false"
+      SAFE_ZONE_AI_PROVIDER: "none"
+      SAFE_ZONE_ADBLOCK_ENABLED: "false"
+      SAFE_ZONE_AGENT_ENABLED: "false"
+      SAFE_ZONE_ML_MODE: "disabled"
+      SAFE_ZONE_URL_ML_MODE: ${LOADTEST_URL_ML_MODE:-disabled}
+      SAFE_ZONE_URL_ML_BUNDLE_DIR: /app/models/safe-zone/url-v1
+      SAFE_ZONE_URL_ML_REQUIRED: "false"
+      SAFE_ZONE_URL_ML_SHADOW_PERCENT: "100"
+      SAFE_ZONE_URL_ML_SHADOW_SEED: ""
+      SAFE_ZONE_URL_ML_BASELINE_PATH: ${LOADTEST_URL_ML_BASELINE:-}
+      SAFE_ZONE_URL_ML_FEEDBACK_SECRET: ""
+    ports:
+      - "127.0.0.1:18080:8080"
+
+  loadgen:
+    profiles: ["loadgen"]
+    build:
+      context: .
+      args:
+        SERVICE: load-ramp
+        VERSION: ${SAFE_ZONE_BUILD_VERSION:-dev}
+        GIT_COMMIT: ${SAFE_ZONE_BUILD_GIT_COMMIT:-unknown}
+        BUILD_TIME: ${SAFE_ZONE_BUILD_TIME:-unknown}
+        IMAGE_TAG: "safe-zone-load-ramp:loadtest"
+        SOURCE_REPO: ${SAFE_ZONE_BUILD_SOURCE_REPO:-unknown}
+    entrypoint: ["/app/service"]
+    environment:
+      TARGET_BASE: http://core-api:8080
+    depends_on:
+      - core-api
