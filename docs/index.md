@@ -4,12 +4,12 @@ Safe Zone is an open-source, nonprofit project developing a DNS-level anti-phish
 
 The project is currently in active development. This repository describes an evolving implementation intended to become a useful community-serving tool; it does not claim complete coverage or production readiness for every deployment scenario. The public project direction is summarized on the [Safe Zone project page](https://www.quorix.io.vn/projects/safe-zone/).
 
-The operator-facing production source of truth is [production-completion-checklist.md](production-completion-checklist.md). Historical design notes and implementation records remain under [specs/](specs/).
+The operator-facing production source of truth is [production-completion-checklist.md](production-completion-checklist.md). The canonical release status and manifest is [deployment/release-manifest-r5.md](deployment/release-manifest-r5.md). Historical design notes and implementation records remain under [specs/](specs/).
 
 ## Project direction
 
 - **Scope:** DNS-level anti-phishing and domain-risk analysis for Vietnamese users and organizations.
-- **Current status:** In development; features, integrations, and operational guidance continue to evolve.
+- **Current status:** Release Candidate (`RELEASE_CANDIDATE_SHADOW_READY`). Core engine and URL ML shadow integration passed local capacity testing (`LOCAL_CAPACITY_PASS_BELOW_200K`); final deployment validation is `PENDING_VPS` ([runbooks/vps-load-test.md](runbooks/vps-load-test.md)). URL ML promotion remains `SHADOW_OBSERVER_ONLY` (pending external traffic evidence).
 - **Target outcome:** An open-source, community-serving system for filtering malicious domains through local policy and threat intelligence.
 - **Core approach:** Go services, DoH and DoT, lexical analysis, threat feeds, optional local AI refinement, and a self-hosted operator control plane.
 
@@ -227,26 +227,31 @@ attaches to the normal local development pair on `5173` and `8080`.
 ## Docker
 
 ```bash
+# Base development stack (100% telemetry write)
 cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# Production stack (5% telemetry write sampling default, loopback internal ports)
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 ```
 
 The dev stack binds `core-api`, `dns-resolver`, and DoT to loopback only for local validation.
-The production stack uses `docker-compose.production.yml`, keeps `8080` and `8081` on loopback, and publishes only `80`, `443`, and `853`.
+The production stack uses `docker-compose.production.yml`, keeps `8080` and `8081` on loopback, publishes only `80`, `443`, and `853`, and defaults telemetry write sampling to **5%** (overridable to 1% via `SAFE_ZONE_TELEMETRY_WRITE_PERCENT`).
 The runtime image includes an internal HTTP healthcheck, and the optional `feed-syncd` service is gated behind the `feed-sync` Compose profile.
+For isolated capacity load testing, use `docker-compose.loadtest.yml` ([runbooks/vps-load-test.md](runbooks/vps-load-test.md)).
 
 ## Operations
 
 Use the PowerShell helper for day-to-day deployment and storage maintenance:
 
 ```powershell
-pwsh ./scripts/safe-zone.ps1 deploy
-pwsh ./scripts/safe-zone.ps1 deploy-dev
-pwsh ./scripts/safe-zone.ps1 status
-pwsh ./scripts/safe-zone.ps1 backup
-pwsh ./scripts/safe-zone.ps1 restore
-pwsh ./scripts/safe-zone.ps1 prune
-pwsh ./scripts/safe-zone.ps1 feed-sync
+pwsh ./scripts/ops/safe-zone.ps1 deploy
+pwsh ./scripts/ops/safe-zone.ps1 deploy-dev
+pwsh ./scripts/ops/safe-zone.ps1 status
+pwsh ./scripts/ops/safe-zone.ps1 backup
+pwsh ./scripts/ops/safe-zone.ps1 restore
+pwsh ./scripts/ops/safe-zone.ps1 prune
+pwsh ./scripts/ops/safe-zone.ps1 feed-sync
 ```
 
 - `deploy` builds and starts the Compose stack, then waits for the health endpoints.
@@ -256,7 +261,7 @@ pwsh ./scripts/safe-zone.ps1 feed-sync
 - `prune` keeps the newest backups and removes stale `tmp/*.log` files.
 - `feed-sync` resolves `SAFE_ZONE_AGENT_FEED_SOURCES`, then `SAFE_ZONE_AGENT_FEED_PRESET`, then `SAFE_ZONE_THREAT_FEED_SOURCE`, and runs each source once.
 
-For Linux hosts, the equivalent shell helper supports `deploy`, `deploy-dev`, and the `SAFE_ZONE_STACK=production|dev` selector for status/log/backup helpers.
+For Linux hosts, the equivalent shell helper `scripts/ops/safe-zone.sh` supports `deploy`, `deploy-dev`, and the `SAFE_ZONE_STACK=production|dev` selector for status/log/backup helpers.
 
 The same actions are also available as `mise` tasks defined in [mise.toml](../mise.toml).
 

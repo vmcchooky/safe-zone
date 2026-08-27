@@ -233,6 +233,17 @@ bounded `url_ml_feedback` SQLite table (TTL + row cap + dedupe + one-label
 anti-replay). Persistence failures fail closed for feedback alone (HTTP 503)
 and never touch analysis.
 
+Error-path correlation (fix in `c3314a8`): sampled events with caller-supplied
+`event_id` are recorded synchronously before the analyze response returns even
+when URL classification fails (`invalid_url_context` or `prediction_error`),
+using a probability sentinel `-1` so that caller feedback is never rejected with
+a spurious `unknown_event`.
+
+Operational drift baseline note: `ml/models/url-baseline/operational-baseline.json`
+is a **staging operational baseline** frozen from 34 synthetic-driven canary samples.
+It is explicitly non-production; an external operational baseline can only be
+frozen from live external traffic windows.
+
 Privacy invariants: no raw URL/query/redirect target is ever persisted;
 label feedback (`POST /v1/url-ml/feedback`) correlates only HMAC
 fingerprints of opaque caller event IDs; calibration/FPR numbers exist only
@@ -252,4 +263,4 @@ ml/
 └── tests/fixtures/golden_vectors.v1.json
 ```
 
-For release gates, rollout stages, privacy constraints, and incident response, use `docs/specs/safe-zone-ai-plan.md` and `docs/production-completion-checklist.md` rather than creating a parallel ML deployment contract.
+For canonical release status and two-gate evaluation, see `docs/deployment/release-manifest-r5.md`. For release gates, rollout stages, privacy constraints, and incident response, use `docs/specs/safe-zone-ai-plan.md` and `docs/production-completion-checklist.md` rather than creating a parallel ML deployment contract.

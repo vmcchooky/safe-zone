@@ -204,12 +204,12 @@ this gate except for the safety profile checks below.
 |---|---|---|
 | A1 | Deterministic analysis path passes full `go test ./...`, race and vet on the release SHA | release preflight |
 | A2 | Production config fails startup on missing/weak admin secrets (`SAFE_ZONE_ENV=production`) | startup check |
-| A3 | TLS/reverse proxy: only Caddy public; internal ports loopback-only | `check-production-ports.sh` |
+| A3 | TLS/reverse proxy: only Caddy public; internal ports loopback-only | `scripts/ops/check-production-ports.sh` |
 | A4 | Health/readiness endpoints and Compose startup ordering verified after restart | `/healthz`, `/readyz` |
 | A5 | Image tags pinned / build provenance recorded; rollback target known | preflight metadata |
-| A6 | Load test within thresholds on target VPS class (`performance-proof.sh`) | benchmark archive |
+| A6 | Load test within thresholds on target VPS class ([docs/runbooks/vps-load-test.md](vps-load-test.md)); local capacity benchmark closed with `LOCAL_CAPACITY_PASS_BELOW_200K` ([docs/benchmarks/local-capacity-loadtest-20260827.md](../benchmarks/local-capacity-loadtest-20260827.md)) | benchmark archive & VPS report |
 | A7 | Restart, rollback, backup/restore drills pass; dependency failure (Redis down) degrades without verdict impact | drill records |
-| A8 | Minimal operational telemetry/alerts configured from existing JSON metrics | alert rules file |
+| A8 | Minimal operational telemetry/alerts configured from existing JSON metrics and runtime block | alert rules file |
 | A9 | Installation/upgrade/rollback/privacy docs current | runbooks index |
 | A10 | UI/API compatibility: dashboard works against the release API; degraded mode (no Redis/OSINT/AI) shows usable UX | manual QA checklist |
 | A11 | Safe URL ML profile holds (see below) even while URL ML stays shadow | `/v1/status → ml.url` |
@@ -249,12 +249,12 @@ Gate B progress:
 - Feedback persistence failures fail closed for feedback alone (HTTP 503)
   while analysis continues unaffected.
 
-Record the outcome of each gate separately in the release manifest:
+Record the outcome of each gate separately in the release manifest ([docs/deployment/release-manifest-r5.md](../deployment/release-manifest-r5.md)):
 
 ```text
-Gate A (Product Release):    READY | HOLD_WITH_SPECIFIC_BLOCKER | NO_GO
-Gate B (URL ML Promotion):   SHADOW_OBSERVER_ONLY | PROMOTION_REVIEW_READY | ENFORCE_APPROVED
+Gate A (Product Release):    READY_FOR_VPS_VALIDATION (Deployment: PENDING_VPS) | READY | NO_GO
+Gate B (URL ML Promotion):   SHADOW_OBSERVER_ONLY (Promotion: PENDING_EXTERNAL_EVIDENCE) | PROMOTION_REVIEW_READY | ENFORCE_APPROVED
 ```
 
-The overall round status is derived from Gate A; Gate B is reported as its own
+The overall round status is derived from Gate A (`RELEASE_CANDIDATE_SHADOW_READY`); Gate B is reported as its own
 line so shadow evidence work is visible without being able to block release.

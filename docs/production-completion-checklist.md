@@ -180,11 +180,12 @@ Steps:
 Goal: prove the system meets the target environment, not only local benchmarks.
 
 - `[x]` Local Go benchmarks exist.
-- `[~]` Local benchmark file explicitly says it does not prove 500 qps cache-hit / 50 qps miss on target VPS.
-- `[x]` Add HTTP/DoH load test script for cache hit and cache miss paths. Implemented as `cmd/load-test`.
-- `[x]` Add a reproducible performance-proof wrapper. Implemented as `scripts/qa/performance-proof.sh`.
-- `[ ]` Run benchmark on the chosen VPS class.
-- `[ ]` Benchmark with Redis enabled, DoH through Caddy, TLS/WHOIS enrichment enabled, and AI mode explicitly selected.
+- `[x]` Local capacity load test completed with verdict `LOCAL_CAPACITY_PASS_BELOW_200K` ([docs/benchmarks/local-capacity-loadtest-20260827.md](benchmarks/local-capacity-loadtest-20260827.md)): Workload A health ceiling ~24,958 RPS (shared-VM), Workload B analyze ~4,930 RPS clean, Workload C URL shadow overhead +23% CPU / -9..10% capacity, 30m release-mode soak @ 2,200 offer (2,190.97 achieved RPS, 99.6%, 0 errors, live heap flat at 7 MB).
+- `[x]` Add HTTP/DoH load test script for cache hit and cache miss paths. Implemented as `cmd/load-test` and open-loop generator `cmd/load-ramp`.
+- `[x]` Add a reproducible performance-proof wrapper. Implemented as `scripts/verifiers/qa/performance-proof.sh`.
+- `[x]` Add VPS capacity verification runbook ([docs/runbooks/vps-load-test.md](runbooks/vps-load-test.md)) for reduced-workload execution on the target VPS class.
+- `[!]` Run reduced benchmark on the chosen VPS class according to [docs/runbooks/vps-load-test.md](runbooks/vps-load-test.md).
+- `[!]` Benchmark with Redis enabled, DoH through Caddy, TLS/WHOIS enrichment enabled, and AI mode explicitly selected.
 - `[x]` Record CPU, memory, latency percentiles, error rate, and cache hit rate in the benchmark tooling.
 - `[x]` Define pass/fail thresholds for production release.
 
@@ -196,7 +197,7 @@ Benchmark procedure:
    ```sh
    SAFE_ZONE_BENCH_API_URL=https://safe.example.com/v1/analyze \
    SAFE_ZONE_BENCH_DOCKER_CONTAINERS="safe-zone-core-api safe-zone-redis" \
-   scripts/qa/performance-proof.sh
+   scripts/verifiers/qa/performance-proof.sh
    ```
 
 3. Archive the generated `tmp/performance-proof/<timestamp>/` directory in the release evidence bundle.
@@ -346,9 +347,10 @@ Phase 0–4 evidence from the current repository includes `go test ./...`, `go t
 - `[!]` Record reviewed live benign promotions, coverage, invalid-context rate and target-host p95/p99 on external traffic cohort before any enforce design is considered.
 - `[x]` Vòng 4 (2026-08-26): seeded canary stepper `1% → 5% → 10%` với policy-revision audit trail (`v10-url-canary-scope-changes.json`, override `docker-compose.canary.yml` chống shell-env drift); UI caller gửi `requested_url` + opaque `event_id` + `caller_class=ui`; snapshot-delta collector sửa cả hai audit gap Vòng 3 (workers, exact+round-half-up rates); operational baseline thật từ canary traffic (`29b8bb72…`, fail-open loader, `operational_reference=true` verified); feedback HMAC privacy-safe; failure injection `4/4` PASS và rollback drill `5/5` PASS trên deployment thật.
 
-- `[x]` Vòng 5 (2026-08-26): release convergence — hai gate độc lập được định nghĩa tại `docs/runbooks/release-gate.md` §8 (Gate A Product Release / Gate B URL ML Promotion, Gate B không thể chặn Gate A); feedback durable bounded trên SQLite sẵn có (`internal/store/url_feedback.go`, `internal/risk/url_feedback_durable.go`: HMAC keyed secret qua env/_FILE, key-version rotation một bước, TTL 168h + cap 65.536 rows, dedupe + anti-replay one-label, fail-closed riêng cho feedback với HTTP 503, rate-limit tier riêng); coverage `missing_context_breakdown`; UI feedback loop khép kín gated bởi `url_ml.sampled` (browser e2e PASS); external pilot kit `ml/src/run_external_pilot.py` từ chối trộn synthetic vào external và từ chối nâng scope khi gate/volume chưa đạt; pilot staging seeded `url-canary-v5-r5-20260826` 1→5→10% synthetic-driven (0 prediction error, invalid rate 0.0000) + failure injection 4/4 + rollback drill 5/5; baseline Vòng 4 ghi rõ là **staging** operational baseline.
+- `[x]` Vòng 5 (2026-08-26/27): release convergence — hai gate độc lập được định nghĩa tại `docs/runbooks/release-gate.md` §8 (Gate A Product Release / Gate B URL ML Promotion, Gate B không thể chặn Gate A); feedback durable bounded trên SQLite sẵn có (`internal/store/url_feedback.go`, `internal/risk/url_feedback_durable.go`: HMAC keyed secret qua env/_FILE, key-version rotation một bước, TTL 168h + cap 65.536 rows, dedupe + anti-replay one-label, fail-closed riêng cho feedback với HTTP 503, rate-limit tier riêng); coverage `missing_context_breakdown`; UI feedback loop khép kín gated bởi `url_ml.sampled` (browser e2e PASS); error-path correlation: sampled failing events (`invalid_url_context` và `prediction_error`) được ghi nhận probability sentinel `-1` trước khi trả response để caller gán nhãn không bị `unknown_event` (commit `c3314a8`); telemetry write sampling mặc định 5% trong production override để khống chế đĩa (`docker-compose.production.yml`); runtime memory metrics (`goroutines`, `heap_alloc_mb`, `sys_mb`, `num_gc`) trên `/metrics`; local capacity test đóng với verdict `LOCAL_CAPACITY_PASS_BELOW_200K` ([docs/benchmarks/local-capacity-loadtest-20260827.md](benchmarks/local-capacity-loadtest-20260827.md)); external pilot kit `ml/src/run_external_pilot.py` từ chối trộn synthetic vào external và từ chối nâng scope khi gate/volume chưa đạt; pilot staging seeded `url-canary-v5-r5-20260826` 1→5→10% synthetic-driven (0 prediction error, invalid rate 0.0000) + failure injection 4/4 + rollback drill 5/5; baseline Vòng 4 ghi rõ là **staging** operational baseline.
 
-Round-4 canary artifacts are `ml/experiments/v10-url-canary-scope-changes.json`, `v10-url-canary-window-{1,5,10}pct.json`, `v10-url-canary-operational-baseline.json`, `v10-url-canary-failure-injection.json`, and `v10-url-canary-rollback-drill.json`. This route remains Gate B `SHADOW_OBSERVER_ONLY` (BLOCKER-1: external URL-context volume; Round-5 windows added 134 synthetic-driven evaluated with zero errors, and the pilot gate tool now refuses scope advancement without external volume). It does not make the domain-only `22/34` representative result pass and does not authorize enforce; per the Round-5 two-gate model this does NOT block the product release gate.
+Round-4 canary artifacts are `ml/experiments/v10-url-canary-scope-changes.json`, `v10-url-canary-window-{1,5,10}pct.json`, `v10-url-canary-operational-baseline.json`, `v10-url-canary-failure-injection.json`, and `v10-url-canary-rollback-drill.json`. This route remains Gate B `SHADOW_OBSERVER_ONLY` (BLOCKER-1: external URL-context volume; Round-5 windows added 134 synthetic-driven evaluated with zero errors, and the pilot gate tool now refuses scope advancement without external volume). It does not make the domain-only `22/34` representative result pass and does not authorize enforce; per the Round-5 two-gate model this does NOT block the product release gate. Overall status: `RELEASE_CANDIDATE_SHADOW_READY` (Product Release Gate: `READY_FOR_VPS_VALIDATION` / `PENDING_VPS`; URL ML Promotion: `SHADOW_OBSERVER_ONLY` / `PENDING_EXTERNAL_EVIDENCE`).
+
 
 ### AI/ML release evidence
 
@@ -468,7 +470,7 @@ Safe Zone can be called production MVP when all of these are true:
 - `[~]` Backups can be copied offsite and restored by scripts; a scheduled restore drill still needs to be recorded.
 - `[x]` Structured logs and request IDs exist.
 - `[x]` Alerts exist for the main failure modes.
-- `[ ]` Performance target is proven on the target VPS.
+- `[!]` Performance target is proven on the target VPS. Local capacity benchmark closed with `LOCAL_CAPACITY_PASS_BELOW_200K` ([docs/benchmarks/local-capacity-loadtest-20260827.md](benchmarks/local-capacity-loadtest-20260827.md)); reduced verification pending on target VPS ([docs/runbooks/vps-load-test.md](runbooks/vps-load-test.md)).
 - `[~]` Threat model draft exists and release-blocking risks are identified; blocker closure is still required.
 - `[~]` Staging deploy and production smoke tests are scripted; pass records from the target environment are still needed.
 - `[~]` AI release profile is explicit. Deterministic/LLM/Agent/Custom ML components are enabled only when their section 10A gates and evidence are complete.

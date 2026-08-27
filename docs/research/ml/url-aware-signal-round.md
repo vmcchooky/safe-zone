@@ -416,6 +416,13 @@ store sẵn có (`internal/store/url_feedback.go`,
   và gửi đúng `event_id` đã dùng tới `/v1/url-ml/feedback`. Lỗi UX thật phát
   hiện khi browser e2e — nút feedback hiện cả khi quan sát KHÔNG được chọn
   mẫu (`unknown_event`) — đã sửa: prompt chỉ hiện khi `url_ml.sampled=true`.
+- **Khắc phục lỗi correlation trên nhánh error-path (commit `c3314a8`):** Trước
+  đây khi phân loại URL gặp lỗi (`invalid_url_context` hoặc `prediction_error`),
+  hàm phân tích trả về sớm trước khi gọi record, dẫn đến việc caller quan sát
+  được sự kiện hợp lệ có `sampled=true` nhưng khi gửi feedback vẫn bị lỗi
+  `unknown_event`. Bản sửa lỗi đã bổ sung lệnh ghi nhận fingerprint đồng bộ
+  trước khi response hoàn tất, sử dụng probability sentinel `-1` (biểu thị
+  không có prediction, tách biệt hoàn toàn khỏi bucket $[0, 0.1)$).
 - Coverage telemetry bổ sung `missing_context_breakdown`
   (`get_domain_only|post_not_provided|unspecified`) giải thích lý do thiếu
   context theo cấu trúc request.
@@ -450,18 +457,26 @@ Không freeze external operational baseline nào ở Vòng 5 vì chưa đủ m�
 gian quan sát external có ý nghĩa; freeze chỉ hợp lệ qua
 `freeze_url_canary_baseline.py` với provenance sample count + confidence.
 
-### Kết luận hai gate
+### Kết luận hai gate & Trạng thái Canonical hiện tại
 
-- **Gate A Product Release: READY** (với `[!]` môi trường: load test và port/
-  firewall check cần chạy trên VPS class thật — blocker vận hành, không phải
-  code).
-- **Gate B URL ML Promotion: SHADOW_OBSERVER_ONLY** — thiếu external volume
-  là blocker duy nhất, không ảnh hưởng Gate A.
+Trạng thái canonical chính thức của toàn hệ thống được chuẩn hóa tại
+[docs/deployment/release-manifest-r5.md](../../deployment/release-manifest-r5.md):
+
+- **Trạng thái chung:** `RELEASE_CANDIDATE_SHADOW_READY`.
+- **Gate A Product Release: READY_FOR_VPS_VALIDATION (Deployment: PENDING_VPS)** — Local
+  capacity test đã đóng với verdict `LOCAL_CAPACITY_PASS_BELOW_200K`
+  ([docs/benchmarks/local-capacity-loadtest-20260827.md](../../benchmarks/local-capacity-loadtest-20260827.md));
+  kiểm tra rút gọn trên VPS đích được hướng dẫn tại
+  [docs/runbooks/vps-load-test.md](../../runbooks/vps-load-test.md).
+- **Gate B URL ML Promotion: SHADOW_OBSERVER_ONLY (Promotion: PENDING_EXTERNAL_EVIDENCE)** —
+  Chuyên gia URL ML hoạt động độc lập ở chế độ shadow; thiếu external volume là blocker
+  duy nhất cho enforce promotion và tuyệt đối không ảnh hưởng tới Gate A.
 
 ## Lịch sử Thay đổi (Version History)
 
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
+| 2026-08-27 | Cập nhật bản sửa lỗi correlation trên error-path (sentinel -1); đồng bộ trạng thái canonical `RELEASE_CANDIDATE_SHADOW_READY`, kết quả local capacity test `LOCAL_CAPACITY_PASS_BELOW_200K` và runbook VPS load-test | Gemini 3.7 |
 | 2026-08-26 | Vòng 5: hai gate độc lập (release-gate §8); feedback durable SQLite bounded (HMAC keyed, key-version rotation, TTL+cap, dedupe+anti-replay, fail-closed); missing-context breakdown; UI feedback loop fix theo url_ml.sampled; external pilot kit `run_external_pilot.py` chống trộn synthetic/external; pilot 1→5→10% seeded với gate từ chối volume thiếu; baseline Vòng 4 được dán nhãn staging; kết luận `RELEASE_CANDIDATE_SHADOW_READY` | ox-alpha (Claude) |
 | 2026-08-26 | Vòng 4: canary 1%→5%→10% seeded có policy revision audit trail, UI caller URL-context, snapshot-delta collector, operational baseline thật (fail-open), feedback HMAC privacy-safe, failure injection trên runtime thật; kết luận `HOLD_WITH_SPECIFIC_BLOCKER` (thiếu external volume) | ox-alpha (Claude) |
 | 2026-08-26 | Hoàn tất Vòng 3 Compose staging deployment: `679/679` replay, p95 inference `250 µs`, rollback drill `5/5` PASS, đóng băng operational baseline `v10-url-shadow-operational-baseline.json`, đề xuất canary gate | Gemini 3.7 |

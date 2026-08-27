@@ -6,12 +6,12 @@ Safe Zone là dự án mã nguồn mở, phi lợi nhuận phát triển hệ th
 
 Dự án đang trong giai đoạn phát triển tích cực. Kho chứa mã nguồn này mô tả kiến trúc và mã nguồn liên tục được hoàn thiện nhằm cung cấp một công cụ hữu ích cho cộng đồng; hệ thống không cam kết bao phủ 100% mối đe dọa hoặc sẵn sàng cho mọi kịch bản triển khai. Định hướng công khai được tóm tắt tại [trang dự án Safe Zone](https://www.quorix.io.vn/projects/safe-zone/).
 
-Tài liệu chuẩn cho người vận hành triển khai production được lưu trữ tại [docs/production-completion-checklist.md](docs/production-completion-checklist.md). Các ghi chú thiết kế và tài liệu lịch sử nằm tại thư mục [docs/specs/](docs/specs/).
+Tài liệu chuẩn cho người vận hành triển khai production được lưu trữ tại [docs/production-completion-checklist.md](docs/production-completion-checklist.md). Trạng thái release canonical và manifest chính thức được lưu trữ tại [docs/deployment/release-manifest-r5.md](docs/deployment/release-manifest-r5.md). Các ghi chú thiết kế và tài liệu lịch sử nằm tại thư mục [docs/specs/](docs/specs/).
 
 ## Định hướng dự án
 
 - **Phạm vi (Scope):** Chống lừa đảo ở cấp độ DNS và phân tích rủi ro tên miền cho người dùng và tổ chức tại Việt Nam.
-- **Trạng thái hiện tại:** Đang phát triển; các tính năng, tích hợp và hướng dẫn vận hành liên tục được cập nhật.
+- **Trạng thái hiện tại:** Release Candidate (`RELEASE_CANDIDATE_SHADOW_READY`). Hệ thống lõi và URL ML shadow integration đã vượt qua kiểm tra công suất cục bộ (`LOCAL_CAPACITY_PASS_BELOW_200K`); xác thực triển khai cuối cùng đang chờ trên VPS đích (`PENDING_VPS`, xem [docs/runbooks/vps-load-test.md](docs/runbooks/vps-load-test.md)). URL ML promotion duy trì `SHADOW_OBSERVER_ONLY` (chờ dữ liệu traffic external).
 - **Mục tiêu:** Hệ thống mã nguồn mở phục vụ cộng đồng, hỗ trợ lọc tên miền độc hại thông qua chính sách nội bộ và dữ liệu đe dọa (threat intelligence).
 - **Phương pháp cốt lõi:** Các dịch vụ viết bằng Go, hỗ trợ DoH và DoT, phân tích cấu trúc ký tự (lexical analysis), dữ liệu đe dọa, tinh chỉnh tùy chọn qua AI nội bộ, và giao diện quản trị self-hosted.
 
@@ -192,11 +192,15 @@ GitHub Actions chạy lệnh `mise run ci` trên mỗi lượt push và pull req
 ## Docker
 
 ```bash
+# Base development stack (100% telemetry write)
 cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+
+# Production stack (5% telemetry write sampling mặc định, loopback internal ports)
+docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 ```
 
-Môi trường dev chỉ lắng nghe cổng loopback cho `core-api`, `dns-resolver`, và DoT. Môi trường production sử dụng `docker-compose.production.yml`, giữ `8080` và `8081` trên loopback, chỉ mở công khai cổng `80`, `443`, và `853`.
+Môi trường dev chỉ lắng nghe cổng loopback cho `core-api`, `dns-resolver`, và DoT với 100% telemetry write. Môi trường production sử dụng `docker-compose.production.yml`, giữ `8080` và `8081` trên loopback, chỉ mở công khai cổng `80`, `443`, và `853`, đồng thời bật telemetry write sampling mặc định ở mức **5%** (có thể ghi đè thành 1% bằng `SAFE_ZONE_TELEMETRY_WRITE_PERCENT`). Để kiểm tra công suất cô lập, sử dụng `docker-compose.loadtest.yml` ([docs/runbooks/vps-load-test.md](docs/runbooks/vps-load-test.md)).
 
 ## Vận hành (Operations)
 
