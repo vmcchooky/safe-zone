@@ -1,0 +1,107 @@
+name: Security
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  schedule:
+    # Weekly scan at 03:17 UTC Sunday (off-peak) to catch newly published CVEs
+    # in dependencies and base images of an otherwise unchanged tree.
+    - cron: "17 3 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  npm-audit:
+    name: Dependency audit (npm)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            ui/package-lock.json
+            package-lock.json
+
+      - name: Audit UI dependencies (fail on high or critical)
+        run: npm audit --prefix ui --audit-level=high
+
+      - name: Audit root dependencies (fail on high or critical)
+        run: npm audit --audit-level=high
+
+  gitleaks:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks (pinned binary, checksum verified)
+        run: |
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" -o /tmp/gitleaks.tar.gz
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan full git history for secrets
+        run: gitleaks git . --config .gitleaks.toml --redact --verbose
+
+  trivy:
+    name: Container scan (trivy)
+    runs-on: ubuntu-latest
+    # Container scan only makes sense on the default branch; PRs are covered
+    # by the cheaper quality job in ci.yml.
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    needs: [gitleaks, npm-audit]
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - core-api
+          - dns-resolver
+          - feed-sync
+          - feed-syncd
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build image
+        run: >
+          docker build
+          --build-arg SERVICE=${{ matrix.service }}
+          --build-arg VERSION=ci
+          -t safe-zone-${{ matrix.service }}:${{ github.sha }} .
+
+      - name: Trivy scan (image CVEs, HIGH+CRITICAL gate)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: safe-zone-${{ matrix.service }}:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          vuln-type: os,library
+
+      - name: Trivy scan (repo misconfig check, non-blocking)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          format: table
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+        continue-on-error: true

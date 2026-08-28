@@ -1,0 +1,22 @@
+# Gitleaks configuration for Safe Zone.
+# Full default ruleset stays enabled; this file only adds allowlists.
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Global allowlists for Safe Zone"
+paths = [
+  # Test fixtures use synthetic secrets by design (TopSecret12345 etc).
+  # Go convention: any *_test.go file. Python: ml/tests/ and ml/src/.
+  '''(^|/)[^/]*_test\.go$''',
+  '''(^|/)ml/tests/.*\.py$''',
+  '''(^|/)ml/src/.*\.py$''',
+  # Lock files hash every dependency; generic-api-key rules misfire on hashes.
+  '''(^|/)package-lock\.json$''',
+  '''(^|/)go\.sum$''',
+  # Example env template by definition contains placeholder values only.
+  '''(^|/)\.env\.example$''',
+  '''(^|/)ops/secrets/README\.md$''',
+  '''(^|/)docs/runbooks/credential-rotation\.md$''',
+]
