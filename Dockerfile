@@ -25,7 +25,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
   -ldflags="-s -w -X safe-zone/internal/buildinfo.Version=${VERSION} -X safe-zone/internal/buildinfo.GitCommit=${GIT_COMMIT} -X safe-zone/internal/buildinfo.BuildTime=${BUILD_TIME} -X safe-zone/internal/buildinfo.ImageTag=${IMAGE_TAG} -X safe-zone/internal/buildinfo.SourceRepo=${SOURCE_REPO}" \
   -o /out/service ./cmd/${SERVICE}
 
-FROM alpine:3.20
+FROM alpine:3.24
 
 ARG SERVICE=core-api
 ARG VERSION=dev
