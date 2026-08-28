@@ -238,6 +238,15 @@ Các thao tác trên cũng có sẵn dưới dạng các task `mise` định ngh
 - `feed-syncd` là tùy chọn và chỉ chạy khi kích hoạt profile Compose `feed-sync`.
 - Metrics, kiểm tra sức khỏe và giao diện quản trị hoạt động ở chế độ self-hosted, không phụ thuộc vào hạ tầng SaaS bên ngoài.
 
+## Contributor và credit công cụ
+
+Các công cụ và tổ chức sau đã hỗ trợ quá trình phát triển Safe Zone:
+
+- [Codex](https://github.com/codex)
+- [Google Antigravity](https://github.com/google-antigravity)
+- [Z.ai](https://github.com/zai-org)
+- [dependabot\[bot\]](https://github.com/apps/dependabot) — bot tự động cập nhật dependency
+
 ## Giấy phép (License)
 
 Dự án được phân phối theo giấy phép mã nguồn mở MIT - xem chi tiết tại tệp [LICENSE](LICENSE).
