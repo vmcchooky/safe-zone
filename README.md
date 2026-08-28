@@ -284,6 +284,15 @@ This project remains in active development. DoT, Gemini, public TLS, DuckDNS, an
 Roadmap decisions should follow [docs/deployment/Safe_Zone_OPEX_Estimate.md](docs/deployment/Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
 Cost-sensitive changes should follow [docs/specs/opex-cost-optimization/policy.md](docs/specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](.github/pull_request_template.md).
 
+## Contributors & tooling credits
+
+The following tools and organizations supported development of Safe Zone:
+
+- [Codex](https://github.com/codex)
+- [Google Antigravity](https://github.com/google-antigravity)
+- [Z.ai](https://github.com/zai-org)
+- [dependabot\[bot\]](https://github.com/apps/dependabot) — automated dependency update bot
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
