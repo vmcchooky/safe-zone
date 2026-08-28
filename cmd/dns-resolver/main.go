@@ -27,6 +27,7 @@ import (
 	"safe-zone/internal/dns/resolver"
 	"safe-zone/internal/dns/server"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 	"safe-zone/internal/observability"
 	"safe-zone/internal/ratelimit"
 	"safe-zone/internal/risk"
@@ -56,8 +57,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	upstreamClient := &http.Client{
-		Timeout: config.DurationMillis("SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS", 3*time.Second),
+	// Upstream fetches go through the shared outbound guard: every dial —
+	// including those caused by redirects — is validated against the
+	// deny-private policy. Exchange additionally validates the configured
+	// URL and each redirect hop before following it.
+	upstreamClient := netguard.NewHTTPClient(&http.Client{
 		Transport: &http.Transport{
 			TLSClientConfig:     &tls.Config{MinVersion: tls.VersionTLS12},
 			MaxIdleConns:        100,
@@ -66,7 +70,7 @@ func main() {
 			TLSHandshakeTimeout: 5 * time.Second,
 			ForceAttemptHTTP2:   true,
 		},
-	}
+	}, config.DurationMillis("SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS", 3*time.Second), false)
 	upstreamURLs := config.String("SAFE_ZONE_UPSTREAM_DOH_URLS",
 		config.String("SAFE_ZONE_UPSTREAM_DOH_URL", "https://cloudflare-dns.com/dns-query"))
 	upstreams := doh.NewUpstreamResolver(upstreamURLs, upstreamClient)

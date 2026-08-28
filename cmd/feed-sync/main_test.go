@@ -4,14 +4,42 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"safe-zone/internal/feed"
 )
+
+// policySourceURL rewrites a loopback httptest URL to a public RFC 5737
+// documentation IP so the source passes the outbound policy checks, while
+// the returned client still dials the real loopback listener.
+func policySourceURL(t *testing.T, srv *httptest.Server) (string, *http.Client) {
+	t.Helper()
+	host := srv.URL[len("http://"):]
+	_, port, err := net.SplitHostPort(host)
+	if err != nil {
+		t.Fatalf("split httptest host: %v", err)
+	}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				_, dialPort, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", dialPort))
+			},
+		},
+	}
+	return "http://" + net.JoinHostPort("198.51.100.10", port), client
+}
 
 func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +51,8 @@ func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reader, closeReader, err := feed.OpenSource(context.Background(), server.URL, server.Client())
+	sourceURL, client := policySourceURL(t, server)
+	reader, closeReader, err := feed.OpenSource(context.Background(), sourceURL, client)
 	if err != nil {
 		t.Fatal(err)
 	}

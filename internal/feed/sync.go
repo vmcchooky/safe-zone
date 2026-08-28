@@ -14,6 +14,7 @@ import (
 	"safe-zone/internal/cache"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 	"safe-zone/internal/safefile"
 
 	"github.com/redis/go-redis/v9"
@@ -298,6 +299,17 @@ func OpenSourceResponseWithin(ctx context.Context, source string, client *http.C
 	}
 
 	if strings.HasPrefix(source, "http://") || strings.HasPrefix(source, "https://") {
+		// Every remote feed source — the configured URL and each redirect
+		// hop — must pass the shared outbound policy, regardless of the
+		// client the caller supplied. Without this a hostile or compromised
+		// feed could redirect fetches into loopback, private, link-local or
+		// CGNAT address space.
+		if _, err := netguard.ValidateURL(source, false); err != nil {
+			return OpenSourceResponse{}, err
+		}
+		client = netguard.NewHTTPClient(client, 30*time.Second, false)
+		client.CheckRedirect = netguard.CheckRedirect
+
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 		if err != nil {
 			return OpenSourceResponse{}, err

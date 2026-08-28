@@ -969,21 +969,25 @@ func TestGetGroupForClient(t *testing.T) {
 	}
 
 	tests := []struct {
-		name     string
-		ip       string
-		clientID string
-		expected string // group name
+		name            string
+		ip              string
+		clientID        string
+		clientIDTrusted bool
+		expected        string // group name
 	}{
-		{"Client ID Match", "8.8.8.8", "my-tablet", "kids"},
-		{"IP Priority Match", "192.168.1.50", "", "iot"},
-		{"CIDR Subnet Match", "192.168.1.20", "", "kids"},
-		{"Fallback Default", "8.8.8.8", "", "default"},
-		{"Client ID Priority over IP", "192.168.1.50", "my-tablet", "kids"}, // Client ID matches kids, IP matches iot. Client ID checked first.
+		{"Trusted Client ID Match", "8.8.8.8", "my-tablet", true, "kids"},
+		{"Untrusted Client ID Cannot Pick Group", "8.8.8.8", "my-tablet", false, "default"},
+		{"Untrusted Client ID Falls Back To IP", "192.168.1.50", "my-tablet", false, "iot"},
+		{"Untrusted Client ID Falls Back To CIDR", "192.168.1.20", "my-tablet", false, "kids"},
+		{"IP Priority Match", "192.168.1.50", "", false, "iot"},
+		{"CIDR Subnet Match", "192.168.1.20", "", false, "kids"},
+		{"Fallback Default", "8.8.8.8", "", false, "default"},
+		{"Trusted Client ID Priority over IP", "192.168.1.50", "my-tablet", true, "kids"}, // Client ID matches kids, IP matches iot. Trusted Client ID checked first.
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			grp, err := db.GetGroupForClient(context.Background(), tt.ip, tt.clientID)
+			grp, err := db.GetGroupForClient(context.Background(), tt.ip, tt.clientID, tt.clientIDTrusted)
 			if err != nil {
 				t.Fatalf("failed to resolve group: %v", err)
 			}

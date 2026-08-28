@@ -139,10 +139,42 @@ func ResolveAllowedIPs(ctx context.Context, host string, allowPrivate bool) ([]n
 	return ips, nil
 }
 
-// IsBlockedIP reports whether an address is loopback, private, or otherwise local.
+// IsBlockedIP reports whether an address is loopback, private, link-local,
+// carrier-grade NAT, or otherwise not a routable public destination.
 func IsBlockedIP(ip net.IP) bool {
 	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || IsCGNAT(ip)
+}
+
+// IsCGNAT reports whether the address falls into the RFC 6598 shared
+// address space 100.64.0.0/10. These addresses are not globally routable
+// and must never be reachable through outbound fetches.
+func IsCGNAT(ip net.IP) bool {
+	ip4 := ip.To4()
+	if ip4 == nil {
+		return false
+	}
+	return ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127
+}
+
+// CheckRedirect is an http.Client redirect policy that validates every
+// redirect hop against the outbound policy. A fetch started from an
+// allowed URL is not allowed to be redirected into loopback, private,
+// link-local, CGNAT or otherwise blocked address space, or to change to
+// a non-HTTP scheme. Returning an error makes the client stop following
+// redirects and surface the error to the caller instead of silently
+// returning the redirect response.
+func CheckRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) >= 10 {
+		return fmt.Errorf("stopped after 10 redirects")
+	}
+	if err := ValidateParsedURL(req.URL, false); err != nil {
+		return fmt.Errorf("blocked redirect: %w", err)
+	}
+	if _, err := ResolveAllowedIPs(req.Context(), req.URL.Hostname(), false); err != nil {
+		return fmt.Errorf("blocked redirect: %w", err)
+	}
+	return nil
 }
 
 func baseTransport(base http.RoundTripper) (*http.Transport, bool) {

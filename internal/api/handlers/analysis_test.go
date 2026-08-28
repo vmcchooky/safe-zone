@@ -28,6 +28,44 @@ func (*handlerURLClassifier) ClassifyURL(analysis.URLContext) (analysis.MLDecisi
 	}, nil
 }
 
+func TestRecentAnalysisHandlerRequiresAuth(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	// Unauthenticated request must be rejected server-side.
+	resp, err := ts.Client.Get(ts.Server.URL + "/v1/analysis/recent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for unauthenticated request, got %d", resp.StatusCode)
+	}
+
+	// A valid admin request must still work (the test server runs without
+	// Redis, so an empty items list is a valid response).
+	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/v1/analysis/recent", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.addAdminBearer(req)
+
+	authedResp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer authedResp.Body.Close()
+	if authedResp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for authenticated request, got %d", authedResp.StatusCode)
+	}
+
+	var payload struct {
+		Items []json.RawMessage `json:"items"`
+	}
+	if err := json.NewDecoder(authedResp.Body).Decode(&payload); err != nil {
+		t.Fatalf("expected valid JSON payload, got %v", err)
+	}
+}
+
 func TestAnalyzeEndpointStillWorks(t *testing.T) {
 	ts := newHandlerTestServer(t)
 

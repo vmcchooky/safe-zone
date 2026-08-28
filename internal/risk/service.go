@@ -26,6 +26,7 @@ import (
 	"safe-zone/internal/domaintrie"
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 	"safe-zone/internal/osint"
 	"safe-zone/internal/store"
 	"safe-zone/internal/tlsinspect"
@@ -75,6 +76,10 @@ type Options struct {
 	OllamaTimeout   time.Duration
 	WhitelistPath   string
 	AdblockFileRoot string
+	// AdblockHTTPClient optionally overrides the HTTP client used to fetch
+	// remote adblock sources (tests inject a loopback-dialing client). When
+	// nil, a shared outbound-guarded client is used.
+	AdblockHTTPClient *http.Client
 	// DisableAdblockSync prevents background source/cache synchronization for
 	// isolated replay and tests that must not perform external I/O.
 	DisableAdblockSync bool
@@ -163,6 +168,7 @@ type Service struct {
 	whoisCacheTTL     time.Duration
 	osint             *osint.Service
 	adblockDataRoot   string
+	adblockHTTPClient *http.Client
 	mlClassifier      analysis.DomainClassifier
 	mlMode            analysis.MLMode
 	mlCanary          MLCanaryConfig
@@ -415,43 +421,44 @@ func NewService(options Options) *Service {
 
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	svc := &Service{
-		lifecycleCtx:     lifecycleCtx,
-		lifecycleCancel:  lifecycleCancel,
-		redis:            options.Redis,
-		redisTimeout:     options.RedisTimeout,
-		ttlAllowed:       options.TTLAllowed,
-		ttlSuspicious:    options.TTLSuspicious,
-		ttlBlocked:       options.TTLBlocked,
-		recentLimit:      recentLimit,
-		recentTTL:        configDuration(options.RecentTTL, 24*time.Hour),
-		threatFeedKey:    threatFeedKey,
-		feedRevisionKey:  feed.RevisionKey(threatFeedKey),
-		ai:               aiClient,
-		aiShared:         aiShared,
-		whitelist:        wl,
-		store:            options.Store,
-		brandStore:       brandStore,
-		configReloadChan: configReloadChannel,
-		configReloadPoll: configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
-		configReloadOn:   options.ConfigReloadEnabled,
-		nodeRole:         strings.TrimSpace(options.NodeRole),
-		reloadBackoffMin: analysisConfigReloadBackoffMin,
-		reloadBackoffMax: analysisConfigReloadBackoffMax,
-		enrichEnabled:    options.EnrichEnabled,
-		enrichTimeout:    options.EnrichTimeout,
-		enrichDone:       make(chan struct{}),
-		enrichInFlight:   make(map[string]struct{}),
-		whoisCacheTTL:    configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
-		osint:            options.OSINT,
-		adblockDataRoot:  adblockDataRoot,
-		mlClassifier:     options.MLClassifier,
-		mlMode:           mlMode,
-		mlCanary:         mlCanary,
-		urlMLClassifier:  options.URLMLClassifier,
-		urlMLMode:        urlMLMode,
-		urlMLShadow:      urlMLShadow,
-		urlMLOpsBaseline: options.URLOpsBaseline,
-		urlMLFeedback:    urlFeedbackBackendImpl,
+		lifecycleCtx:      lifecycleCtx,
+		lifecycleCancel:   lifecycleCancel,
+		redis:             options.Redis,
+		redisTimeout:      options.RedisTimeout,
+		ttlAllowed:        options.TTLAllowed,
+		ttlSuspicious:     options.TTLSuspicious,
+		ttlBlocked:        options.TTLBlocked,
+		recentLimit:       recentLimit,
+		recentTTL:         configDuration(options.RecentTTL, 24*time.Hour),
+		threatFeedKey:     threatFeedKey,
+		feedRevisionKey:   feed.RevisionKey(threatFeedKey),
+		ai:                aiClient,
+		aiShared:          aiShared,
+		whitelist:         wl,
+		store:             options.Store,
+		brandStore:        brandStore,
+		configReloadChan:  configReloadChannel,
+		configReloadPoll:  configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
+		configReloadOn:    options.ConfigReloadEnabled,
+		nodeRole:          strings.TrimSpace(options.NodeRole),
+		reloadBackoffMin:  analysisConfigReloadBackoffMin,
+		reloadBackoffMax:  analysisConfigReloadBackoffMax,
+		enrichEnabled:     options.EnrichEnabled,
+		enrichTimeout:     options.EnrichTimeout,
+		enrichDone:        make(chan struct{}),
+		enrichInFlight:    make(map[string]struct{}),
+		whoisCacheTTL:     configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
+		osint:             options.OSINT,
+		adblockDataRoot:   adblockDataRoot,
+		adblockHTTPClient: options.AdblockHTTPClient,
+		mlClassifier:      options.MLClassifier,
+		mlMode:            mlMode,
+		mlCanary:          mlCanary,
+		urlMLClassifier:   options.URLMLClassifier,
+		urlMLMode:         urlMLMode,
+		urlMLShadow:       urlMLShadow,
+		urlMLOpsBaseline:  options.URLOpsBaseline,
+		urlMLFeedback:     urlFeedbackBackendImpl,
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -796,7 +803,9 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		// Get group
 		var group *store.ClientGroup
 		if s.store != nil && s.store.Enabled() {
-			g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID)
+			// Client-supplied identifiers (DoH client_id) are unauthenticated:
+			// policy must be derived from the trusted client IP only.
+			g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID, false)
 			if err == nil {
 				group = g
 			}
@@ -896,7 +905,9 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	// 1. Get Group for Client
 	var group *store.ClientGroup
 	if s.store != nil && s.store.Enabled() {
-		g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID)
+		// Client-supplied identifiers (DoH client_id) are unauthenticated:
+		// policy must be derived from the trusted client IP only.
+		g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID, false)
 		if err == nil {
 			group = g
 		}
@@ -1574,7 +1585,13 @@ func (s *Service) syncAdblockLists() {
 	// #nosec G115 -- len(sourceList) will never exceed max int32
 	s.adblockSrcCount.Store(int32(len(sourceList)))
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	// Outbound fetches for adblock sources go through the shared outbound
+	// guard; feed.OpenSourceResponseWithin validates every URL and redirect
+	// hop against the same policy.
+	client := s.adblockHTTPClient
+	if client == nil {
+		client = netguard.NewHTTPClient(nil, 60*time.Second, false)
+	}
 	metaPath := s.adblockMetaPath()
 	currentMeta := loadAdblockMeta(metaPath)
 

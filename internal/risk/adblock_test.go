@@ -3,10 +3,12 @@ package risk
 import (
 	"context"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -60,7 +62,7 @@ func newTestServiceWithAdblock(t *testing.T, domains []string) *Service {
 	return service
 }
 
-func newManualAdblockSyncService(t *testing.T) *Service {
+func newManualAdblockSyncService(t *testing.T, adblockClient *http.Client) *Service {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -76,14 +78,15 @@ func newManualAdblockSyncService(t *testing.T) *Service {
 	}
 
 	service := NewService(Options{
-		AnalysisConfig:  config.DefaultAnalysisConfig(),
-		RedisTimeout:    10 * time.Millisecond,
-		TTLAllowed:      time.Hour,
-		TTLSuspicious:   time.Hour,
-		TTLBlocked:      time.Hour,
-		RecentLimit:     10,
-		Store:           storeDB,
-		AdblockFileRoot: tempDir,
+		AnalysisConfig:    config.DefaultAnalysisConfig(),
+		RedisTimeout:      10 * time.Millisecond,
+		TTLAllowed:        time.Hour,
+		TTLSuspicious:     time.Hour,
+		TTLBlocked:        time.Hour,
+		RecentLimit:       10,
+		Store:             storeDB,
+		AdblockFileRoot:   tempDir,
+		AdblockHTTPClient: adblockClient,
 	})
 
 	t.Cleanup(func() {
@@ -282,8 +285,39 @@ func TestAdblockWildcardEntryMatchesViaNormalization(t *testing.T) {
 	}
 }
 
+// loopbackDialClient dials the loopback listener regardless of the URL host,
+// so sources can be addressed through a public RFC 5737 IP that passes the
+// outbound policy the same way production traffic does.
+func loopbackDialClient() *http.Client {
+	return &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				_, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+			},
+		},
+	}
+}
+
+// publicMappedSource rewrites an httptest URL's loopback host to a public
+// documentation IP so remote adblock sources pass the outbound policy.
+func publicMappedSource(t *testing.T, srv *httptest.Server) string {
+	t.Helper()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	_, port, err := net.SplitHostPort(host)
+	if err != nil {
+		t.Fatalf("split source host: %v", err)
+	}
+	return "http://" + net.JoinHostPort("198.51.100.10", port)
+}
+
 func TestAdblockSyncReusesPerSourceCacheOn304(t *testing.T) {
-	service := newManualAdblockSyncService(t)
+	service := newManualAdblockSyncService(t, loopbackDialClient())
 
 	var mu sync.Mutex
 	sourceAMethods := []string{}
@@ -321,7 +355,7 @@ func TestAdblockSyncReusesPerSourceCacheOn304(t *testing.T) {
 	}))
 	defer sourceB.Close()
 
-	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", sourceA.URL+","+sourceB.URL)
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, sourceA)+","+publicMappedSource(t, sourceB))
 
 	service.syncAdblockLists()
 	service.syncAdblockLists()
@@ -348,14 +382,14 @@ func TestAdblockSyncReusesPerSourceCacheOn304(t *testing.T) {
 }
 
 func TestAdblockSyncFallsBackToSourceCacheWhenRemoteFails(t *testing.T) {
-	service := newManualAdblockSyncService(t)
+	service := newManualAdblockSyncService(t, loopbackDialClient())
 
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("ETag", "stable-v1")
 		_, _ = w.Write([]byte("0.0.0.0 resilient-cache.test\n"))
 	}))
 
-	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", source.URL)
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, source))
 
 	service.syncAdblockLists()
 	source.Close()
