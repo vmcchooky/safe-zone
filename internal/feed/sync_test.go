@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,6 +20,36 @@ import (
 	"safe-zone/internal/cache"
 	"safe-zone/internal/netguard"
 )
+
+// policySourceURL rewrites a loopback httptest URL to a public RFC 5737
+// documentation IP so the source passes the outbound policy checks, while
+// the returned client still dials the real loopback listener. This keeps
+// end-to-end HTTP behavior and exercises the same validation path as
+// production traffic.
+func policySourceURL(t *testing.T, srv *httptest.Server) (string, *http.Client) {
+	t.Helper()
+
+	serverURL := strings.TrimSuffix(srv.URL, "/")
+	host := serverURL[len("http://"):]
+	_, port, err := net.SplitHostPort(host)
+	if err != nil {
+		t.Fatalf("split httptest host: %v", err)
+	}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				_, dialPort, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", dialPort))
+			},
+		},
+	}
+	return "http://" + net.JoinHostPort("198.51.100.10", port), client
+}
 
 func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +60,8 @@ func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reader, closeReader, err := OpenSource(context.Background(), server.URL, server.Client())
+	sourceURL, client := policySourceURL(t, server)
+	reader, closeReader, err := OpenSource(context.Background(), sourceURL, client)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +89,8 @@ func TestOpenSourceLimitsDecompressedHTTPFeed(t *testing.T) {
 	}))
 	defer server.Close()
 
-	reader, closeReader, err := OpenSourceWithin(context.Background(), server.URL, server.Client(), t.TempDir(), 8)
+	sourceURL, client := policySourceURL(t, server)
+	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), 8)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,19 +102,73 @@ func TestOpenSourceLimitsDecompressedHTTPFeed(t *testing.T) {
 	}
 }
 
-func TestOpenSourceRejectsPrivateHTTPFeedWithGuardedClient(t *testing.T) {
+func TestOpenSourceRejectsPrivateHTTPFeedSource(t *testing.T) {
+	// The feed layer must reject private sources even when the caller
+	// supplies an unguarded client: policy enforcement cannot depend on
+	// caller discipline.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("bad.test\n"))
 	}))
 	defer server.Close()
 
-	client := netguard.NewHTTPClient(nil, time.Second, false)
-	_, closeReader, err := OpenSourceWithin(context.Background(), server.URL, client, t.TempDir(), DefaultMaxFeedBytes)
+	_, closeReader, err := OpenSourceWithin(context.Background(), server.URL, server.Client(), t.TempDir(), DefaultMaxFeedBytes)
 	if closeReader != nil {
 		defer closeReader()
 	}
 	if err == nil || !strings.Contains(err.Error(), "blocked private or local address") {
-		t.Fatalf("expected guarded client to reject private feed URL, got %v", err)
+		t.Fatalf("expected feed layer to reject private feed URL, got %v", err)
+	}
+}
+
+func TestOpenSourceRejectsRedirectToBlockedTarget(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Redirect từ source "hợp lệ" sang đích bị cấm (CGNAT): phải bị chặn.
+		http.Redirect(w, r, "http://100.64.0.1/hosts.txt", http.StatusFound)
+	}))
+	defer server.Close()
+
+	sourceURL, client := policySourceURL(t, server)
+	_, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes)
+	if closeReader != nil {
+		defer closeReader()
+	}
+	if err == nil {
+		t.Fatal("expected redirect to blocked target to fail")
+	}
+	if !errors.Is(err, netguard.ErrBlockedAddress) {
+		t.Fatalf("expected ErrBlockedAddress, got %v", err)
+	}
+}
+
+func TestOpenSourceFollowsRedirectToAllowedTarget(t *testing.T) {
+	var requests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&requests, 1) == 1 {
+			// Redirect hop trỏ về chính endpoint public-mapped (r.Host là
+			// 198.51.100.10:port) — hợp lệ theo policy nên phải được theo.
+			http.Redirect(w, r, "http://"+r.Host+"/hosts.txt", http.StatusFound)
+			return
+		}
+		_, _ = w.Write([]byte("bad.test\n"))
+	}))
+	defer server.Close()
+
+	sourceURL, client := policySourceURL(t, server)
+	reader, closeReader, err := OpenSource(context.Background(), sourceURL, client)
+	if err != nil {
+		t.Fatalf("expected valid redirect to be followed, got %v", err)
+	}
+	defer closeReader()
+
+	parsed, err := Parse(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Stats.Valid != 1 {
+		t.Fatalf("expected 1 valid domain after redirect, got %d", parsed.Stats.Valid)
+	}
+	if atomic.LoadInt32(&requests) != 2 {
+		t.Fatalf("expected 2 requests (initial + redirect), got %d", requests)
 	}
 }
 

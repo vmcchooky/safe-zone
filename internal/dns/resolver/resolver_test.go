@@ -25,7 +25,7 @@ import (
 
 func newStatusTestResolver(t *testing.T) (*Resolver, *observability.Registry) {
 	t.Helper()
-	r, _, metrics := newPipelineResolver(t, "https://cloudflare-dns.com/dns-query")
+	r, _, metrics := newPipelineResolver(t, "https://cloudflare-dns.com/dns-query", http.DefaultClient)
 	return r, metrics
 }
 
@@ -319,7 +319,7 @@ func TestBlockedDNSResponseStrategies(t *testing.T) {
 // TestPolicyHandlerGroupMapping xác nhận policy endpoint phân giải client từ
 // proxy header (Caddy edge) tới group mapping trong store.
 func TestPolicyHandlerGroupMapping(t *testing.T) {
-	r, _, _ := newPipelineResolver(t, "https://cloudflare-dns.com/dns-query")
+	r, _, _ := newPipelineResolver(t, "https://cloudflare-dns.com/dns-query", http.DefaultClient)
 	db := r.Risk.StoreDB()
 
 	adultGroupID, err := db.CreateGroup(context.Background(), "adult-blocker", "Blocks adult content", []string{"adult"}, false, false)
@@ -374,11 +374,11 @@ func TestPolicyHandlerGroupMapping(t *testing.T) {
 
 // newDoTTestResolver dựng resolver hoàn chỉnh với upstream chỉ định và DoT
 // rate limiter, phục vụ các test transport DoT.
-func newDoTTestResolver(t *testing.T, upstreamURL string, limiter *ratelimit.Limiter) *Resolver {
+func newDoTTestResolver(t *testing.T, upstreamURL string, upstreamClient *http.Client, limiter *ratelimit.Limiter) *Resolver {
 	t.Helper()
 	riskService := risk.NewService(risk.Options{AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond})
 	t.Cleanup(func() { _ = riskService.Close() })
-	return New(riskService, observability.NewRegistry(), doh.NewUpstreamResolver(upstreamURL, http.DefaultClient), Config{
+	return New(riskService, observability.NewRegistry(), doh.NewUpstreamResolver(upstreamURL, upstreamClient), Config{
 		BlockPageIP:   testBlockPageIP,
 		BlockStrategy: BlockStrategySinkhole,
 		DNSTTL:        60,
@@ -414,7 +414,7 @@ func TestDoTHandlerRateLimiter(t *testing.T) {
 	limiter := ratelimit.New(0.1, 0) // cực kỳ hạn chế
 	defer limiter.Close()
 
-	r := newDoTTestResolver(t, deadUpstream.URL, limiter)
+	r := newDoTTestResolver(t, deadUpstream.URL, http.DefaultClient, limiter)
 	addr, _ := startDoTTestServer(t, r)
 	client := dotTestClient()
 
@@ -438,7 +438,8 @@ func TestDoTHandlerConcurrent(t *testing.T) {
 	limiter := ratelimit.New(1000, 100)
 	defer limiter.Close()
 
-	r := newDoTTestResolver(t, upstream.URL, limiter)
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r := newDoTTestResolver(t, upstreamURL, upstreamClient, limiter)
 	addr, _ := startDoTTestServer(t, r)
 	client := dotTestClient()
 
@@ -481,7 +482,8 @@ func TestDoTHandlerPanicRecovery(t *testing.T) {
 func TestDoTHandlerIPv6Sanitization(t *testing.T) {
 	upstream := echoUpstream(t)
 	defer upstream.Close()
-	r, _, _ := newPipelineResolver(t, upstream.URL)
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, _, _ := newPipelineResolver(t, upstreamURL, upstreamClient)
 
 	// RemoteAddr dạng [::1]:12345 phải được chuẩn hóa thành ::1 thay vì làm
 	// hỏng policy lookup.

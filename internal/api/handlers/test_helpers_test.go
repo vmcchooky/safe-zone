@@ -66,7 +66,7 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	mux.HandleFunc("/block", handler.BlockPageHandler)
 	mux.HandleFunc("/block/report", handler.BlockReportHandler)
 	mux.HandleFunc("/v1/analyze", handler.AnalyzeHandler)
-	mux.HandleFunc("/v1/analysis/recent", handler.RecentAnalysisHandler)
+	mux.HandleFunc("/v1/analysis/recent", handler.RequireAuthFunc(handler.RecentAnalysisHandler))
 	mux.HandleFunc("/v1/auth/login", handler.AuthLoginHandler)
 	mux.HandleFunc("/v1/auth/logout", handler.AuthLogoutHandler)
 	mux.HandleFunc("/v1/auth/session", handler.RequireAuthFunc(handler.AuthSessionHandler))

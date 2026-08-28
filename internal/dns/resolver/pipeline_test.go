@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,9 +76,36 @@ func readAllLimited(r *http.Request) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(r.Body, doh.MaxDNSMessageSize))
 }
 
+// policyUpstream rewrites a loopback httptest URL to a public RFC 5737
+// documentation IP so the upstream passes the outbound policy checks, while
+// the returned client still dials the real loopback listener — the same
+// validation path production traffic takes.
+func policyUpstream(t *testing.T, srv *httptest.Server) (string, *http.Client) {
+	t.Helper()
+	host := strings.TrimPrefix(srv.URL, "http://")
+	_, port, err := net.SplitHostPort(host)
+	if err != nil {
+		t.Fatalf("split upstream host: %v", err)
+	}
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				_, dialPort, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", dialPort))
+			},
+		},
+	}
+	return "http://" + net.JoinHostPort("198.51.100.10", port), client
+}
+
 // newPipelineResolver dựng một Resolver hoàn chỉnh với store SQLite tạm,
 // mock upstream và block strategy sinkhole.
-func newPipelineResolver(t *testing.T, upstreamURL string) (*Resolver, *store.DB, *observability.Registry) {
+func newPipelineResolver(t *testing.T, upstreamURL string, upstreamClient *http.Client) (*Resolver, *store.DB, *observability.Registry) {
 	t.Helper()
 	storeDB, err := store.New(filepath.Join(t.TempDir(), "pipeline.db"), 30)
 	if err != nil {
@@ -91,7 +119,7 @@ func newPipelineResolver(t *testing.T, upstreamURL string) (*Resolver, *store.DB
 	t.Cleanup(func() { _ = riskService.Close() })
 
 	metrics := observability.NewRegistry()
-	upstreams := doh.NewUpstreamResolver(upstreamURL, http.DefaultClient)
+	upstreams := doh.NewUpstreamResolver(upstreamURL, upstreamClient)
 	resolverInstance := New(riskService, metrics, upstreams, Config{
 		BlockPageIP:    testBlockPageIP,
 		BlockStrategy:  BlockStrategySinkhole,
@@ -104,7 +132,8 @@ func newPipelineResolver(t *testing.T, upstreamURL string) (*Resolver, *store.DB
 func TestResolveQueryForwardsAllowedDomain(t *testing.T) {
 	upstream := echoUpstream(t)
 	defer upstream.Close()
-	r, _, _ := newPipelineResolver(t, upstream.URL)
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, _, _ := newPipelineResolver(t, upstreamURL, upstreamClient)
 
 	response, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "example.com"), doh.ClientInfo{IP: "192.168.1.10"})
 	if err != nil {
@@ -122,7 +151,8 @@ func TestResolveQueryForwardsAllowedDomain(t *testing.T) {
 func TestResolveQueryBlocksOverriddenDomain(t *testing.T) {
 	upstream := echoUpstream(t)
 	defer upstream.Close()
-	r, storeDB, _ := newPipelineResolver(t, upstream.URL)
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, storeDB, _ := newPipelineResolver(t, upstreamURL, upstreamClient)
 	if err := storeDB.UpsertOverride(context.Background(), "blocked.example", "block", "test override"); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +176,8 @@ func TestResolveQueryBlocksOverriddenDomain(t *testing.T) {
 func TestResolveQueryUncloaksBlockedCNAMETarget(t *testing.T) {
 	upstream := echoUpstream(t)
 	defer upstream.Close()
-	r, storeDB, _ := newPipelineResolver(t, upstream.URL)
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, storeDB, _ := newPipelineResolver(t, upstreamURL, upstreamClient)
 	// Tên miền được hỏi (cname.example) sạch, nhưng đích CNAME bị chặn:
 	// pipeline phải uncloak và trả block page.
 	if err := storeDB.UpsertOverride(context.Background(), "blocked-target.example", "block", "cname target"); err != nil {
@@ -169,7 +200,9 @@ func TestResolveQueryUncloaksBlockedCNAMETarget(t *testing.T) {
 func TestResolveQueryCountsUpstreamFailures(t *testing.T) {
 	deadUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	deadUpstream.Close() // đóng ngay để mô phỏng upstream sập
-	r, _, metrics := newPipelineResolver(t, deadUpstream.URL)
+	// Upstream loopback bây giờ bị outbound policy chặn ngay từ bước
+	// validate — vẫn tính là upstream failure cho metrics.
+	r, _, metrics := newPipelineResolver(t, deadUpstream.URL, http.DefaultClient)
 
 	if _, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "example.com"), doh.ClientInfo{IP: "192.168.1.10"}); err == nil {
 		t.Fatal("expected upstream failure error")
@@ -184,7 +217,8 @@ func TestResolveQueryCountsUpstreamFailures(t *testing.T) {
 func TestDoTHandlerEndToEnd(t *testing.T) {
 	upstream := echoUpstream(t)
 	defer upstream.Close()
-	r, storeDB, _ := newPipelineResolver(t, upstream.URL)
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, storeDB, _ := newPipelineResolver(t, upstreamURL, upstreamClient)
 	if err := storeDB.UpsertOverride(context.Background(), "bocongan-verify.xyz", "block", "mock malicious site"); err != nil {
 		t.Fatal(err)
 	}

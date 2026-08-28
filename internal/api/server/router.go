@@ -38,7 +38,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/v1/url-ml/feedback", h.URLMLFeedbackHandler)
 	mux.HandleFunc("/v1/analyze/raw", h.RawDataHandler)
 	mux.HandleFunc("/v1/osint/evidence", h.RequireAuthFunc(h.OsintEvidenceHandler))
-	mux.HandleFunc("/v1/analysis/recent", h.RecentAnalysisHandler)
+	mux.HandleFunc("/v1/analysis/recent", h.RequireAuthFunc(h.RecentAnalysisHandler))
 
 	// Admin / Overrides
 	mux.HandleFunc("/v1/overrides", h.RequireAdminForMutationFunc(h.OverridesHandler))

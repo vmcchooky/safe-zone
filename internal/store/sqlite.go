@@ -1767,8 +1767,15 @@ func (d *DB) ListGroupOverrides(ctx context.Context, groupID int64) ([]GroupOver
 }
 
 // GetGroupForClient dynamically resolves the policy group for a client request.
-// It checks DoH ClientID mapping first, then exact IP, then CIDR ranges, and falls back to 'default'.
-func (d *DB) GetGroupForClient(ctx context.Context, clientIP, clientID string) (*ClientGroup, error) {
+// It checks DoH ClientID mapping (only for authenticated identities), then exact
+// IP, then CIDR ranges, and falls back to 'default'.
+//
+// clientIDTrusted must only be true when the caller has verified the client
+// identity itself (mTLS client certificate, authenticated token, ...). A DoH
+// client may freely choose its own client_id (query string or URL path), so an
+// unverified client_id must never be allowed to select a policy group — policy
+// then relies exclusively on the trusted client IP.
+func (d *DB) GetGroupForClient(ctx context.Context, clientIP, clientID string, clientIDTrusted bool) (*ClientGroup, error) {
 	if !d.Enabled() {
 		return d.GetGroupByName(ctx, "default")
 	}
@@ -1776,8 +1783,8 @@ func (d *DB) GetGroupForClient(ctx context.Context, clientIP, clientID string) (
 	clientID = strings.TrimSpace(clientID)
 	clientIP = strings.TrimSpace(clientIP)
 
-	// 1. Check DoH Client ID mapping
-	if clientID != "" {
+	// 1. Check DoH Client ID mapping — authenticated identities only.
+	if clientIDTrusted && clientID != "" {
 		var groupID int64
 		err := d.db.QueryRowContext(ctx,
 			"SELECT group_id FROM client_mappings WHERE mapping_type = 'client_id' AND value = ? LIMIT 1",
