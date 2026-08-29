@@ -44,6 +44,25 @@ const (
 	cacheRevision   = "v2"
 )
 
+// ModeBackgroundOnDemand is the only supported OSINT mode. It describes the
+// combined contract: the public API performs on-demand evidence lookups for a
+// requested domain while the background agent task audits recent candidates.
+const ModeBackgroundOnDemand = "background_on_demand"
+
+// NormalizeMode validates and normalizes an OSINT mode value. An empty value
+// falls back to the supported default; anything else is rejected so a
+// mistyped mode fails at startup instead of silently changing behavior.
+func NormalizeMode(value string) (string, error) {
+	mode := strings.ToLower(strings.TrimSpace(value))
+	if mode == "" {
+		return ModeBackgroundOnDemand, nil
+	}
+	if mode != ModeBackgroundOnDemand {
+		return "", fmt.Errorf("unsupported OSINT mode %q; only %q is supported", value, ModeBackgroundOnDemand)
+	}
+	return mode, nil
+}
+
 var warningTerms = []string{
 	"gia mao", "giả mạo", "lua dao", "lừa đảo", "phishing", "scam",
 	"mao danh", "mạo danh", "canh bao", "cảnh báo", "khong truy cap", "không truy cập",
@@ -158,9 +177,21 @@ func NewService(options Options) *Service {
 		trusted = DefaultTrustedDomains()
 	}
 
+	mode, modeErr := NormalizeMode(options.Mode)
+	if modeErr != nil {
+		// The env loader rejects invalid modes at startup; direct callers
+		// get a defensive fallback so the service never runs in an
+		// undefined mode.
+		logjson.Warn("invalid OSINT mode; using default", map[string]any{
+			"service": "osint",
+			"mode":    options.Mode,
+		})
+		mode = ModeBackgroundOnDemand
+	}
+
 	return &Service{
 		enabled:             options.Enabled,
-		mode:                strings.TrimSpace(options.Mode),
+		mode:                mode,
 		timeout:             timeout,
 		cacheTTL:            cacheTTL,
 		trustedDomains:      trusted,
@@ -200,6 +231,15 @@ func SplitList(value string) []string {
 
 func (s *Service) Enabled() bool {
 	return s != nil && s.enabled
+}
+
+// Mode reports the active OSINT mode. It is surfaced through /v1/status so
+// the configured contract is observable at runtime.
+func (s *Service) Mode() string {
+	if s == nil {
+		return ""
+	}
+	return s.mode
 }
 
 func (s *Service) Lookup(ctx context.Context, domain string, force bool) (Report, error) {

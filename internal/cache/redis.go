@@ -245,6 +245,15 @@ func (r *Redis) SetIsMember(ctx context.Context, key, member string) (bool, erro
 	return r.client.SIsMember(ctx, key, member).Result()
 }
 
+// Type reports the Redis type of a key ("none" when the key does not exist).
+func (r *Redis) Type(ctx context.Context, key string) (string, error) {
+	if !r.Enabled() {
+		return "", ErrDisabled
+	}
+
+	return r.client.Type(ctx, key).Result()
+}
+
 func (r *Redis) ZAdd(ctx context.Context, key string, members ...redis.Z) (int64, error) {
 	if !r.Enabled() {
 		return 0, ErrDisabled

@@ -17,6 +17,13 @@ type RateLimitingStatus struct {
 	Enabled bool `json:"enabled"`
 }
 
+// OSINTStatus reports the OSINT runtime contract: whether evidence lookups
+// are enabled and which mode governs API on-demand vs background agent use.
+type OSINTStatus struct {
+	Enabled bool   `json:"enabled"`
+	Mode    string `json:"mode"`
+}
+
 type statusResponse struct {
 	Service        string                           `json:"service"`
 	Status         string                           `json:"status"`
@@ -27,6 +34,7 @@ type statusResponse struct {
 	ML             *risk.MLStatus                   `json:"ml,omitempty"`
 	FeedSync       *feed.StatusSummary              `json:"feed_sync,omitempty"`
 	Adblock        *risk.AdblockStatus              `json:"adblock,omitempty"`
+	OSINT          *OSINTStatus                     `json:"osint,omitempty"`
 	Endpoints      []string                         `json:"endpoints,omitempty"`
 	RateLimiting   *RateLimitingStatus              `json:"rate_limiting,omitempty"`
 	Time           string                           `json:"time"`
@@ -57,6 +65,10 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	feedStatus := h.FeedStatus(r.Context())
 	adblockStatus := h.Risk.AdblockStatus()
 	mlStatus := h.Risk.MLStatus()
+	osintStatus := &OSINTStatus{
+		Enabled: h.Risk.OSINT().Enabled(),
+		Mode:    h.Risk.OSINT().Mode(),
+	}
 	httputil.WriteJSON(w, http.StatusOK, statusResponse{
 		Service:        "core-api",
 		Status:         "ok",
@@ -67,6 +79,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		FeedSync:       &feedStatus,
 		Adblock:        &adblockStatus,
 		ML:             &mlStatus,
+		OSINT:          osintStatus,
 		Endpoints: []string{
 			"/",
 			"/v1/status",

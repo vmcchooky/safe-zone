@@ -57,6 +57,13 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 		whoisCacheDays = 7
 	}
 
+	// Reject an unsupported OSINT mode before any store or cache is created
+	// so a mistyped value fails startup without side effects.
+	osintMode, err := osint.NormalizeMode(config.String("SAFE_ZONE_OSINT_MODE", osint.ModeBackgroundOnDemand))
+	if err != nil {
+		return nil, err
+	}
+
 	redisCache := cache.NewRedis(
 		config.String("SAFE_ZONE_REDIS_ADDR", ""),
 		readSecret("SAFE_ZONE_REDIS_PASSWORD"),
@@ -87,7 +94,7 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 
 	osintService := osint.NewService(osint.Options{
 		Enabled:        config.Bool("SAFE_ZONE_OSINT_ENABLED", false),
-		Mode:           config.String("SAFE_ZONE_OSINT_MODE", "background_on_demand"),
+		Mode:           osintMode,
 		Timeout:        config.DurationMillis("SAFE_ZONE_OSINT_TIMEOUT_MS", 2*time.Second),
 		CacheTTL:       config.DurationSeconds("SAFE_ZONE_OSINT_CACHE_TTL_SECONDS", 6*time.Hour),
 		TrustedDomains: osint.SplitList(config.String("SAFE_ZONE_OSINT_TRUSTED_DOMAINS", "")),

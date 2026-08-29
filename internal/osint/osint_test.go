@@ -175,3 +175,28 @@ func TestOfficialGovDomainDoesNotNeedKeywordLookup(t *testing.T) {
 		t.Fatal("official gov.vn subdomain should not trigger protected keyword OSINT lookup")
 	}
 }
+
+func TestNormalizeMode(t *testing.T) {
+	mode, err := NormalizeMode("")
+	if err != nil || mode != ModeBackgroundOnDemand {
+		t.Fatalf("empty mode should default to %q, got %q (err %v)", ModeBackgroundOnDemand, mode, err)
+	}
+	mode, err = NormalizeMode("  Background_On_Demand  ")
+	if err != nil || mode != ModeBackgroundOnDemand {
+		t.Fatalf("supported mode should normalize cleanly, got %q (err %v)", mode, err)
+	}
+	if _, err := NormalizeMode("turbo"); err == nil {
+		t.Fatal("unsupported mode must be rejected")
+	}
+}
+
+func TestNewServiceModeFallback(t *testing.T) {
+	service := NewService(Options{Enabled: true, Mode: ModeBackgroundOnDemand})
+	if service.Mode() != ModeBackgroundOnDemand {
+		t.Fatalf("expected supported mode to be kept, got %q", service.Mode())
+	}
+	service = NewService(Options{Enabled: true})
+	if service.Mode() != ModeBackgroundOnDemand {
+		t.Fatalf("expected empty mode to default, got %q", service.Mode())
+	}
+}
