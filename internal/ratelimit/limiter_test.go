@@ -159,7 +159,7 @@ func TestMiddleware_AllowsNormal(t *testing.T) {
 	l := ratelimit.New(60, 5)
 	defer l.Close()
 
-	handler := ratelimit.Middleware(l, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := ratelimit.NewTieredMiddleware(l).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -180,7 +180,7 @@ func TestMiddleware_Returns429(t *testing.T) {
 	ok := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := ratelimit.Middleware(l, ok)
+	handler := ratelimit.NewTieredMiddleware(l).Wrap(ok)
 
 	do := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/v1/analyze", nil)
@@ -204,7 +204,7 @@ func TestMiddleware_RetryAfterHeader(t *testing.T) {
 	l := ratelimit.New(60, 1) // 1 req/sec, burst=1
 	defer l.Close()
 
-	handler := ratelimit.Middleware(l, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	handler := ratelimit.NewTieredMiddleware(l).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 	send := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "1.2.3.4:80"
@@ -227,7 +227,7 @@ func TestMiddleware_RetryAfterBody(t *testing.T) {
 	l := ratelimit.New(60, 1)
 	defer l.Close()
 
-	handler := ratelimit.Middleware(l, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	handler := ratelimit.NewTieredMiddleware(l).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
 	send := func() *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		req.RemoteAddr = "9.9.9.9:80"
@@ -255,7 +255,7 @@ func TestMiddleware_IPFromXForwardedFor(t *testing.T) {
 	l := ratelimit.New(60, 1)
 	defer l.Close()
 
-	handler := ratelimit.Middleware(l, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := ratelimit.NewTieredMiddleware(l).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 
@@ -283,7 +283,7 @@ func TestMiddleware_IPFromXRealIP(t *testing.T) {
 	l := ratelimit.New(60, 1)
 	defer l.Close()
 
-	handler := ratelimit.Middleware(l, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := ratelimit.NewTieredMiddleware(l).Wrap(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 

@@ -115,18 +115,6 @@ func NewClient(cfg Config) *Client {
 	return c
 }
 
-// New is a legacy constructor kept to maintain 100% backwards-compatibility with existing tests.
-func New(baseURL, apiKey, model string, timeout time.Duration) *Client {
-	prov := "gemini"
-	if apiKey == "" {
-		prov = "none"
-	}
-	return &Client{
-		providerType: prov,
-		gemini:       NewGeminiClient(baseURL, apiKey, model, timeout),
-	}
-}
-
 // Enabled returns true if the configured AI provider is enabled and active.
 func (c *Client) Enabled() bool {
 	if c == nil {

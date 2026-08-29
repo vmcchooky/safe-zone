@@ -47,15 +47,39 @@ type AlertConfig struct {
 	EmailTo           string
 }
 
+// alertCursorState is the persisted alert position over the agent event log.
+// The keyset is (created_at, id) in SQLite datetime format, matching
+// store.QueryAgentEventsPage. Version guards future schema changes.
+type alertCursorState struct {
+	Version   int    `json:"version"`
+	CreatedAt string `json:"created_at"`
+	ID        int64  `json:"id"`
+}
+
+const (
+	alertCursorVersion    = 1
+	alertCursorConfigKey  = "agent_alert_cursor"
+	alertEventPageSize    = 100
+	alertMaxPagesPerCycle = 20
+	sqliteDatetimeLayout  = "2006-01-02 15:04:05"
+)
+
 // AlertTask sends webhook notifications when significant agent events occur
 // (auto-blocks, feed sync errors).
+//
+// Delivery contract: at-least-once per event. The cursor only advances past
+// events whose page was delivered successfully through every configured
+// channel; a failed page is retried on the next cycle, so operators may see
+// duplicate alerts after a partial failure (correlation IDs in the
+// alert_sent/alert_failed events identify replays). The cursor is persisted
+// so a restart does not skip events raised during downtime.
 type AlertTask struct {
 	store  *store.DB
 	config AlertConfig
 	http   *http.Client
 
-	mu        sync.Mutex
-	lastAlert time.Time
+	mu     sync.Mutex
+	cursor alertCursorState
 }
 
 // AlertPayload is the JSON structure sent to the webhook.
@@ -95,20 +119,90 @@ func NewAlertTask(db *store.DB, cfg AlertConfig) *AlertTask {
 	if cfg.EmailSMTPUsername == "" {
 		cfg.EmailSMTPUsername = cfg.EmailFrom
 	}
-	return &AlertTask{
-		store:     db,
-		config:    cfg,
-		http:      netguard.NewHTTPClient(nil, cfg.Timeout, false),
-		lastAlert: time.Now(),
+	task := &AlertTask{
+		store:  db,
+		config: cfg,
+		http:   netguard.NewHTTPClient(nil, cfg.Timeout, false),
+		cursor: alertCursorState{
+			Version:   alertCursorVersion,
+			CreatedAt: time.Now().UTC().Format(sqliteDatetimeLayout),
+		},
 	}
+	if db != nil && db.Enabled() {
+		task.loadCursor(context.Background())
+	}
+	return task
+}
+
+// loadCursor restores the persisted alert position. Any failure falls back to
+// the construction-time cursor, which can replay recent alerts
+// (at-least-once) but never silently skips a backlog.
+func (t *AlertTask) loadCursor(ctx context.Context) {
+	raw, err := t.store.GetSystemConfig(ctx, alertCursorConfigKey)
+	if err != nil {
+		logjson.Warn("alert cursor load failed; starting from startup", map[string]any{
+			"service": "core-api",
+			"task":    "alert",
+			"error":   err.Error(),
+		})
+		return
+	}
+	if raw == "" {
+		return
+	}
+	var cursor alertCursorState
+	if err := json.Unmarshal([]byte(raw), &cursor); err != nil || cursor.Version != alertCursorVersion || cursor.CreatedAt == "" {
+		logjson.Warn("alert cursor unreadable; starting from startup", map[string]any{
+			"service": "core-api",
+			"task":    "alert",
+		})
+		return
+	}
+	t.cursor = cursor
+}
+
+func (t *AlertTask) snapshotCursor() alertCursorState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.cursor
 }
 
 func (t *AlertTask) Name() string { return "alert" }
 
+// advanceCursor moves the keyset forward and persists it. A persistence
+// failure keeps the in-memory progress (this process will not resend) and is
+// logged; a restart may replay from the last persisted position.
+func (t *AlertTask) advanceCursor(ctx context.Context, last store.AgentEvent) {
+	cursor := alertCursorState{Version: alertCursorVersion, CreatedAt: last.CreatedAt, ID: last.ID}
+	t.mu.Lock()
+	t.cursor = cursor
+	t.mu.Unlock()
+
+	if t.store == nil || !t.store.Enabled() {
+		return
+	}
+	encoded, err := json.Marshal(cursor)
+	if err != nil {
+		logjson.Warn("alert cursor encode failed; restart may replay a page", map[string]any{
+			"service": "core-api",
+			"task":    "alert",
+			"error":   err.Error(),
+		})
+		return
+	}
+	if err := t.store.SetSystemConfig(ctx, alertCursorConfigKey, string(encoded)); err != nil {
+		logjson.Warn("alert cursor persist failed; restart may replay a page", map[string]any{
+			"service": "core-api",
+			"task":    "alert",
+			"error":   err.Error(),
+		})
+	}
+}
+
 func (t *AlertTask) Run(ctx context.Context) error {
 	webhookURL := t.config.WebhookURL
 	if t.store != nil && t.store.Enabled() {
-		if customURL, err := t.store.GetSystemConfig(context.Background(), "agent_webhook_url"); err == nil && customURL != "" {
+		if customURL, err := t.store.GetSystemConfig(ctx, "agent_webhook_url"); err == nil && customURL != "" {
 			webhookURL = customURL
 		}
 	}
@@ -127,139 +221,187 @@ func (t *AlertTask) Run(ctx context.Context) error {
 		return nil
 	}
 
-	t.mu.Lock()
-	since := t.lastAlert
-	t.mu.Unlock()
+	runID := correlation.RunID(ctx)
+	deliveredPages := 0
+	deliveredEvents := 0
 
-	// Query for alertable events since last check.
-	events, err := t.store.QueryAgentEvents(context.Background(), since, []string{
+	// MinEvents gates on the whole pending backlog, not the first page, so a
+	// threshold above the page size still triggers once enough events are
+	// pending instead of starving forever.
+	cursor := t.snapshotCursor()
+	pending, err := t.store.CountAgentEventsAfter(ctx, cursor.CreatedAt, cursor.ID, []string{
 		"auto_block", "feed_error",
-	}, 100)
+	})
 	if err != nil {
-		return fmt.Errorf("query agent events: %w", err)
+		// Cursor stays put: the pending backlog is retried next cycle.
+		return fmt.Errorf("count pending agent events: %w", err)
+	}
+	if pending < int64(t.config.MinEvents) {
+		return nil // not enough pending events to trigger an alert yet
 	}
 
-	if len(events) < t.config.MinEvents {
-		return nil // not enough events to trigger alert
-	}
-
-	// Build payload and search for critical brand spoofing
-	alertEvents := make([]AlertEvent, len(events))
-	var criticalEvents []SpoofResult
-	autoBlocks := 0
-	feedErrors := 0
-
-	for i, e := range events {
-		alertEvents[i] = AlertEvent{
-			Type:      e.EventType,
-			Domain:    e.Domain,
-			Details:   e.Details,
-			CreatedAt: e.CreatedAt,
+	for page := 0; page < alertMaxPagesPerCycle; page++ {
+		cursor := t.snapshotCursor()
+		events, err := t.store.QueryAgentEventsPage(ctx, cursor.CreatedAt, cursor.ID, []string{
+			"auto_block", "feed_error",
+		}, alertEventPageSize)
+		if err != nil {
+			// Cursor stays put: the pending backlog is retried next cycle.
+			return fmt.Errorf("query agent events page: %w", err)
 		}
-		switch e.EventType {
-		case "auto_block":
-			autoBlocks++
-			// Detect critical Vietnam brand spoofing
-			if spoof, yes := detectVietnamBrandSpoof(e.Domain); yes {
-				criticalEvents = append(criticalEvents, spoof)
+		if len(events) == 0 {
+			break
+		}
+
+		// Build payload and detect critical brand spoofing for this page.
+		alertEvents := make([]AlertEvent, len(events))
+		var criticalEvents []SpoofResult
+		autoBlocks := 0
+		feedErrors := 0
+		for i, e := range events {
+			alertEvents[i] = AlertEvent{
+				Type:      e.EventType,
+				Domain:    e.Domain,
+				Details:   e.Details,
+				CreatedAt: e.CreatedAt,
 			}
-		case "feed_error":
-			feedErrors++
-		}
-	}
-
-	var summaryParts []string
-	if autoBlocks > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d domains auto-blocked", autoBlocks))
-	}
-	if feedErrors > 0 {
-		summaryParts = append(summaryParts, fmt.Sprintf("%d feed sync errors", feedErrors))
-	}
-
-	payload := AlertPayload{
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		EventType: "safe_zone_agent_alert",
-		Summary:   "Safe Zone: " + strings.Join(summaryParts, ", "),
-		Events:    alertEvents,
-	}
-
-	var errorsList []string
-
-	// 1. Send default webhook (Discord/Generic)
-	if hasWebhook {
-		if err := t.sendWebhook(ctx, webhookURL, payload); err != nil {
-			errorsList = append(errorsList, fmt.Sprintf("webhook: %v", err))
-		}
-	}
-
-	// 2. Send critical notifications if there are any Vietnam spoofing events
-	if len(criticalEvents) > 0 {
-		if hasTelegram {
-			tgBaseCtx := correlation.WithRunID(context.Background(), correlation.RunID(ctx))
-			tgCtx, tgCancel := context.WithTimeout(tgBaseCtx, t.config.Timeout)
-			go func() {
-				defer tgCancel()
-				if err := t.sendTelegram(tgCtx, criticalEvents); err != nil {
-					logjson.Error("telegram alert failed", correlation.Fields(tgCtx, map[string]any{
-						"service": "core-api",
-						"task":    "alert",
-						"error":   err.Error(),
-					}))
+			switch e.EventType {
+			case "auto_block":
+				autoBlocks++
+				// Detect critical Vietnam brand spoofing
+				if spoof, yes := detectVietnamBrandSpoof(e.Domain); yes {
+					criticalEvents = append(criticalEvents, spoof)
 				}
-			}()
+			case "feed_error":
+				feedErrors++
+			}
 		}
-		if hasSlack {
-			slBaseCtx := correlation.WithRunID(context.Background(), correlation.RunID(ctx))
-			slCtx, slCancel := context.WithTimeout(slBaseCtx, t.config.Timeout)
-			go func() {
-				defer slCancel()
-				if err := t.sendSlack(slCtx, criticalEvents); err != nil {
-					logjson.Error("slack alert failed", correlation.Fields(slCtx, map[string]any{
-						"service": "core-api",
-						"task":    "alert",
-						"error":   err.Error(),
-					}))
-				}
-			}()
+
+		var summaryParts []string
+		if autoBlocks > 0 {
+			summaryParts = append(summaryParts, fmt.Sprintf("%d domains auto-blocked", autoBlocks))
 		}
-		if hasEmail {
-			emBaseCtx := correlation.WithRunID(context.Background(), correlation.RunID(ctx))
-			emCtx, emCancel := context.WithTimeout(emBaseCtx, t.config.Timeout)
-			go func() {
-				defer emCancel()
-				if err := t.sendEmail(emCtx, criticalEvents); err != nil {
-					logjson.Error("email alert failed", correlation.Fields(emCtx, map[string]any{
-						"service": "core-api",
-						"task":    "alert",
-						"error":   err.Error(),
-					}))
-				}
-			}()
+		if feedErrors > 0 {
+			summaryParts = append(summaryParts, fmt.Sprintf("%d feed sync errors", feedErrors))
+		}
+
+		payload := AlertPayload{
+			Timestamp: time.Now().UTC().Format(time.RFC3339),
+			EventType: "safe_zone_agent_alert",
+			Summary:   "Safe Zone: " + strings.Join(summaryParts, ", "),
+			Events:    alertEvents,
+		}
+
+		// Deliver through every configured channel and wait for all of them:
+		// no detached goroutine may influence whether the page counts as sent.
+		failures := t.deliverPage(ctx, webhookURL, payload, criticalEvents, hasWebhook, hasTelegram, hasSlack, hasEmail)
+		lastEvent := events[len(events)-1]
+		if len(failures) > 0 {
+			// The page was not delivered everywhere: the cursor stays on it
+			// so the next cycle replays the whole page (at-least-once).
+			_ = t.store.RecordAgentEvent(ctx, "alert", "alert_failed", "",
+				fmt.Sprintf(`{"run_id":%q,"last_event_id":%d,"failures":[%s]}`, runID, lastEvent.ID, joinQuoted(failures)))
+			return fmt.Errorf("send alert failures: %s", strings.Join(failures, "; "))
+		}
+
+		t.advanceCursor(ctx, lastEvent)
+		deliveredPages++
+		deliveredEvents += len(events)
+
+		_ = t.store.RecordAgentEvent(ctx, "alert", "alert_sent", "",
+			fmt.Sprintf(`{"run_id":%q,"page":%d,"events_count":%d,"last_event_id":%d}`, runID, deliveredPages, len(events), lastEvent.ID))
+
+		if len(events) < alertEventPageSize {
+			break
 		}
 	}
 
-	// Update last alert time on success.
-	t.mu.Lock()
-	t.lastAlert = time.Now()
-	t.mu.Unlock()
-
-	_ = t.store.RecordAgentEvent(context.Background(), "alert", "alert_sent", "",
-		fmt.Sprintf(`{"events_count":%d,"critical_count":%d}`, len(events), len(criticalEvents)))
+	if deliveredPages == 0 {
+		return nil
+	}
 
 	logjson.Info("agent alert triggered", correlation.Fields(ctx, map[string]any{
-		"service":         "core-api",
-		"task":            "alert",
-		"events":          len(events),
-		"critical_events": len(criticalEvents),
+		"service": "core-api",
+		"task":    "alert",
+		"events":  deliveredEvents,
+		"pages":   deliveredPages,
 	}))
 
-	if len(errorsList) > 0 {
-		errStr := strings.Join(errorsList, "; ")
-		_ = t.store.RecordAgentEvent(context.Background(), "alert", "alert_failed", "", errStr)
-		return fmt.Errorf("send alert failures: %s", errStr)
+	return nil
+}
+
+// deliverPage sends one page through all configured channels in parallel and
+// blocks until every send has finished, collecting per-channel failures.
+func (t *AlertTask) deliverPage(ctx context.Context, webhookURL string, payload AlertPayload, criticalEvents []SpoofResult, hasWebhook, hasTelegram, hasSlack, hasEmail bool) []string {
+	var (
+		wg       sync.WaitGroup
+		mu       sync.Mutex
+		failures []string
+	)
+	record := func(channel, taskName string, err error) {
+		if err == nil {
+			return
+		}
+		logjson.Error(channel+" alert failed", correlation.Fields(ctx, map[string]any{
+			"service": "core-api",
+			"task":    taskName,
+			"error":   err.Error(),
+		}))
+		mu.Lock()
+		failures = append(failures, fmt.Sprintf("%s: %v", channel, err))
+		mu.Unlock()
+	}
+	channelCtx := func() (context.Context, context.CancelFunc) {
+		return context.WithTimeout(ctx, t.config.Timeout)
 	}
 
-	return nil
+	if hasWebhook {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sendCtx, cancel := channelCtx()
+			defer cancel()
+			record("webhook", "alert", t.sendWebhook(sendCtx, webhookURL, payload))
+		}()
+	}
+	if len(criticalEvents) > 0 && hasTelegram {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sendCtx, cancel := channelCtx()
+			defer cancel()
+			record("telegram", "alert", t.sendTelegram(sendCtx, criticalEvents))
+		}()
+	}
+	if len(criticalEvents) > 0 && hasSlack {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sendCtx, cancel := channelCtx()
+			defer cancel()
+			record("slack", "alert", t.sendSlack(sendCtx, criticalEvents))
+		}()
+	}
+	if len(criticalEvents) > 0 && hasEmail {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sendCtx, cancel := channelCtx()
+			defer cancel()
+			record("email", "alert", t.sendEmail(sendCtx, criticalEvents))
+		}()
+	}
+
+	wg.Wait()
+	return failures
+}
+
+func joinQuoted(values []string) string {
+	quoted := make([]string, len(values))
+	for i, value := range values {
+		quoted[i] = fmt.Sprintf("%q", value)
+	}
+	return strings.Join(quoted, ",")
 }
 
 func (t *AlertTask) sendWebhook(ctx context.Context, webhookURL string, payload AlertPayload) error {

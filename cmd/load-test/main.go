@@ -96,7 +96,6 @@ type summary struct {
 	Pass            bool           `json:"pass"`
 	Failures        []string       `json:"failures,omitempty"`
 	latencies       []time.Duration
-	elapsed         time.Duration
 }
 
 type latencySummary struct {
@@ -138,7 +137,7 @@ func main() {
 		if !cfg.jsonOutput {
 			fmt.Printf("Warmup:      %d requests\n\n", cfg.warmup)
 		}
-		warmup(context.Background(), cfg)
+		warmup(ctx, cfg)
 	}
 
 	runCtx, cancel := context.WithTimeout(ctx, cfg.duration)
@@ -232,11 +231,19 @@ func printConfig(cfg config) {
 }
 
 func warmup(parent context.Context, cfg config) {
+	// The warmup window is derived from the request timeout so a large
+	// warmup count cannot run unbounded; the parent signal context lets
+	// Ctrl+C/SIGTERM abort the warmup phase immediately.
 	ctx, cancel := context.WithTimeout(parent, maxDuration(5*time.Second, cfg.timeout*time.Duration(cfg.warmup)))
 	defer cancel()
 	client := &http.Client{Timeout: cfg.timeout}
 	picker := &domainPicker{custom: cfg.domains, scenario: cfg.scenario}
 	for i := 0; i < cfg.warmup; i++ {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 		_, _, _, _ = sendRequest(ctx, client, cfg, picker.Next())
 	}
 }
@@ -445,7 +452,6 @@ func summarize(results []result, elapsed time.Duration, cfg config) summary {
 		DurationSeconds: elapsed.Seconds(),
 		StatusCodes:     make(map[int]int),
 		ErrorKinds:      make(map[string]int),
-		elapsed:         elapsed,
 	}
 
 	for _, res := range results {

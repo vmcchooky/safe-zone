@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -52,22 +53,19 @@ func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	reader, closeReader, err := feed.OpenSource(context.Background(), sourceURL, client)
+	reader, closeReader, err := feed.OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), feed.DefaultMaxFeedBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeReader()
 
-	parsed, err := feed.Parse(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
+	domains, stats := collectParsed(t, reader)
 
-	if parsed.Stats.Valid != 1 {
-		t.Fatalf("expected 1 valid domain, got %d", parsed.Stats.Valid)
+	if stats.Valid != 1 {
+		t.Fatalf("expected 1 valid domain, got %d", stats.Valid)
 	}
-	if len(parsed.Domains) != 1 || parsed.Domains[0] != "bad.test" {
-		t.Fatalf("unexpected domains: %#v", parsed.Domains)
+	if len(domains) != 1 || domains[0] != "bad.test" {
+		t.Fatalf("unexpected domains: %#v", domains)
 	}
 }
 
@@ -90,11 +88,25 @@ func TestWrapMaybeCompressedReadCloserWithGzipSuffix(t *testing.T) {
 	}
 	defer closeReader()
 
-	parsed, err := feed.Parse(reader)
+	domains, _ := collectParsed(t, reader)
+	if len(domains) != 1 || domains[0] != "evil.test" {
+		t.Fatalf("unexpected domains: %#v", domains)
+	}
+}
+
+// collectParsed drains a feed through the production ParseEach pipeline.
+func collectParsed(t *testing.T, reader io.Reader) ([]string, feed.ParseStats) {
+	t.Helper()
+	var (
+		domains []string
+		stats   feed.ParseStats
+	)
+	err := feed.ParseEach(reader, func(domain string) error {
+		domains = append(domains, domain)
+		return nil
+	}, &stats)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed.Domains) != 1 || parsed.Domains[0] != "evil.test" {
-		t.Fatalf("unexpected domains: %#v", parsed.Domains)
-	}
+	return domains, stats
 }

@@ -44,6 +44,14 @@ func main() {
 		os.Exit(1)
 	}
 	feedKey := config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey)
+	feedTTL, feedTTLErr := feed.TTLFromDays(config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14))
+	if feedTTLErr != nil {
+		logjson.Error("core-api invalid feed TTL configuration", map[string]any{
+			"service": "core-api",
+			"error":   feedTTLErr.Error(),
+		})
+		os.Exit(1)
+	}
 	feedStaleAfter := config.DurationSeconds("SAFE_ZONE_AGENT_FEED_STALE_AFTER_SECONDS", 36*time.Hour)
 	feedAdmissionMode, err := feed.NormalizeAdmissionMode(config.String("SAFE_ZONE_AGENT_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)))
 	if err != nil || feedAdmissionMode == feed.AdmissionFilter {
@@ -64,7 +72,7 @@ func main() {
 		DeploymentTier:      config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 		RateLimitingEnabled: config.Bool("SAFE_ZONE_RATELIMIT_ENABLED", true),
 		SessionSecret:       security.sessionSecret,
-		AdminPassword:       security.adminPassword,
+		AdminPasswordHash:   security.adminPasswordHash,
 		AdminAPIKey:         security.adminAPIKey,
 		PublicHost:          config.String("SAFE_ZONE_PUBLIC_HOST", ""),
 		FeedKey:             feedKey,
@@ -139,6 +147,7 @@ func main() {
 				MaxPerCycle:         config.Int("SAFE_ZONE_AGENT_AUDIT_MAX_PER_CYCLE", 50),
 				ConfidenceThreshold: config.Float64("SAFE_ZONE_AGENT_AUDIT_CONFIDENCE_THRESHOLD", 0.7),
 				EnrichTimeout:       config.DurationSeconds("SAFE_ZONE_AGENT_ENRICH_TIMEOUT_SECONDS", 5*time.Second),
+				Lookback:            config.DurationSeconds("SAFE_ZONE_AGENT_AUDIT_LOOKBACK_SECONDS", 24*time.Hour),
 			},
 		)
 		agentEngine.Register(
@@ -163,6 +172,7 @@ func main() {
 				ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_AGENT_FEED_DRIFT_INVALID_RATIO", 0.20),
 				ParserDriftMinInvalid:      config.Int("SAFE_ZONE_AGENT_FEED_DRIFT_MIN_INVALID", 25),
 				CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_AGENT_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
+				TTL:                        feedTTL,
 				AdmissionMode:              feedAdmissionMode,
 			},
 		)
@@ -181,6 +191,7 @@ func main() {
 				MaxPerCycle: config.Int("SAFE_ZONE_AGENT_OSINT_MAX_PER_CYCLE", 50),
 				Lookback:    config.DurationSeconds("SAFE_ZONE_AGENT_OSINT_LOOKBACK_SECONDS", 24*time.Hour),
 				ThreatKey:   feedKey,
+				TTL:         feedTTL,
 			},
 		)
 		agentEngine.Register(

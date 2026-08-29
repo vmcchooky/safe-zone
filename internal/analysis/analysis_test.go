@@ -55,13 +55,13 @@ func TestClassifyCategory(t *testing.T) {
 
 func TestAnalyzeCategoryFallback(t *testing.T) {
 	// If domain is clean but matches a category
-	res := Analyze("facebook.com")
+	res := analyzeDefault("facebook.com")
 	if res.Category != "social_media" {
 		t.Errorf("expected category social_media, got %s", res.Category)
 	}
 
 	// Test a suspicious/malicious domain fallback to malware/phishing
-	res2 := Analyze("login-paypal-verify.com")
+	res2 := analyzeDefault("login-paypal-verify.com")
 	if res2.Verdict != VerdictSafe {
 		if res2.Verdict == VerdictMalicious && res2.Category != "phishing" && res2.Category != "malware" {
 			t.Errorf("expected phishing or malware category for malicious domain, got %s", res2.Category)
@@ -73,7 +73,7 @@ func TestAnalyzeCategoryFallback(t *testing.T) {
 }
 
 func TestAnalyzeVietnamPublicServiceAbuse(t *testing.T) {
-	result := Analyze("dichvucong-vn.com")
+	result := analyzeDefault("dichvucong-vn.com")
 	if result.Verdict != VerdictMalicious {
 		t.Fatalf("expected dichvucong-vn.com to be malicious, got %s with score %d and reasons %v", result.Verdict, result.Score, result.Reasons)
 	}
@@ -91,7 +91,7 @@ func TestAnalyzeVietnamPublicServiceAbuse(t *testing.T) {
 func TestAnalyzeVietnamPublicServiceOfficialGovDomains(t *testing.T) {
 	for _, domain := range []string{"dichvucong.gov.vn", "dichvucong.hanoi.gov.vn"} {
 		t.Run(domain, func(t *testing.T) {
-			result := Analyze(domain)
+			result := analyzeDefault(domain)
 			if result.Verdict == VerdictMalicious {
 				t.Fatalf("expected %s not to be escalated to malicious, got %s with reasons %v", domain, result.Verdict, result.Reasons)
 			}
@@ -103,7 +103,7 @@ func TestAnalyzeVietnamPublicServiceOfficialGovDomains(t *testing.T) {
 }
 
 func TestAnalyzeHighEntropyDGASuspected(t *testing.T) {
-	result := Analyze("xjfjwqeoas.com")
+	result := analyzeDefault("xjfjwqeoas.com")
 
 	if !containsReason(result.Reasons, highEntropyDGAReason) {
 		t.Fatalf("expected high entropy DGA reason, got %v", result.Reasons)
@@ -124,7 +124,7 @@ func TestAnalyzeHighEntropyDGASuspected(t *testing.T) {
 }
 
 func TestAnalyzeHighEntropySkipsTrustedBrandRoots(t *testing.T) {
-	result := Analyze("vietcombank.com.vn")
+	result := analyzeDefault("vietcombank.com.vn")
 
 	if containsReason(result.Reasons, highEntropyDGAReason) {
 		t.Fatalf("expected trusted brand root to skip entropy DGA reason, got %v", result.Reasons)
@@ -132,7 +132,7 @@ func TestAnalyzeHighEntropySkipsTrustedBrandRoots(t *testing.T) {
 }
 
 func TestAnalyzeHighEntropySkipsCDNRoots(t *testing.T) {
-	result := Analyze("a1b2c3d4e5f6.cloudfront.net")
+	result := analyzeDefault("a1b2c3d4e5f6.cloudfront.net")
 
 	if result.Verdict != VerdictSafe {
 		t.Fatalf("expected random CDN subdomain to remain safe, got %s with score %d and reasons %v", result.Verdict, result.Score, result.Reasons)
@@ -150,7 +150,7 @@ func TestAnalyzeAllowsDisablingKeywordScoring(t *testing.T) {
 	cfg.Keywords = []string{}
 	cfg.BrandSpoofingScore = 0
 	cfg.EntropyScore = 0
-	analyzer := NewAnalyzer(cfg)
+	analyzer := NewAnalyzerWithBrandStore(cfg, nil)
 
 	result := analyzer.Analyze("secure-login-wallet-example.com")
 	if containsReason(result.Reasons, "phishing keyword pattern") {
@@ -159,7 +159,7 @@ func TestAnalyzeAllowsDisablingKeywordScoring(t *testing.T) {
 }
 
 func TestAnalyzeCDNBrandSpoofingStillRuns(t *testing.T) {
-	result := Analyze("vietcombank-login.cloudfront.net")
+	result := analyzeDefault("vietcombank-login.cloudfront.net")
 
 	if result.Verdict != VerdictMalicious {
 		t.Fatalf("expected brand spoofing on CDN subdomain to be malicious, got %s with score %d and reasons %v", result.Verdict, result.Score, result.Reasons)
@@ -217,4 +217,10 @@ func containsReasonSubstring(reasons []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// analyzeDefault runs the production analyzer with the default configuration
+// (the standalone Analyze wrapper was removed as dead code).
+func analyzeDefault(input string) Result {
+	return NewAnalyzerWithBrandStore(config.DefaultAnalysisConfig(), nil).Analyze(input)
 }

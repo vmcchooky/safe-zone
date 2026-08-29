@@ -44,11 +44,11 @@ func newGuestAuthTestServer(t *testing.T) (*Handler, *store.DB, *httptest.Server
 	})
 
 	handler := New(service, observability.NewRegistry(), Config{
-		DeploymentTier: "test",
-		SessionSecret:  []byte("0123456789abcdef0123456789abcdef"),
-		AdminPassword:  "adminpass1234",
-		AdminAPIKey:    "adminkey123456789012345678",
-		PublicHost:     "",
+		DeploymentTier:    "test",
+		SessionSecret:     []byte("0123456789abcdef0123456789abcdef"),
+		AdminPasswordHash: testAdminPasswordHash(),
+		AdminAPIKey:       "adminkey123456789012345678",
+		PublicHost:        "",
 	})
 
 	mux := http.NewServeMux()
@@ -60,8 +60,6 @@ func newGuestAuthTestServer(t *testing.T) (*Handler, *store.DB, *httptest.Server
 	mux.HandleFunc("/v1/overrides", handler.RequireAdminForMutationFunc(handler.OverridesHandler))
 	mux.HandleFunc("/v1/settings", handler.RequireAdminFunc(handler.SettingsHandler))
 	mux.HandleFunc("/v1/status", handler.StatusHandler)
-	mux.HandleFunc("/dashboard", handler.DashboardHandler)
-	mux.HandleFunc("/dashboard/", handler.DashboardHandler)
 
 	testServer := httptest.NewServer(mux)
 	t.Cleanup(testServer.Close)
@@ -127,24 +125,8 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 		t.Fatalf("expected guest role in session claims, got %q", claims.Role)
 	}
 
-	dashboardReq, err := http.NewRequest(http.MethodGet, testServer.URL+"/dashboard", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dashboardReq.AddCookie(sessionCookie)
-	dashboardResp, err := client.Do(dashboardReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dashboardResp.Body.Close()
-	if dashboardResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected dashboard 200 for guest, got %d", dashboardResp.StatusCode)
-	}
-	dashboardBody, _ := io.ReadAll(dashboardResp.Body)
-	if !strings.Contains(string(dashboardBody), "Safe Zone Dashboard") {
-		t.Fatalf("expected dashboard HTML for guest, got %s", dashboardBody)
-	}
-
+	// The guest cookie must reach an authenticated endpoint (the legacy
+	// dashboard handler was removed; /v1/auth/session carries the check).
 	sessionReq, err := http.NewRequest(http.MethodGet, testServer.URL+"/v1/auth/session", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -252,24 +234,6 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 		t.Fatalf("expected disabled guest session to be rejected with 401, got %d: %s", sessionAfterDisableResp.StatusCode, body)
 	}
 
-	dashboardAfterDisableReq, err := http.NewRequest(http.MethodGet, testServer.URL+"/dashboard", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dashboardAfterDisableReq.AddCookie(sessionCookie)
-	dashboardAfterDisableResp, err := client.Do(dashboardAfterDisableReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dashboardAfterDisableResp.Body.Close()
-	if dashboardAfterDisableResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected disabled guest dashboard fallback to login page, got %d", dashboardAfterDisableResp.StatusCode)
-	}
-	dashboardAfterDisableBody, _ := io.ReadAll(dashboardAfterDisableResp.Body)
-	if !strings.Contains(string(dashboardAfterDisableBody), "Sentinel Command OS") {
-		t.Fatalf("expected login HTML after guest disable, got %s", dashboardAfterDisableBody)
-	}
-
 	loginDisabledResp, err := client.Post(testServer.URL+"/v1/auth/login", "application/json", strings.NewReader(`{"username":"guest","password":"guestpass12"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -314,63 +278,6 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	}
 	if guestStatus.Exists || guestStatus.Enabled {
 		t.Fatalf("expected guest account to be deleted, got %+v", guestStatus)
-	}
-}
-
-func TestDashboardEmbedsAdminSessionBootstrap(t *testing.T) {
-	_, _, testServer := newGuestAuthTestServer(t)
-	client := testServer.Client()
-
-	loginResp, err := client.Post(testServer.URL+"/v1/auth/login", "application/json", strings.NewReader(`{"username":"admin","password":"adminpass1234"}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer loginResp.Body.Close()
-	if loginResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(loginResp.Body)
-		t.Fatalf("expected admin login 200, got %d: %s", loginResp.StatusCode, body)
-	}
-
-	var sessionCookie *http.Cookie
-	for _, cookie := range loginResp.Cookies() {
-		if cookie.Name == "admin_session" {
-			sessionCookie = cookie
-			break
-		}
-	}
-	if sessionCookie == nil {
-		t.Fatal("expected admin session cookie")
-	}
-
-	dashboardReq, err := http.NewRequest(http.MethodGet, testServer.URL+"/dashboard", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dashboardReq.AddCookie(sessionCookie)
-	dashboardResp, err := client.Do(dashboardReq)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dashboardResp.Body.Close()
-	if dashboardResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected dashboard 200 for admin, got %d", dashboardResp.StatusCode)
-	}
-
-	body, err := io.ReadAll(dashboardResp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(body)
-	for _, fragment := range []string{
-		`id="session-bootstrap"`,
-		`"username":"admin"`,
-		`"role":"admin"`,
-		`"read_only":false`,
-		`"can_view_settings":true`,
-	} {
-		if !strings.Contains(content, fragment) {
-			t.Fatalf("expected dashboard bootstrap to contain %q, got %s", fragment, content)
-		}
 	}
 }
 

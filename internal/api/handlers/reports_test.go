@@ -71,7 +71,7 @@ func TestReportsQueueIsAdminOnly(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	token, err := auth.GenerateSessionCookieValueForRole("guest", auth.RoleGuest, time.Hour, ts.Handler.Config.SessionSecret)
+	token, err := auth.GenerateSessionCookieValueForRole("guest", auth.RoleGuest, "", time.Hour, ts.Handler.Config.SessionSecret)
 	if err != nil {
 		t.Fatal(err)
 	}

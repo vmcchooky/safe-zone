@@ -1,74 +1,85 @@
 package feed
 
 import (
+	"io"
 	"strings"
 	"testing"
 )
 
-func TestParseTXT(t *testing.T) {
-	result, err := Parse(strings.NewReader(`
+// parseAll collects domains through the production ParseEach pipeline (the
+// same entry point feed.Sync uses).
+func parseAll(t *testing.T, reader io.Reader) ([]string, ParseStats) {
+	t.Helper()
+	var (
+		domains []string
+		stats   ParseStats
+	)
+	err := ParseEach(reader, func(domain string) error {
+		domains = append(domains, domain)
+		return nil
+	}, &stats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return domains, stats
+}
+
+func TestParseEachTXT(t *testing.T) {
+	domains, stats := parseAll(t, strings.NewReader(`
 # comment
 bad.test
 https://evil.test/path
 bad.test
 bad test
 `))
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	if result.Stats.Valid != 2 {
-		t.Fatalf("expected 2 valid domains, got %d", result.Stats.Valid)
+	if stats.Valid != 2 {
+		t.Fatalf("expected 2 valid domains, got %d", stats.Valid)
 	}
-	if result.Stats.Duplicates != 1 {
-		t.Fatalf("expected 1 duplicate, got %d", result.Stats.Duplicates)
+	if stats.Duplicates != 1 {
+		t.Fatalf("expected 1 duplicate, got %d", stats.Duplicates)
 	}
-	if result.Stats.Invalid != 1 {
-		t.Fatalf("expected 1 invalid row, got %d", result.Stats.Invalid)
+	if stats.Invalid != 1 {
+		t.Fatalf("expected 1 invalid row, got %d", stats.Invalid)
 	}
-	if got := strings.Join(result.Domains, ","); got != "bad.test,evil.test" {
+	if got := strings.Join(domains, ","); got != "bad.test,evil.test" {
 		t.Fatalf("unexpected domains: %s", got)
 	}
 }
 
-func TestParseCSV(t *testing.T) {
-	result, err := Parse(strings.NewReader("label,domain\nknown,bad.test\nurl,https://evil.test/path\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestParseEachCSV(t *testing.T) {
+	domains, stats := parseAll(t, strings.NewReader("label,domain\nknown,bad.test\nurl,https://evil.test/path\n"))
 
-	if result.Stats.Valid != 2 {
-		t.Fatalf("expected 2 valid domains, got %d", result.Stats.Valid)
+	if stats.Valid != 2 {
+		t.Fatalf("expected 2 valid domains, got %d", stats.Valid)
 	}
-	if got := strings.Join(result.Domains, ","); got != "bad.test,evil.test" {
+	if got := strings.Join(domains, ","); got != "bad.test,evil.test" {
 		t.Fatalf("unexpected domains: %s", got)
 	}
 }
 
-func TestParseRejectsOverlongTextLine(t *testing.T) {
-	_, err := Parse(strings.NewReader(strings.Repeat("a", 1024*1024+1)))
+func TestParseEachRejectsOverlongTextLine(t *testing.T) {
+	var stats ParseStats
+	err := ParseEach(strings.NewReader(strings.Repeat("a", 1024*1024+1)), func(string) error { return nil }, &stats)
 	if err == nil || !strings.Contains(err.Error(), "feed line exceeds") {
 		t.Fatalf("expected overlong line error, got %v", err)
 	}
 }
 
-func TestParseHostsFileFormatIgnoresSinkholeIPs(t *testing.T) {
-	result, err := Parse(strings.NewReader(`
+func TestParseEachHostsFileFormatIgnoresSinkholeIPs(t *testing.T) {
+	domains, stats := parseAll(t, strings.NewReader(`
 0.0.0.0 phishing.test
 127.0.0.1 scam.test # inline comment
 ::1 ipv6-sinkhole.test
 `))
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	if result.Stats.Valid != 3 {
-		t.Fatalf("expected 3 valid domains, got %d", result.Stats.Valid)
+	if stats.Valid != 3 {
+		t.Fatalf("expected 3 valid domains, got %d", stats.Valid)
 	}
-	if result.Stats.Invalid != 0 {
-		t.Fatalf("expected sinkhole IPs not to count as invalid, got %d", result.Stats.Invalid)
+	if stats.Invalid != 0 {
+		t.Fatalf("expected sinkhole IPs not to count as invalid, got %d", stats.Invalid)
 	}
-	if got := strings.Join(result.Domains, ","); got != "phishing.test,scam.test,ipv6-sinkhole.test" {
+	if got := strings.Join(domains, ","); got != "phishing.test,scam.test,ipv6-sinkhole.test" {
 		t.Fatalf("unexpected domains: %s", got)
 	}
 }

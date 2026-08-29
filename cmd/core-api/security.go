@@ -15,6 +15,7 @@ const (
 	generatedAdminPasswordBytes = 16
 	generatedAdminAPIKeyBytes   = 24
 	minAdminPasswordLength      = 12
+	maxAdminPasswordBytes       = 72 // bcrypt hashes at most 72 input bytes
 	minAdminAPIKeyLength        = 24
 	localAdminSecretsDir        = "tmp"
 	localAdminSecretsFile       = "tmp/local_admin_secrets.txt" // #nosec G101 -- file path only, not an embedded credential.
@@ -22,11 +23,21 @@ const (
 
 type runtimeSecurity struct {
 	sessionSecret []byte
-	adminPassword string
-	adminAPIKey   string
+	// adminPasswordHash is the bcrypt hash computed once at startup. The
+	// plaintext password is never kept in memory after load.
+	adminPasswordHash string
+	adminAPIKey       string
 }
 
 func loadRuntimeSecurity() (runtimeSecurity, error) {
+	// The security profile must be explicit: an empty or unknown
+	// SAFE_ZONE_ENV refuses to start instead of silently falling back to
+	// lenient local behavior.
+	env, err := config.NormalizeEnvironment(os.Getenv("SAFE_ZONE_ENV"))
+	if err != nil {
+		return runtimeSecurity{}, err
+	}
+
 	sessionSeed, err := auth.GenerateSecureRandomString(generatedSessionSecretBytes)
 	if err != nil {
 		return runtimeSecurity{}, fmt.Errorf("generate session secret: %w", err)
@@ -41,73 +52,89 @@ func loadRuntimeSecurity() (runtimeSecurity, error) {
 		return runtimeSecurity{}, err
 	}
 
-	if config.IsProduction() {
+	if config.EnvironmentRequiresValidatedSecrets(env) {
 		if err := validateProductionAdminPassword(adminPassword); err != nil {
 			return runtimeSecurity{}, err
 		}
 		if err := validateProductionAdminAPIKey(adminAPIKey); err != nil {
 			return runtimeSecurity{}, err
 		}
-		return runtimeSecurity{
-			sessionSecret: []byte(sessionSeed),
-			adminPassword: adminPassword,
-			adminAPIKey:   adminAPIKey,
-		}, nil
-	}
+	} else {
+		generatedAdminPassword := ""
+		generatedAdminAPIKey := ""
 
-	generatedAdminPassword := ""
-	generatedAdminAPIKey := ""
-
-	if adminPassword == "" {
-		adminPassword, err = auth.GenerateSecureRandomString(generatedAdminPasswordBytes)
-		if err != nil {
-			return runtimeSecurity{}, fmt.Errorf("generate admin password: %w", err)
+		if adminPassword == "" {
+			adminPassword, err = auth.GenerateSecureRandomString(generatedAdminPasswordBytes)
+			if err != nil {
+				return runtimeSecurity{}, fmt.Errorf("generate admin password: %w", err)
+			}
+			generatedAdminPassword = adminPassword
+			logjson.Warn("generated temporary local-only admin password", map[string]any{
+				"service":        "core-api",
+				"config_key":     "SAFE_ZONE_ADMIN_PASSWORD",
+				"generated_only": true,
+			})
+		} else if err := validateProductionAdminPassword(adminPassword); err != nil {
+			logjson.Warn("admin password validation warning", map[string]any{
+				"service": "core-api",
+				"error":   err.Error(),
+			})
 		}
-		generatedAdminPassword = adminPassword
-		logjson.Warn("generated temporary local-only admin password", map[string]any{
-			"service":        "core-api",
-			"config_key":     "SAFE_ZONE_ADMIN_PASSWORD",
-			"generated_only": true,
-		})
-	} else if err := validateProductionAdminPassword(adminPassword); err != nil {
-		logjson.Warn("admin password validation warning", map[string]any{
-			"service": "core-api",
-			"error":   err.Error(),
-		})
+
+		if adminAPIKey == "" {
+			adminAPIKey, err = auth.GenerateSecureRandomString(generatedAdminAPIKeyBytes)
+			if err != nil {
+				return runtimeSecurity{}, fmt.Errorf("generate admin api key: %w", err)
+			}
+			generatedAdminAPIKey = adminAPIKey
+			logjson.Warn("generated temporary local-only admin api key", map[string]any{
+				"service":        "core-api",
+				"config_key":     "SAFE_ZONE_ADMIN_API_KEY",
+				"generated_only": true,
+			})
+		} else if err := validateProductionAdminAPIKey(adminAPIKey); err != nil {
+			logjson.Warn("admin api key validation warning", map[string]any{
+				"service": "core-api",
+				"error":   err.Error(),
+			})
+		}
+
+		if generatedAdminPassword != "" || generatedAdminAPIKey != "" {
+			if err := writeLocalAdminSecrets(generatedAdminPassword, generatedAdminAPIKey); err != nil {
+				return runtimeSecurity{}, err
+			}
+			logjson.Warn("temporary local-only admin secrets generated and saved to file", map[string]any{
+				"service":      "core-api",
+				"secrets_file": localAdminSecretsFile,
+			})
+		}
 	}
 
-	if adminAPIKey == "" {
-		adminAPIKey, err = auth.GenerateSecureRandomString(generatedAdminAPIKeyBytes)
-		if err != nil {
-			return runtimeSecurity{}, fmt.Errorf("generate admin API key: %w", err)
-		}
-		generatedAdminAPIKey = adminAPIKey
-		logjson.Warn("generated temporary local-only admin api key", map[string]any{
-			"service":        "core-api",
-			"config_key":     "SAFE_ZONE_ADMIN_API_KEY",
-			"generated_only": true,
-		})
-	} else if err := validateProductionAdminAPIKey(adminAPIKey); err != nil {
-		logjson.Warn("admin api key validation warning", map[string]any{
-			"service": "core-api",
-			"error":   err.Error(),
-		})
+	// bcrypt silently truncates (or rejects) inputs beyond 72 bytes, so the
+	// byte limit is validated for every profile before hashing. len() counts
+	// bytes, not runes, matching the bcrypt contract.
+	if len(adminPassword) > maxAdminPasswordBytes {
+		return runtimeSecurity{}, fmt.Errorf("SAFE_ZONE_ADMIN_PASSWORD must be at most %d bytes for bcrypt hashing (got %d bytes)", maxAdminPasswordBytes, len(adminPassword))
 	}
 
-	if generatedAdminPassword != "" || generatedAdminAPIKey != "" {
-		if err := writeLocalAdminSecrets(generatedAdminPassword, generatedAdminAPIKey); err != nil {
-			return runtimeSecurity{}, err
-		}
-		logjson.Warn("temporary local-only admin secrets generated and saved to file", map[string]any{
-			"service":      "core-api",
-			"secrets_file": localAdminSecretsFile,
-		})
+	// Hash the admin password exactly once at startup. Login requests only
+	// ever see the bcrypt hash, so a memory or config snapshot after load
+	// yields no fast verifier for the secret.
+	adminPasswordHash, err := auth.HashPassword(adminPassword)
+	if err != nil {
+		return runtimeSecurity{}, fmt.Errorf("hash admin password: %w", err)
 	}
+
+	logjson.Info("runtime security profile loaded", map[string]any{
+		"service":       "core-api",
+		"environment":   env,
+		"password_hash": "bcrypt",
+	})
 
 	return runtimeSecurity{
-		sessionSecret: []byte(sessionSeed),
-		adminPassword: adminPassword,
-		adminAPIKey:   adminAPIKey,
+		sessionSecret:     []byte(sessionSeed),
+		adminPasswordHash: adminPasswordHash,
+		adminAPIKey:       adminAPIKey,
 	}, nil
 }
 

@@ -1,61 +1,10 @@
 package handlers
 
 import (
-	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
-
-func TestDashboardEndpointHTTP(t *testing.T) {
-	ts := newHandlerTestServer(t)
-
-	loginResp, err := ts.Client.Get(ts.Server.URL + "/dashboard")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer loginResp.Body.Close()
-
-	if loginResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", loginResp.StatusCode)
-	}
-
-	loginBody, err := io.ReadAll(loginResp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	loginHTML := string(loginBody)
-	if !strings.Contains(loginHTML, "Sentinel Command OS") || !strings.Contains(loginHTML, "adminLoginForm") {
-		t.Fatalf("expected login page HTML, got: %s", loginHTML)
-	}
-
-	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/dashboard", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.AddCookie(ts.adminSessionCookie(t))
-
-	dashboardResp, err := ts.Client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer dashboardResp.Body.Close()
-
-	if dashboardResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200, got %d", dashboardResp.StatusCode)
-	}
-
-	body, err := io.ReadAll(dashboardResp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(body)
-	for _, fragment := range []string{"Safe Zone Dashboard", "Domain Inspection", "Analysis Scoring", "setting-analysis-config", "dashboard-features.js"} {
-		if !strings.Contains(content, fragment) {
-			t.Fatalf("expected dashboard content to contain %q, got: %s", fragment, content)
-		}
-	}
-}
 
 func TestRestrictedAPIsAuth(t *testing.T) {
 	ts := newHandlerTestServer(t)

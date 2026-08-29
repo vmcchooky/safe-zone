@@ -66,6 +66,7 @@ export default defineConfig({
       cwd: '../',
       env: {
         ...process.env,
+        SAFE_ZONE_ENV: 'test',
         SAFE_ZONE_CORE_API_ADDR: `${host}:${apiPort}`,
         SAFE_ZONE_ADMIN_PASSWORD: 'playwright_test_password_1234',
         SAFE_ZONE_ADMIN_API_KEY: 'playwright_test_api_key_1234_abcdefg',

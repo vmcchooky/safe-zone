@@ -120,6 +120,7 @@ type report struct {
 	RecoveryRate                 float64                    `json:"malicious_feed_recovery_rate_of_model_false_negatives"`
 	ResidualMalicious            int                        `json:"residual_malicious"`
 	CombinedBenignFalsePositives int                        `json:"combined_benign_false_positives"`
+	InvalidLabelRows             int                        `json:"invalid_label_rows"`
 	Finding                      string                     `json:"finding"`
 	Decision                     string                     `json:"decision"`
 }
@@ -127,14 +128,15 @@ type report struct {
 func main() {
 	configPath := flag.String("config", "", "checksum-pinned threat-context evaluation protocol")
 	outputPath := flag.String("output", "", "optional aggregate JSON report path")
+	allowInvalidLabels := flag.Bool("allow-invalid-labels", false, "continue evaluation despite non-binary labels (they are counted in the report)")
 	flag.Parse()
-	if err := run(*configPath, *outputPath); err != nil {
+	if err := run(*configPath, *outputPath, *allowInvalidLabels); err != nil {
 		fmt.Fprintln(os.Stderr, "threat context evaluation failed:", err)
 		os.Exit(1)
 	}
 }
 
-func run(configPath, outputPath string) error {
+func run(configPath, outputPath string, allowInvalidLabels bool) error {
 	if strings.TrimSpace(configPath) == "" {
 		return errors.New("--config is required")
 	}
@@ -151,9 +153,15 @@ func run(configPath, outputPath string) error {
 	}
 	asOf, _ := time.Parse(time.RFC3339, cfg.AsOf)
 
-	cases, labelsHash, err := readCases(cfg.Labels.Path)
+	cases, invalidLabelRows, labelsHash, err := readCases(cfg.Labels.Path)
 	if err != nil {
 		return err
+	}
+	if invalidLabelRows > 0 && !allowInvalidLabels {
+		// A checksum-pinned labels file with non-binary labels silently
+		// shrinks the evaluation set; fail loudly unless the operator
+		// explicitly tolerates it.
+		return fmt.Errorf("labels CSV contains %d rows with a non-binary human_label (benign/malicious expected); re-pin the reviewed CSV or pass --allow-invalid-labels", invalidLabelRows)
 	}
 	if !equalHash(labelsHash, cfg.Labels.SHA256) {
 		return errors.New("labels SHA-256 mismatch")
@@ -176,6 +184,7 @@ func run(configPath, outputPath string) error {
 	}
 
 	rep := evaluate(cfg, configHash, labelsHash, predictionsHash, cases, predictions, sources)
+	rep.InvalidLabelRows = invalidLabelRows
 	encoded, err := json.MarshalIndent(rep, "", "  ")
 	if err != nil {
 		return err
@@ -229,40 +238,42 @@ func validateProtocol(cfg protocol) error {
 	return nil
 }
 
-func readCases(path string) ([]evaluationCase, string, error) {
+func readCases(path string) ([]evaluationCase, int, string, error) {
 	data, hash, err := readAndHash(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("read labels: %w", err)
+		return nil, 0, "", fmt.Errorf("read labels: %w", err)
 	}
 	rows, err := csv.NewReader(strings.NewReader(string(data))).ReadAll()
 	if err != nil || len(rows) < 2 {
-		return nil, "", errors.New("labels CSV is empty or invalid")
+		return nil, 0, "", errors.New("labels CSV is empty or invalid")
 	}
 	header := headerIndex(rows[0])
 	for _, required := range []string{"case_id", "domain", "human_label", "reviewer_id"} {
 		if _, ok := header[required]; !ok {
-			return nil, "", fmt.Errorf("labels CSV missing %s", required)
+			return nil, 0, "", fmt.Errorf("labels CSV missing %s", required)
 		}
 	}
 	var cases []evaluationCase
+	invalidLabelRows := 0
 	seen := make(map[string]struct{})
 	for rowIndex, row := range rows[1:] {
 		label := strings.ToLower(csvValue(row, header["human_label"]))
 		if label != "benign" && label != "malicious" {
+			invalidLabelRows++
 			continue
 		}
 		caseID := csvValue(row, header["case_id"])
 		domain, normalizeErr := analysis.NormalizeDomain(csvValue(row, header["domain"]))
 		if caseID == "" || normalizeErr != nil || csvValue(row, header["reviewer_id"]) == "" {
-			return nil, "", fmt.Errorf("invalid reviewed binary label at row %d", rowIndex+2)
+			return nil, 0, "", fmt.Errorf("invalid reviewed binary label at row %d", rowIndex+2)
 		}
 		if _, ok := seen[caseID]; ok {
-			return nil, "", fmt.Errorf("duplicate case_id %q", caseID)
+			return nil, 0, "", fmt.Errorf("duplicate case_id %q", caseID)
 		}
 		seen[caseID] = struct{}{}
 		cases = append(cases, evaluationCase{CaseID: caseID, Domain: domain, HumanLabel: label})
 	}
-	return cases, hash, nil
+	return cases, invalidLabelRows, hash, nil
 }
 
 func readPredictions(ref predictionRef, cases []evaluationCase) (map[string]prediction, string, error) {

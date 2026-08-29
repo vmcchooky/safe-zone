@@ -28,6 +28,11 @@ type FeedSyncConfig struct {
 	ParserDriftMinInvalid      int
 	CacheInvalidationMinWrites int64
 	AdmissionMode              feed.AdmissionMode
+	// TTL is the expiry window scored into every synced member. It must come
+	// from the shared feed.TTLFromDays contract (SAFE_ZONE_FEED_TTL_DAYS) so
+	// the daemon, the CLI tools and the OSINT promotion expire members on
+	// the same schedule; feed.Sync defaults a non-positive TTL to 14 days.
+	TTL time.Duration
 }
 
 // FeedSyncTask downloads threat feed data from multiple sources and adds
@@ -101,6 +106,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 			ParserDriftInvalidRatio:    t.config.ParserDriftInvalidRatio,
 			ParserDriftMinInvalid:      t.config.ParserDriftMinInvalid,
 			CacheInvalidationMinWrites: t.config.CacheInvalidationMinWrites,
+			TTL:                        t.config.TTL,
 			AdmissionMode:              t.config.AdmissionMode,
 		})
 		if err != nil {

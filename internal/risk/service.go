@@ -113,6 +113,11 @@ type Options struct {
 	// (real shadow traffic, never the offline proxy). Nil means drift
 	// monitoring falls back to the bundle reference.
 	URLOpsBaseline *URLOperationalBaseline
+	// URLOpsBaselineFailed marks a configured-but-unloadable baseline so the
+	// status endpoint can report fail_open with a stable error class. The
+	// failure state is injected by the env loader instead of a mutable global.
+	URLOpsBaselineFailed     bool
+	URLOpsBaselineErrorClass string
 	// URLMLFeedback configures durable, privacy-safe label correlation. An
 	// empty secret keeps the legacy ephemeral in-memory buffer.
 	URLMLFeedback URLMLFeedbackConfig
@@ -421,44 +426,46 @@ func NewService(options Options) *Service {
 
 	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	svc := &Service{
-		lifecycleCtx:      lifecycleCtx,
-		lifecycleCancel:   lifecycleCancel,
-		redis:             options.Redis,
-		redisTimeout:      options.RedisTimeout,
-		ttlAllowed:        options.TTLAllowed,
-		ttlSuspicious:     options.TTLSuspicious,
-		ttlBlocked:        options.TTLBlocked,
-		recentLimit:       recentLimit,
-		recentTTL:         configDuration(options.RecentTTL, 24*time.Hour),
-		threatFeedKey:     threatFeedKey,
-		feedRevisionKey:   feed.RevisionKey(threatFeedKey),
-		ai:                aiClient,
-		aiShared:          aiShared,
-		whitelist:         wl,
-		store:             options.Store,
-		brandStore:        brandStore,
-		configReloadChan:  configReloadChannel,
-		configReloadPoll:  configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
-		configReloadOn:    options.ConfigReloadEnabled,
-		nodeRole:          strings.TrimSpace(options.NodeRole),
-		reloadBackoffMin:  analysisConfigReloadBackoffMin,
-		reloadBackoffMax:  analysisConfigReloadBackoffMax,
-		enrichEnabled:     options.EnrichEnabled,
-		enrichTimeout:     options.EnrichTimeout,
-		enrichDone:        make(chan struct{}),
-		enrichInFlight:    make(map[string]struct{}),
-		whoisCacheTTL:     configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
-		osint:             options.OSINT,
-		adblockDataRoot:   adblockDataRoot,
-		adblockHTTPClient: options.AdblockHTTPClient,
-		mlClassifier:      options.MLClassifier,
-		mlMode:            mlMode,
-		mlCanary:          mlCanary,
-		urlMLClassifier:   options.URLMLClassifier,
-		urlMLMode:         urlMLMode,
-		urlMLShadow:       urlMLShadow,
-		urlMLOpsBaseline:  options.URLOpsBaseline,
-		urlMLFeedback:     urlFeedbackBackendImpl,
+		lifecycleCtx:               lifecycleCtx,
+		lifecycleCancel:            lifecycleCancel,
+		redis:                      options.Redis,
+		redisTimeout:               options.RedisTimeout,
+		ttlAllowed:                 options.TTLAllowed,
+		ttlSuspicious:              options.TTLSuspicious,
+		ttlBlocked:                 options.TTLBlocked,
+		recentLimit:                recentLimit,
+		recentTTL:                  configDuration(options.RecentTTL, 24*time.Hour),
+		threatFeedKey:              threatFeedKey,
+		feedRevisionKey:            feed.RevisionKey(threatFeedKey),
+		ai:                         aiClient,
+		aiShared:                   aiShared,
+		whitelist:                  wl,
+		store:                      options.Store,
+		brandStore:                 brandStore,
+		configReloadChan:           configReloadChannel,
+		configReloadPoll:           configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
+		configReloadOn:             options.ConfigReloadEnabled,
+		nodeRole:                   strings.TrimSpace(options.NodeRole),
+		reloadBackoffMin:           analysisConfigReloadBackoffMin,
+		reloadBackoffMax:           analysisConfigReloadBackoffMax,
+		enrichEnabled:              options.EnrichEnabled,
+		enrichTimeout:              options.EnrichTimeout,
+		enrichDone:                 make(chan struct{}),
+		enrichInFlight:             make(map[string]struct{}),
+		whoisCacheTTL:              configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
+		osint:                      options.OSINT,
+		adblockDataRoot:            adblockDataRoot,
+		adblockHTTPClient:          options.AdblockHTTPClient,
+		mlClassifier:               options.MLClassifier,
+		mlMode:                     mlMode,
+		mlCanary:                   mlCanary,
+		urlMLClassifier:            options.URLMLClassifier,
+		urlMLMode:                  urlMLMode,
+		urlMLShadow:                urlMLShadow,
+		urlMLOpsBaseline:           options.URLOpsBaseline,
+		urlMLOpsBaselineFailed:     options.URLOpsBaselineFailed,
+		urlMLOpsBaselineErrorClass: options.URLOpsBaselineErrorClass,
+		urlMLFeedback:              urlFeedbackBackendImpl,
 	}
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.refreshAdblockEnabled()
@@ -2534,11 +2541,6 @@ func (s *Service) DeleteBrand(ctx context.Context, id int64) error {
 	}
 	s.bumpBrandRevision(ctx)
 	return nil
-}
-
-// TelemetryRecent returns recent telemetry entries.
-func (s *Service) TelemetryRecent(limit, offset int) ([]store.TelemetryEntry, error) {
-	return s.TelemetryRecentFiltered(store.TelemetryFilter{}, limit, offset)
 }
 
 // TelemetryRecentFiltered returns recent telemetry entries constrained at the store layer.

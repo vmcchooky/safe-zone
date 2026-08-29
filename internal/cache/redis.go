@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -211,6 +212,57 @@ func (r *Redis) Delete(ctx context.Context, key string) error {
 	return r.client.Del(ctx, key).Err()
 }
 
+// ErrScanIncomplete reports that the scan budget ran out before the whole
+// matching keyspace was visited. A partial delete is not a success: callers
+// must treat it as a failure and retry (a retry rescans from the start and
+// eventually finds nothing left to delete).
+var ErrScanIncomplete = errors.New("scan delete: scan budget exhausted before the keyspace was fully scanned")
+
+// ScanDelete deletes keys matching pattern using bounded incremental SCAN
+// iterations (never KEYS) and returns how many keys were deleted. Scanning
+// stops after maxScan keys have been seen so a pathological keyspace cannot
+// pin the caller; stopping early with a non-exhausted cursor is reported as
+// ErrScanIncomplete instead of success. Reaching the cursor end exactly at
+// the budget boundary is still a complete pass.
+func (r *Redis) ScanDelete(ctx context.Context, pattern string, maxScan int64) (int64, error) {
+	if !r.Enabled() {
+		return 0, ErrDisabled
+	}
+	if maxScan <= 0 {
+		return 0, fmt.Errorf("scan delete: maxScan must be positive")
+	}
+
+	var deleted int64
+	var scanned int64
+	var cursor uint64
+	for {
+		keys, next, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return deleted, err
+		}
+		scanned += int64(len(keys))
+		if len(keys) > 0 {
+			n, delErr := r.client.Del(ctx, keys...).Result()
+			deleted += n
+			if delErr != nil {
+				return deleted, delErr
+			}
+		}
+		if scanned >= maxScan {
+			if next != 0 {
+				return deleted, fmt.Errorf("%w (pattern %q, scanned %d keys, %d deleted)", ErrScanIncomplete, pattern, scanned, deleted)
+			}
+			// The cursor ended exactly at the budget: the whole keyspace
+			// matching the pattern was visited and deleted.
+			return deleted, nil
+		}
+		cursor = next
+		if cursor == 0 {
+			return deleted, nil
+		}
+	}
+}
+
 func (r *Redis) Expire(ctx context.Context, key string, ttl time.Duration) error {
 	if !r.Enabled() {
 		return ErrDisabled
@@ -237,12 +289,13 @@ func (r *Redis) SetAdd(ctx context.Context, key string, members ...string) (int6
 	return r.client.SAdd(ctx, key, members).Result()
 }
 
-func (r *Redis) SetIsMember(ctx context.Context, key, member string) (bool, error) {
+// Type reports the Redis type of a key ("none" when the key does not exist).
+func (r *Redis) Type(ctx context.Context, key string) (string, error) {
 	if !r.Enabled() {
-		return false, ErrDisabled
+		return "", ErrDisabled
 	}
 
-	return r.client.SIsMember(ctx, key, member).Result()
+	return r.client.Type(ctx, key).Result()
 }
 
 func (r *Redis) ZAdd(ctx context.Context, key string, members ...redis.Z) (int64, error) {

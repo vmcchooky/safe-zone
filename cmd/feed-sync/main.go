@@ -31,6 +31,14 @@ func main() {
 	ttlDays := flag.Int("ttl-days", config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14), "number of days before threat domains expire")
 	admissionMode := flag.String("admission-mode", config.String("SAFE_ZONE_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)), "feed admission mode: legacy, corroborated-url-host-shadow, or corroborated-url-host-filter")
 	flag.Parse()
+	feedTTL, ttlErr := feed.TTLFromDays(*ttlDays)
+	if ttlErr != nil {
+		logjson.Error("invalid feed TTL configuration", map[string]any{
+			"service": "feed-sync",
+			"error":   ttlErr.Error(),
+		})
+		os.Exit(1)
+	}
 
 	if strings.TrimSpace(*source) == "" {
 		logjson.Error("feed source is required", map[string]any{
@@ -57,7 +65,7 @@ func main() {
 		ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
 		ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
 		CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
-		TTL:                        time.Duration(*ttlDays) * 24 * time.Hour,
+		TTL:                        feedTTL,
 		AdmissionMode:              feed.AdmissionMode(*admissionMode),
 	})
 	if err != nil {

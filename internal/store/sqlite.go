@@ -207,6 +207,8 @@ type DB struct {
 	sampleSeq    atomic.Uint64
 	configMu     sync.RWMutex
 	done         chan struct{}
+	closeOnce    sync.Once
+	closed       atomic.Bool
 	wg           sync.WaitGroup
 
 	// CIDR Cache
@@ -252,6 +254,15 @@ CREATE TABLE IF NOT EXISTS agent_audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_audit_task ON agent_audit_log(task_name);
 CREATE INDEX IF NOT EXISTS idx_agent_audit_created ON agent_audit_log(created_at);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    session_fingerprint TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS osint_evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -561,19 +572,27 @@ func New(path string, retentionDays int) (*DB, error) {
 	return d, nil
 }
 
-// Close stops background goroutines and closes the database.
+// Close stops background goroutines and closes the database. It is
+// idempotent: a second call is a no-op so layered owners (risk service,
+// tests) can each close safely.
 func (d *DB) Close() error {
 	if d == nil {
 		return nil
 	}
-	close(d.done)
+	d.closeOnce.Do(func() {
+		d.closed.Store(true)
+		close(d.done)
+	})
 	d.wg.Wait()
+	if d.db == nil {
+		return nil
+	}
 	return d.db.Close()
 }
 
 // Enabled returns true if the store is initialized and available.
 func (d *DB) Enabled() bool {
-	return d != nil && d.db != nil
+	return d != nil && d.db != nil && !d.closed.Load()
 }
 
 // --- Telemetry ---
@@ -1100,6 +1119,142 @@ func (d *DB) QuerySuspiciousDomains(ctx context.Context, since time.Time, minOcc
 		LIMIT ?`, sinceStr, minOccurrences, limit)
 	if err != nil {
 		return nil, fmt.Errorf("query suspicious domains: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var results []DomainCount
+	for rows.Next() {
+		var dc DomainCount
+		if err := rows.Scan(&dc.Domain, &dc.Count); err != nil {
+			return nil, fmt.Errorf("scan domain count: %w", err)
+		}
+		results = append(results, dc)
+	}
+	return results, rows.Err()
+}
+
+// QueryAgentEventsPage returns agent events after the (created_at, id) cursor
+// in stable ascending order, optionally filtered by event types. The keyset
+// pagination lets consumers page through large backlogs without skipping or
+// repeating rows, including ties on the second-precision created_at column.
+func (d *DB) QueryAgentEventsPage(ctx context.Context, afterCreatedAt string, afterID int64, eventTypes []string, limit int) ([]AgentEvent, error) {
+	if !d.Enabled() {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+
+	var rows *sql.Rows
+	var err error
+	if len(eventTypes) > 0 {
+		placeholders := make([]string, len(eventTypes))
+		args := make([]any, 0, len(eventTypes)+4)
+		args = append(args, afterCreatedAt, afterCreatedAt, afterID)
+		for i, et := range eventTypes {
+			placeholders[i] = "?"
+			args = append(args, et)
+		}
+		args = append(args, limit)
+		query := fmt.Sprintf( // #nosec G201 -- placeholders are always literal "?" strings, never user input
+			`SELECT id, task_name, event_type, COALESCE(domain, ''), COALESCE(details, ''), created_at
+			 FROM agent_audit_log
+			 WHERE (created_at > ? OR (created_at = ? AND id > ?)) AND event_type IN (%s)
+			 ORDER BY created_at ASC, id ASC LIMIT ?`,
+			strings.Join(placeholders, ","))
+		rows, err = d.db.QueryContext(ctx, query, args...)
+	} else {
+		rows, err = d.db.QueryContext(ctx,
+			`SELECT id, task_name, event_type, COALESCE(domain, ''), COALESCE(details, ''), created_at
+			 FROM agent_audit_log
+			 WHERE created_at > ? OR (created_at = ? AND id > ?)
+			 ORDER BY created_at ASC, id ASC LIMIT ?`, afterCreatedAt, afterCreatedAt, afterID, limit)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("query agent events page: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var events []AgentEvent
+	for rows.Next() {
+		var e AgentEvent
+		if err := rows.Scan(&e.ID, &e.TaskName, &e.EventType, &e.Domain, &e.Details, &e.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan agent event: %w", err)
+		}
+		events = append(events, e)
+	}
+	return events, rows.Err()
+}
+
+// CountAgentEventsAfter counts agent events after the (created_at, id)
+// cursor with the same event-type filters as QueryAgentEventsPage, so
+// consumers can measure the pending backlog before deciding to act on it.
+func (d *DB) CountAgentEventsAfter(ctx context.Context, afterCreatedAt string, afterID int64, eventTypes []string) (int64, error) {
+	if !d.Enabled() {
+		return 0, nil
+	}
+
+	query := `SELECT COUNT(*) FROM agent_audit_log WHERE (created_at > ? OR (created_at = ? AND id > ?))`
+	args := []any{afterCreatedAt, afterCreatedAt, afterID}
+	if len(eventTypes) > 0 {
+		placeholders := make([]string, len(eventTypes))
+		for i, et := range eventTypes {
+			placeholders[i] = "?"
+			args = append(args, et)
+		}
+		query += ` AND event_type IN (` + strings.Join(placeholders, ",") + `)`
+	}
+
+	var count int64
+	if err := d.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count agent events: %w", err)
+	}
+	return count, nil
+}
+
+// QuerySuspiciousDomainsPage is the keyset variant of QuerySuspiciousDomains
+// for background audit cycles. It pages over a frozen [since, until) window
+// ordered by domain ASC, resuming strictly after afterDomain. A frozen window
+// keeps the domain grouping stable, so keyset pagination never skips or
+// repeats a domain across pages.
+func (d *DB) QuerySuspiciousDomainsPage(ctx context.Context, since, until time.Time, minOccurrences, limit int, afterDomain string) ([]DomainCount, error) {
+	if !d.Enabled() {
+		return nil, nil
+	}
+	if minOccurrences <= 0 {
+		minOccurrences = 3
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+
+	// analysis_log timestamps are RFC3339Nano text; fractional seconds sort
+	// before the whole-second "Z" suffix lexicographically. Ceil the upper
+	// bound to the next whole second so entries inside the boundary second
+	// stay inside the window (a small overlap across windows is safe because
+	// audit decisions are idempotent).
+	untilStr := until.UTC().Truncate(time.Second).Add(time.Second).Format(time.RFC3339)
+	sinceStr := since.UTC().Format(time.RFC3339)
+
+	query := `
+		SELECT domain, COUNT(*) AS cnt
+		FROM analysis_log
+		WHERE verdict = 'SUSPICIOUS' AND analyzed_at >= ? AND analyzed_at < ?
+		GROUP BY domain
+		HAVING cnt >= ?`
+	args := []any{sinceStr, untilStr, minOccurrences}
+	if afterDomain != "" {
+		query += ` AND domain > ?`
+		args = append(args, afterDomain)
+	}
+	query += `
+		ORDER BY domain ASC
+		LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := d.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query suspicious domains page: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 

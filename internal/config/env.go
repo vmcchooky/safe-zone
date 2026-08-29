@@ -95,6 +95,35 @@ func Environment() string {
 	return value
 }
 
+// NormalizeEnvironment validates a SAFE_ZONE_ENV value. Service binaries with
+// a security surface (core-api) refuse to start on an empty or unsupported
+// value so the security profile is always explicit; "prod" normalizes to
+// "production".
+func NormalizeEnvironment(value string) (string, error) {
+	switch env := strings.ToLower(strings.TrimSpace(value)); env {
+	case "local", "test", "development", "production":
+		return env, nil
+	case "prod":
+		return "production", nil
+	case "":
+		return "", fmt.Errorf("SAFE_ZONE_ENV is required; set one of local, test, development, production")
+	default:
+		return "", fmt.Errorf("unsupported SAFE_ZONE_ENV %q; use one of local, test, development, production", value)
+	}
+}
+
+// EnvironmentAllowsGeneratedSecrets reports whether the profile may generate
+// temporary local-only admin credentials.
+func EnvironmentAllowsGeneratedSecrets(env string) bool {
+	return env == "local" || env == "test"
+}
+
+// EnvironmentRequiresValidatedSecrets reports whether the profile fails fast
+// on missing or weak admin secrets.
+func EnvironmentRequiresValidatedSecrets(env string) bool {
+	return env == "production" || env == "development"
+}
+
 func SecretFileRoot() string {
 	return String("SAFE_ZONE_SECRET_FILE_ROOT", "./ops/secrets")
 }

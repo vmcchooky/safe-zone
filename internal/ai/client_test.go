@@ -34,7 +34,7 @@ func TestRefineParsesMaliciousResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := New(server.URL+"/v1beta", "test-key", "gemini-2.5-flash-lite", time.Second)
+	client := NewClient(Config{GeminiBaseURL: server.URL + "/v1beta", GeminiAPIKey: "test-key", GeminiModel: "gemini-2.5-flash-lite", GeminiTimeout: time.Second})
 	current := analysis.Result{Domain: "secure-login-example.com", Verdict: analysis.VerdictSuspicious, Confidence: 0.52, Score: 45}
 	result, err := client.Refine(context.Background(), current.Domain, current)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestRefineParsesMaliciousResponse(t *testing.T) {
 }
 
 func TestRefineDisabled(t *testing.T) {
-	client := New("", "", "", time.Second)
+	client := NewClient(Config{})
 	if client.Enabled() {
 		t.Fatal("expected disabled client")
 	}
@@ -71,7 +71,7 @@ func TestRefineParsesCategoryResponse(t *testing.T) {
 	}))
 	defer server1.Close()
 
-	client1 := New(server1.URL+"/v1beta", "test-key", "gemini-2.5-flash-lite", time.Second)
+	client1 := NewClient(Config{GeminiBaseURL: server1.URL + "/v1beta", GeminiAPIKey: "test-key", GeminiModel: "gemini-2.5-flash-lite", GeminiTimeout: time.Second})
 	res1, err := client1.Refine(context.Background(), "facebook.com", analysis.Result{Domain: "facebook.com"})
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestRefineParsesCategoryResponse(t *testing.T) {
 	}))
 	defer server2.Close()
 
-	client2 := New(server2.URL+"/v1beta", "test-key", "gemini-2.5-flash-lite", time.Second)
+	client2 := NewClient(Config{GeminiBaseURL: server2.URL + "/v1beta", GeminiAPIKey: "test-key", GeminiModel: "gemini-2.5-flash-lite", GeminiTimeout: time.Second})
 	res2, err := client2.Refine(context.Background(), "facebook.com", analysis.Result{Domain: "facebook.com"})
 	if err != nil {
 		t.Fatal(err)

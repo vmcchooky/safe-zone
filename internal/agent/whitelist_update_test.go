@@ -128,10 +128,7 @@ func TestWhitelistUpdateTaskDisabled(t *testing.T) {
 	}
 
 	// Verify nothing in DB
-	list, err := db.GetWhitelist(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	list := collectWhitelist(t, db)
 	if len(list) != 0 {
 		t.Fatalf("expected empty whitelist in DB, got %d", len(list))
 	}
@@ -200,4 +197,17 @@ func TestWhitelistUpdateTaskRawCsvFallback(t *testing.T) {
 	if !wl.IsAllowed("microsoft.com") {
 		t.Fatal("expected microsoft.com to be allowed")
 	}
+}
+
+// collectWhitelist drains the production StreamWhitelist path.
+func collectWhitelist(t *testing.T, db *store.DB) []string {
+	t.Helper()
+	var list []string
+	if err := db.StreamWhitelist(context.Background(), func(domain string) error {
+		list = append(list, domain)
+		return nil
+	}); err != nil {
+		t.Fatalf("stream whitelist: %v", err)
+	}
+	return list
 }

@@ -660,10 +660,7 @@ func TestWhitelistStore(t *testing.T) {
 	}
 
 	// Verify duplicates are ignored and we only have unique entries
-	list, err := db.GetWhitelist(context.Background())
-	if err != nil {
-		t.Fatalf("failed to get whitelist: %v", err)
-	}
+	list := collectWhitelist(t, db)
 	if len(list) != 3 {
 		t.Fatalf("expected 3 unique domains, got %d: %v", len(list), list)
 	}
@@ -729,13 +726,23 @@ func TestDisabledWhitelist(t *testing.T) {
 		t.Fatal("nil store should return false for IsDomainWhitelisted")
 	}
 
-	list, err := db.GetWhitelist(context.Background())
-	if err != nil {
-		t.Fatalf("nil store GetWhitelist should not error: %v", err)
-	}
+	list := collectWhitelist(t, db)
 	if list != nil {
-		t.Fatal("nil store should return nil slice for GetWhitelist")
+		t.Fatal("nil store should return nil slice for the whitelist stream")
 	}
+}
+
+// collectWhitelist drains the production StreamWhitelist path.
+func collectWhitelist(t *testing.T, db *DB) []string {
+	t.Helper()
+	var list []string
+	if err := db.StreamWhitelist(context.Background(), func(domain string) error {
+		list = append(list, domain)
+		return nil
+	}); err != nil {
+		t.Fatalf("stream whitelist: %v", err)
+	}
+	return list
 }
 
 func TestUpdateWhitelistBulkInsertChunks(t *testing.T) {

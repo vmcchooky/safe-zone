@@ -33,7 +33,6 @@ type replayCase struct {
 type recordingClassifier struct {
 	classifier *analysis.BundleClassifier
 	decisions  map[string]analysis.MLDecision
-	calls      int
 }
 
 func newRecordingClassifier(bundleDir string) (*recordingClassifier, error) {
@@ -71,7 +70,6 @@ func (c *recordingClassifier) Classify(domain string) (analysis.MLDecision, erro
 	if err == nil {
 		c.decisions[domain] = decision
 	}
-	c.calls++
 	return decision, err
 }
 
@@ -98,27 +96,27 @@ type responseParitySummary struct {
 }
 
 type replayReport struct {
-	SchemaVersion      string                `json:"schema_version"`
-	GeneratedAt        string                `json:"generated_at"`
-	Mode               analysis.MLMode       `json:"mode"`
-	Rounds             int                   `json:"rounds"`
-	Cases              int                   `json:"cases"`
-	RequestsPerService int                   `json:"requests_per_service"`
-	LabelsSHA256       string                `json:"labels_sha256"`
-	SourceCommit       string                `json:"source_commit"`
-	BundleSHA256SHash  string                `json:"bundle_sha256s_sha256"`
-	ModelVersion       string                `json:"model_version"`
-	ModelRevision      string                `json:"model_revision"`
-	ModelThreshold     float64               `json:"model_threshold"`
-	LabelCounts        map[string]int        `json:"label_counts"`
-	Canary             risk.MLCanaryStatus   `json:"canary"`
-	OfflineProbability paritySummary         `json:"offline_probability_parity"`
-	RuntimeProbability paritySummary         `json:"runtime_probability_parity"`
-	ResponseParity     responseParitySummary `json:"response_parity"`
-	OfflineFP          falsePositiveSummary  `json:"offline_model_false_positive"`
-	RuntimeFP          falsePositiveSummary  `json:"runtime_candidate_false_positive"`
-	CoreStatus         risk.MLStatus         `json:"core_ml_status"`
-	DNSStatus          risk.MLStatus         `json:"dns_ml_status"`
+	SchemaVersion          string                `json:"schema_version"`
+	GeneratedAt            string                `json:"generated_at"`
+	Mode                   analysis.MLMode       `json:"mode"`
+	Rounds                 int                   `json:"rounds"`
+	Cases                  int                   `json:"cases"`
+	RequestsPerService     int                   `json:"requests_per_service"`
+	LabelsSHA256           string                `json:"labels_sha256"`
+	SourceCommit           string                `json:"source_commit"`
+	BundleSHA256SHash      string                `json:"bundle_sha256s_sha256"`
+	ModelVersion           string                `json:"model_version"`
+	ModelRevision          string                `json:"model_revision"`
+	ModelThreshold         float64               `json:"model_threshold"`
+	LabelCounts            map[string]int        `json:"label_counts"`
+	Canary                 risk.MLCanaryStatus   `json:"canary"`
+	OfflineSelfConsistency paritySummary         `json:"offline_probability_self_consistency"`
+	RuntimeProbability     paritySummary         `json:"runtime_probability_parity"`
+	ResponseParity         responseParitySummary `json:"response_parity"`
+	OfflineFP              falsePositiveSummary  `json:"offline_model_false_positive"`
+	RuntimeFP              falsePositiveSummary  `json:"runtime_candidate_false_positive"`
+	CoreStatus             risk.MLStatus         `json:"core_ml_status"`
+	DNSStatus              risk.MLStatus         `json:"dns_ml_status"`
 }
 
 func main() {
@@ -223,7 +221,11 @@ func run(labelsPath, bundleDir, outputPath, sourceCommit string, canaryPercent i
 	}
 	responseParity.MismatchCount = len(responseParity.MismatchCaseIDs)
 
-	offlineParity := compareDecisions(cases, offlineCore.decisions, offlineDNS.decisions, tolerance)
+	// Both offline classifiers are independent loads of the same bundle run
+	// through the same deterministic Classify path, so this comparison
+	// verifies bundle self-consistency (a nondeterminism detector) only —
+	// core-vs-DNS parity is covered by the runtime service checks below.
+	offlineSelfConsistency := compareDecisions(cases, offlineCore.decisions, offlineDNS.decisions, tolerance)
 	runtimeParity := compareDecisions(cases, runtimeCore.decisions, runtimeDNS.decisions, tolerance)
 	offlineFP := calculateFalsePositives(cases, offlineCore.decisions)
 	runtimeFP := calculateFalsePositives(cases, runtimeCore.decisions)
@@ -234,27 +236,27 @@ func run(labelsPath, bundleDir, outputPath, sourceCommit string, canaryPercent i
 	}
 
 	report := replayReport{
-		SchemaVersion:      reportSchemaVersion,
-		GeneratedAt:        time.Now().UTC().Format(time.RFC3339Nano),
-		Mode:               analysis.MLModeShadow,
-		Rounds:             rounds,
-		Cases:              len(cases),
-		RequestsPerService: len(cases) * rounds,
-		LabelsSHA256:       labelsHash,
-		SourceCommit:       strings.ToLower(sourceCommit),
-		BundleSHA256SHash:  bundleHash,
-		ModelVersion:       offlineCore.ModelVersion(),
-		ModelRevision:      offlineCore.Revision(),
-		ModelThreshold:     offlineCore.BlockThreshold(),
-		LabelCounts:        labelCounts,
-		Canary:             coreStatus.Canary,
-		OfflineProbability: offlineParity,
-		RuntimeProbability: runtimeParity,
-		ResponseParity:     responseParity,
-		OfflineFP:          offlineFP,
-		RuntimeFP:          runtimeFP,
-		CoreStatus:         coreStatus,
-		DNSStatus:          dnsStatus,
+		SchemaVersion:          reportSchemaVersion,
+		GeneratedAt:            time.Now().UTC().Format(time.RFC3339Nano),
+		Mode:                   analysis.MLModeShadow,
+		Rounds:                 rounds,
+		Cases:                  len(cases),
+		RequestsPerService:     len(cases) * rounds,
+		LabelsSHA256:           labelsHash,
+		SourceCommit:           strings.ToLower(sourceCommit),
+		BundleSHA256SHash:      bundleHash,
+		ModelVersion:           offlineCore.ModelVersion(),
+		ModelRevision:          offlineCore.Revision(),
+		ModelThreshold:         offlineCore.BlockThreshold(),
+		LabelCounts:            labelCounts,
+		Canary:                 coreStatus.Canary,
+		OfflineSelfConsistency: offlineSelfConsistency,
+		RuntimeProbability:     runtimeParity,
+		ResponseParity:         responseParity,
+		OfflineFP:              offlineFP,
+		RuntimeFP:              runtimeFP,
+		CoreStatus:             coreStatus,
+		DNSStatus:              dnsStatus,
 	}
 
 	encoded, err := json.MarshalIndent(report, "", "  ")

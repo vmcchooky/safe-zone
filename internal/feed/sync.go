@@ -22,6 +22,12 @@ import (
 
 const DefaultThreatFeedKey = "safe-zone:threat:feed"
 const DefaultMaxFeedBytes int64 = 50 * 1024 * 1024
+
+// DefaultSyncTTL is the expiry window applied when a sync is requested
+// without a TTL. The CLI tools, the daemon and the OSINT promotion all
+// resolve their configured TTL through feed.TTLFromDays and share this
+// fallback so members never expire on diverging schedules.
+const DefaultSyncTTL = 14 * 24 * time.Hour
 const defaultRedisBatchSize = 1000
 
 type SyncOptions struct {
@@ -177,8 +183,7 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 
 	expireScore := float64(time.Now().Add(options.TTL).Unix())
 	if options.TTL <= 0 {
-		// Default to 14 days if TTL is not provided or <= 0
-		expireScore = float64(time.Now().Add(14 * 24 * time.Hour).Unix())
+		expireScore = float64(time.Now().Add(DefaultSyncTTL).Unix())
 	}
 
 	flush := func() error {
@@ -276,10 +281,6 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		return fail(err)
 	}
 	return report, nil
-}
-
-func OpenSource(ctx context.Context, source string, client *http.Client) (io.ReadCloser, func(), error) {
-	return OpenSourceWithin(ctx, source, client, "./data", DefaultMaxFeedBytes)
 }
 
 func OpenSourceWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64) (io.ReadCloser, func(), error) {

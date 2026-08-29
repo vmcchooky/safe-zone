@@ -39,7 +39,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	username := "admin"
 
 	t.Run("Generate & Verify Valid Cookie", func(t *testing.T) {
-		token, err := GenerateSessionCookieValue(username, 5*time.Minute, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", 5*time.Minute, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}
@@ -56,7 +56,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 
 	t.Run("Expired Token Detection", func(t *testing.T) {
 		// Generate an expired token (expires 1 second ago)
-		token, err := GenerateSessionCookieValue(username, -1*time.Second, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", -1*time.Second, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}
@@ -68,7 +68,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	})
 
 	t.Run("Tampered Signature Detection", func(t *testing.T) {
-		token, err := GenerateSessionCookieValue(username, 5*time.Minute, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", 5*time.Minute, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	})
 
 	t.Run("Tampered Payload Detection", func(t *testing.T) {
-		token, err := GenerateSessionCookieValue(username, 5*time.Minute, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", 5*time.Minute, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}
@@ -108,4 +108,37 @@ func TestAuthSessionLifecycle(t *testing.T) {
 			t.Errorf("expected length 32, got %d", len(str))
 		}
 	})
+}
+
+func TestSessionClaimsRoundTripWithSessionID(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	token, err := GenerateSessionCookieValueForRole("admin", RoleAdmin, "abcd1234", time.Hour, secret)
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	claims, err := VerifySessionClaims(token, secret)
+	if err != nil {
+		t.Fatalf("verify token: %v", err)
+	}
+	if claims.SessionID != "abcd1234" {
+		t.Fatalf("expected session id to survive the round trip, got %q", claims.SessionID)
+	}
+	if claims.Role != RoleAdmin {
+		t.Fatalf("expected admin role, got %q", claims.Role)
+	}
+}
+
+func TestSessionFingerprintIsDeterministicAndBounded(t *testing.T) {
+	first := SessionFingerprint("session-id-1")
+	again := SessionFingerprint("session-id-1")
+	other := SessionFingerprint("session-id-2")
+	if first != again {
+		t.Fatal("fingerprint must be deterministic")
+	}
+	if first == other {
+		t.Fatal("different session ids must produce different fingerprints")
+	}
+	if len(first) != 64 {
+		t.Fatalf("expected sha256 hex fingerprint, got len %d", len(first))
+	}
 }
