@@ -6,7 +6,7 @@ public_ip="${2:-${SAFE_ZONE_BLOCK_PAGE_IP:-}}"
 blocked_domain="${3:-blocked.example.test}"
 
 if [ -z "$public_host" ] || [ -z "$public_ip" ]; then
-  echo "usage: scripts/check-block-page.sh safe.example.com 203.0.113.10 [blocked.example.test]" >&2
+  echo "usage: scripts/ops/check-block-page.sh safe.example.com 203.0.113.10 [blocked.example.test]" >&2
   echo "or set SAFE_ZONE_PUBLIC_HOST and SAFE_ZONE_BLOCK_PAGE_IP." >&2
   exit 2
 fi

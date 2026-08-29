@@ -41,7 +41,7 @@ These visual elements in the current dashboard are placeholders or simulated, le
 
 ### D. VPS Operations & Deployment Prerequisite Gaps
 * **Performance Benchmarking:** Real CPX21 Hetzner benchmarks are needed (Cache-hit: 500 req/s, Cache-miss: 50 req/s).
-* **Firewall Isolation:** Verifying external ports (`80`, `443`, `853`) are open and internal ports (`8080`, `8081`) are isolated via `scripts/check-production-ports.sh`.
+* **Firewall Isolation:** Verifying external ports (`80`, `443`, `853`) are open and internal ports (`8080`, `8081`) are isolated via `scripts/ops/check-production-ports.sh`.
 * **Disaster Recovery Drill:** Verify SQLite and Caddy configuration backups can be fully restored via an offline staging VM test.
 
 ---

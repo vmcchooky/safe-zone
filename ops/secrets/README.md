@@ -5,7 +5,7 @@ This directory is reserved for local file-based secrets and is mounted into the 
 That means a single relative path such as `./ops/secrets/admin_password` works in:
 
 - local `go run` / `go test` workflows started from the repo root
-- `scripts/duckdns-update.sh`
+- `scripts/ops/duckdns-update.sh`
 - Docker Compose services running with `/app` as the container workdir
 
 Recommended usage:

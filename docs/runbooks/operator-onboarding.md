@@ -25,7 +25,7 @@ Verify:
 For production edge, also run:
 
 ```sh
-scripts/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
+scripts/ops/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
 ```
 
 ## 3. First feed sync

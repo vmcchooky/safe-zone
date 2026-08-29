@@ -12,7 +12,7 @@ It covers:
 - Malformed threat feed files
 
 .EXAMPLE
-.\scripts\qa\chaos-test.ps1
+.\scripts\verifiers\qa\chaos-test.ps1
 #>
 
 $ErrorActionPreference = "Stop"
