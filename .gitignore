@@ -89,3 +89,6 @@ data/whitelist/
 data/blacklist/
 ml/data/processed/
 ml/data/derived/
+
+# AutoClaw agent workspace (tools, reports, media)
+.openclaw/
