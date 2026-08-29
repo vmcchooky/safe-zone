@@ -44,7 +44,14 @@ func main() {
 		os.Exit(1)
 	}
 	feedKey := config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey)
-	feedTTLDays := config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14)
+	feedTTL, feedTTLErr := feed.TTLFromDays(config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14))
+	if feedTTLErr != nil {
+		logjson.Error("core-api invalid feed TTL configuration", map[string]any{
+			"service": "core-api",
+			"error":   feedTTLErr.Error(),
+		})
+		os.Exit(1)
+	}
 	feedStaleAfter := config.DurationSeconds("SAFE_ZONE_AGENT_FEED_STALE_AFTER_SECONDS", 36*time.Hour)
 	feedAdmissionMode, err := feed.NormalizeAdmissionMode(config.String("SAFE_ZONE_AGENT_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)))
 	if err != nil || feedAdmissionMode == feed.AdmissionFilter {
@@ -183,7 +190,7 @@ func main() {
 				MaxPerCycle: config.Int("SAFE_ZONE_AGENT_OSINT_MAX_PER_CYCLE", 50),
 				Lookback:    config.DurationSeconds("SAFE_ZONE_AGENT_OSINT_LOOKBACK_SECONDS", 24*time.Hour),
 				ThreatKey:   feedKey,
-				TTL:         time.Duration(feedTTLDays) * 24 * time.Hour,
+				TTL:         feedTTL,
 			},
 		)
 		agentEngine.Register(

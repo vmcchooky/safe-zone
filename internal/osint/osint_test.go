@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"safe-zone/internal/analysis"
+	"safe-zone/internal/config"
 )
 
 type stubResolver struct {
@@ -167,11 +168,11 @@ func TestFetchSourcePinsValidatedIP(t *testing.T) {
 }
 
 func TestOfficialGovDomainDoesNotNeedKeywordLookup(t *testing.T) {
-	result := analysis.Analyze("dichvucong.gov.vn")
+	result := analyzeWithDefaultConfig("dichvucong.gov.vn")
 	if ShouldLookup("dichvucong.gov.vn", result) {
 		t.Fatal("official gov.vn domain should not trigger protected keyword OSINT lookup")
 	}
-	if ShouldLookup("dichvucong.hanoi.gov.vn", analysis.Analyze("dichvucong.hanoi.gov.vn")) {
+	if ShouldLookup("dichvucong.hanoi.gov.vn", analyzeWithDefaultConfig("dichvucong.hanoi.gov.vn")) {
 		t.Fatal("official gov.vn subdomain should not trigger protected keyword OSINT lookup")
 	}
 }
@@ -199,4 +200,10 @@ func TestNewServiceModeFallback(t *testing.T) {
 	if service.Mode() != ModeBackgroundOnDemand {
 		t.Fatalf("expected empty mode to default, got %q", service.Mode())
 	}
+}
+
+// analyzeWithDefaultConfig runs the production analyzer with the default
+// configuration.
+func analyzeWithDefaultConfig(input string) analysis.Result {
+	return analysis.NewAnalyzerWithBrandStore(config.DefaultAnalysisConfig(), nil).Analyze(input)
 }

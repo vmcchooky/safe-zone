@@ -173,7 +173,7 @@ func TestCheckBrandSpoofing(t *testing.T) {
 }
 
 func TestAnalyzeBrandSpoofingIntegration(t *testing.T) {
-	result := Analyze("googel.com")
+	result := analyzeDefault("googel.com")
 	if result.Verdict != VerdictMalicious && result.Verdict != VerdictSuspicious {
 		t.Errorf("expected googel.com to be malicious/suspicious, got %s", result.Verdict)
 	}
@@ -190,7 +190,7 @@ func TestAnalyzeBrandSpoofingIntegration(t *testing.T) {
 	}
 
 	// High entropy test
-	resultEntropy := Analyze("qweasdzxc123.biz")
+	resultEntropy := analyzeDefault("qweasdzxc123.biz")
 	hasEntropyReason := false
 	for _, r := range resultEntropy.Reasons {
 		if r == highEntropyDGAReason {

@@ -21,11 +21,6 @@ type ParseStats struct {
 	Skipped    int `json:"skipped"`
 }
 
-type ParseResult struct {
-	Domains []string   `json:"domains"`
-	Stats   ParseStats `json:"stats"`
-}
-
 type IndicatorKind string
 
 const (
@@ -41,20 +36,6 @@ type Indicator struct {
 	Kind                IndicatorKind `json:"kind"`
 	PathScoped          bool          `json:"path_scoped"`
 	resourceFingerprint [sha256.Size]byte
-}
-
-// Parse parses the input stream line by line in a memory-efficient streaming manner.
-// To protect against decompression bombs, it caps the decompressed stream size at 100MB.
-func Parse(r io.Reader) (ParseResult, error) {
-	var result ParseResult
-	err := ParseEach(r, func(domain string) error {
-		result.Domains = append(result.Domains, domain)
-		return nil
-	}, &result.Stats)
-	if err != nil {
-		return ParseResult{}, err
-	}
-	return result, nil
 }
 
 // ParseEach streams domain names from the reader and invokes the handler callback

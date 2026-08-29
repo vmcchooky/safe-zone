@@ -2,7 +2,6 @@ package analysis
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"net/url"
 	"strings"
@@ -40,10 +39,6 @@ type Analyzer struct {
 	brandStore BrandStore
 }
 
-func NewAnalyzer(cfg config.AnalysisConfig) *Analyzer {
-	return NewAnalyzerWithBrandStore(cfg, NewMemoryBrandStore(DefaultTrustedBrands()))
-}
-
 func NewAnalyzerWithBrandStore(cfg config.AnalysisConfig, brandStore BrandStore) *Analyzer {
 	if brandStore == nil {
 		brandStore = NewMemoryBrandStore(DefaultTrustedBrands())
@@ -52,11 +47,6 @@ func NewAnalyzerWithBrandStore(cfg config.AnalysisConfig, brandStore BrandStore)
 		config:     cfg,
 		brandStore: brandStore,
 	}
-}
-
-func Analyze(input string) Result {
-	// Fallback function for compatibility, uses default config
-	return NewAnalyzer(config.DefaultAnalysisConfig()).Analyze(input)
 }
 
 func ClassifyCategory(domain string) string {
@@ -332,10 +322,6 @@ func NormalizeDomain(input string) (string, error) {
 	}
 
 	return value, nil
-}
-
-func MarshalResult(result Result) ([]byte, error) {
-	return json.MarshalIndent(result, "", "  ")
 }
 
 func digitRatio(value string) float64 {

@@ -278,10 +278,6 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	return report, nil
 }
 
-func OpenSource(ctx context.Context, source string, client *http.Client) (io.ReadCloser, func(), error) {
-	return OpenSourceWithin(ctx, source, client, "./data", DefaultMaxFeedBytes)
-}
-
 func OpenSourceWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64) (io.ReadCloser, func(), error) {
 	resp, err := OpenSourceResponseWithin(ctx, source, client, fileRoot, maxBytes, nil)
 	if err != nil {

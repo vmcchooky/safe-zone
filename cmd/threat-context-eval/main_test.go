@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func TestEvaluateCombinesModelFeedAndTrustedBrandBypass(t *testing.T) {
 		t.Fatal(err)
 	}
 	output := filepath.Join(dir, "report.json")
-	if err := run(cfgPath, output); err != nil {
+	if err := run(cfgPath, output, false); err != nil {
 		t.Fatal(err)
 	}
 	var got report
@@ -100,4 +101,52 @@ func hashFile(t *testing.T, path string) string {
 	}
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// Non-binary labels must fail the evaluation by default instead of silently
+// shrinking the reviewed set; the explicit compatibility flag keeps going
+// and the report records the invalid count.
+func TestRunFailsOnInvalidLabelsByDefault(t *testing.T) {
+	dir := t.TempDir()
+	labels := writeFixture(t, dir, "labels.csv", "case_id,domain,human_label,reviewer_id\nmal,model.evil,malicious,owner\nok,mail.google.com,benign,owner\nbad-row,unknown.test,unlabeled,owner\n")
+	predictions := writeFixture(t, dir, "predictions.jsonl", "{\"case_id\":\"mal\",\"domain\":\"model.evil\",\"human_label\":\"malicious\",\"probability\":0.99,\"would_block\":true}\n{\"case_id\":\"ok\",\"domain\":\"mail.google.com\",\"human_label\":\"benign\",\"probability\":0.10,\"would_block\":false}\n")
+	feedPath := writeFixture(t, dir, "feed.txt", "feed.test\n")
+	cfg := protocol{
+		SchemaVersion:   reportSchemaVersion,
+		AsOf:            "2026-08-24T10:00:00Z",
+		FeedTTLHours:    336,
+		StaleAfterHours: 36,
+		WhitelistState:  "fixture_not_whitelisted",
+		Labels:          fileRef{Path: labels, SHA256: hashFile(t, labels)},
+		Predictions:     predictionRef{fileRef: fileRef{Path: predictions, SHA256: hashFile(t, predictions)}, ModelSHA256: "model", Threshold: 0.92},
+		ExpectedLabels:  map[string]int{"malicious": 1, "benign": 1},
+		Sources:         []sourceConfig{{Name: "fixture", Path: feedPath, SHA256: hashFile(t, feedPath), CollectedAt: "2026-08-24T09:00:00Z"}},
+	}
+	cfgPath := filepath.Join(dir, "config.json")
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(cfgPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Default: fail (non-zero exit path) with a clear reason.
+	if err := run(cfgPath, "", false); err == nil || !strings.Contains(err.Error(), "non-binary human_label") {
+		t.Fatalf("expected invalid label failure, got %v", err)
+	}
+
+	// Compatibility flag: continue and report the count.
+	output := filepath.Join(dir, "report.json")
+	if err := run(cfgPath, output, true); err != nil {
+		t.Fatalf("expected evaluation to continue with --allow-invalid-labels, got %v", err)
+	}
+	var got report
+	reportData, err := os.ReadFile(output)
+	if err != nil || json.Unmarshal(reportData, &got) != nil {
+		t.Fatalf("read report: %v", err)
+	}
+	if got.InvalidLabelRows != 1 {
+		t.Fatalf("expected invalid_label_rows=1, got %d", got.InvalidLabelRows)
+	}
 }

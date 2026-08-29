@@ -39,7 +39,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	username := "admin"
 
 	t.Run("Generate & Verify Valid Cookie", func(t *testing.T) {
-		token, err := GenerateSessionCookieValue(username, 5*time.Minute, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", 5*time.Minute, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}
@@ -56,7 +56,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 
 	t.Run("Expired Token Detection", func(t *testing.T) {
 		// Generate an expired token (expires 1 second ago)
-		token, err := GenerateSessionCookieValue(username, -1*time.Second, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", -1*time.Second, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}
@@ -68,7 +68,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	})
 
 	t.Run("Tampered Signature Detection", func(t *testing.T) {
-		token, err := GenerateSessionCookieValue(username, 5*time.Minute, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", 5*time.Minute, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}
@@ -83,7 +83,7 @@ func TestAuthSessionLifecycle(t *testing.T) {
 	})
 
 	t.Run("Tampered Payload Detection", func(t *testing.T) {
-		token, err := GenerateSessionCookieValue(username, 5*time.Minute, secret)
+		token, err := GenerateSessionCookieValueForRole(username, "", "", 5*time.Minute, secret)
 		if err != nil {
 			t.Fatalf("failed to generate session cookie: %v", err)
 		}

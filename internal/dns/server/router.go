@@ -5,10 +5,12 @@ import (
 
 	"safe-zone/internal/dns/doh"
 	"safe-zone/internal/dns/resolver"
-	"safe-zone/internal/ratelimit"
 )
 
-func NewRouter(r *resolver.Resolver, tiered *ratelimit.TieredMiddleware) *http.ServeMux {
+// NewRouter builds the DNS service HTTP mux. Rate limiting is NOT applied
+// here: the caller wraps the returned mux exactly once with
+// TieredMiddleware.Wrap so DoH and policy endpoints share one limiter.
+func NewRouter(r *resolver.Resolver) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", r.StatusHandler)
 	mux.HandleFunc("/healthz", resolver.HealthHandler("dns-resolver"))

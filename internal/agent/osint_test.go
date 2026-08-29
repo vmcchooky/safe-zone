@@ -215,7 +215,7 @@ func TestOSINTTaskPromotedDomainMatchesRiskLookup(t *testing.T) {
 // A wrong-type threat key must fail the cycle loudly, must be preserved, and
 // must raise a dedicated agent event for alerting.
 func TestOSINTTaskWrongTypeKeyNotDeleted(t *testing.T) {
-	_, redisCache := newTestRedis(t)
+	server, redisCache := newTestRedis(t)
 	db := newTestStore(t)
 
 	if _, err := redisCache.SetAdd(context.Background(), testThreatKey, "legacy-member"); err != nil {
@@ -231,8 +231,9 @@ func TestOSINTTaskWrongTypeKeyNotDeleted(t *testing.T) {
 	if typeErr != nil || keyType != "set" {
 		t.Fatalf("wrong-type key must not be deleted or retyped, got %q (err: %v)", keyType, typeErr)
 	}
-	if member, memberErr := redisCache.SetIsMember(context.Background(), testThreatKey, "legacy-member"); memberErr != nil || !member {
-		t.Fatalf("legacy members must be preserved: %v (err: %v)", member, memberErr)
+	member, memberErr := server.SIsMember(testThreatKey, "legacy-member")
+	if memberErr != nil || !member {
+		t.Fatalf("legacy members must be preserved: found=%v (err: %v)", member, memberErr)
 	}
 	if len(countAgentEvents(t, db, "threat_feed_key_wrong_type")) != 1 {
 		t.Fatal("expected a threat_feed_key_wrong_type agent event")

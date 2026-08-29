@@ -2,6 +2,7 @@ package feed
 
 import (
 	"bytes"
+	"io"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -61,22 +62,19 @@ func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	reader, closeReader, err := OpenSource(context.Background(), sourceURL, client)
+	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer closeReader()
 
-	parsed, err := Parse(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
+	domains, stats := collectParsed(t, reader)
 
-	if parsed.Stats.Valid != 1 {
-		t.Fatalf("expected 1 valid domain, got %d", parsed.Stats.Valid)
+	if stats.Valid != 1 {
+		t.Fatalf("expected 1 valid domain, got %d", stats.Valid)
 	}
-	if len(parsed.Domains) != 1 || parsed.Domains[0] != "bad.test" {
-		t.Fatalf("unexpected parsed domains: %#v", parsed.Domains)
+	if len(domains) != 1 || domains[0] != "bad.test" {
+		t.Fatalf("unexpected parsed domains: %#v", domains)
 	}
 }
 
@@ -96,7 +94,8 @@ func TestOpenSourceLimitsDecompressedHTTPFeed(t *testing.T) {
 	}
 	defer closeReader()
 
-	_, err = Parse(reader)
+	var stats ParseStats
+	err = ParseEach(reader, func(string) error { return nil }, &stats)
 	if err == nil || !strings.Contains(err.Error(), "maximum size") {
 		t.Fatalf("expected max-size error, got %v", err)
 	}
@@ -154,18 +153,15 @@ func TestOpenSourceFollowsRedirectToAllowedTarget(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	reader, closeReader, err := OpenSource(context.Background(), sourceURL, client)
+	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes)
 	if err != nil {
 		t.Fatalf("expected valid redirect to be followed, got %v", err)
 	}
 	defer closeReader()
 
-	parsed, err := Parse(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if parsed.Stats.Valid != 1 {
-		t.Fatalf("expected 1 valid domain after redirect, got %d", parsed.Stats.Valid)
+	domains, _ := collectParsed(t, reader)
+	if len(domains) != 1 || domains[0] != "bad.test" {
+		t.Fatalf("expected 1 valid domain after redirect, got %#v", domains)
 	}
 	if atomic.LoadInt32(&requests) != 2 {
 		t.Fatalf("expected 2 requests (initial + redirect), got %d", requests)
@@ -340,19 +336,16 @@ func TestSyncWritesToRedis(t *testing.T) {
 }
 
 func TestParseOpenPhishCommunityFeed(t *testing.T) {
-	parsed, err := Parse(bytes.NewBufferString("https://a.example/login https://b.example/pay http://a.example/retry"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	domains, stats := collectParsed(t, bytes.NewBufferString("https://a.example/login https://b.example/pay http://a.example/retry"))
 
-	if parsed.Stats.Valid != 2 {
-		t.Fatalf("expected 2 valid domains, got %d", parsed.Stats.Valid)
+	if stats.Valid != 2 {
+		t.Fatalf("expected 2 valid domains, got %d", stats.Valid)
 	}
-	if parsed.Stats.Duplicates != 1 {
-		t.Fatalf("expected 1 duplicate domain, got %d", parsed.Stats.Duplicates)
+	if stats.Duplicates != 1 {
+		t.Fatalf("expected 1 duplicate domain, got %d", stats.Duplicates)
 	}
-	if len(parsed.Domains) != 2 {
-		t.Fatalf("expected 2 normalized domains, got %d", len(parsed.Domains))
+	if len(domains) != 2 {
+		t.Fatalf("expected 2 normalized domains, got %d", len(domains))
 	}
 }
 
@@ -431,4 +424,22 @@ func writeGzipFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// collectParsed drains a feed through the production ParseEach pipeline and
+// returns every accepted domain with its stats.
+func collectParsed(t *testing.T, reader io.Reader) ([]string, ParseStats) {
+	t.Helper()
+	var (
+		domains []string
+		stats   ParseStats
+	)
+	err := ParseEach(reader, func(domain string) error {
+		domains = append(domains, domain)
+		return nil
+	}, &stats)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return domains, stats
 }

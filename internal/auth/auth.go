@@ -56,11 +56,6 @@ func VerifyToken(data, signature string, secret []byte) bool {
 	return hmac.Equal([]byte(signature), []byte(expectedSig))
 }
 
-// GenerateSessionCookieValue creates a signed session token containing claims.
-func GenerateSessionCookieValue(username string, duration time.Duration, secret []byte) (string, error) {
-	return GenerateSessionCookieValueForRole(username, "", "", duration, secret)
-}
-
 // SessionFingerprint derives the identifier persisted for a session. Only
 // the fingerprint is stored server-side; the raw session ID exists solely
 // inside the signed cookie.

@@ -125,7 +125,7 @@ func main() {
 		DeploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 	}, dotLimiter)
 
-	mux := server.NewRouter(res, tiered)
+	mux := server.NewRouter(res)
 
 	var handler http.Handler = mux
 	if tiered != nil {

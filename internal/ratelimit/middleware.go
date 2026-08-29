@@ -74,13 +74,6 @@ func (tm *TieredMiddleware) limiterFor(path string) *Limiter {
 	return tm.fallback
 }
 
-// Middleware wraps next with a single rate limiter keyed by client IP.
-// Use TieredMiddleware when different endpoints need different limits.
-func Middleware(limiter *Limiter, next http.Handler) http.Handler {
-	tm := NewTieredMiddleware(limiter)
-	return tm.Wrap(next)
-}
-
 func sanitizeLog(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 || r == 0x7f {

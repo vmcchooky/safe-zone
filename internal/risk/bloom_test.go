@@ -8,8 +8,8 @@ import (
 func TestBloomFilterBasic(t *testing.T) {
 	bf := NewBloomFilter(1000, 0.01)
 
-	// Verify configuration
-	m, k := bf.Info()
+	// Verify configuration (the fields are package-internal contract)
+	m, k := bf.m, bf.k
 	if m == 0 || k == 0 {
 		t.Fatalf("expected positive bits and hashes, got m=%d, k=%d", m, k)
 	}
