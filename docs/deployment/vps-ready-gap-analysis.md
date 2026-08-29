@@ -188,11 +188,11 @@ graph TD
 
 *   **Task:**
     1. Set `SAFE_ZONE_ENV=production` and `SAFE_ZONE_BLOCK_PAGE_IP=<VPS_PUBLIC_IP>` in `.env`.
-    2. Deploy via Compose and run `scripts/check-production-ports.sh` and `scripts/public-edge-smoke.sh`.
-    3. Run `scripts/safe-zone.ps1 backup` (or equivalent Linux backup script) to generate a full backup bundle (Redis dump, `.env`, SQLite DB, Caddy config).
-    4. Spin up a clean staging server or empty directory, run `scripts/safe-zone.ps1 restore` with the generated backup, and verify the entire dashboard state is successfully restored.
+    2. Deploy via Compose and run `scripts/ops/check-production-ports.sh` and `scripts/ops/public-edge-smoke.sh`.
+    3. Run `scripts/ops/safe-zone.ps1 backup` (or equivalent Linux backup script) to generate a full backup bundle (Redis dump, `.env`, SQLite DB, Caddy config).
+    4. Spin up a clean staging server or empty directory, run `scripts/ops/safe-zone.ps1 restore` with the generated backup, and verify the entire dashboard state is successfully restored.
     5. Execute load testing commands to confirm the VPS meets minimum performance targets (Cache-hit: 500 req/s, Cache-miss: 50 req/s).
-*   **Input Files to Read:** [docs/production-completion-checklist.md](file:///d:/Quorix/services/safe-zone/docs/production-completion-checklist.md) (Section 8 & 11), [scripts/safe-zone.ps1](file:///d:/Quorix/services/safe-zone/scripts/safe-zone.ps1)
+*   **Input Files to Read:** [docs/production-completion-checklist.md](file:///d:/Quorix/services/safe-zone/docs/production-completion-checklist.md) (Section 8 & 11), [scripts/ops/safe-zone.ps1](file:///d:/Quorix/services/safe-zone/scripts/ops/safe-zone.ps1)
 *   **Files to Edit:** Local config configurations (no source code edits).
 *   **Hard Rules:** Never run restoring scripts directly on active production without first validating on an isolated staging clone.
 *   **Acceptance Criteria:**

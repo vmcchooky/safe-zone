@@ -71,7 +71,7 @@ Write-Host "=========================================" -ForegroundColor Yellow
 Write-Step "Checking if containers are up..."
 $redisRunning = (docker ps -q -f "name=redis")
 if (-not $redisRunning) {
-    Write-Fail "Redis container is not running. Please start the stack with 'pwsh ./scripts/safe-zone.ps1 deploy-dev' first."
+    Write-Fail "Redis container is not running. Please start the stack with 'pwsh ./scripts/ops/safe-zone.ps1 deploy-dev' first."
     exit 1
 }
 

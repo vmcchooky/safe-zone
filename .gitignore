@@ -2,6 +2,8 @@ bin/
 dist/
 tmp/
 .env
+.env.*
+!.env.example
 *.exe
 *.test
 *.out
@@ -20,7 +22,6 @@ ops/secrets/*
 deploy.tar.gz
 response.bin
 tmp_test.js
-'@ + $tmp + '@'
 *tmp*.tar.gz
 *.tmp
 backups/
@@ -60,9 +61,6 @@ __pycache__/
 *.bak
 .idea/
 .vscode/
-*.bak
-.idea/
-.vscode/
 coverage.txt
 node_modules/
 ui/.vite/
@@ -92,3 +90,15 @@ ml/data/derived/
 
 # AutoClaw agent workspace (tools, reports, media)
 .openclaw/
+
+# Personal agent workspace files live outside the repository.
+/IDENTITY.md
+/SOUL.md
+/USER.md
+/HEARTBEAT.md
+/TOOLS.md
+/memory/
+
+# Agent session/request metadata is local-only. Project agent tooling
+# under .agents/ (AGENTS.md, skills) stays tracked.
+.agents/ORIGINAL_REQUEST.md

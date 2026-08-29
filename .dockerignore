@@ -19,3 +19,20 @@ ui/dist
 *.out
 docs/**/*.pdf
 safe-zone-*.tar
+
+# Never ship local env, secrets, or runtime/test artifacts into the build context
+.env
+.env.*
+!.env.example
+ops/secrets
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+playwright-report
+test-results
+blob-report
+ui/coverage
+ui/.vite
+.idea
