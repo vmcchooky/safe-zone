@@ -11,13 +11,15 @@ type Config struct {
 	DeploymentTier      string
 	RateLimitingEnabled bool
 	SessionSecret       []byte
-	AdminPassword       string
-	AdminAPIKey         string
-	PublicHost          string
-	FeedKey             string
-	FeedPreset          string
-	FeedSources         []string
-	FeedStaleAfter      time.Duration
+	// AdminPasswordHash is the bcrypt hash loaded once at startup; login
+	// compares against it instead of any plaintext secret.
+	AdminPasswordHash string
+	AdminAPIKey       string
+	PublicHost        string
+	FeedKey           string
+	FeedPreset        string
+	FeedSources       []string
+	FeedStaleAfter    time.Duration
 }
 
 type Handler struct {

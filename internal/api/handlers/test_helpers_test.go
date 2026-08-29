@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,10 +53,10 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	})
 
 	handler := New(riskService, observability.NewRegistry(), Config{
-		DeploymentTier: "test",
-		SessionSecret:  []byte("0123456789abcdef0123456789abcdef"),
-		AdminPassword:  "adminpass1234",
-		AdminAPIKey:    "adminkey123456789012345678",
+		DeploymentTier:    "test",
+		SessionSecret:     []byte("0123456789abcdef0123456789abcdef"),
+		AdminPasswordHash: testAdminPasswordHash(),
+		AdminAPIKey:       "adminkey123456789012345678",
 	})
 
 	mux := http.NewServeMux()
@@ -103,8 +104,22 @@ func (s *handlerTestServer) addAdminBearer(req *http.Request) {
 
 func (s *handlerTestServer) adminSessionCookie(t *testing.T) *http.Cookie {
 	t.Helper()
+	return s.adminSessionCookieWithTTL(t, time.Hour)
+}
 
-	token, err := auth.GenerateSessionCookieValueForRole("admin", auth.RoleAdmin, time.Hour, s.Handler.Config.SessionSecret)
+// adminSessionCookieWithTTL mints a revocable admin session: the fingerprint
+// is persisted in the store, exactly like the real login handler does.
+func (s *handlerTestServer) adminSessionCookieWithTTL(t *testing.T, ttl time.Duration) *http.Cookie {
+	t.Helper()
+
+	sessionID, err := auth.GenerateSecureRandomString(32)
+	if err != nil {
+		t.Fatalf("generate session id: %v", err)
+	}
+	if err := s.Store.CreateAdminSession(context.Background(), auth.SessionFingerprint(sessionID), "admin", time.Now().Add(ttl)); err != nil {
+		t.Fatalf("persist admin session: %v", err)
+	}
+	token, err := auth.GenerateSessionCookieValueForRole("admin", auth.RoleAdmin, sessionID, ttl, s.Handler.Config.SessionSecret)
 	if err != nil {
 		t.Fatalf("generate admin session cookie: %v", err)
 	}
@@ -112,4 +127,22 @@ func (s *handlerTestServer) adminSessionCookie(t *testing.T) *http.Cookie {
 		Name:  "admin_session",
 		Value: token,
 	}
+}
+
+var (
+	testAdminHashOnce sync.Once
+	testAdminHash     string
+)
+
+// testAdminPasswordHash computes the bcrypt hash for "adminpass1234" once
+// per test binary.
+func testAdminPasswordHash() string {
+	testAdminHashOnce.Do(func() {
+		hash, err := auth.HashPassword("adminpass1234")
+		if err != nil {
+			panic(err)
+		}
+		testAdminHash = hash
+	})
+	return testAdminHash
 }

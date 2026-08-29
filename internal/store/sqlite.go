@@ -207,6 +207,8 @@ type DB struct {
 	sampleSeq    atomic.Uint64
 	configMu     sync.RWMutex
 	done         chan struct{}
+	closeOnce    sync.Once
+	closed       atomic.Bool
 	wg           sync.WaitGroup
 
 	// CIDR Cache
@@ -252,6 +254,15 @@ CREATE TABLE IF NOT EXISTS agent_audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_agent_audit_task ON agent_audit_log(task_name);
 CREATE INDEX IF NOT EXISTS idx_agent_audit_created ON agent_audit_log(created_at);
+
+CREATE TABLE IF NOT EXISTS admin_sessions (
+    session_fingerprint TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_admin_sessions_expires ON admin_sessions(expires_at);
 
 CREATE TABLE IF NOT EXISTS osint_evidence (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -561,19 +572,27 @@ func New(path string, retentionDays int) (*DB, error) {
 	return d, nil
 }
 
-// Close stops background goroutines and closes the database.
+// Close stops background goroutines and closes the database. It is
+// idempotent: a second call is a no-op so layered owners (risk service,
+// tests) can each close safely.
 func (d *DB) Close() error {
 	if d == nil {
 		return nil
 	}
-	close(d.done)
+	d.closeOnce.Do(func() {
+		d.closed.Store(true)
+		close(d.done)
+	})
 	d.wg.Wait()
+	if d.db == nil {
+		return nil
+	}
 	return d.db.Close()
 }
 
 // Enabled returns true if the store is initialized and available.
 func (d *DB) Enabled() bool {
-	return d != nil && d.db != nil
+	return d != nil && d.db != nil && !d.closed.Load()
 }
 
 // --- Telemetry ---

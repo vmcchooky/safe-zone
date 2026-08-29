@@ -44,11 +44,11 @@ func newGuestAuthTestServer(t *testing.T) (*Handler, *store.DB, *httptest.Server
 	})
 
 	handler := New(service, observability.NewRegistry(), Config{
-		DeploymentTier: "test",
-		SessionSecret:  []byte("0123456789abcdef0123456789abcdef"),
-		AdminPassword:  "adminpass1234",
-		AdminAPIKey:    "adminkey123456789012345678",
-		PublicHost:     "",
+		DeploymentTier:    "test",
+		SessionSecret:     []byte("0123456789abcdef0123456789abcdef"),
+		AdminPasswordHash: testAdminPasswordHash(),
+		AdminAPIKey:       "adminkey123456789012345678",
+		PublicHost:        "",
 	})
 
 	mux := http.NewServeMux()

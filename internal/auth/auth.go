@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -29,6 +30,7 @@ const (
 type SessionClaims struct {
 	Username  string `json:"username"`
 	Role      string `json:"role,omitempty"`
+	SessionID string `json:"session_id,omitempty"`
 	ExpiresAt int64  `json:"expires_at"` // Unix timestamp
 }
 
@@ -56,13 +58,26 @@ func VerifyToken(data, signature string, secret []byte) bool {
 
 // GenerateSessionCookieValue creates a signed session token containing claims.
 func GenerateSessionCookieValue(username string, duration time.Duration, secret []byte) (string, error) {
-	return GenerateSessionCookieValueForRole(username, "", duration, secret)
+	return GenerateSessionCookieValueForRole(username, "", "", duration, secret)
 }
 
-func GenerateSessionCookieValueForRole(username, role string, duration time.Duration, secret []byte) (string, error) {
+// SessionFingerprint derives the identifier persisted for a session. Only
+// the fingerprint is stored server-side; the raw session ID exists solely
+// inside the signed cookie.
+func SessionFingerprint(sessionID string) string {
+	sum := sha256.Sum256([]byte(sessionID))
+	return hex.EncodeToString(sum[:])
+}
+
+// GenerateSessionCookieValueForRole creates a signed session token. For
+// admin sessions sessionID must be a fresh cryptographically random value
+// whose fingerprint is tracked server-side for revocation; guest sessions
+// may pass an empty sessionID and are validated by the guest-access checks.
+func GenerateSessionCookieValueForRole(username, role, sessionID string, duration time.Duration, secret []byte) (string, error) {
 	claims := SessionClaims{
 		Username:  username,
 		Role:      NormalizeRole(username, role),
+		SessionID: sessionID,
 		ExpiresAt: time.Now().Add(duration).Unix(),
 	}
 
@@ -139,4 +154,27 @@ func HashPassword(password string) (string, error) {
 
 func VerifyPasswordHash(hash, password string) error {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+}
+
+var (
+	dummyHashOnce sync.Once
+	dummyHash     string
+)
+
+// CompareDummyPassword runs a bcrypt comparison against a fixed throwaway
+// hash. Login paths call it for usernames that cannot match so the response
+// timing of an unknown user matches the timing of a real (bcrypt) check,
+// removing the account-existence side channel.
+func CompareDummyPassword(password string) {
+	dummyHashOnce.Do(func() {
+		hash, err := HashPassword("safe-zone-login-timing-equalizer")
+		if err != nil {
+			return
+		}
+		dummyHash = hash
+	})
+	if dummyHash == "" {
+		return
+	}
+	_ = VerifyPasswordHash(dummyHash, password)
 }

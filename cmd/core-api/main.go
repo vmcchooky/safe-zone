@@ -65,7 +65,7 @@ func main() {
 		DeploymentTier:      config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 		RateLimitingEnabled: config.Bool("SAFE_ZONE_RATELIMIT_ENABLED", true),
 		SessionSecret:       security.sessionSecret,
-		AdminPassword:       security.adminPassword,
+		AdminPasswordHash:   security.adminPasswordHash,
 		AdminAPIKey:         security.adminAPIKey,
 		PublicHost:          config.String("SAFE_ZONE_PUBLIC_HOST", ""),
 		FeedKey:             feedKey,

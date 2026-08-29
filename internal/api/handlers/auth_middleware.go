@@ -37,6 +37,34 @@ func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {
 		if err == nil && cookie.Value != "" {
 			claims, err := auth.VerifySessionClaims(cookie.Value, h.Config.SessionSecret)
 			if err == nil {
+				if claims.Role == auth.RoleAdmin {
+					// Admin sessions are revocable: the signed claims carry a
+					// session ID whose fingerprint must be active in the
+					// store. Legacy stateless tokens (no session ID) are
+					// rejected, forcing a fresh login.
+					if claims.SessionID == "" {
+						clearSessionCookie(w, r)
+						httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
+						return
+					}
+					store := h.Risk.StoreDB()
+					if store == nil || !store.Enabled() {
+						httputil.WriteError(w, http.StatusServiceUnavailable, "session validation unavailable")
+						return
+					}
+					active, dbErr := store.AdminSessionActive(r.Context(), auth.SessionFingerprint(claims.SessionID))
+					if dbErr != nil {
+						// Fail closed: an unavailable session store must not
+						// wave authenticated requests through.
+						httputil.WriteError(w, http.StatusServiceUnavailable, "session validation unavailable")
+						return
+					}
+					if !active {
+						clearSessionCookie(w, r)
+						httputil.WriteError(w, http.StatusUnauthorized, "unauthorized")
+						return
+					}
+				}
 				if err := h.ensureGuestSessionActive(r.Context(), claims); err != nil {
 					if err == errGuestAccessRevoked {
 						clearSessionCookie(w, r)
@@ -48,7 +76,7 @@ func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {
 				}
 
 				// Cookie auth is active. Enforce CSRF protection for state-modifying requests.
-				if r.Method == http.MethodPost || r.Method == http.MethodPut || r.Method == http.MethodDelete {
+				if isStateChangingMethod(r.Method) {
 					if csrfErr := h.VerifyCSRF(r); csrfErr != nil {
 						httputil.WriteError(w, http.StatusForbidden, "CSRF verification failed: "+csrfErr.Error())
 						return

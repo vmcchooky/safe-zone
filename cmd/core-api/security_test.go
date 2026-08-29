@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"safe-zone/internal/auth"
 )
 
 func TestLoadRuntimeSecurityProductionRequiresSecrets(t *testing.T) {
@@ -56,8 +58,11 @@ func TestLoadRuntimeSecurityProductionAcceptsFileSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
-	if security.adminPassword != "StrongPassword-2026!" {
-		t.Fatalf("unexpected admin password %q", security.adminPassword)
+	if security.adminPasswordHash == "" {
+		t.Fatal("expected admin password hash")
+	}
+	if err := auth.VerifyPasswordHash(security.adminPasswordHash, "StrongPassword-2026!"); err != nil {
+		t.Fatalf("hash must verify against the configured password: %v", err)
 	}
 	if security.adminAPIKey != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("unexpected api key %q", security.adminAPIKey)
@@ -79,8 +84,8 @@ func TestLoadRuntimeSecurityLocalGeneratesFallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if security.adminPassword == "" {
-		t.Fatal("expected generated admin password")
+	if security.adminPasswordHash == "" {
+		t.Fatal("expected generated admin password hash")
 	}
 	if security.adminAPIKey == "" {
 		t.Fatal("expected generated admin api key")
@@ -93,11 +98,19 @@ func TestLoadRuntimeSecurityLocalGeneratesFallbacks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected local admin secrets file: %v", err)
 	}
-	body := string(content)
-	if !strings.Contains(body, "SAFE_ZONE_ADMIN_PASSWORD="+security.adminPassword+"\n") {
-		t.Fatal("expected generated admin password in local secrets file")
+	var filePassword, fileAPIKey string
+	for _, line := range strings.Split(string(content), "\n") {
+		if value, ok := strings.CutPrefix(line, "SAFE_ZONE_ADMIN_PASSWORD="); ok {
+			filePassword = value
+		}
+		if value, ok := strings.CutPrefix(line, "SAFE_ZONE_ADMIN_API_KEY="); ok {
+			fileAPIKey = value
+		}
 	}
-	if !strings.Contains(body, "SAFE_ZONE_ADMIN_API_KEY="+security.adminAPIKey+"\n") {
+	if filePassword == "" || auth.VerifyPasswordHash(security.adminPasswordHash, filePassword) != nil {
+		t.Fatal("local secrets file must contain the generated password matching the loaded hash")
+	}
+	if fileAPIKey == "" || fileAPIKey != security.adminAPIKey {
 		t.Fatal("expected generated admin api key in local secrets file")
 	}
 }

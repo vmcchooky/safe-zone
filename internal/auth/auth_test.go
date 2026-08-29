@@ -109,3 +109,36 @@ func TestAuthSessionLifecycle(t *testing.T) {
 		}
 	})
 }
+
+func TestSessionClaimsRoundTripWithSessionID(t *testing.T) {
+	secret := []byte("0123456789abcdef0123456789abcdef")
+	token, err := GenerateSessionCookieValueForRole("admin", RoleAdmin, "abcd1234", time.Hour, secret)
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	claims, err := VerifySessionClaims(token, secret)
+	if err != nil {
+		t.Fatalf("verify token: %v", err)
+	}
+	if claims.SessionID != "abcd1234" {
+		t.Fatalf("expected session id to survive the round trip, got %q", claims.SessionID)
+	}
+	if claims.Role != RoleAdmin {
+		t.Fatalf("expected admin role, got %q", claims.Role)
+	}
+}
+
+func TestSessionFingerprintIsDeterministicAndBounded(t *testing.T) {
+	first := SessionFingerprint("session-id-1")
+	again := SessionFingerprint("session-id-1")
+	other := SessionFingerprint("session-id-2")
+	if first != again {
+		t.Fatal("fingerprint must be deterministic")
+	}
+	if first == other {
+		t.Fatal("different session ids must produce different fingerprints")
+	}
+	if len(first) != 64 {
+		t.Fatalf("expected sha256 hex fingerprint, got len %d", len(first))
+	}
+}

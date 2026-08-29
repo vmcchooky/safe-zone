@@ -46,6 +46,13 @@ For admin/API/AI/alert secrets:
 docker compose -f docker-compose.yml -f docker-compose.production.yml restart core-api dns-resolver
 ```
 
+The admin password is bcrypt-hashed once at core-api startup and never
+stored in plaintext by the service. Rotating `SAFE_ZONE_ADMIN_PASSWORD`
+requires the restart above; there is no plaintext copy to update in the
+database. The restart also invalidates every issued admin session (sessions
+are revocable and re-validated per request), so operators must log in again
+with the new password.
+
 For feed sync Redis password changes:
 
 ```sh
