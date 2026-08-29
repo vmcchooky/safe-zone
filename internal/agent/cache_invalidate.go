@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"safe-zone/internal/cache"
-	"safe-zone/internal/correlation"
-	"safe-zone/internal/logjson"
 )
 
 // analysisCachePrefix is the shared key layout of the risk service analysis
@@ -40,21 +38,4 @@ func invalidateAnalysisCache(ctx context.Context, redisCache *cache.Redis, domai
 		return err
 	}
 	return nil
-}
-
-// invalidateAnalysisCacheLogged wraps invalidateAnalysisCache with the shared
-// logging contract: a failed invalidation is never silent because a stale
-// cached verdict would shadow the fresh decision.
-func invalidateAnalysisCacheLogged(ctx context.Context, redisCache *cache.Redis, domain, task string) {
-	if err := invalidateAnalysisCache(ctx, redisCache, domain); err != nil {
-		if ctx.Err() != nil {
-			return
-		}
-		logjson.Warn("agent analysis cache invalidation failed", correlation.Fields(ctx, map[string]any{
-			"service": "core-api",
-			"task":    task,
-			"domain":  domain,
-			"error":   err.Error(),
-		}))
-	}
 }

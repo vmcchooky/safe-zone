@@ -36,8 +36,8 @@ func (h *Handler) AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	role := ""
 	var sessionID string
-	switch {
-	case username == auth.RoleAdmin:
+	switch username {
+	case auth.RoleAdmin:
 		if h.adminPasswordMatches(req.Password) {
 			role = auth.RoleAdmin
 		} else {
@@ -45,7 +45,7 @@ func (h *Handler) AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 			// the bcrypt cost of a successful one.
 			auth.CompareDummyPassword(req.Password)
 		}
-	case username == auth.RoleGuest:
+	case auth.RoleGuest:
 		cfg, err := h.loadGuestAccessConfig(r.Context())
 		if err != nil {
 			logjson.Warn("guest access config unavailable at login", map[string]any{
