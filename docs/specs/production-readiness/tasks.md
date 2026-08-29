@@ -36,7 +36,7 @@
 
 - [x] Add local HTTP/DoH load testing CLI for cache-hit, cache-miss, concurrency, rate-limit, and latency-summary scenarios (`cmd/load-test`).
 - [x] Add comprehensive backup and restore helpers for Redis RDB, SQLite hot backup via `.backup`, `.env` snapshots, Caddy config snapshots, and optional `rclone` offsite upload.
-- [x] Add audited public-edge validation helpers: `scripts/check-production-ports.sh` and `scripts/public-edge-smoke.sh`.
+- [x] Add audited public-edge validation helpers: `scripts/ops/check-production-ports.sh` and `scripts/ops/public-edge-smoke.sh`.
 - [x] Make configured DoT TLS key loading fail fast when the configured cert/key paths are invalid, while preserving self-signed fallback only when no cert/key is configured.
 - [x] Add configurable DNS blocking strategies: `sinkhole`, `nxdomain`, `refused`, and `nullip`.
 - [x] Fix panic recovery double metrics observation by sharing a mutable `*bool` panic-observed marker through request context.

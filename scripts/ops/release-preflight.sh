@@ -11,7 +11,7 @@ evidence_dir=""
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/release-preflight.sh [options]
+Usage: scripts/ops/release-preflight.sh [options]
 
 Options:
   --edge-mode production-edge|shared-host-edge

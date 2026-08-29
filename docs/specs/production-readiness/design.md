@@ -36,8 +36,8 @@ This milestone set keeps Safe Zone local-first while adding the minimum operatio
 ## 2026-05-26 Sync Design
 
 - `cmd/load-test` is the reproducible local load path for HTTP API and DoH scenarios. It reports success/error counts, rate-limit outcomes, throughput, and latency percentiles.
-- `scripts/safe-zone.sh` and `scripts/safe-zone.ps1` are the operator backup/restore entrypoints. They snapshot Redis, SQLite, `.env`, and Caddy config, then optionally upload the backup directory with `rclone` when `SAFE_ZONE_RCLONE_REMOTE` is configured.
-- `scripts/check-production-ports.sh` and `scripts/public-edge-smoke.sh` are the release-gate scripts for the public edge.
+- `scripts/ops/safe-zone.sh` and `scripts/ops/safe-zone.ps1` are the operator backup/restore entrypoints. They snapshot Redis, SQLite, `.env`, and Caddy config, then optionally upload the backup directory with `rclone` when `SAFE_ZONE_RCLONE_REMOTE` is configured.
+- `scripts/ops/check-production-ports.sh` and `scripts/ops/public-edge-smoke.sh` are the release-gate scripts for the public edge.
 - DoT keeps self-signed cert generation for local zero-config runs only. If an operator configures `SAFE_ZONE_DNS_DOT_CERT_FILE` or `SAFE_ZONE_DNS_DOT_KEY_FILE` and loading fails, startup exits immediately.
 - DNS blocking strategy is operator-selectable: `sinkhole` returns the configured block-page IP, `nxdomain` returns name error, `refused` returns DNS refused, and `nullip` returns `0.0.0.0` or `::`.
 - Panic recovery records HTTP 500 metrics inside the recovery middleware and marks a shared `*bool` in request context so outer request logging does not observe the same panic twice.

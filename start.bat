@@ -85,7 +85,7 @@ exit /b 0
 :start_prod
 echo.
 echo [Safe Zone] Starting production stack...
-"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\safe-zone.ps1" deploy
+"%PS_EXE%" -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\ops\safe-zone.ps1" deploy
 exit /b %ERRORLEVEL%
 
 :ensure_local_env

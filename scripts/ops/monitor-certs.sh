@@ -6,7 +6,7 @@ warn_days="${SAFE_ZONE_CERT_WARN_DAYS:-14}"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/monitor-certs.sh
+Usage: scripts/ops/monitor-certs.sh
 
 Environment:
   SAFE_ZONE_CERT_MONITOR_HOST   Hostname to check (default: localhost)

@@ -59,7 +59,7 @@ Goal: expose only the intended production surface to the internet.
 - `[x]` DuckDNS update script and cron example exist.
 - `[x]` DoH can be served publicly on `443` through Caddy at `/dns-query`.
 - `[x]` DoT can be published on `853`.
-- `[x]` Repeatable public-edge checks exist through audited `scripts/check-production-ports.sh` and `scripts/public-edge-smoke.sh`.
+- `[x]` Repeatable public-edge checks exist through audited `scripts/ops/check-production-ports.sh` and `scripts/ops/public-edge-smoke.sh`.
 - `[x]` Lock down host exposure of internal ports `8080` and `8081` in production. Production Compose binds both to `127.0.0.1` only.
 - `[~]` Firewall/security-group validation is scripted for SSH, `80`, `443`, and `853`; each real environment still needs its execution record captured.
 - `[x]` Decide how DoT receives a trusted certificate in production. Production Compose mounts a dedicated certificate directory and the renewal runbook documents the export process.
@@ -69,7 +69,7 @@ Steps:
 1. Add a production override file that keeps `8080` and `8081` loopback-only instead of publicly reachable.
 2. Keep Caddy as the only public HTTP/HTTPS entrypoint.
 3. Configure DoT certificate files or document a repeatable cert export/mount process.
-4. Deploy to a staging VPS and run `scripts/check-production-ports.sh` plus `scripts/public-edge-smoke.sh` from outside the server.
+4. Deploy to a staging VPS and run `scripts/ops/check-production-ports.sh` plus `scripts/ops/public-edge-smoke.sh` from outside the server.
 
 ## 3. Admin Security And Secrets
 
@@ -235,7 +235,7 @@ Any threshold failure blocks production release unless the release owner records
 Steps:
 
 1. Build the release candidate and start the production-like stack.
-2. Run `scripts/qa/performance-proof.sh` and archive its evidence directory.
+2. Run `scripts/verifiers/qa/performance-proof.sh` and archive its evidence directory.
 3. Run the optional DoH edge command if DoH is part of the release surface.
 4. Compare the JSON summaries and Docker stats summary against the pass/fail table.
 5. Tune rate limits, cache TTL, Redis memory, and upstream timeouts based on results.
@@ -404,8 +404,8 @@ Goal: make deployments repeatable and reversible.
 - `[x]` Compose deploy helper exists.
 - `[x]` Health checks exist.
 - `[x]` Production deploy and release-gate runbooks exist for both supported edge modes.
-- `[x]` Production ports validation check exists through `scripts/check-production-ports.sh`.
-- `[x]` Public edge smoke check exists through `scripts/public-edge-smoke.sh`.
+- `[x]` Production ports validation check exists through `scripts/ops/check-production-ports.sh`.
+- `[x]` Public edge smoke check exists through `scripts/ops/public-edge-smoke.sh`.
 - `[x]` Add staging environment procedure.
 - `[x]` Add pre-release checklist.
 - `[x]` Add rollback procedure.

@@ -762,14 +762,14 @@ function Show-Help {
 Safe Zone ops helper
 
 Usage:
-  pwsh ./scripts/safe-zone.ps1 deploy
-  pwsh ./scripts/safe-zone.ps1 deploy-dev
-  pwsh ./scripts/safe-zone.ps1 status
-  pwsh ./scripts/safe-zone.ps1 logs
-  pwsh ./scripts/safe-zone.ps1 backup
-  pwsh ./scripts/safe-zone.ps1 restore [-BackupPath <backup-directory>]
-  pwsh ./scripts/safe-zone.ps1 prune [-Keep 7] [-LogRetentionDays 7]
-  pwsh ./scripts/safe-zone.ps1 feed-sync
+  pwsh ./scripts/ops/safe-zone.ps1 deploy
+  pwsh ./scripts/ops/safe-zone.ps1 deploy-dev
+  pwsh ./scripts/ops/safe-zone.ps1 status
+  pwsh ./scripts/ops/safe-zone.ps1 logs
+  pwsh ./scripts/ops/safe-zone.ps1 backup
+  pwsh ./scripts/ops/safe-zone.ps1 restore [-BackupPath <backup-directory>]
+  pwsh ./scripts/ops/safe-zone.ps1 prune [-Keep 7] [-LogRetentionDays 7]
+  pwsh ./scripts/ops/safe-zone.ps1 feed-sync
 
 Commands:
   deploy      Build and start the production Compose stack, then wait for loopback health.

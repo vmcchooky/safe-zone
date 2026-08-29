@@ -10,7 +10,7 @@ Do not commit real certificate material. The repository ignores `*.pem` in this 
 Recommended workflow:
 
 1. Obtain or renew the public certificate for `SAFE_ZONE_PUBLIC_HOST`.
-2. Export/copy the pair into this directory with `scripts/export-dot-cert.sh`.
+2. Export/copy the pair into this directory with `scripts/ops/export-dot-cert.sh`.
 3. Restart only the resolver:
 
 ```sh

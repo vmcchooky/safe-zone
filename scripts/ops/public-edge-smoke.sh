@@ -5,7 +5,7 @@ host="${1:-${SAFE_ZONE_PUBLIC_HOST:-}}"
 dot_port="${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-853}"
 
 if [ -z "$host" ]; then
-  echo "usage: scripts/public-edge-smoke.sh safe.example.com" >&2
+  echo "usage: scripts/ops/public-edge-smoke.sh safe.example.com" >&2
   echo "or set SAFE_ZONE_PUBLIC_HOST." >&2
   exit 2
 fi

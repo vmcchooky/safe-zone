@@ -290,8 +290,8 @@ copy_optional_snapshots() {
   if [ -f Caddyfile ]; then
     cp Caddyfile "${target}/Caddyfile.snapshot"
   fi
-  if [ -f scripts/duckdns-update.sh ]; then
-    cp scripts/duckdns-update.sh "${target}/duckdns-update.sh.snapshot"
+  if [ -f "${project_dir}/scripts/ops/duckdns-update.sh" ]; then
+    cp "${project_dir}/scripts/ops/duckdns-update.sh" "${target}/duckdns-update.sh.snapshot"
   fi
   if [ -f docker-compose.production.yml ]; then
     cp docker-compose.production.yml "${target}/docker-compose.production.yml.snapshot"
@@ -711,11 +711,11 @@ case "$cmd" in
     IFS="$old_ifs"
     ;;
   duckdns)
-    scripts/duckdns-update.sh
+    "${project_dir}/scripts/ops/duckdns-update.sh"
     ;;
   help|*)
     cat <<'USAGE'
-Usage: scripts/safe-zone.sh <command>
+Usage: scripts/ops/safe-zone.sh <command>
 
 Commands:
   deploy       Build and start the production stack with Caddy and loopback-only internal ports.

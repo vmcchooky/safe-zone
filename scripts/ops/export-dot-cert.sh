@@ -7,7 +7,7 @@ key_src="${2:-${SAFE_ZONE_DOT_KEY_SOURCE:-}}"
 target_dir="${SAFE_ZONE_DOT_CERT_TARGET_DIR:-${project_dir}/ops/certs/dot}"
 
 if [ -z "$cert_src" ] || [ -z "$key_src" ]; then
-  echo "usage: scripts/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem" >&2
+  echo "usage: scripts/ops/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem" >&2
   echo "or set SAFE_ZONE_DOT_CERT_SOURCE and SAFE_ZONE_DOT_KEY_SOURCE." >&2
   exit 2
 fi
