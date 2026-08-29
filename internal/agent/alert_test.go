@@ -48,9 +48,7 @@ func TestAlertTaskNoEvents(t *testing.T) {
 		WebhookURL: "https://example.com/webhook",
 		MinEvents:  1,
 	})
-	task.mu.Lock()
-	task.lastAlert = time.Now().Add(-1 * time.Hour)
-	task.mu.Unlock()
+	rewindAlertCursor(t, task, time.Now().Add(-1*time.Hour))
 
 	err = task.Run(context.Background())
 	if err != nil {
@@ -86,9 +84,7 @@ func TestAlertTaskSendsWebhook(t *testing.T) {
 	})
 	task.http = server.Client()
 
-	task.mu.Lock()
-	task.lastAlert = time.Now().Add(-24 * time.Hour)
-	task.mu.Unlock()
+	rewindAlertCursor(t, task, time.Now().Add(-24*time.Hour))
 
 	err = task.Run(context.Background())
 	if err != nil {
@@ -123,9 +119,7 @@ func TestAlertTaskWebhookError(t *testing.T) {
 		MinEvents:  1,
 	})
 	task.http = server.Client()
-	task.mu.Lock()
-	task.lastAlert = time.Now().Add(-24 * time.Hour)
-	task.mu.Unlock()
+	rewindAlertCursor(t, task, time.Now().Add(-24*time.Hour))
 
 	err = task.Run(context.Background())
 	if err == nil {
@@ -147,9 +141,7 @@ func TestAlertTaskRejectsPrivateWebhookURL(t *testing.T) {
 		WebhookURL: "http://127.0.0.1:9999/hook",
 		MinEvents:  1,
 	})
-	task.mu.Lock()
-	task.lastAlert = time.Now().Add(-24 * time.Hour)
-	task.mu.Unlock()
+	rewindAlertCursor(t, task, time.Now().Add(-24*time.Hour))
 
 	err = task.Run(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "blocked private or local address") {
@@ -293,9 +285,7 @@ func TestAlertTaskAdvancedChannels(t *testing.T) {
 		return http.DefaultTransport.RoundTrip(req)
 	})
 
-	task.mu.Lock()
-	task.lastAlert = time.Now().Add(-24 * time.Hour)
-	task.mu.Unlock()
+	rewindAlertCursor(t, task, time.Now().Add(-24*time.Hour))
 
 	err = task.Run(context.Background())
 	if err != nil {
@@ -483,4 +473,13 @@ func contains(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// rewindAlertCursor moves the alert keyset back so events recorded before
+// the task construction are included in the pending backlog.
+func rewindAlertCursor(t *testing.T, task *AlertTask, since time.Time) {
+	t.Helper()
+	task.mu.Lock()
+	task.cursor = alertCursorState{Version: alertCursorVersion, CreatedAt: since.UTC().Format(sqliteDatetimeLayout)}
+	task.mu.Unlock()
 }

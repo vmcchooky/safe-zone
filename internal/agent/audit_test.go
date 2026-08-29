@@ -82,9 +82,7 @@ func TestAuditTaskSkipsOverriddenDomain(t *testing.T) {
 	})
 
 	// Set lastAudit far back so domain is included.
-	task.mu.Lock()
-	task.lastAudit = time.Now().Add(-48 * time.Hour)
-	task.mu.Unlock()
+	rewindAuditCursor(t, task, time.Now().Add(-48*time.Hour), "")
 
 	err := task.Run(context.Background())
 	if err != nil {
@@ -116,9 +114,7 @@ func TestAuditTaskLimitPerCycle(t *testing.T) {
 		EnrichTimeout:  1 * time.Second,
 	})
 
-	task.mu.Lock()
-	task.lastAudit = time.Now().Add(-48 * time.Hour)
-	task.mu.Unlock()
+	rewindAuditCursor(t, task, time.Now().Add(-48*time.Hour), "")
 
 	err := task.Run(context.Background())
 	if err != nil {
@@ -142,4 +138,17 @@ func TestAuditTaskLimitPerCycle(t *testing.T) {
 	if domainEvents > 2 {
 		t.Errorf("expected at most 2 domain events (MaxPerCycle), got %d", domainEvents)
 	}
+}
+
+// rewindAuditCursor repositions the audit keyset so seeded domains inside a
+// custom window are included.
+func rewindAuditCursor(t *testing.T, task *AuditTask, windowEnd time.Time, lastDomain string) {
+	t.Helper()
+	task.mu.Lock()
+	task.cursor = auditCursorState{
+		Version:    auditCursorVersion,
+		WindowEnd:  windowEnd.UTC().Format(time.RFC3339Nano),
+		LastDomain: lastDomain,
+	}
+	task.mu.Unlock()
 }

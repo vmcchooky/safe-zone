@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -209,6 +210,45 @@ func (r *Redis) Delete(ctx context.Context, key string) error {
 	}
 
 	return r.client.Del(ctx, key).Err()
+}
+
+// ScanDelete deletes keys matching pattern using bounded incremental SCAN
+// iterations (never KEYS) and returns how many keys were deleted. Scanning
+// stops after maxScan keys have been seen so a pathological keyspace cannot
+// pin the caller; callers must scope the pattern tightly enough that a
+// partial pass is still correct.
+func (r *Redis) ScanDelete(ctx context.Context, pattern string, maxScan int64) (int64, error) {
+	if !r.Enabled() {
+		return 0, ErrDisabled
+	}
+	if maxScan <= 0 {
+		return 0, fmt.Errorf("scan delete: maxScan must be positive")
+	}
+
+	var deleted int64
+	var scanned int64
+	var cursor uint64
+	for {
+		keys, next, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return deleted, err
+		}
+		scanned += int64(len(keys))
+		if len(keys) > 0 {
+			n, delErr := r.client.Del(ctx, keys...).Result()
+			deleted += n
+			if delErr != nil {
+				return deleted, delErr
+			}
+		}
+		if scanned >= maxScan {
+			return deleted, nil
+		}
+		cursor = next
+		if cursor == 0 {
+			return deleted, nil
+		}
+	}
 }
 
 func (r *Redis) Expire(ctx context.Context, key string, ttl time.Duration) error {

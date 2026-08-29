@@ -140,6 +140,7 @@ func main() {
 				MaxPerCycle:         config.Int("SAFE_ZONE_AGENT_AUDIT_MAX_PER_CYCLE", 50),
 				ConfidenceThreshold: config.Float64("SAFE_ZONE_AGENT_AUDIT_CONFIDENCE_THRESHOLD", 0.7),
 				EnrichTimeout:       config.DurationSeconds("SAFE_ZONE_AGENT_ENRICH_TIMEOUT_SECONDS", 5*time.Second),
+				Lookback:            config.DurationSeconds("SAFE_ZONE_AGENT_AUDIT_LOOKBACK_SECONDS", 24*time.Hour),
 			},
 		)
 		agentEngine.Register(

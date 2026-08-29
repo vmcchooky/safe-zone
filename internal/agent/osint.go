@@ -161,9 +161,10 @@ func (t *OSINTTask) promote(ctx context.Context, domain string, evidence int) bo
 		t.logPromotionFailure(ctx, normalized, "zadd", err)
 		return false
 	}
-	if err := t.redis.Delete(ctx, "safe-zone:analysis:"+normalized); err != nil {
-		// The feed entry is in place, but the stale cached verdict would
-		// shadow it, so this must not be reported as a clean promotion.
+	if err := invalidateAnalysisCache(ctx, t.redis, normalized); err != nil {
+		// The feed entry is in place, but a stale cached verdict (base key
+		// or a model-revision variant) would shadow it, so this must not be
+		// reported as a clean promotion.
 		t.logPromotionFailure(ctx, normalized, "cache_invalidate", err)
 		return false
 	}

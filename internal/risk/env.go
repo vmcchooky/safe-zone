@@ -127,7 +127,11 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	// Frozen operational drift reference: optional and strictly fail-open.
 	// A missing, corrupt or mismatched baseline never blocks the classifier;
 	// it only leaves drift monitoring on the non-operational bundle proxy.
+	// A configured-but-failed load is surfaced through the Options so the
+	// status endpoint can report the fail-open state accurately.
 	var urlOpsBaseline *URLOperationalBaseline
+	urlOpsBaselineFailed := false
+	urlOpsBaselineErrorClass := ""
 	if urlMLClassifier != nil && urlMLClassifier.Enabled() {
 		baselinePath := strings.TrimSpace(config.String("SAFE_ZONE_URL_ML_BASELINE_PATH", ""))
 		if baselinePath != "" {
@@ -137,10 +141,12 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 			}
 			urlOpsBaseline, err = loadURLOperationalBaseline(baselinePath, modelVersion, urlMLClassifier.Revision())
 			if err != nil {
+				urlOpsBaselineFailed = true
+				urlOpsBaselineErrorClass = "baseline_load"
 				logjson.Warn("URL ML operational baseline unavailable; drift monitoring stays fail-open", map[string]any{
 					"service":     "risk",
 					"path":        baselinePath,
-					"error_class": "baseline_load",
+					"error_class": urlOpsBaselineErrorClass,
 					"error":       err.Error(),
 				})
 				urlOpsBaseline = nil
@@ -188,6 +194,8 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 		URLMLMode:                urlMLMode,
 		URLMLShadow:              urlMLShadow,
 		URLOpsBaseline:           urlOpsBaseline,
+		URLOpsBaselineFailed:     urlOpsBaselineFailed,
+		URLOpsBaselineErrorClass: urlOpsBaselineErrorClass,
 		URLMLFeedback:            urlFeedback,
 	}), nil
 }
