@@ -37,6 +37,9 @@ export function EndpointsPage() {
   const { data: mappingsData, error: mappingsErr, mutate: mutateMappings } = useSWR<{ items: ClientMapping[] }>('/v1/mappings', apiFetch, { keepPreviousData: true });
 
   const status = statusData ? ('status' in statusData ? statusData.status : statusData) : null;
+  // Older agent builds can omit `tasks` or send it as null; the table below
+  // renders both the rows and the empty state from this single normalization.
+  const tasks = Array.isArray(status?.tasks) ? status.tasks : [];
   const groups = groupsData?.items || [];
   const mappings = mappingsData?.items || [];
   
@@ -250,7 +253,7 @@ export function EndpointsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {status.tasks.map((t, index) => (
+                    {tasks.map((t, index) => (
                       <motion.tr 
                         key={t.name} 
                         initial={{ opacity: 0, x: -10 }}
@@ -282,7 +285,7 @@ export function EndpointsPage() {
                         </td>
                       </motion.tr>
                     ))}
-                    {status.tasks.length === 0 && (
+                    {tasks.length === 0 && (
                       <tr>
                         <td colSpan={4} className="px-4 py-8 text-center text-slate-500">No background tasks registered.</td>
                       </tr>

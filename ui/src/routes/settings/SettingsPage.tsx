@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { FormEvent } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useForm, Controller } from 'react-hook-form';
@@ -89,8 +89,50 @@ const scoringSchema = z.object({
   entropy_score: z.number().min(0).max(100)
 });
 
+const DEFAULT_ANALYSIS_CONFIG: AnalysisConfig = {
+  punycode_score: 35,
+  long_domain_length: 24,
+  long_domain_score: 15,
+  hyphen_count_threshold: 3,
+  hyphen_score: 10,
+  digit_ratio_threshold: 0.25,
+  digit_ratio_score: 10,
+  mixed_script_score: 25,
+  keywords: [],
+  keyword_base_score: 15,
+  keyword_match_score: 10,
+  keyword_multiple_bonus: 10,
+  brand_spoofing_score: 50,
+  entropy_threshold: 3.0,
+  entropy_score: 35
+};
+
+/**
+ * Server payloads for the analysis config come from a persisted store that
+ * older versions may write partially or with null fields; every missing or
+ * malformed numeric falls back to the built-in default and `keywords` MUST
+ * end up a string[] or the keyword-chips render path crashes the whole app
+ * (no error boundary wraps routes).
+ */
+function normalizeAnalysisConfig(raw: unknown): AnalysisConfig {
+  const cfg = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const normalized: AnalysisConfig = { ...DEFAULT_ANALYSIS_CONFIG };
+  for (const key of Object.keys(DEFAULT_ANALYSIS_CONFIG) as Array<keyof AnalysisConfig>) {
+    if (key === 'keywords') continue;
+    const value = cfg[key];
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      normalized[key] = value;
+    }
+  }
+  normalized.keywords = Array.isArray(cfg.keywords)
+    ? cfg.keywords.filter((kw): kw is string => typeof kw === 'string')
+    : [];
+  return normalized;
+}
+
 export function SettingsPage() {
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [savingCore, setSavingCore] = useState(false);
   const [savingGuest, setSavingGuest] = useState(false);
   const [savingScoring, setSavingScoring] = useState(false);
@@ -117,23 +159,7 @@ export function SettingsPage() {
   const [testingAlert, setTestingAlert] = useState(false);
 
   // Scoring engine states
-  const [scoring, setScoring] = useState<AnalysisConfig>({
-    punycode_score: 35,
-    long_domain_length: 24,
-    long_domain_score: 15,
-    hyphen_count_threshold: 3,
-    hyphen_score: 10,
-    digit_ratio_threshold: 0.25,
-    digit_ratio_score: 10,
-    mixed_script_score: 25,
-    keywords: [],
-    keyword_base_score: 15,
-    keyword_match_score: 10,
-    keyword_multiple_bonus: 10,
-    brand_spoofing_score: 50,
-    entropy_threshold: 3.0,
-    entropy_score: 35
-  });
+  const [scoring, setScoring] = useState<AnalysisConfig>(DEFAULT_ANALYSIS_CONFIG);
   const [newKeyword, setNewKeyword] = useState('');
 
   // Guest access states
@@ -145,6 +171,13 @@ export function SettingsPage() {
   const [guestPassword, setGuestPassword] = useState('');
   const [showGuestPassword, setShowGuestPassword] = useState(false);
 
+  // While the settings bundle has not loaded successfully, every mutating
+  // control is disabled AND its handler early-returns: saving defaults from
+  // an unloaded form would overwrite the operator's real configuration.
+  const mutationLocked = loadError !== null;
+  // Monotonic sequence for loadSettings — see the guard inside it.
+  const loadSeqRef = useRef(0);
+
   const showToast = (message: string, type: 'ok' | 'err') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts(prev => [...prev, { id, message, type }]);
@@ -154,28 +187,58 @@ export function SettingsPage() {
   };
 
   const loadSettings = async () => {
+    // Sequence guard: React StrictMode (dev) fires the mount effect twice
+    // and Retry can race an in-flight load; a stale response must never
+    // overwrite a newer one's result (e.g. a late 500 clobbering a success).
+    const seq = ++loadSeqRef.current;
+    setLoadError(null);
     try {
       const res = await fetch('/v1/settings/bundle');
-      if (!res.ok) throw new Error('Failed to load settings');
+      if (!res.ok) throw new Error(`Failed to load settings (HTTP ${res.status})`);
       const data = await res.json();
+      if (seq !== loadSeqRef.current) return;
 
-      resetCore({ geminiKey: data.settings.gemini_api_key || '', webhookUrl: data.settings.agent_webhook_url || '', retentionDays: data.settings.telemetry_retention_days || 30 });
+      // The bundle is assembled from several server-side stores; a partial or
+      // legacy payload must degrade to field defaults instead of white-
+      // screening the route (no error boundary wraps it).
+      const settings = data && typeof data.settings === 'object' && data.settings !== null ? data.settings : {};
+      const rawRetention = settings.telemetry_retention_days;
+      const retention = typeof rawRetention === 'number' && Number.isFinite(rawRetention) ? rawRetention : 30;
+      resetCore({
+        geminiKey: typeof settings.gemini_api_key === 'string' ? settings.gemini_api_key : '',
+        webhookUrl: typeof settings.agent_webhook_url === 'string' ? settings.agent_webhook_url : '',
+        retentionDays: Number.isFinite(retention) ? retention : 30,
+      });
 
-      if (data.analysis_config) { setScoring(data.analysis_config); resetScoring(data.analysis_config); }
-      if (data.guest_access) setGuest(data.guest_access);
+      setScoring(normalizeAnalysisConfig(data?.analysis_config));
+      resetScoring(normalizeAnalysisConfig(data?.analysis_config));
+      if (data && typeof data.guest_access === 'object' && data.guest_access !== null) {
+        const g = data.guest_access;
+        setGuest({
+          username: typeof g.username === 'string' ? g.username : 'guest',
+          exists: Boolean(g.exists),
+          enabled: Boolean(g.enabled),
+        });
+      }
 
       setLoading(false);
     } catch (err) {
+      if (seq !== loadSeqRef.current) return;
       console.error(err);
-      showToast('Error loading settings from server', 'err');
+      // The loading gate MUST clear on failure too, or /app/settings spins
+      // forever whenever /v1/settings/bundle errors (500, offline, ...).
+      setLoading(false);
+      setLoadError(err instanceof Error ? err.message : 'Error loading settings from server');
     }
   };
 
   useEffect(() => {
     loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSaveCore = async (data: z.infer<typeof coreSchema>) => {
+    if (mutationLocked) return;
     setSavingCore(true);
     try {
       const payload: Record<string, string | number> = {
@@ -202,6 +265,7 @@ export function SettingsPage() {
   };
 
   const handleSaveScoring = async (data: z.infer<typeof scoringSchema>) => { const fullScoring = { ...scoring, ...data };
+    if (mutationLocked) return;
     setSavingScoring(true);
     try {
       const res = await fetch('/v1/config/analysis', {
@@ -222,6 +286,7 @@ export function SettingsPage() {
   };
 
   const handleResetScoring = async () => {
+    if (mutationLocked) return;
     if (!(await confirm('Are you sure you want to reset all scoring thresholds to default?'))) return;
     setSavingScoring(true);
     try {
@@ -231,7 +296,12 @@ export function SettingsPage() {
         throw new Error(error.error || 'Failed to reset settings');
       }
       const defaultData = await res.json();
-      setScoring(defaultData);
+      // Same contract as loadSettings: one normalization pass, and BOTH the
+      // keyword chips (component state) and the numeric inputs (RHF) must
+      // reflect the server response.
+      const normalized = normalizeAnalysisConfig(defaultData);
+      setScoring(normalized);
+      resetScoring(normalized);
       showToast('Scoring thresholds reset to defaults', 'ok');
     } catch (err: any) {
       showToast(err.message, 'err');
@@ -240,7 +310,7 @@ export function SettingsPage() {
     }
   };
 
-  const handleSaveGuest = async (data: z.infer<typeof guestSchema>) => { if (!data.guestPassword && !guest.exists) {
+  const handleSaveGuest = async (data: z.infer<typeof guestSchema>) => { if (mutationLocked) return; if (!data.guestPassword && !guest.exists) {
       showToast('Password is required to initialize guest access', 'err');
       return;
     }
@@ -269,6 +339,7 @@ export function SettingsPage() {
   };
 
   const handleTestAi = async () => {
+    if (mutationLocked) return;
     setTestingAi(true);
     try {
       const res = await fetch('/v1/settings/test-ai', {
@@ -291,6 +362,7 @@ export function SettingsPage() {
   };
 
   const handleTestAlert = async () => {
+    if (mutationLocked) return;
     setTestingAlert(true);
     try {
       const res = await fetch('/v1/settings/test-alert', {
@@ -313,6 +385,7 @@ export function SettingsPage() {
   const handleAddKeyword = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      if (mutationLocked) return;
       const kw = newKeyword.trim().toLowerCase();
       if (kw && !scoring.keywords.includes(kw)) {
         setScoring(prev => ({ ...prev, keywords: [...prev.keywords, kw] }));
@@ -322,6 +395,7 @@ export function SettingsPage() {
   };
 
   const handleRemoveKeyword = (kw: string) => {
+    if (mutationLocked) return;
     setScoring(prev => ({ ...prev, keywords: prev.keywords.filter(k => k !== kw) }));
   };
 
@@ -365,6 +439,31 @@ export function SettingsPage() {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* Load failure: the page shell still renders with field defaults so
+          the operator keeps navigation, plus an actionable retry. */}
+      {loadError && (
+        <div
+          role="alert"
+          data-testid="settings-load-error"
+          className="p-4 bg-red-50 text-red-800 rounded-2xl border border-red-200/50 flex flex-col sm:flex-row sm:items-center gap-3 shadow-sm"
+        >
+          <AlertCircle size={20} className="text-red-500 shrink-0" />
+          <span className="font-medium text-sm flex-1">
+            {loadError} — values shown below are defaults, not your saved configuration.
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setLoading(true);
+              loadSettings();
+            }}
+            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition-colors shrink-0"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Header */}
       <motion.div 
@@ -413,20 +512,23 @@ export function SettingsPage() {
               {/* API Key Box */}
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div>
-                  <label className="block font-semibold text-slate-900 text-sm">Gemini API Key</label>
+                  <label htmlFor="gemini-key-input" className="block font-semibold text-slate-900 text-sm">Gemini API Key</label>
                   <p className="text-xs text-slate-500 mt-0.5">Used by AI classifier node. You can test a new key before saving.</p>
                 </div>
                 <div className="relative">
-                  <input 
+                  <input
+                    id="gemini-key-input"
                     type={showApiKey && !geminiKeyValue.includes('*') ? "text" : "password"}
+                    disabled={mutationLocked}
                     {...registerCore("geminiKey")}
                     placeholder="Enter API Key"
-                    className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-mono text-slate-700"
+                    className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-mono text-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
                     autoComplete="off"
                   />
 {coreErrors.geminiKey && <p className="text-red-500 text-xs mt-1">{coreErrors.geminiKey.message}</p>}
-                  <button 
+                  <button
                     type="button"
+                    aria-label={showApiKey && !geminiKeyValue.includes('*') ? 'Hide Gemini API key' : 'Show Gemini API key'}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                     onClick={() => setShowApiKey(!showApiKey)}
                   >
@@ -439,10 +541,10 @@ export function SettingsPage() {
                     <Check size={14} className="text-emerald-500" />
                     <span>Status</span>
                   </div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={handleTestAi}
-                    disabled={testingAi}
+                    disabled={testingAi || mutationLocked}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                   >
                     {testingAi ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -454,20 +556,25 @@ export function SettingsPage() {
               {/* Webhook Box */}
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div>
-                  <label className="block font-semibold text-slate-900 text-sm">Agent Webhook URL</label>
+                  <label htmlFor="webhook-url-input" className="block font-semibold text-slate-900 text-sm">Agent Webhook URL</label>
                   <p className="text-xs text-slate-500 mt-0.5">Endpoint for instant alerts. You can test a new URL before saving.</p>
                 </div>
                 <div className="relative">
-                  <input 
+                  <input
+                    id="webhook-url-input"
                     type={showWebhook && !webhookUrlValue.includes('*') ? "text" : "password"}
+                    disabled={mutationLocked}
                     {...registerCore("webhookUrl")}
                     placeholder="https://..."
-                    className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm font-mono text-slate-700"
+                    aria-invalid={coreErrors.webhookUrl ? true : undefined}
+                    aria-describedby={coreErrors.webhookUrl ? 'webhook-url-error' : undefined}
+                    className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm font-mono text-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
                     autoComplete="off"
                   />
-{coreErrors.webhookUrl && <p className="text-red-500 text-xs mt-1">{coreErrors.webhookUrl.message}</p>}
-                  <button 
+{coreErrors.webhookUrl && <p id="webhook-url-error" className="text-red-500 text-xs mt-1">{coreErrors.webhookUrl.message}</p>}
+                  <button
                     type="button"
+                    aria-label={showWebhook && !webhookUrlValue.includes('*') ? 'Hide webhook URL' : 'Show webhook URL'}
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                     onClick={() => setShowWebhook(!showWebhook)}
                   >
@@ -480,10 +587,10 @@ export function SettingsPage() {
                     <Bell size={14} className="text-blue-500" />
                     <span>Pipeline</span>
                   </div>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={handleTestAlert}
-                    disabled={testingAlert}
+                    disabled={testingAlert || mutationLocked}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-medium transition-colors disabled:opacity-50"
                   >
                     {testingAlert ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} />}
@@ -495,27 +602,31 @@ export function SettingsPage() {
               {/* Telemetry Box */}
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-between">
                 <div>
-                  <label className="block font-semibold text-slate-900 text-sm">Log Retention</label>
+                  <label htmlFor="retention-days-input" className="block font-semibold text-slate-900 text-sm">Log Retention</label>
                   <p className="text-xs text-slate-500 mt-0.5">Days to keep diagnostic logs.</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <input 
+                  <input
+                    id="retention-days-input"
                     type="number"
                     min={1}
                     max={90}
+                    disabled={mutationLocked}
+                    aria-invalid={coreErrors.retentionDays ? true : undefined}
+                    aria-describedby={coreErrors.retentionDays ? 'retention-days-error' : undefined}
                     {...registerCore("retentionDays", { valueAsNumber: true })}
-                    className="w-16 text-center px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-medium text-slate-700 text-sm"
+                    className="w-16 text-center px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-medium text-slate-700 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-xs font-medium text-slate-500">Days</span>
-{coreErrors.retentionDays && <p className="text-red-500 text-xs ml-2">{coreErrors.retentionDays.message}</p>}
+{coreErrors.retentionDays && <p id="retention-days-error" className="text-red-500 text-xs ml-2">{coreErrors.retentionDays.message}</p>}
                 </div>
               </div>
             </div>
 
             <div className="mt-6 pt-4 border-t border-slate-200/50">
-              <button 
-                type="submit" 
-                disabled={savingCore}
+              <button
+                type="submit"
+                disabled={savingCore || mutationLocked}
                 className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-colors disabled:opacity-50 shadow-sm text-sm"
               >
                 {savingCore ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -548,34 +659,47 @@ export function SettingsPage() {
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-100">
                   <div>
-                    <h4 className="font-semibold text-slate-900 text-sm">Enable Guest Mode</h4>
+                    <h4 id="guest-mode-heading" className="font-semibold text-slate-900 text-sm">Enable Guest Mode</h4>
                     <p className="text-xs text-slate-500 mt-0.5">Allows login as <code className="px-1 bg-slate-200 rounded text-slate-700 font-mono">guest</code></p>
                   </div>
-                  
-                  <button 
+
+                  <button
                     type="button"
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${guest.enabled ? 'bg-emerald-500' : 'bg-slate-300'}`}
-                    onClick={() => setGuest(prev => ({ ...prev, enabled: !prev.enabled }))}
+                    role="switch"
+                    aria-checked={guest.enabled}
+                    aria-labelledby="guest-mode-heading"
+                    data-testid="guest-mode-toggle"
+                    disabled={mutationLocked}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed ${guest.enabled ? 'bg-emerald-500' : 'bg-slate-300'} ${mutationLocked ? 'opacity-60' : ''}`}
+                    onClick={() => {
+                      if (mutationLocked) return;
+                      setGuest(prev => ({ ...prev, enabled: !prev.enabled }));
+                    }}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${guest.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
                   </button>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-xs font-semibold text-slate-700">
+                  <label htmlFor="guest-password-input" className="block text-xs font-semibold text-slate-700">
                     {guest.exists ? 'Reset Guest Password (Optional)' : 'Set Initial Guest Password'}
                   </label>
                   <div className="relative">
-                    <input 
+                    <input
+                      id="guest-password-input"
                       type={showGuestPassword ? "text" : "password"}
+                      disabled={mutationLocked}
                       {...registerGuest("guestPassword")}
                       placeholder="Enter password..."
-                      className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-mono text-slate-700"
+                      aria-invalid={guestErrors.guestPassword ? true : undefined}
+                      aria-describedby={guestErrors.guestPassword ? 'guest-password-error' : undefined}
+                      className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-mono text-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
                       autoComplete="new-password"
                     />
-{guestErrors.guestPassword && <p className="text-red-500 text-xs mt-1">{guestErrors.guestPassword.message}</p>}
-                    <button 
+{guestErrors.guestPassword && <p id="guest-password-error" className="text-red-500 text-xs mt-1">{guestErrors.guestPassword.message}</p>}
+                    <button
                       type="button"
+                      aria-label={showGuestPassword ? 'Hide guest password' : 'Show guest password'}
                       className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                       onClick={() => setShowGuestPassword(!showGuestPassword)}
                     >
@@ -587,9 +711,9 @@ export function SettingsPage() {
             </div>
 
             <div className="mt-6 pt-4 border-t border-slate-200/50">
-              <button 
-                type="submit" 
-                disabled={savingGuest}
+              <button
+                type="submit"
+                disabled={savingGuest || mutationLocked}
                 className="w-full flex items-center justify-center gap-2 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors disabled:opacity-50 shadow-sm text-sm"
               >
                 {savingGuest ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}
@@ -621,17 +745,18 @@ export function SettingsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <button 
+                <button
                   onClick={handleResetScoring}
-                  className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm"
+                  disabled={savingScoring || mutationLocked}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <RotateCcw size={14} />
                   Reset Defaults
                 </button>
-                <button 
+                <button
                   onClick={handleSubmitScoring(handleSaveScoring)}
-                  disabled={savingScoring}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50"
+                  disabled={savingScoring || mutationLocked}
+                  className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {savingScoring ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                   Apply Config
@@ -649,28 +774,28 @@ export function SettingsPage() {
                 </h3>
                 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
-                  <label className="text-xs font-medium text-slate-600">Punycode Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("punycode_score", { valueAsNumber: true })} />
+                  <label htmlFor="scoring-punycode-score" className="text-xs font-medium text-slate-600">Punycode Penalty</label>
+                  <input id="scoring-punycode-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.punycode_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("punycode_score", { valueAsNumber: true })} />
 {scoringErrors.punycode_score && <span className="text-red-500 text-[10px]">punycode_score</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Mixed Script Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("mixed_script_score", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-mixed-script-score" className="text-xs font-medium text-slate-600">Mixed Script Penalty</label>
+                  <input id="scoring-mixed-script-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.mixed_script_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("mixed_script_score", { valueAsNumber: true })} />
 {scoringErrors.mixed_script_score && <span className="text-red-500 text-[10px]">mixed_script_score</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Long Domain (Chars)</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("long_domain_length", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-long-domain-length" className="text-xs font-medium text-slate-600">Long Domain (Chars)</label>
+                  <input id="scoring-long-domain-length" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.long_domain_length ? true : undefined} className="settings-num-input text-sm" {...registerScoring("long_domain_length", { valueAsNumber: true })} />
 {scoringErrors.long_domain_length && <span className="text-red-500 text-[10px]">long_domain_length</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Long Domain Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("long_domain_score", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-long-domain-score" className="text-xs font-medium text-slate-600">Long Domain Penalty</label>
+                  <input id="scoring-long-domain-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.long_domain_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("long_domain_score", { valueAsNumber: true })} />
 {scoringErrors.long_domain_score && <span className="text-red-500 text-[10px]">long_domain_score</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Hyphen Threshold</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("hyphen_count_threshold", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-hyphen-count-threshold" className="text-xs font-medium text-slate-600">Hyphen Threshold</label>
+                  <input id="scoring-hyphen-count-threshold" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.hyphen_count_threshold ? true : undefined} className="settings-num-input text-sm" {...registerScoring("hyphen_count_threshold", { valueAsNumber: true })} />
 {scoringErrors.hyphen_count_threshold && <span className="text-red-500 text-[10px]">hyphen_count_threshold</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Hyphen Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("hyphen_score", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-hyphen-score" className="text-xs font-medium text-slate-600">Hyphen Penalty</label>
+                  <input id="scoring-hyphen-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.hyphen_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("hyphen_score", { valueAsNumber: true })} />
 {scoringErrors.hyphen_score && <span className="text-red-500 text-[10px]">hyphen_score</span>}
                 </div>
               </div>
@@ -683,20 +808,20 @@ export function SettingsPage() {
                 </h3>
                 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
-                  <label className="text-xs font-medium text-slate-600">Digit Ratio Threshold</label>
-                  <input type="number" step="0.05" className="settings-num-input text-sm" {...registerScoring("digit_ratio_threshold", { valueAsNumber: true })} />
+                  <label htmlFor="scoring-digit-ratio-threshold" className="text-xs font-medium text-slate-600">Digit Ratio Threshold</label>
+                  <input id="scoring-digit-ratio-threshold" type="number" disabled={mutationLocked} step="0.05" aria-invalid={scoringErrors.digit_ratio_threshold ? true : undefined} className="settings-num-input text-sm" {...registerScoring("digit_ratio_threshold", { valueAsNumber: true })} />
 {scoringErrors.digit_ratio_threshold && <span className="text-red-500 text-[10px]">digit_ratio_threshold</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Digit Ratio Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("digit_ratio_score", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-digit-ratio-score" className="text-xs font-medium text-slate-600">Digit Ratio Penalty</label>
+                  <input id="scoring-digit-ratio-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.digit_ratio_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("digit_ratio_score", { valueAsNumber: true })} />
 {scoringErrors.digit_ratio_score && <span className="text-red-500 text-[10px]">digit_ratio_score</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Entropy Threshold</label>
-                  <input type="number" step="0.1" className="settings-num-input text-sm" {...registerScoring("entropy_threshold", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-entropy-threshold" className="text-xs font-medium text-slate-600">Entropy Threshold</label>
+                  <input id="scoring-entropy-threshold" type="number" disabled={mutationLocked} step="0.1" aria-invalid={scoringErrors.entropy_threshold ? true : undefined} className="settings-num-input text-sm" {...registerScoring("entropy_threshold", { valueAsNumber: true })} />
 {scoringErrors.entropy_threshold && <span className="text-red-500 text-[10px]">entropy_threshold</span>}
-                  
-                  <label className="text-xs font-medium text-slate-600">Entropy Penalty</label>
-                  <input type="number" className="settings-num-input text-sm" {...registerScoring("entropy_score", { valueAsNumber: true })} />
+
+                  <label htmlFor="scoring-entropy-score" className="text-xs font-medium text-slate-600">Entropy Penalty</label>
+                  <input id="scoring-entropy-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.entropy_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("entropy_score", { valueAsNumber: true })} />
 {scoringErrors.entropy_score && <span className="text-red-500 text-[10px]">entropy_score</span>}
                 </div>
               </div>
@@ -710,38 +835,44 @@ export function SettingsPage() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Keyword Base Score</label>
-                    <input type="number" className="settings-num-input text-sm" {...registerScoring("keyword_base_score", { valueAsNumber: true })} />
+                    <label htmlFor="scoring-keyword-base-score" className="block text-xs font-medium text-slate-600 mb-1">Keyword Base Score</label>
+                    <input id="scoring-keyword-base-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.keyword_base_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("keyword_base_score", { valueAsNumber: true })} />
 {scoringErrors.keyword_base_score && <span className="text-red-500 text-[10px]">keyword_base_score</span>}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Match Multiplier</label>
-                    <input type="number" className="settings-num-input text-sm" {...registerScoring("keyword_match_score", { valueAsNumber: true })} />
+                    <label htmlFor="scoring-keyword-match-score" className="block text-xs font-medium text-slate-600 mb-1">Match Multiplier</label>
+                    <input id="scoring-keyword-match-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.keyword_match_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("keyword_match_score", { valueAsNumber: true })} />
 {scoringErrors.keyword_match_score && <span className="text-red-500 text-[10px]">keyword_match_score</span>}
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-slate-600 mb-1">Brand Spoof Penalty</label>
-                    <input type="number" className="settings-num-input text-sm" {...registerScoring("brand_spoofing_score", { valueAsNumber: true })} />
+                    <label htmlFor="scoring-brand-spoofing-score" className="block text-xs font-medium text-slate-600 mb-1">Brand Spoof Penalty</label>
+                    <input id="scoring-brand-spoofing-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.brand_spoofing_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("brand_spoofing_score", { valueAsNumber: true })} />
 {scoringErrors.brand_spoofing_score && <span className="text-red-500 text-[10px]">brand_spoofing_score</span>}
                   </div>
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-slate-50">
-                  <label className="block text-sm font-semibold text-slate-800 mb-2">Suspicious Keywords Dictionary</label>
+                  <label htmlFor="new-keyword-input" className="block text-sm font-semibold text-slate-800 mb-2">Suspicious Keywords Dictionary</label>
                   <p className="text-xs text-slate-500 mb-3">Add exact match substrings that indicate phishing or scams.</p>
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 min-h-[120px]">
                     <div className="flex flex-wrap gap-2 mb-3">
                       <AnimatePresence>
                         {scoring.keywords.map(kw => (
-                          <motion.span 
-                            key={kw} 
+                          <motion.span
+                            key={kw}
                             initial={{ opacity: 0, scale: 0.8 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.8 }}
                             className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-slate-200 text-slate-700 rounded-lg text-xs font-medium shadow-sm"
                           >
                             {kw}
-                            <button onClick={() => handleRemoveKeyword(kw)} className="text-slate-400 hover:text-red-500 focus:outline-none transition-colors ml-1">
+                            <button
+                              type="button"
+                              aria-label={`Remove keyword ${kw}`}
+                              disabled={mutationLocked}
+                              onClick={() => handleRemoveKeyword(kw)}
+                              className="text-slate-400 hover:text-red-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-600 focus-visible:ring-offset-1 focus-visible:ring-offset-white rounded transition-colors ml-1 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
                               <X size={14} />
                             </button>
                           </motion.span>
@@ -750,10 +881,12 @@ export function SettingsPage() {
                     </div>
                     <div className="flex items-center gap-2 mt-2">
                       <Plus size={16} className="text-slate-400 ml-1" />
-                      <input 
-                        type="text" 
-                        className="flex-1 bg-transparent border-none focus:ring-0 text-sm outline-none placeholder:text-slate-400 font-medium text-slate-700" 
-                        placeholder="Add keyword and press Enter..." 
+                      <input
+                        id="new-keyword-input"
+                        type="text"
+                        disabled={mutationLocked}
+                        className="flex-1 bg-transparent border-none focus:ring-0 text-sm outline-none placeholder:text-slate-400 font-medium text-slate-700 disabled:cursor-not-allowed"
+                        placeholder="Add keyword and press Enter..."
                         value={newKeyword}
                         onChange={(e) => setNewKeyword(e.target.value)}
                         onKeyDown={handleAddKeyword}

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import useSWR from 'swr';
 import { apiFetch, apiJSON, messageFromError } from '../lib/api';
+import { paginationWindow } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageSquareWarning, ShieldAlert, CheckCircle2, XCircle, Loader2, ChevronLeft, ChevronRight, ShieldCheck, Search, Filter } from 'lucide-react';
 import { InfoTooltip } from '../components/InfoTooltip';
@@ -340,19 +341,28 @@ export function UserReportsPage() {
                   <ChevronLeft className="w-5 h-5" />
                 </button>
                 <div className="flex items-center gap-1">
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-                    <button
-                      key={page}
-                      onClick={() => setCurrentPage(page)}
-                      className={`min-w-[32px] h-8 flex items-center justify-center rounded-lg text-sm font-medium active:scale-95 transition-all duration-200 ${
-                        safeCurrentPage === page
-                          ? 'bg-amber-50 text-amber-600 font-semibold'
-                          : 'text-slate-600 hover:bg-slate-100 active:bg-slate-200'
-                      }`}
-                    >
-                      {page}
-                    </button>
-                  ))}
+                  {paginationWindow(safeCurrentPage, totalPages).map((page, i) =>
+                    page === null ? (
+                      <span
+                        key={`gap-${i}`}
+                        className="min-w-[24px] h-8 flex items-center justify-center text-sm text-slate-400 select-none"
+                      >
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={page}
+                        onClick={() => setCurrentPage(page)}
+                        className={`min-w-[32px] h-8 flex items-center justify-center rounded-lg text-sm font-medium active:scale-95 transition-all duration-200 ${
+                          safeCurrentPage === page
+                            ? 'bg-amber-50 text-amber-600 font-semibold'
+                            : 'text-slate-600 hover:bg-slate-100 active:bg-slate-200'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    ),
+                  )}
                 </div>
                 <button
                   onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
