@@ -225,6 +225,21 @@ func (t *AlertTask) Run(ctx context.Context) error {
 	deliveredPages := 0
 	deliveredEvents := 0
 
+	// MinEvents gates on the whole pending backlog, not the first page, so a
+	// threshold above the page size still triggers once enough events are
+	// pending instead of starving forever.
+	cursor := t.snapshotCursor()
+	pending, err := t.store.CountAgentEventsAfter(ctx, cursor.CreatedAt, cursor.ID, []string{
+		"auto_block", "feed_error",
+	})
+	if err != nil {
+		// Cursor stays put: the pending backlog is retried next cycle.
+		return fmt.Errorf("count pending agent events: %w", err)
+	}
+	if pending < int64(t.config.MinEvents) {
+		return nil // not enough pending events to trigger an alert yet
+	}
+
 	for page := 0; page < alertMaxPagesPerCycle; page++ {
 		cursor := t.snapshotCursor()
 		events, err := t.store.QueryAgentEventsPage(ctx, cursor.CreatedAt, cursor.ID, []string{
@@ -236,9 +251,6 @@ func (t *AlertTask) Run(ctx context.Context) error {
 		}
 		if len(events) == 0 {
 			break
-		}
-		if deliveredPages == 0 && len(events) < t.config.MinEvents {
-			break // not enough pending events to trigger an alert yet
 		}
 
 		// Build payload and detect critical brand spoofing for this page.

@@ -47,7 +47,9 @@ docker compose -f docker-compose.yml -f docker-compose.production.yml restart co
 ```
 
 The admin password is bcrypt-hashed once at core-api startup and never
-stored in plaintext by the service. Rotating `SAFE_ZONE_ADMIN_PASSWORD`
+stored in plaintext by the service. It must be 12-72 **bytes** long (the
+bcrypt input limit; multibyte characters count per byte, not per rune) —
+core-api refuses to start otherwise. Rotating `SAFE_ZONE_ADMIN_PASSWORD`
 requires the restart above; there is no plaintext copy to update in the
 database. The restart also invalidates every issued admin session (sessions
 are revocable and re-validated per request), so operators must log in again

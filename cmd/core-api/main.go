@@ -172,6 +172,7 @@ func main() {
 				ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_AGENT_FEED_DRIFT_INVALID_RATIO", 0.20),
 				ParserDriftMinInvalid:      config.Int("SAFE_ZONE_AGENT_FEED_DRIFT_MIN_INVALID", 25),
 				CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_AGENT_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
+				TTL:                        feedTTL,
 				AdmissionMode:              feedAdmissionMode,
 			},
 		)

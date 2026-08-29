@@ -139,17 +139,27 @@ func (h *Handler) AuthLogoutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Revoke the persisted admin session before clearing the cookie so a
-	// stolen copy of it is rejected on the next request.
+	// stolen copy of it is rejected on the next request. A failed revocation
+	// must not be reported as success: the cookie stays in place so the
+	// operator can retry while the session row remains revocable.
 	if cookie, err := r.Cookie("admin_session"); err == nil && cookie.Value != "" {
 		if claims, verifyErr := auth.VerifySessionClaims(cookie.Value, h.Config.SessionSecret); verifyErr == nil &&
 			claims.Role == auth.RoleAdmin && claims.SessionID != "" {
-			if store := h.Risk.StoreDB(); store != nil && store.Enabled() {
-				if err := store.RevokeAdminSession(r.Context(), auth.SessionFingerprint(claims.SessionID)); err != nil {
-					logjson.Warn("admin session revoke failed", map[string]any{
-						"service": "core-api",
-						"error":   err.Error(),
-					})
-				}
+			store := h.Risk.StoreDB()
+			if store == nil || !store.Enabled() {
+				logjson.Warn("admin logout unavailable: session store disabled", map[string]any{
+					"service": "core-api",
+				})
+				httputil.WriteError(w, http.StatusServiceUnavailable, "session store unavailable")
+				return
+			}
+			if err := store.RevokeAdminSession(r.Context(), auth.SessionFingerprint(claims.SessionID)); err != nil {
+				logjson.Warn("admin session revoke failed", map[string]any{
+					"service": "core-api",
+					"error":   err.Error(),
+				})
+				httputil.WriteError(w, http.StatusServiceUnavailable, "session store unavailable")
+				return
 			}
 		}
 	}

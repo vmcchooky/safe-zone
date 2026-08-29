@@ -137,6 +137,14 @@ func (t *AuditTask) snapshotCursor() auditCursorState {
 	return t.cursor
 }
 
+// auditCursorPersistTimeout bounds the detached write used to persist the
+// cursor when the task context is already cancelled.
+const auditCursorPersistTimeout = 2 * time.Second
+
+// testHookAfterDomain is a deterministic test seam invoked after each
+// successfully audited domain; it is nil in production.
+var testHookAfterDomain func()
+
 func (t *AuditTask) storeCursor(ctx context.Context, cursor auditCursorState) {
 	t.mu.Lock()
 	t.cursor = cursor
@@ -154,7 +162,12 @@ func (t *AuditTask) storeCursor(ctx context.Context, cursor auditCursorState) {
 		})
 		return
 	}
-	if err := t.store.SetSystemConfig(ctx, auditCursorConfigKey, string(encoded)); err != nil {
+	// The cursor must survive a cancelled task context (mid-page
+	// cancellation commits the processed prefix), so the write runs on a
+	// detached but strictly bounded context instead of the caller's.
+	persistCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), auditCursorPersistTimeout)
+	defer cancel()
+	if err := t.store.SetSystemConfig(persistCtx, auditCursorConfigKey, string(encoded)); err != nil {
 		logjson.Warn("audit cursor persist failed; restart may re-audit a page", map[string]any{
 			"service": "core-api",
 			"task":    "audit",
@@ -240,6 +253,9 @@ func (t *AuditTask) Run(ctx context.Context) error {
 		}
 		result.Audited++
 		lastDone = dc.Domain
+		if testHookAfterDomain != nil {
+			testHookAfterDomain()
+		}
 	}
 
 	if len(domains) < t.config.MaxPerCycle {

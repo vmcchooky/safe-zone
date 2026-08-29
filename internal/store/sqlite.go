@@ -1186,6 +1186,32 @@ func (d *DB) QueryAgentEventsPage(ctx context.Context, afterCreatedAt string, af
 	return events, rows.Err()
 }
 
+// CountAgentEventsAfter counts agent events after the (created_at, id)
+// cursor with the same event-type filters as QueryAgentEventsPage, so
+// consumers can measure the pending backlog before deciding to act on it.
+func (d *DB) CountAgentEventsAfter(ctx context.Context, afterCreatedAt string, afterID int64, eventTypes []string) (int64, error) {
+	if !d.Enabled() {
+		return 0, nil
+	}
+
+	query := `SELECT COUNT(*) FROM agent_audit_log WHERE (created_at > ? OR (created_at = ? AND id > ?))`
+	args := []any{afterCreatedAt, afterCreatedAt, afterID}
+	if len(eventTypes) > 0 {
+		placeholders := make([]string, len(eventTypes))
+		for i, et := range eventTypes {
+			placeholders[i] = "?"
+			args = append(args, et)
+		}
+		query += ` AND event_type IN (` + strings.Join(placeholders, ",") + `)`
+	}
+
+	var count int64
+	if err := d.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count agent events: %w", err)
+	}
+	return count, nil
+}
+
 // QuerySuspiciousDomainsPage is the keyset variant of QuerySuspiciousDomains
 // for background audit cycles. It pages over a frozen [since, until) window
 // ordered by domain ASC, resuming strictly after afterDomain. A frozen window

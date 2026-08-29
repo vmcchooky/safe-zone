@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"context"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -222,5 +224,92 @@ func TestSessionStoreUnavailableFailsClosed(t *testing.T) {
 	defer bearerResp.Body.Close()
 	if bearerResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for bearer auth without session store, got %d", bearerResp.StatusCode)
+	}
+}
+
+// Logout must not report success when the revocation itself fails: the
+// cookie stays in place (retryable) and the session row stays revocable.
+// The revocation failure is injected by calling the handler with a canceled
+// request context after the cookie has been verified — i.e. the failure
+// happens post-validation, during the revoke step.
+func TestLogoutRevokeFailureDoesNotReportSuccess(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	cookie := ts.adminSessionCookie(t)
+
+	revokeCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	req.AddCookie(cookie)
+	req = req.WithContext(revokeCtx)
+	recorder := httptest.NewRecorder()
+	ts.Handler.AuthLogoutHandler(recorder, req)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 when revocation fails, got %d", recorder.Code)
+	}
+	if setCookie := recorder.Header().Get("Set-Cookie"); setCookie != "" {
+		t.Fatalf("failed logout must not clear the cookie, got Set-Cookie %q", setCookie)
+	}
+
+	// The session must still be active in the store: revocation did not
+	// happen, so the (stolen) cookie copy remains usable until a real
+	// revocation succeeds.
+	active, err := ts.Store.AdminSessionActive(context.Background(), auth.SessionFingerprint(sessionIDFromCookie(t, ts, cookie)))
+	if err != nil || !active {
+		t.Fatalf("expected session to remain active after failed revocation (active=%v, err=%v)", active, err)
+	}
+
+	// Retry with a working request context: revocation succeeds, cookie is
+	// cleared, and the stolen copy is rejected afterwards.
+	retryReq := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	retryReq.AddCookie(cookie)
+	retryRecorder := httptest.NewRecorder()
+	ts.Handler.AuthLogoutHandler(retryRecorder, retryReq)
+
+	if retryRecorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 on retry after recovery, got %d", retryRecorder.Code)
+	}
+	if setCookie := retryRecorder.Header().Get("Set-Cookie"); !strings.Contains(setCookie, "Max-Age=0") {
+		t.Fatalf("successful logout must clear the cookie, got Set-Cookie %q", setCookie)
+	}
+	active, err = ts.Store.AdminSessionActive(context.Background(), auth.SessionFingerprint(sessionIDFromCookie(t, ts, cookie)))
+	if err != nil || active {
+		t.Fatalf("expected session revoked after retry (active=%v, err=%v)", active, err)
+	}
+}
+
+// sessionIDFromCookie recovers the raw session ID from a signed cookie so
+// tests can compute the stored fingerprint.
+func sessionIDFromCookie(t *testing.T, ts *handlerTestServer, cookie *http.Cookie) string {
+	t.Helper()
+	claims, err := auth.VerifySessionClaims(cookie.Value, ts.Handler.Config.SessionSecret)
+	if err != nil {
+		t.Fatalf("verify session cookie: %v", err)
+	}
+	return claims.SessionID
+}
+
+// A disabled session store must likewise refuse logout instead of silently
+// reporting success while the row stays active.
+func TestLogoutWithDisabledStoreFailsClosed(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	cookie := ts.adminSessionCookie(t)
+
+	if err := ts.Store.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	req.AddCookie(cookie)
+	recorder := httptest.NewRecorder()
+	ts.Handler.AuthLogoutHandler(recorder, req)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected 503 with disabled session store, got %d", recorder.Code)
+	}
+	if setCookie := recorder.Header().Get("Set-Cookie"); setCookie != "" {
+		t.Fatalf("failed logout must not clear the cookie, got Set-Cookie %q", setCookie)
 	}
 }

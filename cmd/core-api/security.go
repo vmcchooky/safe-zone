@@ -15,6 +15,7 @@ const (
 	generatedAdminPasswordBytes = 16
 	generatedAdminAPIKeyBytes   = 24
 	minAdminPasswordLength      = 12
+	maxAdminPasswordBytes       = 72 // bcrypt hashes at most 72 input bytes
 	minAdminAPIKeyLength        = 24
 	localAdminSecretsDir        = "tmp"
 	localAdminSecretsFile       = "tmp/local_admin_secrets.txt" // #nosec G101 -- file path only, not an embedded credential.
@@ -107,6 +108,13 @@ func loadRuntimeSecurity() (runtimeSecurity, error) {
 				"secrets_file": localAdminSecretsFile,
 			})
 		}
+	}
+
+	// bcrypt silently truncates (or rejects) inputs beyond 72 bytes, so the
+	// byte limit is validated for every profile before hashing. len() counts
+	// bytes, not runes, matching the bcrypt contract.
+	if len(adminPassword) > maxAdminPasswordBytes {
+		return runtimeSecurity{}, fmt.Errorf("SAFE_ZONE_ADMIN_PASSWORD must be at most %d bytes for bcrypt hashing (got %d bytes)", maxAdminPasswordBytes, len(adminPassword))
 	}
 
 	// Hash the admin password exactly once at startup. Login requests only

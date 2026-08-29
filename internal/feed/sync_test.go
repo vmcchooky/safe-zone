@@ -2,10 +2,10 @@ package feed
 
 import (
 	"bytes"
-	"io"
 	"compress/gzip"
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
