@@ -154,6 +154,16 @@ textarea:focus {
   transform: none;
 }
 
+/* The base rules strip the outline for pointer use; keyboard users still get
+ * a visible indicator (same ring language as the input focus styles). */
+.button-primary:focus-visible,
+.button-secondary:focus-visible,
+.button-danger:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.25);
+  border-color: rgba(14, 165, 233, 0.5);
+}
+
 .eyebrow {
   color: var(--accent-2);
   text-transform: uppercase;

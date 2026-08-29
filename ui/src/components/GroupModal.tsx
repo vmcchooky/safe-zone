@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { X, Shield, ShieldAlert, Globe, Gamepad2, Dices, MessageSquare, Megaphone } from 'lucide-react';
@@ -35,9 +35,60 @@ type GroupFormValues = z.infer<typeof groupSchema>;
 export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) {
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const openerRef = useRef<HTMLElement | null>(null);
+  // Mirrored synchronously during render: the autoFocus focusin fires inside
+  // the commit phase, before any effect has a chance to detach listeners, so
+  // the tracker must consult the render-time open state, not effect timing.
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  // Focus lifecycle: remember the last element focused OUTSIDE the dialog
+  // while it is closed, so focus can be handed back to it (the opener) when
+  // the dialog closes (WCAG 2.4.3 — focus must not drop to <body> behind a
+  // now-closed overlay). Sampling activeElement on open alone would capture
+  // the autoFocus target inside the panel instead of the real opener.
+  useEffect(() => {
+    const trackFocus = (e: FocusEvent) => {
+      if (isOpenRef.current) return; // dialog open: never record
+      const target = e.target as HTMLElement | null;
+      if (!target || target === document.body) return;
+      openerRef.current = target;
+    };
+    document.addEventListener('focusin', trackFocus);
+    return () => document.removeEventListener('focusin', trackFocus);
+  }, []);
+
+  // While open, freeze the opener snapshot; on close (or unmount) restore.
+  useEffect(() => {
+    if (!isOpen) return;
+    const opener = openerRef.current;
+    return () => {
+      openerRef.current = null;
+      if (opener && document.contains(opener)) opener.focus();
+    };
+  }, [isOpen]);
+
+  // Single close entry point: hands focus back to the opener on a microtask
+  // right after React's synchronous flush for the discrete close event. The
+  // effect cleanup above stays as a fallback, but it alone proved flaky when
+  // React's commit timing interleaved with the exiting panel's unmount.
+  const closeAndRestoreFocus = useCallback(() => {
+    const opener = openerRef.current;
+    onClose();
+    if (opener && document.contains(opener)) {
+      queueMicrotask(() => opener.focus());
+    }
+  }, [onClose]);
 
   const { register, handleSubmit, control, reset, formState: { errors } } = useForm<GroupFormValues>({
     resolver: zodResolver(groupSchema),
+    // RHF's built-in focus-on-error resolves ASYNC (after the zod resolver's
+    // promise) and races the modal close: it refocuses the invalid field even
+    // after the user has dismissed the dialog, stealing focus back from the
+    // restored opener. We focus the first error field ourselves, only while
+    // the dialog is still open.
+    shouldFocusError: false,
     defaultValues: {
       name: '',
       description: '',
@@ -46,6 +97,12 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
       strictMalware: false,
     }
   });
+
+  const handleInvalid = (errs: FieldErrors<GroupFormValues>) => {
+    if (!isOpenRef.current) return;
+    if (errs.name) document.getElementById('group-name-input')?.focus();
+    else if (errs.description) document.getElementById('group-description-input')?.focus();
+  };
 
   useEffect(() => {
     if (isOpen) {
@@ -70,6 +127,45 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
     }
   }, [isOpen, group, reset]);
 
+  // Modal keyboard contract: Escape dismisses, and Tab cycles inside the
+  // dialog instead of reaching the inert background page.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeAndRestoreFocus();
+        return;
+      }
+      if (e.key !== 'Tab' || !panelRef.current) return;
+      // Only truly focusable children may receive the wrapped Tab: disabled
+      // controls and display/visibility-hidden (or zero-size) elements would
+      // otherwise capture focus invisibly and break the cycle.
+      const focusables = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+        ),
+      ).filter((el) => {
+        if (el.hasAttribute('disabled') || el.getAttribute('aria-disabled') === 'true') return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden') return false;
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, closeAndRestoreFocus]);
+
   const onSubmit = async (data: GroupFormValues) => {
     setSaving(true);
     setApiError(null);
@@ -90,7 +186,9 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
       }
 
       onSave();
-      onClose();
+      // Same close path as Cancel/Escape/backdrop: hands focus back to the
+      // opener instead of dropping it at <body> when the panel unmounts.
+      closeAndRestoreFocus();
     } catch (err: any) {
       setApiError(err.message || 'Failed to save group');
     } finally {
@@ -106,21 +204,27 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            aria-hidden="true"
             className="fixed inset-0 bg-slate-900/20 backdrop-blur-sm z-[100]"
-            onClick={onClose}
+            onClick={closeAndRestoreFocus}
           />
           <motion.div
+            ref={panelRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="group-modal-title"
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-white/80 backdrop-blur-xl border border-white rounded-3xl shadow-2xl z-[101] overflow-hidden flex flex-col max-h-[90vh]"
           >
             <div className="flex items-center justify-between p-6 border-b border-black/5 bg-white/50">
-              <h2 className="text-xl font-semibold text-slate-900">
+              <h2 id="group-modal-title" className="text-xl font-semibold text-slate-900">
                 {group ? 'Edit Policy Group' : 'New Policy Group'}
               </h2>
               <button
-                onClick={onClose}
+                onClick={closeAndRestoreFocus}
+                aria-label="Close"
                 className="p-2 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
               >
                 <X size={20} />
@@ -128,34 +232,41 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
             </div>
 
             <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-              <form id="group-form" onSubmit={handleSubmit(onSubmit)} className="space-y-8">
+              <form id="group-form" onSubmit={handleSubmit(onSubmit, handleInvalid)} className="space-y-8">
                 
                 {apiError && (
-                  <div className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+                  <div role="alert" className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
                     {apiError}
                   </div>
                 )}
 
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Group Name</label>
+                    <label htmlFor="group-name-input" className="block text-sm font-semibold text-slate-700 mb-1">Group Name</label>
                     <input
+                      id="group-name-input"
                       type="text"
+                      autoFocus
+                      aria-invalid={errors.name ? true : undefined}
+                      aria-describedby={errors.name ? 'group-name-error' : undefined}
                       {...register('name')}
                       placeholder="e.g., Office WiFi, Guest Network"
                       className={`w-full bg-white border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all ${errors.name ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500' : 'border-slate-200 focus:ring-sky-500/20 focus:border-sky-500'}`}
                     />
-                    {errors.name && <p className="text-rose-500 text-xs mt-1">{errors.name.message}</p>}
+                    {errors.name && <p id="group-name-error" className="text-rose-500 text-xs mt-1">{errors.name.message}</p>}
                   </div>
                   <div>
-                    <label className="block text-sm font-semibold text-slate-700 mb-1">Description</label>
+                    <label htmlFor="group-description-input" className="block text-sm font-semibold text-slate-700 mb-1">Description</label>
                     <input
+                      id="group-description-input"
                       type="text"
+                      aria-invalid={errors.description ? true : undefined}
+                      aria-describedby={errors.description ? 'group-description-error' : undefined}
                       {...register('description')}
                       placeholder="Optional details about this group"
                       className={`w-full bg-white border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all ${errors.description ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500' : 'border-slate-200 focus:ring-sky-500/20 focus:border-sky-500'}`}
                     />
-                    {errors.description && <p className="text-rose-500 text-xs mt-1">{errors.description.message}</p>}
+                    {errors.description && <p id="group-description-error" className="text-rose-500 text-xs mt-1">{errors.description.message}</p>}
                   </div>
                 </div>
 
@@ -173,6 +284,7 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                             <button
                               type="button"
                               key={cat.id}
+                              aria-pressed={active}
                               onClick={() => {
                                 const newValue = active
                                   ? field.value.filter((c: string) => c !== cat.id)
@@ -218,6 +330,7 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                       render={({ field }) => (
                         <button
                           type="button"
+                          aria-pressed={field.value}
                           onClick={() => field.onChange(!field.value)}
                           className={`flex items-center justify-between w-full p-4 rounded-2xl border transition-all ${
                             field.value ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-slate-200 hover:border-slate-300'
@@ -249,6 +362,7 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                       render={({ field }) => (
                         <button
                           type="button"
+                          aria-pressed={field.value}
                           onClick={() => field.onChange(!field.value)}
                           className={`flex items-center justify-between w-full p-4 rounded-2xl border transition-all ${
                             field.value ? 'bg-rose-50/50 border-rose-200' : 'bg-white border-slate-200 hover:border-slate-300'
@@ -281,7 +395,7 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
             <div className="p-6 border-t border-black/5 bg-white/50 flex justify-end gap-3">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={closeAndRestoreFocus}
                 className="px-5 py-2.5 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors"
               >
                 Cancel

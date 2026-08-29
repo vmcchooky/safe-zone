@@ -889,7 +889,10 @@ export function TelemetryPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-black/5 text-slate-800">
-                <AnimatePresence mode="wait">
+                {/* mode="sync" is required here: the tbody renders several
+                    motion.tr children at once (skeleton set, data rows), which
+                    mode="wait" forbids — it logs a console warning per render. */}
+                <AnimatePresence mode="sync">
                   {loadingRecent ? (
                     Array.from({ length: 5 }).map((_, i) => (
                       <motion.tr 

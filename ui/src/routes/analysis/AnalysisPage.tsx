@@ -346,9 +346,11 @@ export function AnalysisPage() {
 
         <AnimatePresence>
           {error && (
-            <motion.div 
-              initial={{ opacity: 0, y: -10 }} 
-              animate={{ opacity: 1, y: 0 }} 
+            <motion.div
+              role="alert"
+              data-testid="analyze-error"
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               className="mt-6 relative z-10 text-rose-700 text-sm font-medium bg-rose-50 p-4 rounded-xl border border-rose-200 flex items-center gap-3 shadow-sm"
             >
