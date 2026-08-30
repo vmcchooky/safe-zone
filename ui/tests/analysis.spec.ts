@@ -26,6 +26,52 @@ test('keeps the plain login card elevated without Moody Dog', async ({ page }) =
   expect(Math.abs(layout.offsetFromCentered)).toBeLessThanOrEqual(1);
 });
 
+test('uses the local Moody Dog only while the bounded loader is active', async ({ page }) => {
+  await page.goto('/app/');
+  await expect(page.getByTestId('login-card')).toBeVisible();
+  await expect(page.getByTestId('moody-dog-loader')).toHaveCount(0);
+
+  let releaseLogin!: () => void;
+  const loginGate = new Promise<void>((resolve) => {
+    releaseLogin = resolve;
+  });
+  let markRouteDone!: () => void;
+  const routeDone = new Promise<void>((resolve) => {
+    markRouteDone = resolve;
+  });
+  await page.route('**/v1/auth/login', async (route) => {
+    try {
+      await loginGate;
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ error: 'test login release' }),
+      });
+    } finally {
+      markRouteDone();
+    }
+  });
+
+  await page.getByPlaceholder('Enter your username').fill('admin');
+  await page.getByPlaceholder('Enter your access secret').fill('loader_test_password');
+  await page.getByRole('button', { name: /Authenticate/i }).click();
+
+  const dog = page.getByTestId('moody-dog-loader');
+  try {
+    await expect(dog).toBeVisible();
+    const source = await dog.evaluate((element) => String(
+      (element as HTMLElement & { src?: unknown }).src ?? element.getAttribute('src') ?? '',
+    ));
+    expect(source).toMatch(/moody-dog(?:-[^/]+)?\.lottie$/);
+    expect(source).not.toContain('lottie.host');
+    await expect(page.locator('.app-loader-backdrop.is-visible')).toBeVisible();
+  } finally {
+    releaseLogin();
+    await routeDone;
+    await page.unroute('**/v1/auth/login');
+  }
+});
+
 test('has title and can perform an analysis', async ({ page }) => {
   await page.goto('/app/analysis');
   await expect(page).toHaveTitle(/Safe Zone/i);
