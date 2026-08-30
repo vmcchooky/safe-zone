@@ -33,11 +33,12 @@ func (h *Handler) AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	username := strings.TrimSpace(strings.ToLower(req.Username))
+	adminUsername := h.adminUsername()
 
 	role := ""
 	var sessionID string
 	switch username {
-	case auth.RoleAdmin:
+	case adminUsername:
 		if h.adminPasswordMatches(req.Password) {
 			role = auth.RoleAdmin
 		} else {
@@ -120,6 +121,18 @@ func (h *Handler) AuthLoginHandler(w http.ResponseWriter, r *http.Request) {
 	})
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// adminUsername returns the configured administrator login name. The guest
+// name is reserved for the optional read-only account and must never become
+// an administrator alias; an empty or conflicting value falls back safely to
+// the historical default.
+func (h *Handler) adminUsername() string {
+	username := strings.TrimSpace(strings.ToLower(h.Config.AdminUsername))
+	if username == "" || username == auth.RoleGuest {
+		return auth.RoleAdmin
+	}
+	return username
 }
 
 // adminPasswordMatches compares the presented password against the bcrypt

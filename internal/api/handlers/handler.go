@@ -11,6 +11,9 @@ type Config struct {
 	DeploymentTier      string
 	RateLimitingEnabled bool
 	SessionSecret       []byte
+	// AdminUsername is the login name for the administrator account. An empty
+	// value keeps the backwards-compatible default of "admin".
+	AdminUsername string
 	// AdminPasswordHash is the bcrypt hash loaded once at startup; login
 	// compares against it instead of any plaintext secret.
 	AdminPasswordHash string

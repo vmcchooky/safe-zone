@@ -30,11 +30,13 @@ Set at minimum:
 - `SAFE_ZONE_BLOCK_PAGE_IP` set to the public IPv4 that serves the block page
 - `SAFE_ZONE_ADMIN_PASSWORD` or `SAFE_ZONE_ADMIN_PASSWORD_FILE`
 - `SAFE_ZONE_ADMIN_API_KEY` or `SAFE_ZONE_ADMIN_API_KEY_FILE`
+- `SAFE_ZONE_ADMIN_USERNAME` (optional; defaults to `admin`)
 
 Recommended file-based secret layout:
 
 ```env
 SAFE_ZONE_ENV=production
+SAFE_ZONE_ADMIN_USERNAME=admin
 SAFE_ZONE_ADMIN_PASSWORD_FILE=./ops/secrets/admin_password
 SAFE_ZONE_ADMIN_API_KEY_FILE=./ops/secrets/admin_api_key
 SAFE_ZONE_GEMINI_API_KEY_FILE=./ops/secrets/gemini_api_key

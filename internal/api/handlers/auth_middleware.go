@@ -26,7 +26,7 @@ func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {
 			expectedHash := sha256.Sum256([]byte(h.Config.AdminAPIKey))
 
 			if subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1 {
-				identity := authIdentity{Username: auth.RoleAdmin, Role: auth.RoleAdmin, AuthMethod: "bearer"}
+				identity := authIdentity{Username: h.adminUsername(), Role: auth.RoleAdmin, AuthMethod: "bearer"}
 				next(w, r.WithContext(withAuthIdentity(r.Context(), identity)))
 				return
 			}

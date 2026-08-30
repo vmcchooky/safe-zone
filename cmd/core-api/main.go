@@ -12,6 +12,7 @@ import (
 	"safe-zone/internal/api/handlers"
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/api/server"
+	"safe-zone/internal/auth"
 	"safe-zone/internal/config"
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
@@ -72,6 +73,7 @@ func main() {
 		DeploymentTier:      config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 		RateLimitingEnabled: config.Bool("SAFE_ZONE_RATELIMIT_ENABLED", true),
 		SessionSecret:       security.sessionSecret,
+		AdminUsername:       config.String("SAFE_ZONE_ADMIN_USERNAME", auth.RoleAdmin),
 		AdminPasswordHash:   security.adminPasswordHash,
 		AdminAPIKey:         security.adminAPIKey,
 		PublicHost:          config.String("SAFE_ZONE_PUBLIC_HOST", ""),
