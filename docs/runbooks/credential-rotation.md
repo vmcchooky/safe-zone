@@ -15,6 +15,9 @@ Rotate admin and third-party credentials without guessing which components need 
 - `SAFE_ZONE_ALERT_SLACK_WEBHOOK_URL`
 - `SAFE_ZONE_ALERT_EMAIL_PASSWORD`
 
+The administrator login name is configured separately with
+`SAFE_ZONE_ADMIN_USERNAME` and defaults to `admin`.
+
 ## Recommended storage
 
 Use `*_FILE` entries that point into `./ops/secrets`, for example:
@@ -45,6 +48,21 @@ For admin/API/AI/alert secrets:
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.production.yml restart core-api dns-resolver
 ```
+
+To change the administrator login name, edit `.env` and recreate `core-api`
+so Compose loads the new environment value:
+
+```env
+SAFE_ZONE_ADMIN_USERNAME=henry
+```
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production-edge up -d --no-deps --force-recreate core-api
+```
+
+The username is normalized to lowercase. The reserved username `guest` cannot
+be used for the administrator account. Existing admin sessions are not valid
+for the new login identity after the restart; sign in again.
 
 The admin password is bcrypt-hashed once at core-api startup and never
 stored in plaintext by the service. It must be 12-72 **bytes** long (the

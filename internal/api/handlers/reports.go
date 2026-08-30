@@ -121,7 +121,7 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	reviewer := "admin"
+	reviewer := h.adminUsername()
 	if identity, ok := authIdentityFromRequest(r); ok && strings.TrimSpace(identity.Username) != "" {
 		reviewer = identity.Username
 	}

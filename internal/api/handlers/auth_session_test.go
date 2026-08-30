@@ -71,6 +71,64 @@ func TestAdminLoginCreatesActiveSession(t *testing.T) {
 	}
 }
 
+func TestAdminLoginUsesConfiguredUsername(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	ts.Handler.Config.AdminUsername = " Henry "
+
+	resp, err := ts.Client.Post(ts.Server.URL+"/v1/auth/login", "application/json",
+		strings.NewReader(`{"username":"henry","password":"adminpass1234"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200 for configured admin username, got %d", resp.StatusCode)
+	}
+
+	var sessionCookie *http.Cookie
+	for _, cookie := range resp.Cookies() {
+		if cookie.Name == "admin_session" {
+			sessionCookie = cookie
+			break
+		}
+	}
+	if sessionCookie == nil {
+		t.Fatal("expected admin_session cookie")
+	}
+
+	adminReq, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/auth/login", strings.NewReader(`{"username":"admin","password":"adminpass1234"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	adminReq.Header.Set("Content-Type", "application/json")
+	adminResp, err := ts.Client.Do(adminReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer adminResp.Body.Close()
+	if adminResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected legacy admin username to be rejected after configuration, got %d", adminResp.StatusCode)
+	}
+
+	sessionReq, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/v1/auth/session", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionReq.AddCookie(sessionCookie)
+	sessionResp, err := ts.Client.Do(sessionReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sessionResp.Body.Close()
+	body, err := io.ReadAll(sessionResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sessionResp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"username":"henry"`) {
+		t.Fatalf("expected session identity henry, got status=%d body=%s", sessionResp.StatusCode, body)
+	}
+}
+
 // Wrong credentials must fail uniformly without issuing a cookie.
 func TestAdminLoginRejectsWrongCredentials(t *testing.T) {
 	ts := newHandlerTestServer(t)

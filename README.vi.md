@@ -163,6 +163,8 @@ Khi cấu hình `SAFE_ZONE_ENV=production`, `core-api` sẽ dừng khởi độn
 - `SAFE_ZONE_ADMIN_PASSWORD` thiếu hoặc yếu
 - `SAFE_ZONE_ADMIN_API_KEY` thiếu hoặc yếu
 
+Tên đăng nhập quản trị lấy từ `SAFE_ZONE_ADMIN_USERNAME` (mặc định là `admin`); có thể đổi mà không cần sửa code, sau đó recreate `core-api` để Compose nạp giá trị mới.
+
 Ở chế độ cục bộ, các khóa thiếu sẽ tự động sinh giá trị tạm thời để thuận tiện phát triển.
 
 ## Tiến trình Agent (Agent Workflow)

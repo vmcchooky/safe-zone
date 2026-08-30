@@ -124,7 +124,7 @@ func (h *Handler) ReviewFalsePositiveHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	reviewer := "admin"
+	reviewer := h.adminUsername()
 	if identity, ok := authIdentityFromRequest(r); ok && strings.TrimSpace(identity.Username) != "" {
 		reviewer = identity.Username
 	}
