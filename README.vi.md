@@ -49,6 +49,7 @@ Cấu hình mặc định:
 - `dns-resolver` lắng nghe tại cổng `:8081`
 - Redis mặc định tắt trừ khi biến `SAFE_ZONE_REDIS_ADDR` được thiết lập
 - Dashboard chính: <http://localhost:8080/app/>
+- Đường dẫn `/` sẽ tự động chuyển hướng về dashboard chính
 - Đường dẫn `/dashboard` sẽ tự động chuyển hướng về dashboard chính
 
 Bật Redis cục bộ tùy chọn:
@@ -61,7 +62,7 @@ $env:SAFE_ZONE_REDIS_ADDR = "localhost:6379"
 Các endpoint hữu ích:
 
 ```bash
-curl "http://localhost:8080/"
+curl "http://localhost:8080/v1/status"
 curl "http://localhost:8080/metrics"
 curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
 curl "http://localhost:8081/"
@@ -95,7 +96,7 @@ Daemon tùy chọn có thể chạy bằng `go run ./cmd/feed-syncd --once` ho�
 SAFE_ZONE_AGENT_FEED_PRESET=production-free
 ```
 
-Cấu hình này tự động mở rộng sang dữ liệu URLhaus CSV mới nhất và OpenPhish community feed. `core-api` cung cấp thông tin độ tươi dữ liệu, cảnh báo dữ liệu cũ, và metadata phiên bản feed trên endpoint `/` và `/metrics` khi Redis hoạt động.
+Cấu hình này tự động mở rộng sang dữ liệu URLhaus CSV mới nhất và OpenPhish community feed. `core-api` cung cấp thông tin độ tươi dữ liệu, cảnh báo dữ liệu cũ, và metadata phiên bản feed trên endpoint `/v1/status` và `/metrics` khi Redis hoạt động.
 
 Để mở rộng tập quét cho môi trường Việt Nam, sử dụng:
 `SAFE_ZONE_AGENT_FEED_PRESET=production-vn`. Cấu hình này bổ sung PhishDestroy Primary Active và Phishing.Database Active vào tập toàn cầu. Đây là các tập dữ liệu toàn cầu được lựa chọn làm baseline mở rộng cho Việt Nam, không phải dữ liệu riêng biệt của Việt Nam. Các danh sách chặn quảng cáo/tracker thông thường được loại trừ chủ đích vì mọi kết quả khớp feed đe dọa đều xử lý ở mức độc hại (`MALICIOUS`). Chi tiết xem tại `docs/research/security/threat-intelligence-sources.md`.

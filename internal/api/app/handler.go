@@ -12,6 +12,27 @@ const (
 	legacyDashboardPath = "/dashboard"
 )
 
+// RedirectPublicRoot sends browser requests for the service root to the
+// primary React UI. The API status document remains available at /v1/status.
+func RedirectPublicRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	target := MountPath + "/"
+	if r.URL.RawQuery != "" {
+		target += "?" + r.URL.RawQuery
+	}
+	// #nosec G710 -- target always starts with the fixed relative /app/ path; the query cannot change its origin.
+	http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+}
+
 // RedirectRoot canonicalizes the mount root so relative asset resolution stays stable.
 func RedirectRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != MountPath {

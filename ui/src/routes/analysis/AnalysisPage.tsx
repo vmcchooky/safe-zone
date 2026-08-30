@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { 
   Activity, ShieldCheck, ShieldBan, Ban,
   Search, Globe, ChevronRight, Zap, Target, AlertTriangle, Fingerprint, Loader2, X, CheckCircle2, Info
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useLocation } from 'react-router-dom';
 import { InfoTooltip } from '../../components/InfoTooltip';
 
 export interface Evidence {
@@ -79,7 +80,19 @@ interface ToastMessage {
   type: 'success' | 'error' | 'info' | 'allow' | 'block';
 }
 
+function resetShellScrollPosition() {
+  const shellMain = document.querySelector<HTMLElement>('.shell-main');
+  if (shellMain) {
+    shellMain.scrollTop = 0;
+  } else {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }
+}
+
 export function AnalysisPage() {
+  const location = useLocation();
+  const reviewDomain = new URLSearchParams(location.search).get('domain')?.trim() ?? '';
+  const domainInputRef = useRef<HTMLInputElement>(null);
   const [domain, setDomain] = useState('');
   const [urlContext, setUrlContext] = useState('');
   // lastEventId keeps the opaque correlation ID of the most recent
@@ -116,6 +129,28 @@ export function AnalysisPage() {
   useEffect(() => {
     fetchRecentAnalyses();
   }, []);
+
+  useLayoutEffect(() => {
+    if (!reviewDomain) return;
+
+    setDomain((currentDomain) => currentDomain === reviewDomain ? currentDomain : reviewDomain);
+    setUrlContext('');
+    setLastEventId('');
+    setResult(null);
+    setRawData(null);
+    setShowRawData(false);
+    setError('');
+
+    domainInputRef.current?.focus({ preventScroll: true });
+    resetShellScrollPosition();
+
+    const settleFrame = window.requestAnimationFrame(() => {
+      domainInputRef.current?.focus({ preventScroll: true });
+      resetShellScrollPosition();
+    });
+
+    return () => window.cancelAnimationFrame(settleFrame);
+  }, [reviewDomain]);
 
   const handleAnalyze = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -250,6 +285,7 @@ export function AnalysisPage() {
           <div className="flex-1 relative">
             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-400" size={22} />
             <input 
+              ref={domainInputRef}
               type="text" 
               value={domain}
               onChange={(e) => {
