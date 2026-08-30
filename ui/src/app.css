@@ -21,16 +21,34 @@
 }
 
 .app-loader {
+  position: relative;
   display: grid;
   place-items: center;
   width: min(390px, calc(100vw - 48px));
   aspect-ratio: 1;
 }
 
+.app-loader::before {
+  content: "";
+  position: absolute;
+  inset: 22%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(224, 242, 254, 0.95), rgba(186, 230, 253, 0.72) 48%, rgba(248, 250, 252, 0.5) 72%);
+  box-shadow: 0 20px 50px rgba(14, 165, 233, 0.15);
+}
+
 .app-loader dotlottie-wc {
   display: block;
   width: 100% !important;
   height: 100% !important;
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loader dotlottie-wc {
+    display: none;
+  }
 }
 
 .auth-screen {

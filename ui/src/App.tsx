@@ -37,9 +37,26 @@ export const globalLoader = {
   }
 };
 
+function usePrefersReducedMotion() {
+  const [reducedMotion, setReducedMotion] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ));
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const handleChange = () => setReducedMotion(mediaQuery.matches);
+    handleChange();
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
+  }, []);
+
+  return reducedMotion;
+}
+
 export function ScreenLoader({ forceVisible = false }: { forceVisible?: boolean }) {
   const [visible, setVisible] = useState(loaderCount > 0);
   const isVisible = forceVisible || visible;
+  const reducedMotion = usePrefersReducedMotion();
   
   useEffect(() => {
     const l = (v: boolean) => setVisible(v);
@@ -47,16 +64,18 @@ export function ScreenLoader({ forceVisible = false }: { forceVisible?: boolean 
     return () => { listeners = listeners.filter(x => x !== l); };
   }, []);
 
+  if (!isVisible) return null;
+
   return (
-		<div className={`app-loader-backdrop${isVisible ? ' is-visible' : ''}`} aria-hidden={!isVisible}>
-			<div className="app-loader" role={isVisible ? 'status' : undefined} aria-label="Loading Safe Zone">
-				{React.createElement('dotlottie-wc', {
-					src: moodyDogLoader,
-					style: { width: 390, height: 390 },
-					autoplay: true,
-					loop: true,
-				})}
-			</div>
+    <div className="app-loader-backdrop is-visible" role="status" aria-label="Loading Safe Zone">
+      <div className="app-loader" aria-hidden="true">
+        {!reducedMotion && React.createElement('dotlottie-wc', {
+          'data-testid': 'moody-dog-loader',
+          src: moodyDogLoader,
+          autoplay: true,
+          loop: true,
+        })}
+      </div>
     </div>
   );
 }

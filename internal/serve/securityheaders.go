@@ -2,7 +2,10 @@ package serve
 
 import "net/http"
 
-const contentSecurityPolicy = "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'"
+// DotLottie uses a locally generated Blob worker and compiles the bundled WASM
+// renderer. The policy allows only that same-origin asset flow; it does not
+// grant remote scripts, inline scripts, or unsafe eval.
+const contentSecurityPolicy = "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self'; form-action 'self'; frame-ancestors 'none'; img-src 'self' data:; object-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'"
 
 // SecurityHeaders applies a baseline set of browser security headers to every response.
 func SecurityHeaders(next http.Handler) http.Handler {

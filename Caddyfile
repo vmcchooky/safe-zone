@@ -1,17 +1,9 @@
-(common_security_headers) {
-	header {
-		X-Frame-Options "DENY"
-		Content-Security-Policy "default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' https://fonts.gstatic.com data:; form-action 'self'; frame-ancestors 'none'; img-src 'self' data: https:; object-src 'none'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com"
-		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
-		Referrer-Policy "no-referrer"
-		X-Content-Type-Options "nosniff"
-	}
-}
-
 {$SAFE_ZONE_PUBLIC_HOST:localhost} {
 	encode zstd gzip
 
-	import common_security_headers
+	# core-api owns the canonical browser security headers. Keeping these at one
+	# layer avoids duplicate CSP policies and lets the local DotLottie WASM
+	# renderer use the explicitly-scoped worker permission it needs.
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
 
 	@doh path /dns-query
@@ -21,8 +13,6 @@
 }
 
 http:// {
-	import common_security_headers
-
 	route {
 		@assets path /assets/*
 		reverse_proxy @assets core-api:8080
