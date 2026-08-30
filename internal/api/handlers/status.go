@@ -82,6 +82,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		OSINT:          osintStatus,
 		Endpoints: []string{
 			"/",
+			"/app/",
 			"/v1/status",
 			"/healthz",
 			"/readyz",

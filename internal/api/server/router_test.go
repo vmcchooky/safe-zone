@@ -68,6 +68,23 @@ func TestNewRouterMountsReactAppAtAppPrefix(t *testing.T) {
 	}
 }
 
+func TestNewRouterRedirectsPublicRootToReactApp(t *testing.T) {
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected root redirect 307, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/app/" {
+		t.Fatalf("unexpected root redirect location %q", got)
+	}
+}
+
 func TestNewRouterRedirectsLegacyDashboardToReactApp(t *testing.T) {
 	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},

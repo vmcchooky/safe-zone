@@ -74,6 +74,34 @@ func TestNewHandlerReturnsNotFoundForMissingStaticAssets(t *testing.T) {
 	}
 }
 
+func TestRedirectPublicRootToApp(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/?domain=example.com", nil)
+	rec := httptest.NewRecorder()
+
+	RedirectPublicRoot(rec, req)
+
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("expected 307, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/app/?domain=example.com" {
+		t.Fatalf("unexpected redirect location %q", got)
+	}
+}
+
+func TestRedirectPublicRootRejectsNonGet(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	rec := httptest.NewRecorder()
+
+	RedirectPublicRoot(rec, req)
+
+	if rec.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Allow"); got != "GET, HEAD" {
+		t.Fatalf("unexpected Allow header %q", got)
+	}
+}
+
 func TestRedirectRoot(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/app", nil)
 	rec := httptest.NewRecorder()

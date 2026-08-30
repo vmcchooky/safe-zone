@@ -15,7 +15,11 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux := http.NewServeMux()
 
 	// System & Health
-	mux.HandleFunc("/", h.StatusHandler)
+	rootHandler := h.StatusHandler
+	if appFS != nil {
+		rootHandler = apiapp.RedirectPublicRoot
+	}
+	mux.HandleFunc("/", rootHandler)
 	mux.HandleFunc("/v1/status", h.StatusHandler)
 	mux.HandleFunc("/healthz", handlers.HealthHandler("core-api"))
 	mux.HandleFunc("/readyz", handlers.HealthHandler("core-api"))

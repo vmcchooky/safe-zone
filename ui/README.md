@@ -7,6 +7,7 @@ because it is a Node.js/React workspace.
 ## UI routing policy
 
 - Primary UI: `/app/*`
+- `/` redirects to `/app/`
 - `/dashboard` redirects to `/app/`
 
 The React UI is the sole operator interface. The redirect keeps existing

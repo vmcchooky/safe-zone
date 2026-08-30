@@ -47,6 +47,7 @@ Defaults:
 - `dns-resolver` listens on `:8081`
 - Redis is disabled unless `SAFE_ZONE_REDIS_ADDR` is set
 - Primary dashboard: <http://localhost:8080/app/>
+- `/` redirects to the primary dashboard
 - `/dashboard` redirects to the primary dashboard
 
 `/app/*` is the production UI path. Existing `/dashboard` bookmarks redirect
@@ -62,7 +63,7 @@ $env:SAFE_ZONE_REDIS_ADDR = "localhost:6379"
 Useful endpoints:
 
 ```bash
-curl "http://localhost:8080/"
+curl "http://localhost:8080/v1/status"
 curl "http://localhost:8080/metrics"
 curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
 curl "http://localhost:8081/"
@@ -96,7 +97,7 @@ For the first-class free production preset, set:
 SAFE_ZONE_AGENT_FEED_PRESET=production-free
 ```
 
-That preset currently expands to URLhaus recent CSV plus the OpenPhish community feed. `core-api` exposes feed freshness, stale warnings, parser-drift warnings, and feed revision metadata on `/` and `/metrics` when Redis is enabled.
+That preset currently expands to URLhaus recent CSV plus the OpenPhish community feed. `core-api` exposes feed freshness, stale warnings, parser-drift warnings, and feed revision metadata on `/v1/status` and `/metrics` when Redis is enabled.
 
 For a broader phishing/scam set suited to Vietnamese deployments, use
 `SAFE_ZONE_AGENT_FEED_PRESET=production-vn`. It adds PhishDestroy Primary
@@ -173,7 +174,7 @@ to periodic SQLite reconciliation when a node misses an event.
 
 Operator visibility:
 
-- `GET /` exposes `analysis_config_reload` with the loaded revision, last reload source, channel, and runtime subscriber/reconciler state.
+- `GET /v1/status` exposes `analysis_config_reload` with the loaded revision, last reload source, channel, and runtime subscriber/reconciler state.
 - `GET /metrics` includes the same `analysis_config_reload` snapshot for lightweight debugging.
 - Structured logs now show publish success/failure, duplicate or self-loop ignores, subscriber retries, Pub/Sub applies, and reconciliation self-heals.
 

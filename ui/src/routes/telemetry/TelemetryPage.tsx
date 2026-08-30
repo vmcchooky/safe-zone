@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   memo,
   useMemo,
   useState,
@@ -503,6 +504,7 @@ export function TelemetryPage() {
   const [page, setPage] = useState(1);
 
   const [debouncedDomain, setDebouncedDomain] = useState('');
+  const paginationScrollTopRef = useRef<number | null>(null);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedDomain(domain.trim()), 250);
@@ -528,6 +530,36 @@ export function TelemetryPage() {
   const entries = recentRes?.items || [];
   const refreshing = refreshingStats || refreshingRecent;
   const loadingRecent = !recentRes && !recentErr;
+
+  const changePage = useCallback((delta: number) => {
+    const shellMain = document.querySelector<HTMLElement>('.shell-main');
+    paginationScrollTopRef.current = shellMain?.scrollTop ?? window.scrollY;
+    setPage((value) => Math.max(1, value + delta));
+  }, []);
+
+  useLayoutEffect(() => {
+    const preservedScrollTop = paginationScrollTopRef.current;
+    if (preservedScrollTop === null) return;
+
+    const restoreScrollPosition = () => {
+      const shellMain = document.querySelector<HTMLElement>('.shell-main');
+      if (shellMain) {
+        shellMain.scrollTop = preservedScrollTop;
+      } else {
+        window.scrollTo({ top: preservedScrollTop, behavior: 'auto' });
+      }
+    };
+
+    restoreScrollPosition();
+    const restoreFrame = window.requestAnimationFrame(() => {
+      restoreScrollPosition();
+      if (!refreshingRecent) {
+        paginationScrollTopRef.current = null;
+      }
+    });
+
+    return () => window.cancelAnimationFrame(restoreFrame);
+  }, [page, recentRes, refreshingRecent]);
   
   const errorObj = statsErr || recentErr;
   const error = errorObj ? messageFromError(errorObj) : null;
@@ -1003,24 +1035,16 @@ export function TelemetryPage() {
               <button
                 className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
-                disabled={page === 1}
-                onClick={() => {
-                  setTimeout(() => {
-                    setPage((value) => Math.max(1, value - 1));
-                  }, 100);
-                }}
+                disabled={page === 1 || refreshingRecent}
+                onClick={() => changePage(-1)}
               >
                 Previous
               </button>
               <button
                 className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
-                disabled={entries.length < PAGE_SIZE}
-                onClick={() => {
-                  setTimeout(() => {
-                    setPage((value) => value + 1);
-                  }, 100);
-                }}
+                disabled={entries.length < PAGE_SIZE || refreshingRecent}
+                onClick={() => changePage(1)}
               >
                 Next
               </button>
