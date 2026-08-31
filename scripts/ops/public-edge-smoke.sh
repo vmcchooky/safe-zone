@@ -20,7 +20,9 @@ echo "Checking public analyze API..."
 curl -fsS "https://${host}/v1/analyze?domain=example.com" >/dev/null
 
 echo "Checking public DoH endpoint..."
-printf '\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00\x07example\x03com\x00\x00\x01\x00\x01' |
+# POSIX `sh` does not require printf's non-portable `\xNN` escape.  Keep the
+# probe runnable on the minimal `/bin/sh` implementations used by VPS images.
+printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' |
   curl -fsS \
     -H "accept: application/dns-message" \
     -H "content-type: application/dns-message" \
