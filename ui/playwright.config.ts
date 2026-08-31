@@ -82,6 +82,12 @@ export default defineConfig({
         // unchanged — this only configures the throwaway test server.
         SAFE_ZONE_RATELIMIT_AUTH_RPM: '240',
         SAFE_ZONE_RATELIMIT_AUTH_BURST: '60',
+        // The telemetry pagination regression test seeds 26 analyses in a
+        // burst; the production analyze limiter (10 RPM / burst 5) would
+        // 429 the seed. Production rate limiting is unchanged — this only
+        // configures the throwaway test server.
+        SAFE_ZONE_RATELIMIT_ANALYZE_RPM: '600',
+        SAFE_ZONE_RATELIMIT_ANALYZE_BURST: '120',
       },
       url: `${apiOrigin}/healthz`,
       reuseExistingServer: false,
