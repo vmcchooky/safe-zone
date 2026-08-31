@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { setWasmUrl } from '@lottiefiles/dotlottie-wc';
 
@@ -8,34 +8,38 @@ import { AppShell } from './components/AppShell';
 import { LoginScreen } from './components/LoginScreen';
 import { useAuth } from './auth/AuthProvider';
 import { useAntiInspect } from './hooks/useAntiInspect';
+import { subscribeLoader, globalLoader } from './lib/globalLoader';
+import {
+  AnalysisPage,
+  EndpointsPage,
+  OverridesPage,
+  SettingsPage,
+  SystemPage,
+  TelemetryPage,
+  UserReportsPage,
+} from './routes/lazyRoutes';
 import './app.css';
 
 // Keep the renderer local so Moody Dog works when the browser cannot reach a CDN.
 setWasmUrl(dotLottieWasm);
 
-// --- Global Loader Engine ---
-let loaderCount = 0;
-let hideTimeout: any = null;
-let listeners: ((visible: boolean) => void)[] = [];
+export { globalLoader };
 
-export const globalLoader = {
-  show: () => {
-    if (hideTimeout) clearTimeout(hideTimeout);
-    loaderCount++;
-    if (loaderCount === 1) {
-      listeners.forEach(l => l(true));
-    }
-  },
-  hide: () => {
-    loaderCount = Math.max(0, loaderCount - 1);
-    if (loaderCount === 0) {
-      // 50ms debounce prevents blinking when handing off between Auth and Route loading
-      hideTimeout = setTimeout(() => {
-        listeners.forEach(l => l(false));
-      }, 50);
-    }
-  }
-};
+// How long the player gets to load the local asset and render its first
+// frame before the loader gives up on the animation and falls back to a
+// static, motionless placeholder.
+const ANIMATION_READY_TIMEOUT_MS = 4000;
+
+// Minimal structural view of the DotLottie instance the <dotlottie-wc>
+// custom element exposes. The element dispatches no DOM events itself;
+// these are the real event names from the installed dotlottie-web core.
+interface DotLottieInstance {
+  isLoaded?: boolean;
+  addEventListener(type: 'load' | 'loadError', listener: () => void): void;
+  removeEventListener(type: 'load' | 'loadError', listener: () => void): void;
+}
+
+type LoaderAnimState = 'animation-pending' | 'animation-ready' | 'fallback';
 
 function usePrefersReducedMotion() {
   const [reducedMotion, setReducedMotion] = useState(() => (
@@ -54,144 +58,129 @@ function usePrefersReducedMotion() {
 }
 
 export function ScreenLoader({ forceVisible = false }: { forceVisible?: boolean }) {
-  const [visible, setVisible] = useState(loaderCount > 0);
+  const [visible, setVisible] = useState(false);
   const isVisible = forceVisible || visible;
   const reducedMotion = usePrefersReducedMotion();
-  
+  const [animState, setAnimState] = useState<LoaderAnimState>(() => (
+    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? 'fallback'
+      : 'animation-pending'
+  ));
+  const animationRef = useRef<(HTMLElement & { dotLottie?: DotLottieInstance | null }) | null>(null);
+
+  useEffect(() => subscribeLoader(setVisible), []);
+
+  // Each new overlay appearance retries the animation from scratch, and a
+  // fresh appearance after a previous fallback gets a new chance to animate.
+  useLayoutEffect(() => {
+    if (!isVisible) return;
+    setAnimState(reducedMotion ? 'fallback' : 'animation-pending');
+  }, [isVisible, reducedMotion]);
+
+  // Drive the fallback exclusively from real player signals:
+  // - 'load'  → the local .lottie asset parsed and the player is rendering.
+  // - 'loadError' → asset fetch/parse or player failure.
+  // - bounded timeout → player never became ready.
+  // With prefers-reduced-motion the animation is never mounted at all.
   useEffect(() => {
-    const l = (v: boolean) => setVisible(v);
-    listeners.push(l);
-    return () => { listeners = listeners.filter(x => x !== l); };
-  }, []);
+    if (!isVisible || reducedMotion || animState !== 'animation-pending') return;
+
+    let cancelled = false;
+    let attached: DotLottieInstance | null = null;
+    let retryFrames = 0;
+
+    const markReady = () => {
+      if (!cancelled) setAnimState('animation-ready');
+    };
+    const markFallback = () => {
+      if (!cancelled) setAnimState('fallback');
+    };
+
+    const tryAttach = () => {
+      const instance = animationRef.current?.dotLottie ?? null;
+      if (!instance || attached === instance) return Boolean(attached);
+      attached = instance;
+      instance.addEventListener('load', markReady);
+      instance.addEventListener('loadError', markFallback);
+      if (instance.isLoaded) markReady();
+      return true;
+    };
+
+    if (!tryAttach()) {
+      // The instance is created synchronously on connect; retry across a
+      // few frames only to absorb custom-element upgrade timing.
+      const retryAttach = () => {
+        if (cancelled || tryAttach()) return;
+        retryFrames += 1;
+        if (retryFrames < 20) requestAnimationFrame(retryAttach);
+      };
+      requestAnimationFrame(retryAttach);
+    }
+
+    const timeoutId = setTimeout(markFallback, ANIMATION_READY_TIMEOUT_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+      if (attached) {
+        attached.removeEventListener('load', markReady);
+        attached.removeEventListener('loadError', markFallback);
+      }
+    };
+  }, [isVisible, reducedMotion, animState]);
 
   if (!isVisible) return null;
 
   return (
     <div className="app-loader-backdrop is-visible" role="status" aria-label="Loading Safe Zone">
-      <div className="app-loader" aria-hidden="true">
-        {!reducedMotion && React.createElement('dotlottie-wc', {
+      <div className={`app-loader is-${animState}`} aria-hidden="true">
+        {!reducedMotion && animState !== 'fallback' && React.createElement('dotlottie-wc', {
+          ref: animationRef,
           'data-testid': 'moody-dog-loader',
           src: moodyDogLoader,
           autoplay: true,
           loop: true,
         })}
+        {animState === 'fallback' && (
+          <div className="app-loader-fallback" data-testid="moody-dog-fallback">
+            <svg viewBox="0 0 64 64" className="app-loader-fallback-paw" aria-hidden="true">
+              <ellipse cx="32" cy="41" rx="13" ry="10" />
+              <ellipse cx="15" cy="26" rx="5.5" ry="7.5" transform="rotate(-22 15 26)" />
+              <ellipse cx="26.5" cy="18" rx="5.5" ry="7.5" transform="rotate(-7 26.5 18)" />
+              <ellipse cx="37.5" cy="18" rx="5.5" ry="7.5" transform="rotate(7 37.5 18)" />
+              <ellipse cx="49" cy="26" rx="5.5" ry="7.5" transform="rotate(22 49 26)" />
+            </svg>
+          </div>
+        )}
       </div>
     </div>
   );
 }
-
-// --- Custom Async Loader (Bypasses React Suspense to allow immediate URL updates) ---
-function lazyWithLoader<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
-  let CachedComponent: T | null = null;
-  let pending: Promise<T> | null = null;
-
-  const load = () => {
-    if (CachedComponent) return Promise.resolve(CachedComponent);
-    if (!pending) {
-      pending = factory()
-        .then((moduleExports) => {
-          CachedComponent = moduleExports.default;
-          return moduleExports.default;
-        })
-        .finally(() => {
-          pending = null;
-        });
-    }
-    return pending;
-  };
-
-  return function AsyncWrapper(props: any) {
-    const [Component, setComponent] = useState<T | null>(() => CachedComponent);
-    const [loadError, setLoadError] = useState<unknown>(null);
-
-    useLayoutEffect(() => {
-      if (Component) return; // Already loaded from cache
-
-      let cancelled = false;
-      let loaderFinished = false;
-      globalLoader.show();
-
-      const finishLoader = () => {
-        if (!loaderFinished) {
-          loaderFinished = true;
-          globalLoader.hide();
-        }
-      };
-
-      void load()
-        .then((LoadedComponent) => {
-          if (!cancelled) setComponent(() => LoadedComponent);
-        })
-        .catch((error) => {
-          if (!cancelled) setLoadError(error);
-        })
-        .finally(finishLoader);
-
-      return () => {
-        cancelled = true;
-        finishLoader();
-      };
-    }, [Component]);
-
-    if (loadError) throw loadError;
-
-    if (!Component) {
-      // Empty container while loading, global loader handles the visual overlay
-      return <div className="min-h-screen" />;
-    }
-
-    return <Component {...props} />;
-  };
-}
-
-const AnalysisPage = lazyWithLoader(() =>
-  import('./routes/analysis/AnalysisPage').then((module) => ({ default: module.AnalysisPage })),
-);
-const SettingsPage = lazyWithLoader(() =>
-  import('./routes/settings/SettingsPage').then((module) => ({ default: module.SettingsPage })),
-);
-const TelemetryPage = lazyWithLoader(() =>
-  import('./routes/telemetry/TelemetryPage').then((module) => ({ default: module.TelemetryPage })),
-);
-const EndpointsPage = lazyWithLoader(() =>
-  import('./routes/EndpointsPage').then((module) => ({ default: module.EndpointsPage })),
-);
-const OverridesPage = lazyWithLoader(() =>
-  import('./routes/OverridesPage').then((module) => ({ default: module.OverridesPage })),
-);
-const UserReportsPage = lazyWithLoader(() =>
-  import('./routes/UserReportsPage').then((module) => ({ default: module.UserReportsPage })),
-);
-const SystemPage = lazyWithLoader(() =>
-  import('./routes/SystemPage').then((module) => ({ default: module.SystemPage })),
-);
 
 function ProtectedRoutes() {
   const { session } = useAuth();
 
   return (
     <AppShell session={session!}>
-      <Suspense fallback={<div className="min-h-screen bg-transparent" />}>
-        <Routes>
-          <Route path="/" element={<Navigate to="/analysis" replace />} />
-          <Route path="/analysis" element={<AnalysisPage />} />
-          <Route path="/telemetry" element={<TelemetryPage />} />
-          <Route path="/endpoints" element={<EndpointsPage />} />
-          <Route path="/overrides" element={<OverridesPage />} />
-          <Route
-            path="/reports"
-            element={session?.can_mutate ? <UserReportsPage /> : <Navigate to="/analysis" replace />}
-          />
-          <Route path="/system" element={<SystemPage />} />
-          <Route
-            path="/settings"
-            element={
-              session?.can_view_settings ? <SettingsPage /> : <Navigate to="/analysis" replace />
-            }
-          />
-          <Route path="*" element={<Navigate to="/analysis" replace />} />
-        </Routes>
-      </Suspense>
+      <Routes>
+        <Route path="/" element={<Navigate to="/analysis" replace />} />
+        <Route path="/analysis" element={<AnalysisPage />} />
+        <Route path="/telemetry" element={<TelemetryPage />} />
+        <Route path="/endpoints" element={<EndpointsPage />} />
+        <Route path="/overrides" element={<OverridesPage />} />
+        <Route
+          path="/reports"
+          element={session?.can_mutate ? <UserReportsPage /> : <Navigate to="/analysis" replace />}
+        />
+        <Route path="/system" element={<SystemPage />} />
+        <Route
+          path="/settings"
+          element={
+            session?.can_view_settings ? <SettingsPage /> : <Navigate to="/analysis" replace />
+          }
+        />
+        <Route path="*" element={<Navigate to="/analysis" replace />} />
+      </Routes>
     </AppShell>
   );
 }
@@ -200,9 +189,21 @@ export function App() {
   useAntiInspect();
   const { loading, session, error } = useAuth();
 
+  // Hold a globalLoader reference for the whole auth phase so the overlay
+  // stays mounted continuously across the login → protected-route handoff:
+  // when `loading` flips to false, this effect's cleanup (a passive effect)
+  // runs after the newly mounted route's layout effect has already taken
+  // over its own loader reference, so the count never drops to zero in
+  // between and the animation never unmounts/remounts mid-handoff.
+  useEffect(() => {
+    if (!loading) return;
+    globalLoader.show();
+    return () => globalLoader.hide();
+  }, [loading]);
+
   return (
     <>
-			<ScreenLoader forceVisible={loading} />
+      <ScreenLoader forceVisible={loading} />
       {(!loading && !session) ? (
         <LoginScreen initialError={error} />
       ) : (
