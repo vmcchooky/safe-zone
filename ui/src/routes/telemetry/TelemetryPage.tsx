@@ -910,7 +910,7 @@ export function TelemetryPage() {
             </div>
           </div>
 
-          <div className="overflow-clip">
+          <div className="overflow-clip min-h-[58rem]">
             <table className="w-full text-left border-collapse min-w-[800px]">
               <thead>
                 <tr className="border-b border-black/5 text-slate-500 text-sm">
@@ -1022,7 +1022,7 @@ export function TelemetryPage() {
             </span>
             <div className="flex gap-3 mr-4">
               <button
-                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
                 disabled={page === 1 || refreshingRecent}
                 onClick={() => changePage(-1)}
@@ -1030,7 +1030,7 @@ export function TelemetryPage() {
                 Previous
               </button>
               <button
-                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-1 active:scale-90 disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
+                className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-2xl font-bold transition-all duration-200 ease-out active:duration-100 hover:-translate-y-0.5 active:translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none shadow-[0_2px_10px_-4px_rgba(0,0,0,0.05)] hover:shadow-[0_6px_14px_-4px_rgba(0,0,0,0.08)]"
                 type="button"
                 disabled={entries.length < PAGE_SIZE || refreshingRecent}
                 onClick={() => changePage(1)}
