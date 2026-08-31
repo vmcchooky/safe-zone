@@ -2,7 +2,14 @@ FROM node:25-alpine AS ui-build
 
 WORKDIR /ui
 COPY ui/package.json ui/package-lock.json ./
-RUN npm ci
+# Registry connections can be reset transiently on shared CI runners.  Keep
+# dependency installation bounded and retry only through npm's network-aware
+# backoff; deterministic lockfile/configuration failures still fail the build.
+RUN npm ci \
+    --fetch-retries=5 \
+    --fetch-retry-factor=2 \
+    --fetch-retry-mintimeout=1000 \
+    --fetch-retry-maxtimeout=60000
 COPY ui/ ./
 RUN npm run check
 
