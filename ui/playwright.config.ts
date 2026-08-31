@@ -76,6 +76,12 @@ export default defineConfig({
         SAFE_ZONE_AGENT_ENABLED: 'false',
         SAFE_ZONE_OSINT_ENABLED: 'false',
         SAFE_ZONE_GEMINI_API_KEY: '',
+        // The E2E suite performs several real logins in sequence from one
+        // client IP; the production auth limiter (8 RPM / burst 3) would
+        // artificially 429 late tests. Production rate limiting is
+        // unchanged — this only configures the throwaway test server.
+        SAFE_ZONE_RATELIMIT_AUTH_RPM: '240',
+        SAFE_ZONE_RATELIMIT_AUTH_BURST: '60',
       },
       url: `${apiOrigin}/healthz`,
       reuseExistingServer: false,

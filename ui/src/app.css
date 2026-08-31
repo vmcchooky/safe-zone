@@ -28,13 +28,33 @@
   aspect-ratio: 1;
 }
 
-.app-loader::before {
-  content: "";
-  position: absolute;
-  inset: 22%;
+/* Loader visual states (no always-on pseudo-element):
+   - .is-animation-pending: animation mounted, waiting for the player's
+     real 'load' signal; nothing painted behind it.
+   - .is-animation-ready: the local Moody Dog is rendering; only the
+     animation is visible, nothing stacked behind it.
+   - .is-fallback: the animation failed or the user prefers reduced
+     motion; a static, motionless placeholder replaces it entirely. */
+.app-loader-fallback {
+  display: grid;
+  place-items: center;
+  width: 72%;
+  aspect-ratio: 1;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 30%, rgba(224, 242, 254, 0.95), rgba(186, 230, 253, 0.72) 48%, rgba(248, 250, 252, 0.5) 72%);
   box-shadow: 0 20px 50px rgba(14, 165, 233, 0.15);
+}
+
+.app-loader-fallback-paw {
+  width: 55%;
+  height: 55%;
+  fill: rgba(14, 165, 233, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loader-fallback {
+    box-shadow: 0 8px 24px rgba(14, 165, 233, 0.1);
+  }
 }
 
 .app-loader dotlottie-wc {
@@ -43,12 +63,6 @@
   height: 100% !important;
   position: relative;
   z-index: 1;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .app-loader dotlottie-wc {
-    display: none;
-  }
 }
 
 .auth-screen {
