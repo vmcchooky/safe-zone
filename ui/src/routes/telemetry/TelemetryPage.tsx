@@ -51,6 +51,10 @@ import { apiFetch, messageFromError } from '../../lib/api';
 import type { TelemetryEntry, TelemetryStats } from '../../lib/types';
 
 const PAGE_SIZE = 12;
+
+// Bounded window (ms) during which the pagination restore keeps pinning the
+// scroll position while animated table rows mount/unmount after a page flip.
+const PAGINATION_SCROLL_SETTLE_MS = 900;
 const CHART_MOTION_DURATION = 1400;
 const CHART_MOTION_EASING = 'ease-out' as const;
 const SPRING_MOTION = { stiffness: 105, damping: 23, mass: 0.72 } as const;
@@ -551,14 +555,24 @@ export function TelemetryPage() {
     };
 
     restoreScrollPosition();
-    const restoreFrame = window.requestAnimationFrame(() => {
-      restoreScrollPosition();
-      if (!refreshingRecent) {
-        paginationScrollTopRef.current = null;
-      }
-    });
 
-    return () => window.cancelAnimationFrame(restoreFrame);
+    // Row exit/enter animations keep mutating the table layout for a few
+    // hundred ms AFTER the fresh page data lands, so the scroll position
+    // must be pinned across a bounded settle window — one rAF restore
+    // fires before the exiting rows are removed and the viewport drifts.
+    let settleFrame = 0;
+    const settleDeadline = performance.now() + PAGINATION_SCROLL_SETTLE_MS;
+    const settle = () => {
+      restoreScrollPosition();
+      if (performance.now() >= settleDeadline) {
+        paginationScrollTopRef.current = null;
+        return;
+      }
+      settleFrame = window.requestAnimationFrame(settle);
+    };
+    settleFrame = window.requestAnimationFrame(settle);
+
+    return () => window.cancelAnimationFrame(settleFrame);
   }, [page, recentRes, refreshingRecent]);
   
   const errorObj = statsErr || recentErr;

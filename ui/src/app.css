@@ -449,6 +449,10 @@
   width: 100%;
   height: 100%;
   overflow-y: auto;
+  /* The pagination restore in TelemetryPage pins the scroll position itself;
+     Chrome's scroll anchoring fights it while animated rows mount/unmount
+     and yanks the viewport away from the pagination bar. */
+  overflow-anchor: none;
   -ms-overflow-style: none;
   scrollbar-width: none;
   padding: 100px 24px 0; /* Top header padding */
