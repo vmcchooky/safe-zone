@@ -25,8 +25,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 // Single source of truth for the intentional minimum loader display time.
 // It is consumed once per loading sequence — never stacked on top of a
-// caller that already waited.
-const MIN_LOADER_DURATION_MS = 1200;
+// caller that already waited. 2.2s keeps the Moody Dog scene transition
+// smooth while the Analysis chunk preloads in parallel.
+const MIN_LOADER_DURATION_MS = 2200;
 
 const minLoaderDelay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 

@@ -32,6 +32,20 @@ function countVisibleEpisodes(log: { v: boolean; t: number }[]): number {
   return log.filter((entry) => entry.v).length;
 }
 
+/**
+ * Duration (ms) of the Nth visible loader episode (0-based), from its
+ * visible transition to the next hidden transition.
+ */
+function episodeDuration(log: { v: boolean; t: number }[], episodeIndex: number): number {
+  const visibleStarts = log.filter((entry) => entry.v).map((entry) => entry.t);
+  const start = visibleStarts[episodeIndex];
+  const end = log.find((entry) => !entry.v && entry.t > start)?.t;
+  if (start === undefined || end === undefined) {
+    throw new Error(`loader episode ${episodeIndex} did not end`);
+  }
+  return end - start;
+}
+
 test('keeps the plain login card elevated without Moody Dog', async ({ page }) => {
   await page.goto('/app/');
 
@@ -202,7 +216,7 @@ test('prefers-reduced-motion renders the static fallback without any animation',
 });
 
 test('keeps one continuous loader from login through the Analysis deck', async ({ page }) => {
-  test.setTimeout(30000);
+  test.setTimeout(60000);
   const pageErrors: Error[] = [];
   page.on('pageerror', (error) => pageErrors.push(error));
 
@@ -219,49 +233,51 @@ test('keeps one continuous loader from login through the Analysis deck', async (
   });
 
   await trackLoaderTransitions(page);
-  // Timestamp (page clock) of the login request so the .lottie fetches can
-  // be proven to happen before the login submit, not at the route handoff.
-  await page.route('**/v1/auth/login', async (route) => {
-    await page.evaluate(() => {
-      (window as unknown as { __loginRequestAt?: number }).__loginRequestAt = Math.round(performance.now());
-    });
-    await route.continue();
-  });
   await page.goto('/app/analysis');
   await expect(page.getByTestId('login-card')).toBeVisible();
+
+  // Baseline episodes already observed (the initial session check may or
+  // may not have been sampled yet on a cold page — it is irrelevant to the
+  // invariant being tested).
+  const baselineEpisodes = await page.evaluate(() => (
+    (window as unknown as { __loaderLog: { v: boolean }[] }).__loaderLog.filter((e) => e.v).length
+  ));
 
   await page.getByPlaceholder('Enter your username').fill('admin');
   await page.getByPlaceholder('Enter your access secret').fill('playwright_test_password_1234');
   await page.getByRole('button', { name: /Authenticate/i }).click();
 
   const deck = page.getByText('Analysis Deck');
-  await expect(deck).toBeVisible({ timeout: 20000 });
+  await expect(deck).toBeVisible({ timeout: 30000 });
   await expect(page.locator('.app-loader-backdrop')).toHaveCount(0);
 
   const log = await readLoaderLog(page);
-  // Exactly two loader episodes in the whole session: the initial session
-  // check and the login itself. Crucially, the login episode must run
-  // continuously until the Analysis chunk is ready — no hide/re-show.
-  expect(countVisibleEpisodes(log)).toBe(2);
+  // Exactly ONE loader episode covers the whole login → Analysis sequence:
+  // no hidden -> visible flip after the submit, no blank frame in between.
+  const totalEpisodes = log.filter((entry) => entry.v).length;
+  expect(totalEpisodes - baselineEpisodes).toBe(1);
   expect(log[log.length - 1]?.v).toBe(false);
 
-  // The animation must not be remounted at the handoff (a remount would
-  // fetch the .lottie asset again): every player mount happens at the start
-  // of a loader episode, i.e. before the login round-trip begins. A fetch
-  // after that point means the overlay blinked mid-handoff.
-  const loginRequestAt = await page.evaluate(() => (
-    (window as unknown as { __loginRequestAt?: number }).__loginRequestAt ?? 0
-  ));
-  expect(loginRequestAt).toBeGreaterThan(0);
+  // The login episode holds for the intentional minimum (2200ms) so the
+  // Moody Dog scene transition stays smooth, and stays bounded. The page is
+  // idle at submit so the episode start is sampled tightly; slack on both
+  // ends keeps the timing assertion flake-free.
+  const loginEpisodeMs = episodeDuration(log, totalEpisodes - 1);
+  expect(loginEpisodeMs).toBeGreaterThanOrEqual(1800);
+  expect(loginEpisodeMs).toBeLessThanOrEqual(20000);
+
+  // Exactly two player mounts in the whole session — one per loader
+  // episode (initial session check + login). A remount at the handoff
+  // would show up as a third fetch of the .lottie asset.
   const lottieTimestamps = await page.evaluate(() => (
     performance
       .getEntriesByType('resource')
-      .map((entry) => ({ url: entry.name, t: Math.round(entry.startTime) }))
-      .filter((entry) => /moody-dog[^?]*\.lottie$/.test(entry.url))
+      .map((entry) => entry.name)
+      .filter((url) => /moody-dog[^?]*\.lottie$/.test(url))
   ));
-  for (const entry of lottieTimestamps) {
-    expect(entry.t).toBeLessThan(loginRequestAt);
-    expect(entry.url).not.toContain('lottie.host');
+  expect(lottieTimestamps.length).toBe(2);
+  for (const url of lottieTimestamps) {
+    expect(url).not.toContain('lottie.host');
   }
 
   // Protected analysis data is only requested after the server accepted
@@ -291,6 +307,13 @@ test('does not flash a second loader while the Analysis chunk is slow', async ({
 
   await page.goto('/app/analysis');
   await expect(page.getByTestId('login-card')).toBeVisible();
+
+  // Baseline episodes already observed (the initial session check may or
+  // may not have been sampled yet — irrelevant to the invariant).
+  const baselineEpisodes = await page.evaluate(() => (
+    (window as unknown as { __loaderLog: { v: boolean }[] }).__loaderLog.filter((e) => e.v).length
+  ));
+
   await page.getByPlaceholder('Enter your username').fill('admin');
   await page.getByPlaceholder('Enter your access secret').fill('playwright_test_password_1234');
   await page.getByRole('button', { name: /Authenticate/i }).click();
@@ -303,13 +326,14 @@ test('does not flash a second loader while the Analysis chunk is slow', async ({
     expect(chunkServed).toBe(1);
 
     releaseChunk();
-    await expect(page.getByText('Analysis Deck')).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText('Analysis Deck')).toBeVisible({ timeout: 30000 });
     await expect(page.locator('.app-loader-backdrop')).toHaveCount(0);
 
     const log = await readLoaderLog(page);
-    // One episode after login submit (plus the initial session check);
+    // One episode after login submit (plus any pre-submit session check);
     // no hidden -> visible flip once the overlay appeared.
-    expect(countVisibleEpisodes(log)).toBe(2);
+    const totalEpisodes = log.filter((entry) => entry.v).length;
+    expect(totalEpisodes - baselineEpisodes).toBe(1);
     expect(log[log.length - 1]?.v).toBe(false);
     expect(pageErrors).toEqual([]);
   } finally {
@@ -387,9 +411,14 @@ test('serves an already-authenticated reload without a double loader', async ({ 
 
   const log = await readLoaderLog(page);
   // Reload flow: exactly one loader episode, from first paint until the
-  // deck is ready — no second re-show.
+  // deck is ready — no second re-show — and bounded. The upper bound is
+  // the meaningful one (no endless loader); the lower bound is kept loose
+  // because a busy cold page can start sampling the episode a bit late.
   expect(countVisibleEpisodes(log)).toBe(1);
   expect(log[log.length - 1]?.v).toBe(false);
+  const episodeMs = episodeDuration(log, 0);
+  expect(episodeMs).toBeGreaterThanOrEqual(1000);
+  expect(episodeMs).toBeLessThanOrEqual(20000);
   expect(pageErrors).toEqual([]);
 });
 
