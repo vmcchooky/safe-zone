@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"math"
 	"strconv"
 	"testing"
@@ -57,12 +58,24 @@ func TestTelemetryWriteSampling(t *testing.T) {
 			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		})
 	}
-	time.Sleep(400 * time.Millisecond)
-	afterSample, err := db.QueryRecent(context.Background(), 5000, 0)
-	if err != nil {
-		t.Fatalf("query recent sampled: %v", err)
+
+	// RecordAnalysis is intentionally non-blocking and the writer drains in a
+	// goroutine. Close performs the production drain path, so the assertion is
+	// about the sampled result rather than how quickly a CI runner schedules
+	// SQLite writes. Re-open the file for a read-only query after the flush.
+	if err := db.Close(); err != nil {
+		t.Fatalf("flush sampled telemetry: %v", err)
 	}
-	written := len(afterSample) - before
+	readDB, err := sql.Open("sqlite", db.dbPath)
+	if err != nil {
+		t.Fatalf("open flushed telemetry db: %v", err)
+	}
+	t.Cleanup(func() { _ = readDB.Close() })
+	var total int
+	if err := readDB.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM analysis_log").Scan(&total); err != nil {
+		t.Fatalf("count flushed sampled telemetry: %v", err)
+	}
+	written := total - before
 	if written < 160 || written > 240 {
 		t.Fatalf("writePercent=10: sampled %d entries, want ~200", written)
 	}
