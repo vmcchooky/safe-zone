@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 
 	"safe-zone/internal/cache"
 	"safe-zone/internal/netguard"
@@ -378,6 +379,12 @@ func TestReadStatusSummaryMarksStale(t *testing.T) {
 	if err := redisCache.SetString(context.Background(), RevisionKey(DefaultThreatFeedKey), "3", 0); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := redisCache.ZAdd(context.Background(), DefaultThreatFeedKey, redis.Z{
+		Score:  float64(time.Now().Add(time.Hour).Unix()),
+		Member: "active.test",
+	}); err != nil {
+		t.Fatal(err)
+	}
 
 	summary := ReadStatusSummary(context.Background(), redisCache, DefaultThreatFeedKey, ProductionFreePreset, []string{source}, 24*time.Hour)
 	if summary.Status != "stale" {
@@ -389,8 +396,57 @@ func TestReadStatusSummaryMarksStale(t *testing.T) {
 	if summary.Revision != 3 {
 		t.Fatalf("expected revision 3, got %d", summary.Revision)
 	}
+	if summary.ActiveEntries != 1 {
+		t.Fatalf("expected one active feed entry, got %d", summary.ActiveEntries)
+	}
 	if len(summary.Sources) != 1 || !summary.Sources[0].Stale {
 		t.Fatalf("expected one stale source, got %#v", summary.Sources)
+	}
+}
+
+func TestReadStatusSummaryDetectsMissingFeedAfterSuccessfulSync(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	redisCache := cache.NewRedis(server.Addr(), "", 0)
+	defer func() {
+		if err := redisCache.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	source := "https://example.test/feed.txt"
+	now := time.Now().UTC().Format(time.RFC3339Nano)
+	status := SourceStatus{
+		Source:        source,
+		SourceID:      "abc123",
+		FeedKey:       DefaultThreatFeedKey,
+		Status:        "ok",
+		LastAttemptAt: now,
+		LastSuccessAt: now,
+	}
+	if err := redisCache.SetJSON(context.Background(), StatusKey(DefaultThreatFeedKey, source), status, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := redisCache.SetString(context.Background(), RevisionKey(DefaultThreatFeedKey), "3", 0); err != nil {
+		t.Fatal(err)
+	}
+
+	summary := ReadStatusSummary(context.Background(), redisCache, DefaultThreatFeedKey, ProductionFreePreset, []string{source}, 24*time.Hour)
+	if summary.Status != "missing" {
+		t.Fatalf("expected missing summary status, got %s", summary.Status)
+	}
+	if !summary.Stale {
+		t.Fatal("expected a missing feed to be marked stale")
+	}
+	if summary.ActiveEntries != 0 {
+		t.Fatalf("expected zero active entries, got %d", summary.ActiveEntries)
+	}
+	if !strings.Contains(summary.Error, "no active entries") {
+		t.Fatalf("expected actionable missing-feed error, got %q", summary.Error)
 	}
 }
 

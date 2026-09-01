@@ -8,6 +8,22 @@ import { InfoTooltip } from '../components/InfoTooltip';
 import { globalLoader } from '../App';
 import { useDialog } from '../components/DialogContext';
 
+function requestOutcome(endpoint: string, status: number) {
+  if (status >= 500) return { label: 'Server error', className: 'bg-red-100 text-red-700' };
+  if (status >= 200 && status < 300) return { label: 'OK', className: 'bg-emerald-100 text-emerald-700' };
+  if (status >= 300 && status < 400) return { label: 'Redirect', className: 'bg-sky-100 text-sky-700' };
+  if (status === 429) return { label: 'Rate limited', className: 'bg-indigo-100 text-indigo-700' };
+  if (status === 401) return { label: 'Auth required', className: 'bg-slate-100 text-slate-700' };
+  if (status === 403) return { label: 'Access denied', className: 'bg-slate-100 text-slate-700' };
+  if (status === 404 && endpoint.includes('/app/assets/:missing')) {
+    return { label: 'Stale UI asset', className: 'bg-amber-100 text-amber-700' };
+  }
+  if (status === 404) return { label: 'Not found', className: 'bg-slate-100 text-slate-700' };
+  if (status === 405) return { label: 'Method rejected', className: 'bg-slate-100 text-slate-700' };
+  if (status >= 400) return { label: 'Client rejected', className: 'bg-amber-100 text-amber-700' };
+  return { label: 'Observed', className: 'bg-slate-100 text-slate-700' };
+}
+
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean, error: any }> {
   constructor(props: any) {
     super(props);
@@ -208,6 +224,8 @@ function SystemPageContent() {
                   </div>
                   {coreStatus?.redis?.status === 'ok' ? (
                     <span className="flex items-center gap-1 text-emerald-600 font-medium text-xs"><CheckCircle2 size={14} /> OK</span>
+                  ) : coreStatus?.redis?.status === 'disabled' ? (
+                    <span className="flex items-center gap-1 text-slate-400 font-medium text-xs"><XCircle size={14} /> Off</span>
                   ) : (
                     <span className="flex items-center gap-1 text-red-500 font-medium text-xs"><XCircle size={14} /> ERR</span>
                   )}
@@ -218,8 +236,12 @@ function SystemPageContent() {
                   </div>
                   {coreStatus?.feed_sync?.status === 'ok' ? (
                     <span className="flex items-center gap-1 text-emerald-600 font-medium text-xs"><CheckCircle2 size={14} /> Synced</span>
+                  ) : coreStatus?.feed_sync?.status === 'disabled' ? (
+                    <span className="flex items-center gap-1 text-slate-400 font-medium text-xs"><XCircle size={14} /> Disabled</span>
+                  ) : coreStatus?.feed_sync?.status === 'missing' || coreStatus?.feed_sync?.status === 'unavailable' ? (
+                    <span className="flex items-center gap-1 text-red-500 font-medium text-xs"><XCircle size={14} /> {coreStatus.feed_sync.status === 'missing' ? 'Missing' : 'Unavailable'}</span>
                   ) : (
-                    <span className="flex items-center gap-1 text-amber-500 font-medium text-xs"><AlertCircle size={14} /> Syncing</span>
+                    <span className="flex items-center gap-1 text-amber-500 font-medium text-xs"><AlertCircle size={14} /> {coreStatus?.feed_sync?.status === 'stale' ? 'Stale' : 'Syncing'}</span>
                   )}
                 </div>
                 <div className="flex justify-between items-center text-sm">
@@ -347,7 +369,7 @@ function SystemPageContent() {
                 <th className="pb-3 font-semibold text-slate-500">REQUESTS</th>
                 <th className="pb-3 font-semibold text-slate-500">AVG LATENCY</th>
                 <th className="pb-3 font-semibold text-slate-500">MAX LATENCY</th>
-                <th className="pb-3 font-semibold text-slate-500 text-right">LAST STATUS</th>
+                <th className="pb-3 font-semibold text-slate-500 text-right">OUTCOME</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -358,6 +380,7 @@ function SystemPageContent() {
               ) : (
                 Object.entries(metricsData.metrics.request_summary).map(([endpoint, metric]) => {
                   const avgLatency = metric.count > 0 ? (metric.total_duration_ms / metric.count).toFixed(2) : '0.00';
+                  const outcome = requestOutcome(endpoint, metric.last_status);
                   return (
                     <tr key={endpoint} className="group hover:bg-slate-50/50 transition-colors">
                       <td className="py-3 pr-4 font-medium text-slate-700">{endpoint}</td>
@@ -365,12 +388,8 @@ function SystemPageContent() {
                       <td className="py-3 px-4 text-slate-600">{avgLatency} ms</td>
                       <td className="py-3 px-4 text-slate-600">{metric.max_duration_ms} ms</td>
                       <td className="py-3 pl-4 text-right">
-                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                          metric.last_status >= 200 && metric.last_status < 300 ? 'bg-emerald-100 text-emerald-700' : 
-                          metric.last_status >= 400 && metric.last_status < 500 ? 'bg-amber-100 text-amber-700' : 
-                          metric.last_status >= 500 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-700'
-                        }`}>
-                          {metric.last_status}
+                        <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${outcome.className}`} title={`HTTP ${metric.last_status}`}>
+                          {metric.last_status} · {outcome.label}
                         </span>
                       </td>
                     </tr>

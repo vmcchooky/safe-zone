@@ -146,6 +146,13 @@ func TestMetricsHandlerRoot(t *testing.T) {
 	if _, ok := metricsPayload["request_summary"].(map[string]any); !ok {
 		t.Fatalf("expected request_summary map, got %#v", metricsPayload["request_summary"])
 	}
+	redisStatus, ok := payload["redis"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected redis status object, got %#v", payload["redis"])
+	}
+	if redisStatus["status"] != "disabled" {
+		t.Fatalf("expected disabled redis status, got %#v", redisStatus["status"])
+	}
 }
 
 func TestVersionHandlerReportsBuildMetadata(t *testing.T) {

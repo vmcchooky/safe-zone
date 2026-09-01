@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="safe-zone-shield" x1="10" y1="8" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#38bdf8"/>
+      <stop offset="1" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#f8fafc"/>
+  <path d="M32 6 52 14v15c0 14-8.4 24.3-20 29C20.4 53.3 12 43 12 29V14L32 6Z" fill="url(#safe-zone-shield)"/>
+  <path d="m22 31 6.5 6.5L43 23" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

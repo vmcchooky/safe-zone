@@ -2,6 +2,27 @@ import React, { useLayoutEffect, useState } from 'react';
 
 import { globalLoader } from './globalLoader';
 
+const staleChunkReloadKey = 'safe-zone:stale-chunk-reload';
+
+function isDynamicImportFailure(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /dynamically imported module|module script|failed to fetch/i.test(message);
+}
+
+function reloadOnceForStaleChunk(error: unknown) {
+  if (typeof window === 'undefined' || !isDynamicImportFailure(error)) return false;
+
+  try {
+    const marker = window.sessionStorage.getItem(staleChunkReloadKey);
+    if (marker === window.location.pathname) return false;
+    window.sessionStorage.setItem(staleChunkReloadKey, window.location.pathname);
+    window.location.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Minimal structural view of the DotLottie instance the <dotlottie-wc>
 // custom element exposes. Event names verified against the installed
 // @lottiefiles/dotlottie-web EventType union ('load' | 'loadError' | ...);
@@ -53,7 +74,16 @@ export function createLazyRoute<T extends React.ComponentType<any>>(
     const [loadError, setLoadError] = useState<unknown>(null);
 
     useLayoutEffect(() => {
-      if (Component || loadError) return;
+      if (Component) {
+        // Clear the marker only when the route that failed has actually
+        // mounted. A different route may preload successfully during auth;
+        // clearing there would turn a persistent failure into a reload loop.
+        if (typeof window !== 'undefined' && window.sessionStorage.getItem(staleChunkReloadKey) === window.location.pathname) {
+          window.sessionStorage.removeItem(staleChunkReloadKey);
+        }
+        return;
+      }
+      if (loadError) return;
 
       // Chunk already prepared (e.g. preloaded while the login loader was
       // running): mount synchronously so the overlay never hides and
@@ -79,7 +109,7 @@ export function createLazyRoute<T extends React.ComponentType<any>>(
           if (!cancelled) setComponent(() => LoadedComponent);
         })
         .catch((error) => {
-          if (!cancelled) setLoadError(error);
+          if (!cancelled && !reloadOnceForStaleChunk(error)) setLoadError(error);
         })
         .finally(finishLoader);
 

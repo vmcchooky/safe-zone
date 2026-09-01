@@ -57,6 +57,9 @@ func TestNewHandlerServesStaticAssets(t *testing.T) {
 	if string(body) != "console.log('app')" {
 		t.Fatalf("unexpected asset body %q", body)
 	}
+	if got := rec.Header().Get("Cache-Control"); got != "public, max-age=31536000, immutable" {
+		t.Fatalf("unexpected asset cache policy %q", got)
+	}
 }
 
 func TestNewHandlerReturnsNotFoundForMissingStaticAssets(t *testing.T) {
@@ -149,5 +152,38 @@ func TestRedirectLegacyDashboardToApp(t *testing.T) {
 		if got := rec.Header().Get("Location"); got != want {
 			t.Fatalf("%s: unexpected redirect location %q, want %q", requestPath, got, want)
 		}
+	}
+}
+
+func TestIndexUsesRevalidationSafeCachePolicy(t *testing.T) {
+	handler := NewHandler(fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},
+	})
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app/analysis", nil))
+
+	if got := rec.Header().Get("Cache-Control"); got != "no-cache, no-store, must-revalidate" {
+		t.Fatalf("unexpected index cache policy %q", got)
+	}
+}
+
+func TestLegacyBackgroundRedirectKeepsVersionQuery(t *testing.T) {
+	rec := httptest.NewRecorder()
+	RedirectLegacyBackground(rec, httptest.NewRequest(http.MethodGet, "/app-background.avif?v=1", nil))
+
+	if rec.Code != http.StatusPermanentRedirect {
+		t.Fatalf("expected 308, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/app/app-background.avif?v=1" {
+		t.Fatalf("unexpected redirect location %q", got)
+	}
+}
+
+func TestRobotsDisallowsOperatorUIIndexing(t *testing.T) {
+	rec := httptest.NewRecorder()
+	Robots(rec, httptest.NewRequest(http.MethodGet, "/robots.txt", nil))
+
+	if rec.Code != http.StatusOK || rec.Body.String() != "User-agent: *\nDisallow: /\n" {
+		t.Fatalf("unexpected robots response: status=%d body=%q", rec.Code, rec.Body.String())
 	}
 }

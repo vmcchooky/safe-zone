@@ -84,6 +84,9 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 		mux.Handle("/assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assetsFS))))
 	}
 	if appFS != nil {
+		mux.HandleFunc("/app-background.avif", apiapp.RedirectLegacyBackground)
+		mux.HandleFunc("/favicon.ico", apiapp.RedirectFavicon)
+		mux.HandleFunc("/robots.txt", apiapp.Robots)
 		mux.HandleFunc(apiapp.MountPath, apiapp.RedirectRoot)
 		mux.Handle(apiapp.MountPath+"/", apiapp.NewHandler(appFS))
 	}

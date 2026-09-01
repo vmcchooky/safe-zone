@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,6 +20,39 @@ var ErrDisabled = errors.New("redis cache disabled")
 
 type Redis struct {
 	client *redis.Client
+}
+
+// RedisRuntimeStats contains the bounded subset of Redis INFO fields used by
+// Safe Zone's JSON status endpoints. The presence flag distinguishes an
+// explicitly unlimited maxmemory value (0) from an INFO response that omitted
+// the field (for example, a restricted or test Redis implementation).
+type RedisRuntimeStats struct {
+	UsedMemoryBytes uint64
+	MaxMemoryBytes  uint64
+	MaxMemoryPolicy string
+	EvictedKeys     uint64
+	HasMaxMemory    bool
+}
+
+// ProtectsNonExpiringKeys reports whether Redis memory configuration protects
+// keys without a TTL, such as the threat-feed ZSET. The second return value is
+// false when INFO did not expose enough policy data to make that determination.
+func (s RedisRuntimeStats) ProtectsNonExpiringKeys() (safe bool, known bool) {
+	if !s.HasMaxMemory {
+		return false, false
+	}
+	if s.MaxMemoryBytes == 0 {
+		return true, true
+	}
+
+	switch strings.ToLower(strings.TrimSpace(s.MaxMemoryPolicy)) {
+	case "noeviction", "volatile-lru", "volatile-lfu", "volatile-random", "volatile-ttl":
+		return true, true
+	case "allkeys-lru", "allkeys-lfu", "allkeys-random":
+		return false, true
+	default:
+		return false, false
+	}
 }
 
 func NewRedis(addr, password string, db int) *Redis {
@@ -56,6 +90,60 @@ func (r *Redis) Ping(ctx context.Context) error {
 	}
 
 	return r.client.Ping(ctx).Err()
+}
+
+// RuntimeStats reads Redis INFO without requiring CONFIG permissions. This is
+// intentionally a single read so status polling remains cheap.
+func (r *Redis) RuntimeStats(ctx context.Context) (RedisRuntimeStats, error) {
+	if !r.Enabled() {
+		return RedisRuntimeStats{}, ErrDisabled
+	}
+
+	info, err := r.client.Info(ctx).Result()
+	if err != nil {
+		return RedisRuntimeStats{}, err
+	}
+	return parseRedisRuntimeStats(info)
+}
+
+func parseRedisRuntimeStats(info string) (RedisRuntimeStats, error) {
+	var stats RedisRuntimeStats
+	for _, rawLine := range strings.Split(info, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		key, value, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		switch strings.TrimSpace(key) {
+		case "used_memory":
+			parsed, err := strconv.ParseUint(value, 10, 64)
+			if err != nil {
+				return RedisRuntimeStats{}, fmt.Errorf("parse Redis INFO used_memory: %w", err)
+			}
+			stats.UsedMemoryBytes = parsed
+		case "maxmemory":
+			parsed, err := strconv.ParseUint(value, 10, 64)
+			if err != nil {
+				return RedisRuntimeStats{}, fmt.Errorf("parse Redis INFO maxmemory: %w", err)
+			}
+			stats.MaxMemoryBytes = parsed
+			stats.HasMaxMemory = true
+		case "maxmemory_policy":
+			stats.MaxMemoryPolicy = value
+		case "evicted_keys":
+			parsed, err := strconv.ParseUint(value, 10, 64)
+			if err != nil {
+				return RedisRuntimeStats{}, fmt.Errorf("parse Redis INFO evicted_keys: %w", err)
+			}
+			stats.EvictedKeys = parsed
+		}
+	}
+	return stats, nil
 }
 
 func (r *Redis) GetJSON(ctx context.Context, key string, target any) (bool, error) {
@@ -315,6 +403,14 @@ func (r *Redis) ZScore(ctx context.Context, key, member string) (float64, error)
 	}
 
 	return r.client.ZScore(ctx, key, member).Result()
+}
+
+func (r *Redis) ZCount(ctx context.Context, key, min, max string) (int64, error) {
+	if !r.Enabled() {
+		return 0, ErrDisabled
+	}
+
+	return r.client.ZCount(ctx, key, min, max).Result()
 }
 
 func (r *Redis) ZRemRangeByScore(ctx context.Context, key string, min, max string) (int64, error) {

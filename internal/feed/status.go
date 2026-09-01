@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,6 +60,7 @@ type StatusSummary struct {
 	FeedKey       string         `json:"feed_key,omitempty"`
 	Status        string         `json:"status"`
 	Error         string         `json:"error,omitempty"`
+	ActiveEntries int64          `json:"active_entries"`
 	Stale         bool           `json:"stale"`
 	ParserDrift   bool           `json:"parser_drift"`
 	Revision      int64          `json:"revision,omitempty"`
@@ -166,6 +168,15 @@ func ReadStatusSummary(ctx context.Context, redisCache *cache.Redis, feedKey str
 		return summary
 	}
 	summary.Revision = revision
+	activeEntries, err := redisCache.ZCount(ctx, feedKey, strconv.FormatInt(time.Now().Unix(), 10), "+inf")
+	if err != nil {
+		summary.Status = "unavailable"
+		summary.Error = err.Error()
+		summary.Sources = buildDefaultSourceStatuses(feedKey, sources, staleAfter)
+		summary.Stale = true
+		return summary
+	}
+	summary.ActiveEntries = activeEntries
 
 	statuses := make([]SourceStatus, 0, len(sources))
 	hasWarning := false
@@ -207,6 +218,10 @@ func ReadStatusSummary(ctx context.Context, redisCache *cache.Redis, feedKey str
 
 	summary.Sources = statuses
 	switch {
+	case summary.ActiveEntries == 0 && (summary.Revision > 0 || summary.LastSuccessAt != ""):
+		summary.Status = "missing"
+		summary.Error = "threat feed has no active entries after a recorded successful sync"
+		summary.Stale = true
 	case summary.Stale:
 		summary.Status = "stale"
 	case hasWarning:

@@ -108,6 +108,13 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	if feedSync["status"] != "disabled" {
 		t.Fatalf("expected disabled feed_sync status, got %#v", feedSync["status"])
 	}
+	redisStatus, ok := payload["redis"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected redis status object, got %#v", payload["redis"])
+	}
+	if redisStatus["status"] != "disabled" {
+		t.Fatalf("expected disabled redis status, got %#v", redisStatus["status"])
+	}
 	metrics, ok := payload["metrics"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected metrics object, got %#v", payload["metrics"])

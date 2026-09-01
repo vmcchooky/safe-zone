@@ -221,9 +221,15 @@ type Policy struct {
 }
 
 type CacheStatus struct {
-	Configured bool   `json:"configured"`
-	Status     string `json:"status"`
-	Error      string `json:"error,omitempty"`
+	Configured         bool   `json:"configured"`
+	Status             string `json:"status"`
+	Error              string `json:"error,omitempty"`
+	UsedMemoryBytes    uint64 `json:"used_memory_bytes,omitempty"`
+	MaxMemoryBytes     uint64 `json:"maxmemory_bytes,omitempty"`
+	MaxMemoryPolicy    string `json:"maxmemory_policy,omitempty"`
+	EvictedKeys        uint64 `json:"evicted_keys"`
+	EvictionPolicySafe *bool  `json:"eviction_policy_safe,omitempty"`
+	ObservabilityError string `json:"observability_error,omitempty"`
 }
 
 type AnalysisConfigReloadStatus struct {
@@ -1118,10 +1124,29 @@ func (s *Service) CacheStatus(ctx context.Context) CacheStatus {
 		}
 	}
 
-	return CacheStatus{
+	status := CacheStatus{
 		Configured: true,
 		Status:     "ok",
 	}
+	var runtimeStats cache.RedisRuntimeStats
+	statsErr := s.withRedis(ctx, func(redisCtx context.Context) error {
+		var err error
+		runtimeStats, err = s.redis.RuntimeStats(redisCtx)
+		return err
+	})
+	if statsErr != nil {
+		status.ObservabilityError = statsErr.Error()
+		return status
+	}
+
+	status.UsedMemoryBytes = runtimeStats.UsedMemoryBytes
+	status.MaxMemoryBytes = runtimeStats.MaxMemoryBytes
+	status.MaxMemoryPolicy = runtimeStats.MaxMemoryPolicy
+	status.EvictedKeys = runtimeStats.EvictedKeys
+	if safe, known := runtimeStats.ProtectsNonExpiringKeys(); known {
+		status.EvictionPolicySafe = &safe
+	}
+	return status
 }
 
 const negativeCacheTTL = 2 * time.Minute

@@ -22,10 +22,25 @@ rules:
     condition: core_api_status.json.redis.configured == true and core_api_status.json.redis.status != "ok" for 5m
     action: investigate Redis health; Safe Zone is fail-open but cache/feed coverage is degraded
 
+  - id: redis-unsafe-eviction-policy
+    severity: critical
+    condition: core_api_status.json.redis.configured == true and core_api_status.json.redis.eviction_policy_safe == false for 5m
+    action: set SAFE_ZONE_REDIS_MAXMEMORY_POLICY=volatile-lru (or noeviction), restart Redis safely, and verify the threat feed remains populated
+
+  - id: redis-memory-pressure
+    severity: warning
+    condition: core_api_metrics.json.redis.maxmemory_bytes > 0 and core_api_metrics.json.redis.used_memory_bytes / core_api_metrics.json.redis.maxmemory_bytes > 0.90 for 10m
+    action: inspect cache churn and feed growth; raise the bounded Redis memory budget or reduce expiring cache pressure before feed sync returns OOM
+
   - id: threat-feed-stale
     severity: critical
-    condition: core_api_status.json.feed_sync.configured == true and core_api_status.json.feed_sync.stale == true for 15m
+    condition: core_api_status.json.feed_sync.configured == true and core_api_status.json.feed_sync.stale == true and core_api_status.json.feed_sync.status != "missing" for 15m
     action: run feed sync, inspect source reachability, and confirm last_success_at moved forward
+
+  - id: threat-feed-missing
+    severity: critical
+    condition: core_api_status.json.feed_sync.configured == true and core_api_status.json.feed_sync.status == "missing" for 2m
+    action: inspect Redis memory/eviction policy, restore or rerun feed sync, and verify active_entries is greater than zero
 
   - id: threat-feed-parser-drift
     severity: warning
