@@ -129,6 +129,7 @@ func (h *Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		"status":                 "ok",
 		"runtime":                runtimeStatus,
 		"metrics":                h.Metrics.Snapshot(),
+		"redis":                  h.Risk.CacheStatus(r.Context()),
 		"feed_sync":              h.FeedStatus(r.Context()),
 		"adblock":                h.Risk.AdblockStatus(),
 		"analysis_config_reload": h.Risk.AnalysisConfigReloadStatus(),

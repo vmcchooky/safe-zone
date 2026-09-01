@@ -71,6 +71,7 @@ func (r *Resolver) MetricsHandler(w http.ResponseWriter, req *http.Request) {
 		"service":                "dns-resolver",
 		"status":                 "ok",
 		"metrics":                r.Metrics.Snapshot(),
+		"redis":                  r.Risk.CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
 		"ml":                     r.Risk.MLStatus(),
 		"upstream_doh": map[string]any{

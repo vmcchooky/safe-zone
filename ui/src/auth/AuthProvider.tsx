@@ -28,6 +28,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 // caller that already waited. 2.2s keeps the Moody Dog scene transition
 // smooth while the Analysis chunk preloads in parallel.
 const MIN_LOADER_DURATION_MS = 2200;
+const backgroundImageURL = `${import.meta.env.BASE_URL}app-background.avif?v=1`;
 
 const minLoaderDelay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -38,7 +39,7 @@ const preloadBackgroundImage = () =>
       return;
     }
     const img = new Image();
-    img.src = '/app-background.avif?v=1';
+    img.src = backgroundImageURL;
     img.onload = () => resolve();
     img.onerror = () => resolve();
   });

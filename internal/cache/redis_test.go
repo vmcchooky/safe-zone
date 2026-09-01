@@ -95,3 +95,63 @@ func TestRedisPubSubDisabled(t *testing.T) {
 		t.Fatal("expected nil cleanup func when redis is disabled")
 	}
 }
+
+func TestParseRedisRuntimeStats(t *testing.T) {
+	stats, err := parseRedisRuntimeStats("# Memory\r\nused_memory:12345\r\nmaxmemory:268435456\r\nmaxmemory_policy:volatile-lru\r\n# Stats\r\nevicted_keys:7\r\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.UsedMemoryBytes != 12345 {
+		t.Fatalf("expected used memory 12345, got %d", stats.UsedMemoryBytes)
+	}
+	if stats.MaxMemoryBytes != 268435456 || !stats.HasMaxMemory {
+		t.Fatalf("unexpected maxmemory state: %#v", stats)
+	}
+	if stats.MaxMemoryPolicy != "volatile-lru" {
+		t.Fatalf("expected volatile-lru, got %q", stats.MaxMemoryPolicy)
+	}
+	if stats.EvictedKeys != 7 {
+		t.Fatalf("expected 7 evicted keys, got %d", stats.EvictedKeys)
+	}
+	if safe, known := stats.ProtectsNonExpiringKeys(); !known || !safe {
+		t.Fatalf("expected volatile-lru to protect non-expiring keys, safe=%t known=%t", safe, known)
+	}
+}
+
+func TestRedisRuntimeStatsProtectionPolicy(t *testing.T) {
+	tests := []struct {
+		name  string
+		stats RedisRuntimeStats
+		safe  bool
+		known bool
+	}{
+		{name: "unlimited", stats: RedisRuntimeStats{HasMaxMemory: true}, safe: true, known: true},
+		{name: "volatile lru", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "volatile-lru"}, safe: true, known: true},
+		{name: "volatile lfu", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "volatile-lfu"}, safe: true, known: true},
+		{name: "volatile random", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "volatile-random"}, safe: true, known: true},
+		{name: "volatile ttl", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "volatile-ttl"}, safe: true, known: true},
+		{name: "no eviction", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "noeviction"}, safe: true, known: true},
+		{name: "all keys lru", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "allkeys-lru"}, safe: false, known: true},
+		{name: "all keys lfu", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "allkeys-lfu"}, safe: false, known: true},
+		{name: "all keys random", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1, MaxMemoryPolicy: "allkeys-random"}, safe: false, known: true},
+		{name: "unlimited unsafe policy", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryPolicy: "allkeys-lru"}, safe: true, known: true},
+		{name: "missing maxmemory", stats: RedisRuntimeStats{MaxMemoryPolicy: "volatile-lru"}, safe: false, known: false},
+		{name: "missing policy", stats: RedisRuntimeStats{HasMaxMemory: true, MaxMemoryBytes: 1}, safe: false, known: false},
+		{name: "unknown", stats: RedisRuntimeStats{}, safe: false, known: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			safe, known := tc.stats.ProtectsNonExpiringKeys()
+			if safe != tc.safe || known != tc.known {
+				t.Fatalf("got safe=%t known=%t, want safe=%t known=%t", safe, known, tc.safe, tc.known)
+			}
+		})
+	}
+}
+
+func TestParseRedisRuntimeStatsRejectsInvalidCounters(t *testing.T) {
+	if _, err := parseRedisRuntimeStats("used_memory:not-a-number\n"); err == nil {
+		t.Fatal("expected invalid used_memory to fail")
+	}
+}

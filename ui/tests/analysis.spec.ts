@@ -458,6 +458,38 @@ test('keeps the loader bounded and recoverable for an uncached route', async ({ 
   }
 });
 
+test('reloads once to recover a stale lazy-route chunk after deployment', async ({ page }) => {
+  test.setTimeout(40000);
+  const pageErrors: Error[] = [];
+  page.on('pageerror', (error) => pageErrors.push(error));
+
+  await page.goto('/app/analysis');
+  await page.getByPlaceholder('Enter your username').fill('admin');
+  await page.getByPlaceholder('Enter your access secret').fill('playwright_test_password_1234');
+  await page.getByRole('button', { name: /Authenticate/i }).click();
+  await expect(page.getByText('Analysis Deck')).toBeVisible({ timeout: 20000 });
+
+  let systemChunkRequests = 0;
+  await page.route(/\/src\/routes\/SystemPage\./, async (route) => {
+    systemChunkRequests += 1;
+    if (systemChunkRequests === 1) {
+      await route.abort();
+      return;
+    }
+    await route.continue();
+  });
+
+  try {
+    await page.getByRole('link', { name: 'System' }).click();
+    await expect(page.locator('h1', { hasText: /^System/ })).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('.app-loader-backdrop')).toHaveCount(0);
+    expect(systemChunkRequests).toBeGreaterThanOrEqual(2);
+    expect(pageErrors).toEqual([]);
+  } finally {
+    await page.unroute(/\/src\/routes\/SystemPage\./);
+  }
+});
+
 
 test('has title and can perform an analysis', async ({ page }) => {
   await page.goto('/app/analysis');

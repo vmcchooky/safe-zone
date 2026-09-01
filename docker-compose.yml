@@ -23,7 +23,9 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory ${SAFE_ZONE_REDIS_MAXMEMORY:-256mb} --maxmemory-policy allkeys-lru
+    # Threat-feed/status keys intentionally have no key TTL. Restrict eviction
+    # to expiring cache keys so memory pressure cannot remove security state.
+    command: redis-server --appendonly yes --maxmemory ${SAFE_ZONE_REDIS_MAXMEMORY:-256mb} --maxmemory-policy ${SAFE_ZONE_REDIS_MAXMEMORY_POLICY:-volatile-lru}
     volumes:
       - redis-data:/data
     restart: unless-stopped

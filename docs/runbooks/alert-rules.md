@@ -7,7 +7,9 @@ Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert ru
 - core-api down
 - dns-resolver down
 - Redis unavailable
+- unsafe Redis eviction policy and sustained Redis memory pressure
 - threat-feed stale
+- threat-feed missing after a recorded successful sync
 - parser drift
 - high HTTP 5xx rate
 - upstream DoH failure
@@ -76,11 +78,20 @@ Redis health:
 curl -fsS http://127.0.0.1:8080/ | jq '.redis'
 ```
 
+The shared Redis is safe for the non-expiring threat-feed key when
+`eviction_policy_safe` is `true`. The production baseline uses `volatile-lru`;
+`allkeys-*` is a critical configuration error because it can evict the entire
+feed key under memory pressure.
+
 Threat-feed freshness:
 
 ```sh
 curl -fsS http://127.0.0.1:8080/ | jq '.feed_sync'
 ```
+
+After at least one successful sync, `active_entries` must stay above zero. A
+`status` of `missing` indicates lost or fully expired feed coverage and pages
+the operator independently of ordinary freshness warnings.
 
 Upstream DoH failure count:
 

@@ -97,10 +97,17 @@ export interface CoreStatus {
     configured: boolean;
     status: string;
     error?: string;
+    used_memory_bytes?: number;
+    maxmemory_bytes?: number;
+    maxmemory_policy?: string;
+    evicted_keys?: number;
+    eviction_policy_safe?: boolean;
+    observability_error?: string;
   };
   feed_sync?: {
     status: string;
     total_domains: number;
+    active_entries?: number;
     last_sync: string;
     error?: string;
   };
