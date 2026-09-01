@@ -95,7 +95,7 @@ func RedirectFavicon(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	http.Redirect(w, r, MountPath+"/favicon.svg", http.StatusPermanentRedirect)
+	http.Redirect(w, r, MountPath+"/favicon.ico?v=2", http.StatusPermanentRedirect)
 }
 
 func Robots(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +180,12 @@ func serveFile(fileServer http.Handler, w http.ResponseWriter, r *http.Request, 
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 	} else {
 		w.Header().Set("Cache-Control", "public, max-age=86400")
+	}
+	switch name {
+	case "favicon.ico":
+		w.Header().Set("Content-Type", "image/x-icon")
+	case "favicon-32.png", "apple-touch-icon.png":
+		w.Header().Set("Content-Type", "image/png")
 	}
 	cloned := r.Clone(r.Context())
 	clonedURL := *r.URL

@@ -62,6 +62,41 @@ func TestNewHandlerServesStaticAssets(t *testing.T) {
 	}
 }
 
+func TestNewHandlerServesFaviconAssetsWithMimeAndCacheHeaders(t *testing.T) {
+	handler := NewHandler(fstest.MapFS{
+		"index.html":           &fstest.MapFile{Data: []byte("<html>spa</html>")},
+		"favicon.ico":          &fstest.MapFile{Data: []byte("ico")},
+		"favicon-32.png":       &fstest.MapFile{Data: []byte("png")},
+		"apple-touch-icon.png": &fstest.MapFile{Data: []byte("apple")},
+	})
+
+	tests := []struct {
+		name        string
+		contentType string
+	}{
+		{name: "favicon.ico", contentType: "image/x-icon"},
+		{name: "favicon-32.png", contentType: "image/png"},
+		{name: "apple-touch-icon.png", contentType: "image/png"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app/"+tt.name+"?v=2", nil))
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d", rec.Code)
+			}
+			if got := rec.Header().Get("Content-Type"); got != tt.contentType {
+				t.Fatalf("unexpected content type %q, want %q", got, tt.contentType)
+			}
+			if got := rec.Header().Get("Cache-Control"); got != "public, max-age=86400" {
+				t.Fatalf("unexpected cache policy %q", got)
+			}
+		})
+	}
+}
+
 func TestNewHandlerReturnsNotFoundForMissingStaticAssets(t *testing.T) {
 	handler := NewHandler(fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},
@@ -185,5 +220,17 @@ func TestRobotsDisallowsOperatorUIIndexing(t *testing.T) {
 
 	if rec.Code != http.StatusOK || rec.Body.String() != "User-agent: *\nDisallow: /\n" {
 		t.Fatalf("unexpected robots response: status=%d body=%q", rec.Code, rec.Body.String())
+	}
+}
+
+func TestFaviconRedirectsToBrandedIcon(t *testing.T) {
+	rec := httptest.NewRecorder()
+	RedirectFavicon(rec, httptest.NewRequest(http.MethodGet, "/favicon.ico", nil))
+
+	if rec.Code != http.StatusPermanentRedirect {
+		t.Fatalf("expected 308, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Location"); got != "/app/favicon.ico?v=2" {
+		t.Fatalf("unexpected redirect location %q", got)
 	}
 }
