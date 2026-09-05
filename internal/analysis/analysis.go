@@ -138,7 +138,29 @@ func ClassifyCategory(domain string) string {
 	return "uncategorized"
 }
 
+// Analyze scores a domain using the analyzer's BrandStore. The store may
+// serve from memory but can also reach Redis or SQLite on a cold/expired
+// cache, so this path is only appropriate where backend I/O is acceptable.
 func (a *Analyzer) Analyze(input string) Result {
+	return a.analyzeWithBrands(input, a.trustedBrands())
+}
+
+// localBrandSeed is the built-in brand seed captured once at startup and
+// treated as immutable by the scoring path; nothing in analyzeWithBrands
+// mutates the slice or its brands.
+var localBrandSeed = DefaultTrustedBrands()
+
+// AnalyzeLocal scores a domain without touching any BrandStore: no Redis, no
+// SQLite, no HTTP, no context, no AI/OSINT. Brand spoofing is evaluated
+// against the immutable built-in brand seed only, so operator-managed brands
+// from the store are NOT considered — results may differ from Analyze for
+// custom brands. This is the entry point for zero-backend request paths such
+// as the DNS adblock fast path.
+func (a *Analyzer) AnalyzeLocal(input string) Result {
+	return a.analyzeWithBrands(input, localBrandSeed)
+}
+
+func (a *Analyzer) analyzeWithBrands(input string, brands []Brand) Result {
 	domain, err := NormalizeDomain(input)
 	if err != nil {
 		return Result{
@@ -197,7 +219,6 @@ func (a *Analyzer) Analyze(input string) Result {
 	}
 
 	// 7. Advanced Brand Spoofing Detection
-	brands := a.trustedBrands()
 	if isSpoof, reason, penalty := CheckBrandSpoofingWithBrands(domain, a.config.BrandSpoofingScore, brands); isSpoof {
 		score += penalty
 		reasons = append(reasons, reason)

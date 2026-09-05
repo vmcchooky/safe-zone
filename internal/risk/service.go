@@ -56,6 +56,116 @@ const (
 
 var replaceFileLocks sync.Map
 
+// PolicySemantics controls whether adblock matches are fused with the
+// security verdict (legacy) or reported as a separate content-policy decision
+// (separated). "separated" is the default so an invalid value falls back to
+// it rather than silently re-fusing adblock with MALICIOUS/100.
+type PolicySemantics string
+
+const (
+	PolicySemanticsSeparated PolicySemantics = "separated"
+	PolicySemanticsLegacy    PolicySemantics = "legacy"
+)
+
+// NormalizePolicySemantics maps any value other than "legacy" to the
+// separated default. Unknown values are tolerated instead of failing startup
+// because the flag exists for emergency rollback only; refusing to boot a DNS
+// resolver over it would be worse than falling forward.
+func NormalizePolicySemantics(value string) PolicySemantics {
+	if strings.ToLower(strings.TrimSpace(value)) == string(PolicySemanticsLegacy) {
+		return PolicySemanticsLegacy
+	}
+	return PolicySemanticsSeparated
+}
+
+// PolicyDecision describes why a policy action was chosen, separate from the
+// security verdict in Result. The adblock branch is the first producer; other
+// policy paths may adopt it later.
+type PolicyDecision struct {
+	Action         string `json:"action"`
+	Kind           string `json:"kind,omitempty"`
+	Category       string `json:"category,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+	Source         string `json:"source,omitempty"`
+	AssessmentMode string `json:"assessment_mode,omitempty"`
+	// MatchedRule is the normalized domain of the adblock rule that fired.
+	MatchedRule string `json:"matched_rule,omitempty"`
+	// MatchType is the rule scope: exact or suffix.
+	MatchType string `json:"match_type,omitempty"`
+	// SourceID is the digest of the blocklist source that contributed the
+	// rule ("legacy" for legacy Add callers, "legacy-cache" for pre-v2 cache
+	// reloads).
+	SourceID string `json:"source_id,omitempty"`
+	// ExceptionID is the operator-configured content exception that
+	// suppressed the adblock match. Set only on adblock_exception decisions;
+	// the config reason behind it is never exposed.
+	ExceptionID string `json:"exception_id,omitempty"`
+}
+
+// adblockDecision builds the content-policy decision for an adblock match,
+// enriched with the matched rule's provenance. Category comes from the rule
+// and falls back to "unknown" — merged host lists do not carry per-entry
+// evidence to justify ads vs malware classification.
+func adblockDecision(assessmentMode string, rule *domaintrie.Rule) PolicyDecision {
+	category := domaintrie.DefaultRuleCategory
+	var matchedRule, matchType, sourceID string
+	if rule != nil {
+		if domaintrie.IsValidRuleCategory(rule.Category) {
+			category = rule.Category
+		}
+		matchedRule = rule.Domain
+		matchType = string(rule.Scope)
+		sourceID = rule.SourceID
+	}
+	return PolicyDecision{
+		Action:         "block",
+		Kind:           "content",
+		Category:       category,
+		Reason:         "adblock_match",
+		Source:         "adblock",
+		AssessmentMode: assessmentMode,
+		MatchedRule:    matchedRule,
+		MatchType:      matchType,
+		SourceID:       sourceID,
+	}
+}
+
+const adblockAssessmentLocalDefaultBrands = "lexical_local_default_brands"
+
+// adblockAssessmentFullPipeline marks decisions whose attached security
+// Result ran the full pipeline (threat assessment plus dynamic group
+// enforcement) instead of the local-only lexical path.
+const adblockAssessmentFullPipeline = "full_security_pipeline"
+
+// adblockExceptionDecision builds the content-axis decision for a suppressed
+// adblock match. The action is allow on the content axis only; the overall
+// Policy still comes from the security Result plus dynamic enforcement, so a
+// malicious security verdict keeps the overall policy at block.
+func adblockExceptionDecision(rule *domaintrie.Rule, exceptionID string) PolicyDecision {
+	category := domaintrie.DefaultRuleCategory
+	var matchedRule, matchType, sourceID string
+	if rule != nil {
+		if domaintrie.IsValidRuleCategory(rule.Category) {
+			category = rule.Category
+		}
+		matchedRule = rule.Domain
+		matchType = string(rule.Scope)
+		sourceID = rule.SourceID
+	}
+	return PolicyDecision{
+		Action:         "allow",
+		Kind:           "content",
+		Category:       category,
+		Reason:         "adblock_exception",
+		Source:         "adblock",
+		AssessmentMode: adblockAssessmentFullPipeline,
+		MatchedRule:    matchedRule,
+		MatchType:      matchType,
+		SourceID:       sourceID,
+		ExceptionID:    exceptionID,
+	}
+}
+
 type Options struct {
 	Redis           *cache.Redis
 	RedisTimeout    time.Duration
@@ -121,6 +231,18 @@ type Options struct {
 	// URLMLFeedback configures durable, privacy-safe label correlation. An
 	// empty secret keeps the legacy ephemeral in-memory buffer.
 	URLMLFeedback URLMLFeedbackConfig
+	// PolicySemantics selects between fused adblock/security reporting
+	// (legacy) and the separated content-policy decision (default).
+	PolicySemantics PolicySemantics
+	// AdblockExceptionsFile optionally pins the scoped content-exception
+	// config path. Empty means the env loader decides
+	// (SAFE_ZONE_ADBLOCK_EXCEPTIONS_FILE); empty/unset disables exceptions.
+	AdblockExceptionsFile string
+	// AdblockShadowExactEnabled turns on shadow exact/suffix observation
+	// (PR3B-lite). Startup-only: read once at construction from this option
+	// or SAFE_ZONE_ADBLOCK_SHADOW_EXACT_ENABLED (default false). Observation
+	// never changes enforcement.
+	AdblockShadowExactEnabled bool
 }
 
 type adblockSourceMeta struct {
@@ -192,12 +314,46 @@ type Service struct {
 	// URLMLFeedbackConfig.
 	urlMLFeedback urlFeedbackBackend
 
+	policySemantics PolicySemantics
+
+	// Adblock typed-rule state. adblockMatchMode mirrors
+	// SAFE_ZONE_ADBLOCK_MATCH_MODE (default suffix); adblockSourcePolicies
+	// holds the parsed per-source policies. Both are written during
+	// construction/sync and read by the sync goroutine only.
+	adblockMatchMode      atomic.Value // string (adblockMatchMode)
+	adblockSourcePolicies adblockSourcePolicySet
+
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
 	adblockEnabled    atomic.Bool
 	adblockLastSync   atomic.Value
 	adblockLastSyncOK atomic.Bool
 	adblockSrcCount   atomic.Int32
 	adblockOKCount    atomic.Int32
+
+	// Shadow exact/suffix observation (PR3B-lite). The enable flag is
+	// startup-only; the counters below are observation-only aggregates and
+	// never feed back into enforcement.
+	adblockShadowExactEnabled bool
+	adblockShadowStillBlock   atomic.Uint64
+	adblockShadowWouldAllow   atomic.Uint64
+	adblockShadowPreserved    atomic.Uint64
+	adblockShadowUnavailable  atomic.Uint64
+	adblockShadowExcOverlap   atomic.Uint64
+
+	// Scoped content exceptions (PR3A). The snapshot pointer is published
+	// atomically; reload writers are serialized by adblockExcMu. Request
+	// paths only Load plus RAM lookup.
+	adblockExceptionsFile       string
+	adblockExceptionsPinned     bool
+	adblockExceptions           atomic.Pointer[adblockExceptionSnapshot]
+	adblockExcMu                sync.Mutex
+	adblockExceptionsConfigured atomic.Bool
+	adblockExcLastReload        atomic.Value // time.Time
+	adblockExcLastOK            atomic.Bool
+	adblockExcLastErr           atomic.Value // string (bounded error class)
+	adblockExcReloadSuccesses   atomic.Uint64
+	adblockExcReloadFailures    atomic.Uint64
+	adblockExcMatches           atomic.Uint64
 }
 
 type ClientInfo struct {
@@ -214,9 +370,13 @@ type Analysis struct {
 }
 
 type Policy struct {
-	Domain   string          `json:"domain"`
-	Policy   string          `json:"policy"`
-	Result   analysis.Result `json:"result"`
+	Domain string          `json:"domain"`
+	Policy string          `json:"policy"`
+	Result analysis.Result `json:"result"`
+	// Decision explains the policy action independently of the security
+	// verdict. Nil on paths that have not adopted the separated decision
+	// model yet, and absent from legacy serialized payloads.
+	Decision *PolicyDecision `json:"decision,omitempty"`
 	CacheHit bool            `json:"cache_hit"`
 }
 
@@ -472,8 +632,20 @@ func NewService(options Options) *Service {
 		urlMLOpsBaselineFailed:     options.URLOpsBaselineFailed,
 		urlMLOpsBaselineErrorClass: options.URLOpsBaselineErrorClass,
 		urlMLFeedback:              urlFeedbackBackendImpl,
+		policySemantics:            NormalizePolicySemantics(string(options.PolicySemantics)),
 	}
+	svc.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+	svc.adblockSourcePolicies = parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
 	svc.adblockTrie.Store(domaintrie.NewTrie())
+	svc.adblockShadowExactEnabled = options.AdblockShadowExactEnabled || config.Bool(envAdblockShadowExactEnabled, false)
+	svc.adblockExceptionsFile = strings.TrimSpace(options.AdblockExceptionsFile)
+	if svc.adblockExceptionsFile == "" {
+		svc.adblockExceptionsFile = strings.TrimSpace(config.String(envAdblockExceptionsFile, ""))
+	} else {
+		svc.adblockExceptionsPinned = true
+	}
+	svc.adblockExceptions.Store(newEmptyAdblockExceptionSnapshot())
+	svc.reloadAdblockExceptions()
 	svc.refreshAdblockEnabled()
 	if svc.redis != nil {
 		svc.subscribeReload = svc.redis.Subscribe
@@ -870,15 +1042,20 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 			// 2.5 Check Adblock Trie
 			adTrie := s.adblockTrie.Load()
 			if s.isAdblockEnabled() && adTrie != nil && adTrie.Match(normalized) {
-				result = analysis.Result{
-					Domain:     normalized,
-					Verdict:    analysis.VerdictMalicious,
-					Confidence: 1.0,
-					Score:      100,
-					Reasons:    []string{"adblock"},
-					Category:   "adware",
+				if s.policySemantics == PolicySemanticsLegacy {
+					result = analysis.Result{
+						Domain:     normalized,
+						Verdict:    analysis.VerdictMalicious,
+						Confidence: 1.0,
+						Score:      100,
+						Reasons:    []string{"adblock"},
+						Category:   "adware",
+					}
+					cacheHit = false
 				}
-				cacheHit = false
+				// Separated semantics: an adblock match is content-policy
+				// evidence, not security evidence. The security pipeline below
+				// still runs so the verdict only reflects independent signals.
 			}
 		}
 
@@ -994,28 +1171,84 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		return policyResult
 	}
 
-	// 3.5 Check Adblock Trie
-	adTrie := s.adblockTrie.Load()
-	if s.isAdblockEnabled() && adTrie != nil && adTrie.Match(normalized) {
-		policyResult := Policy{
-			Domain: normalized,
-			Policy: "block",
-			Result: analysis.Result{
-				Domain:     normalized,
-				Verdict:    analysis.VerdictMalicious,
-				Confidence: 1.0,
-				Score:      100,
-				Reasons:    []string{"adblock"},
-				Category:   "adware",
-			},
-			CacheHit: false,
+	// 3.5 Check Adblock Trie. Group/override lookups above may already have
+	// touched the store; only the post-match lexical assessment below is
+	// backend-free. Check enabled and trie presence before MatchRule so a
+	// nil trie never dereferences and the hot path stays lock/allocation/
+	// I/O-free after the match.
+	var adDetail domaintrie.MatchDetail
+	if s.isAdblockEnabled() {
+		if adTrie := s.adblockTrie.Load(); adTrie != nil {
+			adDetail = adTrie.MatchRuleDetail(normalized)
 		}
-		s.recordTelemetry(Analysis{
-			Result:     policyResult.Result,
-			CacheHit:   false,
-			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		}, client)
-		return policyResult
+	}
+	adMatched := adDetail.Matched
+	// 3.6 Scoped content exception (separated mode only). It suppresses
+	// exactly this adblock match — no early return — so the request falls
+	// through to the full security pipeline below. The legacy branch above
+	// runs unchanged before any exception is consulted.
+	var excRule *domaintrie.Rule
+	excID := ""
+	if adMatched {
+		if s.policySemantics == PolicySemanticsLegacy {
+			policyResult := Policy{
+				Domain: normalized,
+				Policy: "block",
+				Result: analysis.Result{
+					Domain:     normalized,
+					Verdict:    analysis.VerdictMalicious,
+					Confidence: 1.0,
+					Score:      100,
+					Reasons:    []string{"adblock"},
+					Category:   "adware",
+				},
+				CacheHit: false,
+			}
+			s.recordTelemetry(Analysis{
+				Result:     policyResult.Result,
+				CacheHit:   false,
+				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			}, client)
+			return policyResult
+		}
+
+		excMatched := false
+		if id, ok := s.matchAdblockException(normalized, &adDetail.Rule); ok {
+			excRule = &adDetail.Rule
+			excID = id
+			excMatched = true
+			s.adblockExcMatches.Add(1)
+		}
+		// 3.7 Shadow exact/suffix observation (PR3B-lite). Records what a
+		// prospective global suffix→exact flip would do to this hit. Pure
+		// observation: it never influences Policy, Result or telemetry.
+		s.observeShadowExact(adDetail, excMatched)
+		if !excMatched {
+			// Separated semantics: after the match above, adblock stays a fast
+			// content-policy block on a strict post-match local-only path — no
+			// s.analyze(), no BrandStore.ListBrands, no Redis, no SQLite, no
+			// HTTP, no AI/OSINT, no enrichment enqueue.
+			// The security Result is scored by the in-process lexical analyzer
+			// against the built-in brand seed only (lexical_local_default_brands);
+			// it is explicitly not a full security assessment. The matched rule's
+			// provenance (normalized domain, scope, source, category) flows into
+			// the Decision so FP triage never has to guess which rule fired.
+			lexicalResult := s.analyzeLexicalLocal(normalized)
+			decision := adblockDecision(adblockAssessmentLocalDefaultBrands, &adDetail.Rule)
+			policyResult := Policy{
+				Domain:   normalized,
+				Policy:   "block",
+				Result:   lexicalResult,
+				Decision: &decision,
+				CacheHit: false,
+			}
+			s.recordTelemetryWithSource(Analysis{
+				Result:     lexicalResult,
+				CacheHit:   false,
+				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			}, client, "adblock")
+			return policyResult
+		}
 	}
 
 	// 4. Get Threat Assessment
@@ -1054,6 +1287,14 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		Policy:   policy,
 		Result:   result,
 		CacheHit: cacheHit,
+	}
+	if excRule != nil {
+		// Content axis only: the exception suppresses the adblock block, so
+		// the decision is allow while the overall policy above still follows
+		// the security Result plus dynamic enforcement. Telemetry below keeps
+		// the real inferred source; the config reason is never exposed.
+		decision := adblockExceptionDecision(excRule, excID)
+		policyResult.Decision = &decision
 	}
 
 	s.recordTelemetry(Analysis{
@@ -1330,7 +1571,9 @@ func (s *Service) refreshAdblockEnabled() {
 	s.adblockEnabled.Store(enabled)
 }
 
-// runAdblockConfigSync periodically refreshes the adblock_enabled flag.
+// runAdblockConfigSync periodically refreshes the adblock_enabled flag and
+// the scoped content-exception snapshot. No extra goroutine is needed for
+// exception reloads.
 func (s *Service) runAdblockConfigSync() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -1340,30 +1583,47 @@ func (s *Service) runAdblockConfigSync() {
 			return
 		case <-ticker.C:
 			s.refreshAdblockEnabled()
+			s.reloadAdblockExceptions()
 		}
 	}
 }
 
 // AdblockStatus holds runtime telemetry for the adblock subsystem.
 type AdblockStatus struct {
-	Enabled      bool   `json:"enabled"`
-	DomainCount  int    `json:"domain_count"`
-	LastSyncAt   string `json:"last_sync_at,omitempty"`
-	LastSyncOK   bool   `json:"last_sync_ok"`
-	SourceCount  int    `json:"source_count"`
-	SuccessCount int    `json:"success_count"`
+	Enabled         bool                     `json:"enabled"`
+	MatchMode       string                   `json:"match_mode"`
+	DomainCount     int                      `json:"domain_count"`
+	ExactRuleCount  int                      `json:"exact_rule_count"`
+	SuffixRuleCount int                      `json:"suffix_rule_count"`
+	LastSyncAt      string                   `json:"last_sync_at,omitempty"`
+	LastSyncOK      bool                     `json:"last_sync_ok"`
+	SourceCount     int                      `json:"source_count"`
+	SuccessCount    int                      `json:"success_count"`
+	Exceptions      AdblockExceptionStatus   `json:"exceptions"`
+	ShadowExact     AdblockShadowExactStatus `json:"shadow_exact"`
 }
 
 // AdblockStatus returns a snapshot of the adblock subsystem state.
 func (s *Service) AdblockStatus() AdblockStatus {
+	matchMode := "suffix"
+	if v := s.adblockMatchMode.Load(); v != nil {
+		if mode, ok := v.(string); ok && mode != "" {
+			matchMode = mode
+		}
+	}
 	status := AdblockStatus{
 		Enabled:      s.isAdblockEnabled(),
+		MatchMode:    matchMode,
 		LastSyncOK:   s.adblockLastSyncOK.Load(),
 		SourceCount:  int(s.adblockSrcCount.Load()),
 		SuccessCount: int(s.adblockOKCount.Load()),
+		Exceptions:   s.AdblockExceptionStatus(),
+		ShadowExact:  s.AdblockShadowExactStatus(),
 	}
 	if t := s.adblockTrie.Load(); t != nil {
 		status.DomainCount = t.Count()
+		status.ExactRuleCount = t.ExactCount()
+		status.SuffixRuleCount = t.SuffixCount()
 	}
 	if v := s.adblockLastSync.Load(); v != nil {
 		if ts, ok := v.(time.Time); ok {
@@ -1496,7 +1756,15 @@ func (s *Service) saveAdblockMeta(metaPath string, meta map[string]adblockSource
 	}
 }
 
-func (s *Service) parseAdblockSource(reader io.Reader, trie *domaintrie.Trie) error {
+// parseAdblockSourceInto decodes one feed stream into the provided staging
+// trie without touching any global destination. It returns the Scanner/I/O
+// error (if any) so callers can decide whether the staging state is committable.
+// The stream itself is never buffered as []Rule/[]byte; only parsed rules
+// accumulate in the staging trie.
+func (s *Service) parseAdblockSourceInto(reader io.Reader, staging *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
+	if staging == nil {
+		return errors.New("adblock staging trie is nil")
+	}
 	scanner := bufio.NewScanner(reader)
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
@@ -1522,14 +1790,123 @@ func (s *Service) parseAdblockSource(reader io.Reader, trie *domaintrie.Trie) er
 		for _, domain := range parts[startIdx:] {
 			domain = strings.ToLower(domain)
 			if domain != "" && domain != "localhost" && domain != "local" && domain != "broadcasthost" {
-				trie.Add(domain)
+				staging.AddRule(domaintrie.Rule{
+					Domain:   domain,
+					Scope:    scope,
+					SourceID: sourceID,
+					Category: category,
+					Action:   domaintrie.RuleActionBlock,
+					Origin:   origin,
+				})
 			}
 		}
 	}
 	return scanner.Err()
 }
 
-func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *domaintrie.Trie) error {
+// parseAdblockSource parses one feed stream with source-level atomicity: the
+// stream is decoded into a staging trie and merged into trie only after the
+// whole source scans without a Scanner/I/O error, so a source that fails
+// partway contributes zero rules. Merging in SAFE_ZONE_ADBLOCK_SOURCES order
+// preserves first-wins per (domain, scope). Remote fetches must not use this
+// helper directly: saveAdblockSourceCache parses into staging and merges only
+// after the cache commit (Close, Sync, replace) succeeds.
+func (s *Service) parseAdblockSource(reader io.Reader, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
+	if trie == nil {
+		return errors.New("adblock destination trie is nil")
+	}
+	staging := domaintrie.NewTrie()
+	if err := s.parseAdblockSourceInto(reader, staging, sourceID, category, scope, origin); err != nil {
+		return err
+	}
+	trie.MergeFrom(staging)
+	return nil
+}
+
+// parseAdblockCache loads the global cache with whole-load atomicity: records
+// decode into a staging trie and merge only when the Scanner reaches EOF
+// without an I/O/token-too-long error. A Scanner error fails the entire load
+// (false, destination untouched) so a partially read cache is never
+// published. Individual malformed v2 records are still skipped by design.
+// Legacy v1 domain-only content is lossy (exact/suffix provenance is dropped
+// on write) and reloads as suffix/unknown/block for degraded-mode continuity,
+// never as a lossless typed restore.
+func (s *Service) parseAdblockCache(reader io.Reader, trie *domaintrie.Trie) bool {
+	if trie == nil {
+		return false
+	}
+	staging := domaintrie.NewTrie()
+	scanner := bufio.NewScanner(reader)
+	buf := make([]byte, 64*1024)
+	scanner.Buffer(buf, 10*1024*1024)
+
+	firstLine := true
+	v2 := false
+	malformed := 0
+	total := 0
+	for scanner.Scan() {
+		line := strings.TrimRight(scanner.Text(), "\r")
+		if firstLine {
+			firstLine = false
+			if strings.HasPrefix(line, domaintrie.CacheV2Header) {
+				v2 = true
+				continue
+			}
+			// Legacy v1 cache: the first line is already a domain.
+		}
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if v2 {
+			total++
+			rule, ok := domaintrie.ParseCacheV2Line(line)
+			if !ok {
+				malformed++
+				continue
+			}
+			staging.AddRule(rule)
+			continue
+		}
+		// Legacy degraded-mode semantics: domains-only cache reloads as
+		// suffix/unknown/block rules from a synthetic provenance label, so a
+		// degraded network sync never silently changes match behavior to the
+		// configured exact default.
+		total++
+		staging.AddRule(domaintrie.Rule{
+			Domain:   strings.TrimSpace(line),
+			Scope:    domaintrie.RuleScopeSuffix,
+			SourceID: domaintrie.CacheV2LegacySourceID,
+			Category: domaintrie.DefaultRuleCategory,
+			Action:   domaintrie.RuleActionBlock,
+			Origin:   domaintrie.OriginLegacyCache,
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		logjson.Warn("error reading adblock cache file", map[string]any{"error": err.Error()})
+		return false
+	}
+	if malformed > 0 {
+		logjson.Warn("skipped malformed adblock cache records", map[string]any{
+			"records":   total,
+			"malformed": malformed,
+		})
+	}
+	if staging.Count() == 0 {
+		return false
+	}
+	trie.MergeFrom(staging)
+	return true
+}
+
+// saveAdblockSourceCache persists one remote source body to its per-source
+// cache file and merges its rules into trie only after parse, Close, Sync and
+// replace all succeed. A cache persistence failure therefore contributes
+// exactly zero rules; the sync loop's fallback to the old cache file then
+// merges only old data, never a mix of uncommitted refresh plus old cache.
+func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
+	if trie == nil {
+		return errors.New("adblock destination trie is nil")
+	}
 	if err := s.ensureAdblockSourceCacheRoot(); err != nil {
 		return err
 	}
@@ -1539,8 +1916,9 @@ func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *
 		return err
 	}
 
+	staging := domaintrie.NewTrie()
 	tee := io.TeeReader(reader, f)
-	parseErr := s.parseAdblockSource(tee, trie)
+	parseErr := s.parseAdblockSourceInto(tee, staging, sourceID, category, scope, origin)
 	closeErr := f.Close()
 	if parseErr != nil {
 		_ = os.Remove(tmpPath)
@@ -1550,15 +1928,26 @@ func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *
 		_ = os.Remove(tmpPath)
 		return closeErr
 	}
-	if err := syncPath(tmpPath); err != nil {
+	if err := commitAdblockSourceCache(tmpPath, finalPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return err
 	}
-	if err := replaceFile(tmpPath, finalPath); err != nil {
-		_ = os.Remove(tmpPath)
-		return err
-	}
+	trie.MergeFrom(staging)
 	return nil
+}
+
+// commitAdblockSourceCache fsyncs the staged per-source cache temp file and
+// publishes it at the final cache path via replaceFile. replaceFile is a
+// remove-then-rename sequence serialized in-process per path, not a
+// crash-atomic rename: a crash between remove and rename can leave the final
+// path momentarily absent. Concurrent readers therefore observe either the
+// old file or an error, never a torn write, since the temp file is fully
+// synced before the swap.
+func commitAdblockSourceCache(tmpPath, finalPath string) error {
+	if err := syncPath(tmpPath); err != nil {
+		return err
+	}
+	return replaceFile(tmpPath, finalPath)
 }
 
 func syncPath(path string) error {
@@ -1571,14 +1960,14 @@ func syncPath(path string) error {
 	return f.Sync()
 }
 
-func (s *Service) loadAdblockSourceCache(source string, trie *domaintrie.Trie) bool {
+func (s *Service) loadAdblockSourceCache(source string, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) bool {
 	f, err := os.Open(s.adblockSourceCachePath(source))
 	if err != nil {
 		return false
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := s.parseAdblockSource(f, trie); err != nil {
+	if err := s.parseAdblockSource(f, trie, sourceID, category, scope, origin); err != nil {
 		logjson.Warn("error reading adblock source cache", map[string]any{"source": source, "error": err.Error()})
 		return false
 	}
@@ -1600,6 +1989,10 @@ func (s *Service) runAdblockSync() {
 			return
 		case <-ticker.C:
 			if s.isAdblockEnabled() {
+				// Re-read mode/source policies so config changes are
+				// picked up without a restart, before rules are rebuilt.
+				s.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+				s.adblockSourcePolicies = parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
 				s.syncAdblockLists()
 			} else {
 				s.adblockTrie.Store(domaintrie.NewTrie())
@@ -1640,6 +2033,8 @@ func (s *Service) syncAdblockLists() {
 	nextMeta := make(map[string]adblockSourceMeta, len(sourceList))
 
 	for _, source := range sourceList {
+		sourceID := canonicalSourceID(source)
+		sourceCategory, sourceScope, sourceOrigin := s.resolveAdblockSourcePolicy(source)
 		func() {
 			if !isRemoteAdblockSource(source) {
 				reader, closeReader, err := feed.OpenSourceWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024)
@@ -1648,7 +2043,7 @@ func (s *Service) syncAdblockLists() {
 					return
 				}
 				defer closeReader()
-				if err := s.parseAdblockSource(reader, newTrie); err != nil {
+				if err := s.parseAdblockSource(reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err != nil {
 					logjson.Warn("error while scanning adblock source", map[string]any{"source": source, "error": err.Error()})
 					return
 				}
@@ -1667,7 +2062,7 @@ func (s *Service) syncAdblockLists() {
 
 			response, err := feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, requestHeaders)
 			if err == nil && response.StatusCode == http.StatusNotModified {
-				if s.loadAdblockSourceCache(source, newTrie) {
+				if s.loadAdblockSourceCache(source, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin) {
 					successCount++
 					cachedCount++
 					nextMeta[source] = meta
@@ -1681,7 +2076,7 @@ func (s *Service) syncAdblockLists() {
 					defer response.Close()
 				}
 				if response.Reader != nil {
-					if err := s.saveAdblockSourceCache(source, response.Reader, newTrie); err == nil {
+					if err := s.saveAdblockSourceCache(source, response.Reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err == nil {
 						successCount++
 						networkCount++
 						nextMeta[source] = adblockSourceMetaFromHeader(response.Header)
@@ -1694,7 +2089,7 @@ func (s *Service) syncAdblockLists() {
 				logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
 			}
 
-			if s.loadAdblockSourceCache(source, newTrie) {
+			if s.loadAdblockSourceCache(source, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin) {
 				successCount++
 				cachedCount++
 				nextMeta[source] = meta
@@ -1703,7 +2098,11 @@ func (s *Service) syncAdblockLists() {
 		}()
 	}
 
-	if successCount > 0 || newTrie.Count() > 0 {
+	// Publish only on at least one fully successful source. A non-zero rule
+	// count alone never counts as success: failed sources contribute zero
+	// rules through staging, and a scanner error must not publish a partial
+	// trie with sources_ok=0.
+	if successCount > 0 {
 		s.adblockTrie.Store(newTrie)
 		s.adblockOKCount.Store(int32(successCount))
 		s.adblockLastSync.Store(time.Now())
@@ -1748,7 +2147,7 @@ func (s *Service) saveAdblockCache(trie *domaintrie.Trie) {
 		logjson.Warn("failed to create adblock cache temp file", map[string]any{"error": err.Error()})
 		return
 	}
-	_, err = trie.WriteTo(f)
+	_, err = trie.WriteToV2(f)
 	if err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmpPath)
@@ -1775,17 +2174,10 @@ func (s *Service) loadAdblockCache(trie *domaintrie.Trie) bool {
 	}
 	defer func() { _ = f.Close() }()
 
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		domain := strings.TrimSpace(scanner.Text())
-		if domain != "" {
-			trie.Add(domain)
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		logjson.Warn("error reading adblock cache file", map[string]any{"error": err.Error()})
-	}
-	return trie.Count() > 0
+	// parseAdblockCache detects the v2 header; a legacy domains-only file
+	// reloads with suffix/unknown/block/legacy-cache semantics so a degraded
+	// network sync can never silently flip match behavior.
+	return s.parseAdblockCache(f, trie)
 }
 
 func (s *Service) syncAIClient() {
@@ -2229,6 +2621,19 @@ func (s *Service) analyzeLexical(domain string) analysis.Result {
 	return analyzer.Analyze(domain)
 }
 
+// analyzeLexicalLocal scores a domain with the local-only lexical path
+// (Analyzer.AnalyzeLocal): it never touches BrandStore.ListBrands, Redis,
+// SQLite, HTTP, AI/OSINT or enrichment, and uses no context. Brand spoofing
+// is evaluated against the built-in brand seed only, not operator-managed
+// brands — an accepted PR1 limitation, surfaced in the decision's
+// assessment_mode.
+func (s *Service) analyzeLexicalLocal(domain string) analysis.Result {
+	s.analyzerMu.RLock()
+	analyzer := s.analyzer
+	s.analyzerMu.RUnlock()
+	return analyzer.AnalyzeLocal(domain)
+}
+
 func analysisConfigRevision(cfg config.AnalysisConfig) string {
 	encoded, _ := json.Marshal(cfg.Clone())
 	sum := sha256.Sum256(encoded)
@@ -2450,8 +2855,25 @@ func (s *Service) bumpBrandRevision(ctx context.Context) {
 // --- Telemetry ---
 
 func (s *Service) recordTelemetry(a Analysis, client ClientInfo) {
+	s.recordTelemetryWithSource(a, client, "")
+}
+
+// recordTelemetryWithSource records telemetry with an explicit source,
+// overriding the Reasons-based inference. Policy paths that do not inject
+// their reason into Result.Reasons (e.g. the separated adblock branch) use
+// this so the telemetry source stays accurate without polluting the security
+// reasons.
+//
+// PR1 limitation: telemetry stores the security result (verdict/score/
+// reasons) and the source label only. The policy action, category and
+// assessment_mode carried by PolicyDecision are not persisted yet; adding
+// columns would be a schema migration, deferred to a later PR.
+func (s *Service) recordTelemetryWithSource(a Analysis, client ClientInfo, source string) {
 	if s.store == nil {
 		return
+	}
+	if source == "" {
+		source = inferSource(a)
 	}
 	s.store.RecordAnalysis(store.TelemetryEntry{
 		Domain:     a.Domain,
@@ -2460,7 +2882,7 @@ func (s *Service) recordTelemetry(a Analysis, client ClientInfo) {
 		Confidence: a.Confidence,
 		Reasons:    a.Reasons,
 		CacheHit:   a.CacheHit,
-		Source:     inferSource(a),
+		Source:     source,
 		AnalyzedAt: a.AnalyzedAt,
 		ClientIP:   client.IP,
 		ClientID:   client.ClientID,
@@ -2585,6 +3007,18 @@ func (s *Service) TelemetryStats(period string) (store.Stats, error) {
 }
 
 // --- Accessors for Agent Engine ---
+
+// AdblockTrieOverride replaces the in-memory adblock trie. Production flows
+// must go through syncAdblockLists; this seam exists so transport-level
+// tests (e.g. the dns-resolver /v1/policy endpoint) can pin trie contents
+// without a network sync. A nil trie is normalized to an empty trie so
+// Policy never observes a nil pointer.
+func (s *Service) AdblockTrieOverride(trie *domaintrie.Trie) {
+	if trie == nil {
+		trie = domaintrie.NewTrie()
+	}
+	s.adblockTrie.Store(trie)
+}
 
 // StoreDB returns the underlying SQLite store, or nil if not configured.
 func (s *Service) StoreDB() *store.DB {
