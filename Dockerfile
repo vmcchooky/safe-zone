@@ -13,7 +13,7 @@ RUN npm ci \
 COPY ui/ ./
 RUN npm run check
 
-FROM golang:1.27.0-alpine AS build
+FROM golang:1.27.1-alpine AS build
 
 ARG SERVICE=core-api
 ARG VERSION=dev
