@@ -10,6 +10,7 @@ import (
 
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/config"
+	"safe-zone/internal/domaintrie"
 	"safe-zone/internal/observability"
 	"safe-zone/internal/osint"
 	"safe-zone/internal/risk"
@@ -88,6 +89,50 @@ func TestAnalyzeEndpointStillWorks(t *testing.T) {
 	}
 	if payload["domain"] == "" {
 		t.Fatal("expected domain in response")
+	}
+}
+
+// /v1/analyze returns risk.Analysis, which never carries a policy decision.
+// PR1 must not change this response contract: no "decision" key may appear
+// even for domains that match the adblock trie, and the security fields keep
+// their meaning.
+func TestAnalyzeEndpointContractUnchangedForAdblockDomain(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	// The test server disables adblock sync but not the matcher itself: pin a
+	// trie entry via the exposed test seam.
+	trie := domaintrie.NewTrie()
+	trie.Add("ads.example.com")
+	ts.Handler.Risk.AdblockTrieOverride(trie)
+
+	resp, err := ts.Client.Get(ts.Server.URL + "/v1/analyze?domain=ads.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if _, hasDecision := payload["decision"]; hasDecision {
+		t.Fatal("/v1/analyze must not expose a policy decision field")
+	}
+	for _, key := range []string{"domain", "verdict", "confidence", "score", "reasons", "cache_hit", "analyzed_at"} {
+		if _, ok := payload[key]; !ok {
+			t.Fatalf("/v1/analyze response lost field %q: %v", key, payload)
+		}
+	}
+	// Under separated semantics an adblock match is not security evidence on
+	// the analysis path either.
+	if payload["verdict"] == "MALICIOUS" {
+		if reasons, _ := payload["reasons"].([]any); len(reasons) > 0 && reasons[0] == "adblock" {
+			t.Fatalf("adblock must not drive the analyze verdict, got %v", payload["reasons"])
+		}
 	}
 }
 
