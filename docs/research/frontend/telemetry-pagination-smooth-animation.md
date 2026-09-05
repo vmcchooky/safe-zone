@@ -54,6 +54,39 @@ npx playwright test tests/extreme-data.spec.ts
 npm run check
 ```
 
+---
+
+## Ổn định Khung Bảng và Nút Bấm khi Lật trang Ít hàng
+
+### Mục tiêu (Objectives)
+
+Triệt tiêu hiện tượng khung bảng bị co rút đột ngột khi chuyển sang trang cuối (chứa ít hơn 12 hàng) hoặc trạng thái lọc rỗng. Đồng thời loại bỏ hiện tượng nảy giật cơ học của các nút Previous / Next dưới con trỏ chuột khi chuyển đổi giữa trạng thái tương tác (`:active`) và vô hiệu hóa (`disabled`).
+
+### Phương pháp & Lý do (Methodology & Rationale)
+
+| Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
+|---|---|---|---|
+| Chiều cao khung bảng | Cố định chiều cao tối thiểu `min-h-[58rem]` trên container bọc ngoài bảng | Bổ sung hàng rỗng (empty placeholder rows) giả lập hoặc khóa cứng `height` bằng JavaScript | Khung bọc với `min-h-[58rem]` tương đương footprint chuẩn 12 hàng (~924 px bảng + tiêu đề). Khi trang cuối chỉ có 2 hàng hoặc danh sách rỗng, khung chứa không bị sụt giảm chiều cao, thanh điều hướng phân trang ở chân thẻ cố định vị trí tuyệt đối mà không cần can thiệp logic DOM giả lập. |
+| Phản hồi tương tác nút bấm | Tinh chỉnh hiệu ứng click `:active` sang `scale-[0.98] translate-y-0.5` | Giữ nguyên `scale-90 translate-y-1` hoặc bỏ hoàn toàn hiệu ứng active | Thuộc tính `scale-90 translate-y-1` gây co rút nút quá sâu (10%). Khi người dùng nhấn chuột, nút chuyển sang `disabled={refreshingRecent}` ngay trong frame tiếp theo; trình duyệt hủy bỏ tức thì pseudo-class `:active`, khiến nút phóng to giật ngược trở lại (từ 0.90 về 1.0) gây cảm giác co giật thị giác ngay dưới ngón tay người dùng. Mức thu nhỏ 2% (`0.98`) và dịch chuyển 0.5 px mang lại phản hồi xúc giác nhẹ nhàng mà không tạo cú sốc thị giác khi kích hoạt `disabled`. |
+
+### Cách thức Thực hiện (Implementation Details)
+
+Trong [`ui/src/routes/telemetry/TelemetryPage.tsx`](ui/src/routes/telemetry/TelemetryPage.tsx):
+1. Cập nhật thẻ bọc `<div className="overflow-clip min-h-[58rem]">` tại vị trí dòng 913, thiết lập footprint tối thiểu 58 rem (~928 px) cho khu vực bảng.
+2. Tinh chỉnh lớp CSS của hai nút Previous và Next tại dòng 1025 và 1033: thay thế `active:translate-y-1 active:scale-90` bằng `active:translate-y-0.5 active:scale-[0.98]`.
+3. Kiểm chứng quy trình build và typecheck thông qua `scripts/ops/ui.ps1 check`.
+
+Tác vụ được thực hiện bởi AI agent Antigravity điều phối với mô hình Gemini 2.5 Flash, tuân thủ nguyên tắc Living Document.
+
+### Số liệu (Metrics & Results)
+
+| Chỉ số | Trước khi bổ sung | Sau khi bổ sung |
+|---|---:|---:|
+| Biến thiên chiều cao container khi vào trang 2 hàng | Tụt 770 px (từ 960 px xuống 190 px) | 0 px (giữ nguyên tối thiểu 928 px) |
+| Độ co rút nút bấm khi click (`:active`) | 10% diện tích (scale 0.90, $\Delta y = 4\text{ px}$) | 2% diện tích (scale 0.98, $\Delta y = 2\text{ px}$) |
+| Trạng thái giật nảy khi nút chuyển sang `disabled` | Xuất hiện cú nảy 10% đột ngột | Chuyển tiếp êm ái, không có xung đột thị giác |
+| TypeScript check & Vite build | Pass | Pass |
+
 ### Liên kết Artifacts
 
 - [`ui/src/routes/telemetry/TelemetryPage.tsx`](ui/src/routes/telemetry/TelemetryPage.tsx)
@@ -67,3 +100,4 @@ npm run check
 | Ngày | Thay đổi | Tác giả |
 |---|---|---|
 | 2026-08-31 | Loại bỏ `AnimatePresence` gây nhân đôi hàng bảng Telemetry, bổ sung hiệu ứng loading mờ nhẹ và triệt tiêu vòng lặp ghìm scroll 900 ms | Antigravity AI |
+| 2026-08-31 | Thiết lập `min-h-[58rem]` cố định footprint bảng khi có ít hơn 12 hàng, tinh chỉnh độ co giãn active của nút Next/Previous chống nảy giật | Antigravity AI |
