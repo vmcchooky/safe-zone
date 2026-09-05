@@ -5,15 +5,24 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/buildinfo"
+	"safe-zone/internal/config"
 	"safe-zone/internal/observability"
+	"safe-zone/internal/risk"
 	"safe-zone/internal/serve"
+	"safe-zone/internal/store"
 )
 
 func TestStatusEndpointHTTP(t *testing.T) {
+	// Package handlers has no shadow TestMain pin; force the hermetic default.
+	t.Setenv("SAFE_ZONE_ADBLOCK_SHADOW_EXACT_ENABLED", "false")
 	ts := newHandlerTestServer(t)
 
 	resp, err := ts.Client.Get(ts.Server.URL + "/")
@@ -66,6 +75,52 @@ func TestStatusEndpointHTTP(t *testing.T) {
 	}
 	if payload.Adblock == nil {
 		t.Fatal("expected adblock status block")
+	}
+	if payload.Adblock.Exceptions.Configured {
+		t.Fatal("expected exceptions disabled without config")
+	}
+	if payload.Adblock.Exceptions.Count != 0 {
+		t.Fatalf("expected zero exceptions, got %d", payload.Adblock.Exceptions.Count)
+	}
+	shadow := payload.Adblock.ShadowExact
+	if shadow.Enabled || shadow.Active {
+		t.Fatalf("expected shadow disabled/inactive by default, got %+v", shadow)
+	}
+	if shadow.TargetScope != "exact" {
+		t.Fatalf("expected target_scope exact, got %+v", shadow)
+	}
+	if shadow.Observations != shadow.WouldStillBlockContent+shadow.WouldAllowContent+
+		shadow.ExplicitScopePreservedBlock+shadow.UnavailableOriginUnknown {
+		t.Fatalf("observations must equal the primary sum: %+v", shadow)
+	}
+	if shadow.Observations != 0 || shadow.ExceptionOverlap != 0 {
+		t.Fatalf("expected zero shadow counters, got %+v", shadow)
+	}
+	raw, err := json.Marshal(payload.Adblock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	shadowWire, ok := wire["shadow_exact"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected adblock.shadow_exact object, got %v", wire)
+	}
+	wantKeys := map[string]bool{
+		"enabled": true, "active": true, "target_scope": true, "observations": true,
+		"would_still_block_content": true, "would_allow_content": true,
+		"explicit_scope_preserved_block": true, "unavailable_origin_unknown": true,
+		"exception_overlap": true,
+	}
+	if len(shadowWire) != len(wantKeys) {
+		t.Fatalf("unexpected shadow_exact keys, got %v", shadowWire)
+	}
+	for key := range shadowWire {
+		if !wantKeys[key] {
+			t.Fatalf("unexpected shadow_exact key %q leaking into public JSON: %v", key, shadowWire)
+		}
 	}
 	if len(payload.Endpoints) == 0 {
 		t.Fatal("expected endpoint list")
@@ -232,6 +287,77 @@ func overrideBuildInfo(version, gitCommit, buildTime, imageTag, sourceRepo strin
 		buildinfo.BuildTime = prevBuildTime
 		buildinfo.ImageTag = prevImageTag
 		buildinfo.SourceRepo = prevSourceRepo
+	}
+}
+
+// The status endpoint must expose aggregate exception state (configured,
+// count, digest revision, reload outcome) without leaking raw config such as
+// exception IDs or reasons.
+func TestStatusEndpointReportsExceptionAggregates(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "")
+
+	excBody := `{"version":1,"exceptions":[` +
+		`{"id":"fp-status","domain":"status.example.com","scope":"exact",` +
+		`"matched_rule":"status.example.com","source_id":"legacy",` +
+		`"match_type":"suffix","reason":"INC-status verified"}` +
+		`]}`
+	excPath := filepath.Join(tempDir, "exceptions.json")
+	if err := os.WriteFile(excPath, []byte(excBody), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SAFE_ZONE_ADBLOCK_EXCEPTIONS_FILE", excPath)
+
+	dbPath := filepath.Join(tempDir, "status-exc.db")
+	storeDB, err := store.New(dbPath, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = storeDB.Close() })
+
+	riskService := risk.NewService(risk.Options{
+		AnalysisConfig:     config.DefaultAnalysisConfig(),
+		RedisTimeout:       10 * time.Millisecond,
+		Store:              storeDB,
+		AdblockFileRoot:    tempDir,
+		DisableAdblockSync: true,
+	})
+	t.Cleanup(func() { _ = riskService.Close() })
+
+	handler := &Handler{Risk: riskService, Config: Config{DeploymentTier: "test"}}
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	handler.StatusHandler(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+	var payload statusResponse
+	if err := json.NewDecoder(recorder.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Adblock == nil {
+		t.Fatal("expected adblock status block")
+	}
+	exc := payload.Adblock.Exceptions
+	if !exc.Configured || exc.Count != 1 {
+		t.Fatalf("expected one configured exception, got %+v", exc)
+	}
+	if exc.Revision == "" || len(exc.Revision) != 32 {
+		t.Fatalf("expected digest revision, got %+v", exc)
+	}
+	if !exc.LastReloadOK || exc.LastErrorClass != "" {
+		t.Fatalf("expected clean reload, got %+v", exc)
+	}
+	if exc.ReloadSuccesses != 1 || exc.ReloadFailures != 0 {
+		t.Fatalf("expected reload counters, got %+v", exc)
+	}
+	raw, err := json.Marshal(payload.Adblock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "fp-status") || strings.Contains(string(raw), "INC-status") {
+		t.Fatalf("status must not leak exception ids or reasons: %s", raw)
 	}
 }
 

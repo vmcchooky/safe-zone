@@ -19,8 +19,9 @@ import (
 	"safe-zone/internal/store"
 )
 
-// newTestServiceWithAdblock creates a service with a pre-populated adblock trie.
-func newTestServiceWithAdblock(t *testing.T, domains []string) *Service {
+// newTestServiceWithAdblockSemantics creates a service with a pre-populated
+// adblock trie and an explicit policy semantics mode.
+func newTestServiceWithAdblockSemantics(t *testing.T, semantics PolicySemantics, domains []string) *Service {
 	t.Helper()
 
 	tempDir := t.TempDir()
@@ -38,14 +39,16 @@ func newTestServiceWithAdblock(t *testing.T, domains []string) *Service {
 	}
 
 	service := NewService(Options{
-		AnalysisConfig:  config.DefaultAnalysisConfig(),
-		RedisTimeout:    10 * time.Millisecond,
-		TTLAllowed:      time.Hour,
-		TTLSuspicious:   time.Hour,
-		TTLBlocked:      time.Hour,
-		RecentLimit:     10,
-		Store:           storeDB,
-		AdblockFileRoot: tempDir,
+		AnalysisConfig:     config.DefaultAnalysisConfig(),
+		RedisTimeout:       10 * time.Millisecond,
+		TTLAllowed:         time.Hour,
+		TTLSuspicious:      time.Hour,
+		TTLBlocked:         time.Hour,
+		RecentLimit:        10,
+		Store:              storeDB,
+		AdblockFileRoot:    tempDir,
+		PolicySemantics:    semantics,
+		DisableAdblockSync: true,
 	})
 
 	// Manually populate the adblock trie (bypass network sync)
@@ -60,6 +63,12 @@ func newTestServiceWithAdblock(t *testing.T, domains []string) *Service {
 	})
 
 	return service
+}
+
+// newTestServiceWithAdblock creates a service with a pre-populated adblock
+// trie under the default (separated) policy semantics.
+func newTestServiceWithAdblock(t *testing.T, domains []string) *Service {
+	return newTestServiceWithAdblockSemantics(t, PolicySemanticsSeparated, domains)
 }
 
 func newManualAdblockSyncService(t *testing.T, adblockClient *http.Client) *Service {
@@ -97,7 +106,7 @@ func newManualAdblockSyncService(t *testing.T, adblockClient *http.Client) *Serv
 }
 
 func TestAdblockTrieMatchInAnalyze(t *testing.T) {
-	service := newTestServiceWithAdblock(t, []string{
+	service := newTestServiceWithAdblockSemantics(t, PolicySemanticsLegacy, []string{
 		"ads.example.com",
 		"tracker.doubleclick.net",
 	})
@@ -117,8 +126,28 @@ func TestAdblockTrieMatchInAnalyze(t *testing.T) {
 	}
 }
 
-func TestAdblockTrieMatchInPolicy(t *testing.T) {
+// In separated semantics the adblock match must not produce a security
+// verdict by itself: a lexical-safe domain flows through the normal analysis
+// pipeline and its reasons never mention adblock.
+func TestAdblockTrieMatchInAnalyzeSeparated(t *testing.T) {
 	service := newTestServiceWithAdblock(t, []string{
+		"ads.example.com",
+		"tracker.doubleclick.net",
+	})
+
+	result := service.Analyze(context.Background(), "ads.example.com", ClientInfo{})
+	if result.Verdict == analysis.VerdictMalicious && result.Score >= 70 && result.Reasons[0] == "adblock" {
+		t.Fatalf("adblock match must not drive the security verdict, got %s/%d reasons=%v", result.Verdict, result.Score, result.Reasons)
+	}
+	for _, r := range result.Reasons {
+		if r == "adblock" {
+			t.Fatalf("adblock must not appear in security reasons, got %v", result.Reasons)
+		}
+	}
+}
+
+func TestAdblockTrieMatchInPolicy(t *testing.T) {
+	service := newTestServiceWithAdblockSemantics(t, PolicySemanticsLegacy, []string{
 		"ads.example.com",
 	})
 
@@ -131,6 +160,36 @@ func TestAdblockTrieMatchInPolicy(t *testing.T) {
 	}
 	if pol.Result.Category != "adware" {
 		t.Fatalf("expected category 'adware', got %s", pol.Result.Category)
+	}
+}
+
+// In separated semantics Policy must still block an adblock match, but the
+// attached security Result comes from the lexical analyzer and the reason is
+// carried by Decision, never by Result.Reasons.
+func TestAdblockTrieMatchInPolicySeparated(t *testing.T) {
+	service := newTestServiceWithAdblock(t, []string{
+		"ads.example.com",
+	})
+
+	pol := service.Policy(context.Background(), "ads.example.com", ClientInfo{})
+	if pol.Policy != "block" {
+		t.Fatalf("expected policy 'block' for adblocked domain, got %s", pol.Policy)
+	}
+	if pol.Decision == nil {
+		t.Fatal("expected decision on separated adblock block")
+	}
+	if pol.Decision.Action != "block" || pol.Decision.Reason != "adblock_match" ||
+		pol.Decision.Source != "adblock" || pol.Decision.AssessmentMode != "lexical_local_default_brands" ||
+		pol.Decision.Kind != "content" || pol.Decision.Category != "unknown" {
+		t.Fatalf("unexpected decision: %+v", pol.Decision)
+	}
+	if pol.Result.Verdict == analysis.VerdictMalicious && pol.Result.Score >= 70 && pol.Result.Reasons[0] == "adblock" {
+		t.Fatalf("adblock must not drive the security result, got %s/%d reasons=%v", pol.Result.Verdict, pol.Result.Score, pol.Result.Reasons)
+	}
+	for _, r := range pol.Result.Reasons {
+		if r == "adblock" {
+			t.Fatalf("adblock must not appear in Result.Reasons, got %v", pol.Result.Reasons)
+		}
 	}
 }
 
@@ -216,7 +275,7 @@ func TestAdblockOverridePriority(t *testing.T) {
 }
 
 func TestAdblockSubdomainMatch(t *testing.T) {
-	service := newTestServiceWithAdblock(t, []string{
+	service := newTestServiceWithAdblockSemantics(t, PolicySemanticsLegacy, []string{
 		"ads.example.com",
 	})
 
@@ -272,7 +331,7 @@ func TestAdblockPolicyWhitelistPriority(t *testing.T) {
 }
 
 func TestAdblockWildcardEntryMatchesViaNormalization(t *testing.T) {
-	service := newTestServiceWithAdblock(t, []string{
+	service := newTestServiceWithAdblockSemantics(t, PolicySemanticsLegacy, []string{
 		"*.ads.example.com",
 	})
 
@@ -361,11 +420,14 @@ func TestAdblockSyncReusesPerSourceCacheOn304(t *testing.T) {
 	service.syncAdblockLists()
 	service.adblockEnabled.Store(true)
 
-	if got := service.Analyze(context.Background(), "ads.two.test", ClientInfo{}); got.Verdict != analysis.VerdictMalicious {
-		t.Fatalf("expected changed source entry to be active after second sync, got %s", got.Verdict)
+	// Assert on the trie directly so the sync contract stays independent of
+	// policy semantics (separated mode no longer surfaces "adblock" reasons).
+	trie := service.adblockTrie.Load()
+	if !trie.Match("ads.two.test") {
+		t.Fatal("expected changed source entry to be active after second sync")
 	}
-	if got := service.Analyze(context.Background(), "sub.cache.keep.test", ClientInfo{}); got.Verdict != analysis.VerdictMalicious {
-		t.Fatalf("expected cached 304 source entry to remain active, got %s", got.Verdict)
+	if !trie.Match("sub.cache.keep.test") {
+		t.Fatal("expected cached 304 source entry to remain active")
 	}
 
 	mu.Lock()
@@ -396,9 +458,11 @@ func TestAdblockSyncFallsBackToSourceCacheWhenRemoteFails(t *testing.T) {
 	service.syncAdblockLists()
 	service.adblockEnabled.Store(true)
 
-	result := service.Analyze(context.Background(), "sub.resilient-cache.test", ClientInfo{})
-	if result.Verdict != analysis.VerdictMalicious {
-		t.Fatalf("expected cached source to survive remote failure, got %s", result.Verdict)
+	// Assert on the trie directly so the sync contract stays independent of
+	// policy semantics (separated mode no longer surfaces "adblock" reasons).
+	trie := service.adblockTrie.Load()
+	if !trie.Match("sub.resilient-cache.test") {
+		t.Fatal("expected cached source to survive remote failure")
 	}
 }
 
@@ -442,7 +506,7 @@ func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
 			ready:   &ready,
 			release: release,
 		}
-		errCh <- service.saveAdblockSourceCache(source, reader, trie)
+		errCh <- service.saveAdblockSourceCache(source, reader, trie, canonicalSourceID(source), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault)
 	}
 
 	go runSave(serviceA)
@@ -458,7 +522,7 @@ func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
 	}
 
 	loadedTrie := domaintrie.NewTrie()
-	if !serviceA.loadAdblockSourceCache(source, loadedTrie) {
+	if !serviceA.loadAdblockSourceCache(source, loadedTrie, canonicalSourceID(source), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault) {
 		t.Fatal("expected source cache to be readable after concurrent writes")
 	}
 	if !loadedTrie.Match("ads.concurrent.test") {
