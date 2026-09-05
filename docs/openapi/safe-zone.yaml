@@ -311,6 +311,34 @@ paths:
       responses:
         "200":
           description: Logout successful
+  /v1/policy:
+    get:
+      summary: Evaluate the DNS policy for a domain (served by dns-resolver)
+      description: >
+        Returns the policy action plus the security verdict assessed
+        independently. When SAFE_ZONE_POLICY_SEMANTICS=separated, an adblock
+        match carries a decision object (reason=adblock_match,
+        assessment_mode=lexical_local_default_brands) while the security
+        result stays lexical-local. A scoped content exception suppresses the
+        adblock block instead (reason=adblock_exception,
+        assessment_mode=full_security_pipeline) and the request continues
+        through the full security pipeline; the overall policy still follows
+        the security verdict. The optional shadow exact/suffix observation
+        (SAFE_ZONE_ADBLOCK_SHADOW_EXACT_ENABLED) only counts prospective
+        outcomes into status aggregates and never changes this response.
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy decision and security result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PolicyResponse"
   /dns-query:
     get:
       summary: DNS-over-HTTPS query using RFC 8484 GET
@@ -379,6 +407,134 @@ components:
         analyzed_at:
           type: string
           format: date-time
+    PolicyDecision:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          enum: [allow, block]
+        kind:
+          type: string
+          description: Decision axis, e.g. "content" for content/DNS policy.
+        category:
+          type: string
+          description: >
+            Content category driving the decision. "unknown" when the merged
+            feed source does not carry per-entry classification evidence.
+        reason:
+          type: string
+          description: Machine-readable reason, e.g. "adblock_match" or "adblock_exception".
+        source:
+          type: string
+          description: Rule system that produced the decision, e.g. "adblock".
+        assessment_mode:
+          type: string
+          description: >
+            How the attached security Result was assessed for this decision.
+            "lexical_local_default_brands" means only the in-process lexical
+            analyzer ran against the built-in brand seed, with no backend
+            I/O; it is explicitly not a full security assessment.
+            "full_security_pipeline" means a scoped content exception
+            suppressed the adblock block and the security Result ran the full
+            pipeline instead.
+        matched_rule:
+          type: string
+          description: >
+            Normalized domain of the adblock rule that fired (e.g.
+            "ads.example.com").
+        match_type:
+          type: string
+          enum: [exact, suffix]
+          description: >
+            Rule scope. Exact rules match only the recorded domain; suffix
+            rules also match every subdomain.
+        source_id:
+          type: string
+          description: >
+            Stable digest of the blocklist source that contributed the rule
+            ("legacy" for legacy adds, "legacy-cache" for pre-v2 cache
+            reloads). The source URL itself is never exposed.
+        exception_id:
+          type: string
+          description: >
+            Operator-configured scoped content exception that suppressed the
+            adblock match. Present only on adblock_exception decisions; the
+            config reason behind it is never exposed.
+    Policy:
+      type: object
+      description: risk.Policy — the DNS policy decision plus the security verdict.
+      properties:
+        domain:
+          type: string
+        policy:
+          type: string
+          enum: [allow, block]
+        result:
+          type: object
+          description: Security verdict assessed independently of the policy action.
+          properties:
+            domain:
+              type: string
+            verdict:
+              type: string
+              enum: [INVALID, SAFE, SUSPICIOUS, MALICIOUS]
+            confidence:
+              type: number
+            score:
+              type: integer
+            reasons:
+              type: array
+              items:
+                type: string
+            category:
+              type: string
+        decision:
+          description: >
+            Content/DNS policy decision, separate from the security verdict.
+            Present on paths that adopt the separated decision model (e.g.
+            adblock blocks under SAFE_ZONE_POLICY_SEMANTICS=separated); null
+            or absent on legacy paths.
+          $ref: "#/components/schemas/PolicyDecision"
+        cache_hit:
+          type: boolean
+    PolicyResponse:
+      type: object
+      description: dns-resolver GET /v1/policy response (service + risk.Policy + meta).
+      properties:
+        service:
+          type: string
+        domain:
+          type: string
+        policy:
+          type: string
+          enum: [allow, block]
+        result:
+          type: object
+          properties:
+            domain:
+              type: string
+            verdict:
+              type: string
+              enum: [INVALID, SAFE, SUSPICIOUS, MALICIOUS]
+            confidence:
+              type: number
+            score:
+              type: integer
+            reasons:
+              type: array
+              items:
+                type: string
+            category:
+              type: string
+        decision:
+          $ref: "#/components/schemas/PolicyDecision"
+        cache_hit:
+          type: boolean
+        meta:
+          type: object
+          additionalProperties:
+            type: string
     OverrideRequest:
       type: object
       required: [domain, action]
