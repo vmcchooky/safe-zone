@@ -162,6 +162,11 @@ services:
       SAFE_ZONE_ML_BLOCK_THRESHOLD: ${SAFE_ZONE_ML_BLOCK_THRESHOLD:-}
       SAFE_ZONE_ML_CANARY_PERCENT: ${SAFE_ZONE_ML_CANARY_PERCENT:-0}
       SAFE_ZONE_ML_CANARY_SEED: ${SAFE_ZONE_ML_CANARY_SEED:-}
+      # URL ML is core-API-only. Explicitly override values inherited from
+      # env_file so a shared production .env cannot make the resolver require
+      # or load the URL model bundle.
+      SAFE_ZONE_URL_ML_MODE: disabled
+      SAFE_ZONE_URL_ML_REQUIRED: "false"
       SAFE_ZONE_UPSTREAM_DOH_URL: ${SAFE_ZONE_UPSTREAM_DOH_URL:-https://cloudflare-dns.com/dns-query}
       SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS: ${SAFE_ZONE_UPSTREAM_DOH_TIMEOUT_MS:-3000}
       SAFE_ZONE_BLOCK_PAGE_IP: ${SAFE_ZONE_BLOCK_PAGE_IP:-127.0.0.1}

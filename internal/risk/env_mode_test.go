@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -18,6 +19,24 @@ func TestNewServiceFromEnvForRoleERejectsInvalidOSINTMode(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "unsupported OSINT mode") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDNSResolverIgnoresCoreOnlyURLMLConfiguration(t *testing.T) {
+	t.Setenv("SAFE_ZONE_SQLITE_PATH", filepath.Join(t.TempDir(), "safe-zone.db"))
+	t.Setenv("SAFE_ZONE_URL_ML_MODE", "shadow")
+	t.Setenv("SAFE_ZONE_URL_ML_REQUIRED", "true")
+	t.Setenv("SAFE_ZONE_URL_ML_BUNDLE_DIR", filepath.Join(t.TempDir(), "missing-url-bundle"))
+
+	service, err := NewServiceFromEnvForRoleE("dns-resolver")
+	if err != nil {
+		t.Fatalf("DNS resolver must ignore core-only URL ML settings: %v", err)
+	}
+	defer func() { _ = service.Close() }()
+
+	status := service.URLMLStatus()
+	if status.Mode != "disabled" || status.Enabled || status.State != "disabled" {
+		t.Fatalf("expected URL ML to stay disabled in DNS resolver, got %+v", status)
 	}
 }
 

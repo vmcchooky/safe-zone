@@ -131,6 +131,30 @@ func TestAnalyzeHighEntropySkipsTrustedBrandRoots(t *testing.T) {
 	}
 }
 
+func TestAnalyzeShopeeMobileInfrastructureAsTrustedBrand(t *testing.T) {
+	domains := []string{
+		"ccms.dr-wan.shopeemobile.com",
+		"gs1b.sgw.shopeemobile.com",
+		"mp-others-sg-sg7-19.dr-wan.shopeemobile.com",
+	}
+
+	for _, domain := range domains {
+		t.Run(domain, func(t *testing.T) {
+			result := analyzeDefault(domain)
+			if result.Verdict != VerdictSafe {
+				t.Fatalf("expected verified Shopee infrastructure to remain safe, got %s with score %d and reasons %v", result.Verdict, result.Score, result.Reasons)
+			}
+			if containsReasonSubstring(result.Reasons, "trusted brand keyword (shopee)") ||
+				containsReasonSubstring(result.Reasons, "brand subdomain usage (shopee)") {
+				t.Fatalf("expected no Shopee spoofing reason, got %v", result.Reasons)
+			}
+			if containsReason(result.Reasons, highEntropyDGAReason) {
+				t.Fatalf("expected trusted Shopee infrastructure to skip DGA entropy scoring, got %v", result.Reasons)
+			}
+		})
+	}
+}
+
 func TestAnalyzeHighEntropySkipsCDNRoots(t *testing.T) {
 	result := analyzeDefault("a1b2c3d4e5f6.cloudfront.net")
 

@@ -85,7 +85,7 @@ func DefaultTrustedBrands() []Brand {
 		{Name: "momo", OfficialDomain: "momo.vn"},
 		{Name: "zalopay", OfficialDomain: "zalopay.vn"},
 		{Name: "vnpay", OfficialDomain: "vnpay.vn"},
-		{Name: "shopee", OfficialDomain: "shopee.vn", AltDomains: []string{"shopee.com"}},
+		{Name: "shopee", OfficialDomain: "shopee.vn", AltDomains: []string{"shopee.com", "shopeemobile.com"}},
 		{Name: "tiki", OfficialDomain: "tiki.vn"},
 		{Name: "lazada", OfficialDomain: "lazada.vn", AltDomains: []string{"lazada.com"}},
 	})
