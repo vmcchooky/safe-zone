@@ -112,18 +112,10 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	urlMLMode, urlMLClassifier, err := loadURLMLFromEnv()
-	if err != nil {
-		return nil, err
-	}
-	urlMLShadow, err := loadURLMLShadowFromEnv(urlMLMode)
-	if err != nil {
-		return nil, err
-	}
-	urlFeedback, err := loadURLMLFeedbackFromEnv(readSecret)
-	if err != nil {
-		return nil, err
-	}
+	urlMLMode := analysis.MLModeDisabled
+	var urlMLClassifier analysis.URLClassifier
+	urlMLShadow := URLMLShadowConfig{Percent: 100}
+	urlFeedback := URLMLFeedbackConfig{}
 	// Frozen operational drift reference: optional and strictly fail-open.
 	// A missing, corrupt or mismatched baseline never blocks the classifier;
 	// it only leaves drift monitoring on the non-operational bundle proxy.
@@ -132,6 +124,24 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	var urlOpsBaseline *URLOperationalBaseline
 	urlOpsBaselineFailed := false
 	urlOpsBaselineErrorClass := ""
+	// URL ML consumes caller-supplied URL context and is a core-API-only
+	// observer. A shared env_file may expose its variables to dns-resolver;
+	// the resolver must ignore them instead of requiring a URL bundle it does
+	// not mount or performing URL inference on DNS traffic.
+	if strings.TrimSpace(nodeRole) != "dns-resolver" {
+		urlMLMode, urlMLClassifier, err = loadURLMLFromEnv()
+		if err != nil {
+			return nil, err
+		}
+		urlMLShadow, err = loadURLMLShadowFromEnv(urlMLMode)
+		if err != nil {
+			return nil, err
+		}
+		urlFeedback, err = loadURLMLFeedbackFromEnv(readSecret)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if urlMLClassifier != nil && urlMLClassifier.Enabled() {
 		baselinePath := strings.TrimSpace(config.String("SAFE_ZONE_URL_ML_BASELINE_PATH", ""))
 		if baselinePath != "" {
