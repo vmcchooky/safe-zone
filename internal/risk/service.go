@@ -40,7 +40,7 @@ const defaultThreatFeedKey = "safe-zone:threat:feed"
 const brandRevisionKey = "safe-zone:analysis:trusted-brands:revision"
 const defaultAnalysisConfigReloadChannel = "safe-zone:config:analysis:updated"
 const threatFeedReason = "matched local threat feed"
-const analysisAlgorithmRevision = "2026-09-trusted-brand-v3"
+const analysisAlgorithmRevision = "2026-09-dns-outcome-v1"
 const geminiKeySyncCooldown = 10 * time.Second
 const defaultAnalysisConfigReloadPollInterval = 30 * time.Second
 const analysisConfigReloadBackoffMin = 250 * time.Millisecond
@@ -427,9 +427,82 @@ type enrichmentJob struct {
 }
 
 type enrichmentSignals struct {
-	DNSFailed bool
-	TLS       tlsinspect.Result
-	WHOIS     whois.Result
+	// DNS classifies the apex NS lookup performed during background
+	// enrichment. DNS metadata is availability evidence only: no outcome
+	// may promote the security score or verdict on its own (PR-01/H1).
+	// The zero value means the lookup succeeded with usable NS records.
+	DNS   DNSOutcome
+	TLS   tlsinspect.Result
+	WHOIS whois.Result
+}
+
+// DNSOutcome is the closed set of apex nameserver lookup results observed
+// by background enrichment. Reason prose is derived from String, so the
+// telemetry vocabulary stays bounded.
+type DNSOutcome int
+
+const (
+	// DNSOutcomeOK means the apex returned usable NS records.
+	DNSOutcomeOK DNSOutcome = iota
+	// DNSOutcomeNXDOMAIN means the apex authoritatively does not exist.
+	DNSOutcomeNXDOMAIN
+	// DNSOutcomeNoData means the apex answered without usable NS records.
+	DNSOutcomeNoData
+	// DNSOutcomeTimeout means the lookup exceeded its deadline.
+	DNSOutcomeTimeout
+	// DNSOutcomeServerFailure covers SERVFAIL, refused and other
+	// server-side lookup errors.
+	DNSOutcomeServerFailure
+	// DNSOutcomeCanceled means the lookup context was canceled.
+	DNSOutcomeCanceled
+	// DNSOutcomeUnknownError is the catch-all for unclassified errors.
+	DNSOutcomeUnknownError
+)
+
+// String returns the bounded availability note for a non-OK outcome.
+func (o DNSOutcome) String() string {
+	switch o {
+	case DNSOutcomeNXDOMAIN:
+		return "dns: apex has no NS records (authoritative NXDOMAIN)"
+	case DNSOutcomeNoData:
+		return "dns: apex answered without usable NS records"
+	case DNSOutcomeTimeout:
+		return "dns: apex NS lookup timed out"
+	case DNSOutcomeServerFailure:
+		return "dns: apex NS lookup failed (server error)"
+	case DNSOutcomeCanceled:
+		return "dns: apex NS lookup canceled"
+	case DNSOutcomeUnknownError:
+		return "dns: apex NS lookup failed"
+	default:
+		return "dns: apex NS lookup unavailable"
+	}
+}
+
+// classifyDNSLookupErr maps a LookupNS error to a DNSOutcome. A nil error
+// with an empty answer set is classified by the caller as NoData.
+func classifyDNSLookupErr(err error) DNSOutcome {
+	if err == nil {
+		return DNSOutcomeOK
+	}
+	if errors.Is(err, context.Canceled) {
+		return DNSOutcomeCanceled
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		switch {
+		case dnsErr.IsNotFound:
+			return DNSOutcomeNXDOMAIN
+		case dnsErr.IsTimeout:
+			return DNSOutcomeTimeout
+		default:
+			return DNSOutcomeServerFailure
+		}
+	}
+	if os.IsTimeout(err) {
+		return DNSOutcomeTimeout
+	}
+	return DNSOutcomeUnknownError
 }
 
 type analysisConfigReloadEvent struct {
@@ -2477,7 +2550,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 
 func (s *Service) defaultEnrichmentLookup(ctx context.Context, domain string) enrichmentSignals {
 	var (
-		dnsFailed   bool
+		dnsOutcome  = DNSOutcomeOK
 		tlsResult   tlsinspect.Result
 		whoisResult whois.Result
 		wg          sync.WaitGroup
@@ -2491,8 +2564,13 @@ func (s *Service) defaultEnrichmentLookup(ctx context.Context, domain string) en
 		}
 		nsCtx, cancel := context.WithTimeout(ctx, minDuration(2*time.Second, enrichContextTimeout(ctx, 2*time.Second)))
 		defer cancel()
-		if _, err := net.DefaultResolver.LookupNS(nsCtx, apex); err != nil {
-			dnsFailed = true
+		nss, err := net.DefaultResolver.LookupNS(nsCtx, apex)
+		if outcome := classifyDNSLookupErr(err); outcome != DNSOutcomeOK {
+			dnsOutcome = outcome
+			return
+		}
+		if len(nss) == 0 {
+			dnsOutcome = DNSOutcomeNoData
 		}
 	}()
 	go func() {
@@ -2505,9 +2583,9 @@ func (s *Service) defaultEnrichmentLookup(ctx context.Context, domain string) en
 	}()
 	wg.Wait()
 	return enrichmentSignals{
-		DNSFailed: dnsFailed,
-		TLS:       tlsResult,
-		WHOIS:     whoisResult,
+		DNS:   dnsOutcome,
+		TLS:   tlsResult,
+		WHOIS: whoisResult,
 	}
 }
 
@@ -2515,11 +2593,11 @@ func applyEnrichmentSignals(result *analysis.Result, signals enrichmentSignals) 
 	if result == nil {
 		return
 	}
-	if signals.DNSFailed {
-		if result.Score < 75 {
-			result.Score = 75
-		}
-		result.Reasons = append(result.Reasons, "domain is not registered or resolving (NXDOMAIN)")
+	// DNS outcomes are availability notes only. They never add to the
+	// security score: an unreachable, slow or failing resolver says
+	// nothing about malice (PR-01/H1).
+	if signals.DNS != DNSOutcomeOK {
+		result.Reasons = append(result.Reasons, signals.DNS.String())
 	}
 	result.Score += signals.TLS.Score + signals.WHOIS.Score
 	result.Reasons = append(result.Reasons, signals.TLS.Reasons...)
