@@ -88,3 +88,35 @@ func newTestFlagSet(t *testing.T) *flag.FlagSet {
 	t.Helper()
 	return flag.NewFlagSet("feed-syncd-test", flag.ContinueOnError)
 }
+
+// Replace defaults to false so multiple writers (one daemon per source,
+// or the one-shot loop) can share a feed key without staging renames
+// wiping each other. Single-source freshness then rests on per-member TTL
+// expiry instead of whole-key replacement.
+func TestSyncSettingsReplaceDefaultsFalse(t *testing.T) {
+	t.Setenv("SAFE_ZONE_THREAT_FEED_SOURCE", "https://feeds.example.test/list.txt")
+	t.Setenv("SAFE_ZONE_FEED_ADMISSION_MODE", "")
+
+	settings, err := parseSyncSettings(newTestFlagSet(t), nil)
+	if err != nil {
+		t.Fatalf("parse default settings: %v", err)
+	}
+	if settings.Replace {
+		t.Fatal("expected replace=false by default so concurrent writers cannot clobber the shared key")
+	}
+}
+
+// Explicit --replace keeps working for operators who dedicate one key to
+// one daemon and want immediate removal of delisted members.
+func TestSyncSettingsReplaceExplicitOptIn(t *testing.T) {
+	t.Setenv("SAFE_ZONE_THREAT_FEED_SOURCE", "https://feeds.example.test/list.txt")
+	t.Setenv("SAFE_ZONE_FEED_ADMISSION_MODE", "")
+
+	settings, err := parseSyncSettings(newTestFlagSet(t), []string{"-replace"})
+	if err != nil {
+		t.Fatalf("parse explicit replace settings: %v", err)
+	}
+	if !settings.Replace {
+		t.Fatal("expected explicit -replace to stay enabled")
+	}
+}

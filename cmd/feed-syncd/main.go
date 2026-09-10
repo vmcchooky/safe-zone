@@ -56,6 +56,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if settings.Replace {
+		logjson.Warn("feed-syncd replace mode requires exclusive ownership of the feed key", map[string]any{
+			"service": "feed-syncd",
+			"source":  settings.Source,
+			"key":     settings.Key,
+		})
+	}
+
 	runSync := func() {
 		runCtx := correlation.WithRunID(ctx, correlation.NewID("feed-syncd"))
 		client := netguard.NewHTTPClient(nil, settings.Timeout, false)
@@ -123,7 +131,11 @@ func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error)
 	redisPassword := flags.String("redis-password", config.SecretString("SAFE_ZONE_REDIS_PASSWORD", ""), "Redis password")
 	redisDB := flags.Int("redis-db", config.Int("SAFE_ZONE_REDIS_DB", 0), "Redis database")
 	key := flags.String("key", config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey), "Redis Set key for threat feed")
-	replace := flags.Bool("replace", true, "delete the target set before writing parsed domains")
+	// Replace defaults to false: whole-key staging renames would wipe other
+	// writers sharing the feed key (one daemon per source, or the one-shot
+	// loop). Single-source freshness then rests on per-member TTL expiry.
+	// Enable -replace only when this daemon owns its key exclusively.
+	replace := flags.Bool("replace", false, "delete the target set before writing parsed domains (requires exclusive key ownership)")
 	once := flags.Bool("once", false, "run one sync cycle and exit")
 	interval := flags.Duration("interval", config.DurationSeconds("SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS", 24*time.Hour), "time between sync cycles")
 	timeout := flags.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
