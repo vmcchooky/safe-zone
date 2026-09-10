@@ -301,6 +301,12 @@ func isProtectedVietnamPublicServiceAbuse(domain string) bool {
 	return strings.Contains(root, "dichvucong")
 }
 
+// DNS wire bounds (RFC 1035) enforced by NormalizeDomain.
+const (
+	maxDomainLength      = 253
+	maxDomainLabelLength = 63
+)
+
 func NormalizeDomain(input string) (string, error) {
 	value := strings.TrimSpace(strings.ToLower(input))
 	if value == "" {
@@ -330,6 +336,21 @@ func NormalizeDomain(input string) (string, error) {
 	value = strings.TrimSuffix(value, ".")
 	if value == "" {
 		return "", errInvalidDomain("domain is empty")
+	}
+
+	// H4: DNS wire bounds (RFC 1035) before any suffix expansion or store
+	// work downstream. Lengths are octets: the limits that actually bind
+	// on the wire. Full IDNA canonicalization is a separate follow-up.
+	if len(value) > maxDomainLength {
+		return "", errInvalidDomain("domain exceeds 253 bytes")
+	}
+	for _, label := range strings.Split(value, ".") {
+		if label == "" {
+			return "", errInvalidDomain("domain contains an empty label")
+		}
+		if len(label) > maxDomainLabelLength {
+			return "", errInvalidDomain("domain label exceeds 63 bytes")
+		}
 	}
 
 	for _, r := range value {

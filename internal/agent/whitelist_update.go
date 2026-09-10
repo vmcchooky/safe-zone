@@ -24,7 +24,16 @@ type WhitelistUpdateConfig struct {
 	SourceURL string
 	Timeout   time.Duration
 	Enabled   bool
+	// MaxDownloadBytes caps the source response buffered in memory before
+	// parsing. Zero means DefaultWhitelistDownloadBytes. The parse stage
+	// keeps its own 128MiB reader cap; this one guards the buffer.
+	MaxDownloadBytes int64
 }
+
+// DefaultWhitelistDownloadBytes bounds the whitelist source download.
+// Tranco top-1M CSVs are tens of megabytes; 64MiB leaves headroom without
+// letting a runaway response exhaust a small VPS.
+const DefaultWhitelistDownloadBytes = 64 << 20
 
 // WhitelistUpdateTask implements the agent.Task interface to update the clean list.
 type WhitelistUpdateTask struct {
@@ -37,6 +46,9 @@ type WhitelistUpdateTask struct {
 func NewWhitelistUpdateTask(db *store.DB, wl *risk.Whitelist, cfg WhitelistUpdateConfig) *WhitelistUpdateTask {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 5 * time.Minute // 1 million entries can take a moment to download and import
+	}
+	if cfg.MaxDownloadBytes <= 0 {
+		cfg.MaxDownloadBytes = DefaultWhitelistDownloadBytes
 	}
 	return &WhitelistUpdateTask{
 		store:     db,
@@ -157,11 +169,19 @@ func (t *WhitelistUpdateTask) downloadAndParse(ctx context.Context) ([]string, e
 		return nil, fmt.Errorf("http error: status code %d", resp.StatusCode)
 	}
 
-	// Read everything into memory. Zip requires random access, so we must buffer the bytes.
+	// Read the body bounded: zip needs random access so bytes must be
+	// buffered, but an unbounded copy lets a runaway response exhaust
+	// memory before the parse-stage cap ever applies.
+	limit := t.config.MaxDownloadBytes
+	if limit <= 0 {
+		limit = DefaultWhitelistDownloadBytes
+	}
 	var buf bytes.Buffer
-	_, err = io.Copy(&buf, resp.Body)
-	if err != nil {
+	if _, err := io.Copy(&buf, io.LimitReader(resp.Body, limit+1)); err != nil {
 		return nil, fmt.Errorf("read response body: %w", err)
+	}
+	if int64(buf.Len()) > limit {
+		return nil, fmt.Errorf("whitelist source exceeds %d bytes download cap", limit)
 	}
 
 	zipReader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))
