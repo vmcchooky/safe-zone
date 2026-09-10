@@ -1063,7 +1063,9 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		if s.store != nil && s.store.Enabled() {
 			// Client-supplied identifiers (DoH client_id) are unauthenticated:
 			// policy must be derived from the trusted client IP only.
-			g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID, false)
+			// The request context (not Background) bounds this lookup so a
+			// disconnected caller stops consuming database work.
+			g, err := s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
 			if err == nil {
 				group = g
 			}
@@ -1074,7 +1076,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 
 		// 1. Check Overrides
 		if s.store != nil && s.store.Enabled() {
-			override, err := s.store.GetEffectiveOverride(context.Background(), group.ID, normalized)
+			override, err := s.store.GetEffectiveOverride(ctx, group.ID, normalized)
 			if err == nil && override != nil {
 				verdict := analysis.VerdictSafe
 				score := 0
@@ -1170,7 +1172,9 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	if s.store != nil && s.store.Enabled() {
 		// Client-supplied identifiers (DoH client_id) are unauthenticated:
 		// policy must be derived from the trusted client IP only.
-		g, err := s.store.GetGroupForClient(context.Background(), client.IP, client.ClientID, false)
+		// The request context (not Background) bounds this lookup so a
+		// disconnected caller stops consuming database work.
+		g, err := s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
 		if err == nil {
 			group = g
 		}
@@ -1186,7 +1190,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 
 	// 2. Check Overrides
 	if s.store != nil && s.store.Enabled() {
-		override, err := s.store.GetEffectiveOverride(context.Background(), group.ID, normalized)
+		override, err := s.store.GetEffectiveOverride(ctx, group.ID, normalized)
 		if err == nil && override != nil {
 			policyAction := override.Action
 			verdict := analysis.VerdictSafe
