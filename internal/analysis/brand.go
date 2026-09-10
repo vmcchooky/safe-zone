@@ -345,6 +345,27 @@ var keyboardAdjacency = map[rune]string{
 	'y': "tghu67", 'z': "asx",
 }
 
+// brandKeywordExemptRoots lists roots whose own names legitimately embed a
+// trusted brand keyword (amazonaws holds amazon, googleadservices holds
+// google). Only the main-label keyword rule skips these roots; typosquat,
+// subdomain-abuse, feed, OSINT and override paths are unaffected, and the
+// same token as a subdomain label elsewhere still fires. Additions need
+// code review: each entry narrows phishing detection on that root.
+var brandKeywordExemptRoots = map[string]bool{
+	"amazonaws.com":        true,
+	"googleadservices.com": true,
+}
+
+// isBrandKeywordExemptRoot reports whether rootDomain is a known
+// infrastructure root exempt from the main-label brand-keyword rule.
+func isBrandKeywordExemptRoot(rootDomain string) bool {
+	rootDomain = strings.ToLower(strings.TrimSpace(rootDomain))
+	if rootDomain == "" {
+		return false
+	}
+	return brandKeywordExemptRoots[rootDomain]
+}
+
 var suspiciousTLDs = map[string]bool{
 	"xyz":  true,
 	"top":  true,
@@ -686,8 +707,11 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 			}
 		}
 
-		// 3. Suspicious Brand Keyword Mention
-		if isSuspiciousLabel(getMainLabel(rootDomain), brand.Name) || isSuspiciousLabel(getMainLabel(skeletonRootDomain), brand.Name) {
+		// 3. Suspicious Brand Keyword Mention. Skipped when the root itself
+		// is known infrastructure whose name embeds the brand
+		// (amazonaws.com, googleadservices.com).
+		if !isBrandKeywordExemptRoot(rootDomain) &&
+			(isSuspiciousLabel(getMainLabel(rootDomain), brand.Name) || isSuspiciousLabel(getMainLabel(skeletonRootDomain), brand.Name)) {
 			penalty := brandSpoofingScore
 			if suspiciousTLDs[tld] {
 				penalty += 20
