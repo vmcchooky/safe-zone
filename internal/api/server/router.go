@@ -62,6 +62,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	// Agent & System control
 	mux.HandleFunc("/v1/agent/status", h.RequireAuthFunc(h.AgentStatusHandler(agentEngine)))
 	mux.HandleFunc("/v1/agent/trigger", h.RequireAdminFunc(handlers.AgentTriggerHandler(agentEngine)))
+	mux.HandleFunc("/v1/agent/proposals", h.RequireAdminForMutationFunc(h.AgentProposalsHandler))
 
 	// Groups & Mappings
 	mux.HandleFunc("/v1/groups", h.RequireAdminForMutationFunc(h.GroupsHandler))

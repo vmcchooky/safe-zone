@@ -150,6 +150,10 @@ func main() {
 				ConfidenceThreshold: config.Float64("SAFE_ZONE_AGENT_AUDIT_CONFIDENCE_THRESHOLD", 0.7),
 				EnrichTimeout:       config.DurationSeconds("SAFE_ZONE_AGENT_ENRICH_TIMEOUT_SECONDS", 5*time.Second),
 				Lookback:            config.DurationSeconds("SAFE_ZONE_AGENT_AUDIT_LOOKBACK_SECONDS", 24*time.Hour),
+				// AutoEnforce restores direct audit-to-override writes. It
+				// defaults to false: findings become reviewable proposals
+				// at /v1/agent/proposals instead of durable global blocks.
+				AutoEnforce: config.Bool("SAFE_ZONE_AGENT_AUDIT_AUTO_ENFORCE", false),
 			},
 		)
 		agentEngine.Register(

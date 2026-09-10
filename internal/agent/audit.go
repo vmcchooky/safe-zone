@@ -27,6 +27,13 @@ type AuditConfig struct {
 	// [windowEnd-Lookback, windowEnd) window; a window is only retired once
 	// every domain in it has been processed.
 	Lookback time.Duration
+	// AutoEnforce restores the legacy direct-to-override path. It defaults
+	// to false: findings become reviewable proposals instead of durable
+	// global blocks. Enable only for a dedicated key no other writer uses.
+	AutoEnforce bool
+	// ProposalTTL bounds how long an unreviewed proposal stays actionable.
+	// Zero means DefaultAgentProposalTTL (7 days) via the store default.
+	ProposalTTL time.Duration
 }
 
 // auditCursorState is the persisted audit position. windowEnd is the frozen
@@ -51,6 +58,9 @@ type AuditTask struct {
 	ai     *ai.Client
 	redis  *cache.Redis
 	config AuditConfig
+	// enrich runs TLS/WHOIS enrichment for one domain. It defaults to live
+	// parallel lookups; tests override it to avoid network access.
+	enrich func(ctx context.Context, domain string) (tlsinspect.Result, whois.Result)
 	// cursor is thread-safe and survives restarts via the system_config
 	// table; a failed persistence is logged and degrades to at-least-once
 	// reprocessing instead of data loss.
@@ -62,6 +72,7 @@ type AuditTask struct {
 type AuditResult struct {
 	Audited     int `json:"audited"`
 	AutoBlocked int `json:"auto_blocked"`
+	Proposed    int `json:"proposed"`
 	Skipped     int `json:"skipped"`
 	Errors      int `json:"errors"`
 }
@@ -90,10 +101,37 @@ func NewAuditTask(db *store.DB, aiClient *ai.Client, redis *cache.Redis, cfg Aud
 		config: cfg,
 		cursor: auditCursorState{Version: auditCursorVersion},
 	}
+	task.enrich = func(ctx context.Context, domain string) (tlsinspect.Result, whois.Result) {
+		return enrichDomainSignals(ctx, domain, task.config.EnrichTimeout)
+	}
 	if db != nil && db.Enabled() {
 		task.loadCursor(context.Background())
 	}
 	return task
+}
+
+// enrichDomainSignals runs TLS + WHOIS enrichment in parallel under a
+// shared timeout.
+func enrichDomainSignals(ctx context.Context, domain string, timeout time.Duration) (tlsinspect.Result, whois.Result) {
+	enrichCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	var (
+		tlsResult   tlsinspect.Result
+		whoisResult whois.Result
+		wg          sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		tlsResult = tlsinspect.Inspect(enrichCtx, domain)
+	}()
+	go func() {
+		defer wg.Done()
+		whoisResult = whois.Lookup(enrichCtx, domain)
+	}()
+	wg.Wait()
+	return tlsResult, whoisResult
 }
 
 func (t *AuditTask) Name() string { return "audit" }
@@ -248,6 +286,8 @@ func (t *AuditTask) Run(ctx context.Context) error {
 		switch action {
 		case "blocked":
 			result.AutoBlocked++
+		case "proposed":
+			result.Proposed++
 		case "skipped":
 			result.Skipped++
 		}
@@ -267,8 +307,8 @@ func (t *AuditTask) Run(ctx context.Context) error {
 		t.storeCursor(ctx, auditCursorState{Version: auditCursorVersion, WindowEnd: cursor.WindowEnd, LastDomain: lastDone})
 	}
 
-	details := fmt.Sprintf(`{"audited":%d,"auto_blocked":%d,"skipped":%d,"errors":%d}`,
-		result.Audited, result.AutoBlocked, result.Skipped, result.Errors)
+	details := fmt.Sprintf(`{"audited":%d,"auto_blocked":%d,"proposed":%d,"skipped":%d,"errors":%d}`,
+		result.Audited, result.AutoBlocked, result.Proposed, result.Skipped, result.Errors)
 	_ = t.store.RecordAgentEvent(ctx, "audit", "audit_completed", "", details)
 
 	logjson.Info("agent audit completed", correlation.Fields(ctx, map[string]any{
@@ -276,6 +316,7 @@ func (t *AuditTask) Run(ctx context.Context) error {
 		"task":         "audit",
 		"audited":      result.Audited,
 		"auto_blocked": result.AutoBlocked,
+		"proposed":     result.Proposed,
 		"skipped":      result.Skipped,
 		"errors":       result.Errors,
 	}))
@@ -283,10 +324,11 @@ func (t *AuditTask) Run(ctx context.Context) error {
 	return nil
 }
 
-// auditDomain enriches a single domain and decides whether to auto-block.
-// Returns "blocked", "skipped", or "reviewed".
+// auditDomain enriches a single domain and decides whether to propose or
+// auto-block it. Returns "blocked", "proposed", "skipped", or "reviewed".
 func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, error) {
-	// Skip if domain already has an override (respect admin intent).
+	// Skip if domain already has an override (respect admin intent), either
+	// global or scoped to any client group the agent cannot see.
 	existing, err := t.store.GetOverride(ctx, domain)
 	if err != nil {
 		return "", fmt.Errorf("check override: %w", err)
@@ -294,26 +336,14 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 	if existing != nil {
 		return "skipped", nil
 	}
+	if grouped, err := t.store.HasGroupOverrideForDomain(ctx, domain); err != nil {
+		return "", fmt.Errorf("check group overrides: %w", err)
+	} else if grouped {
+		return "skipped", nil
+	}
 
-	// Run TLS + WHOIS enrichment in parallel.
-	enrichCtx, cancel := context.WithTimeout(ctx, t.config.EnrichTimeout)
-	defer cancel()
-
-	var (
-		tlsResult   tlsinspect.Result
-		whoisResult whois.Result
-		wg          sync.WaitGroup
-	)
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		tlsResult = tlsinspect.Inspect(enrichCtx, domain)
-	}()
-	go func() {
-		defer wg.Done()
-		whoisResult = whois.Lookup(enrichCtx, domain)
-	}()
-	wg.Wait()
+	// Run TLS + WHOIS enrichment (parallel live lookups by default).
+	tlsResult, whoisResult := t.enrich(ctx, domain)
 
 	// Build a merged score from enrichment signals.
 	score := tlsResult.Score + whoisResult.Score
@@ -335,6 +365,7 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 	}
 
 	// Optional AI refinement for ambiguous cases.
+	aiPromoted := false
 	if t.ai != nil && t.ai.Enabled() && verdict == analysis.VerdictSuspicious {
 		current := analysis.Result{
 			Domain:     domain,
@@ -345,6 +376,7 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 		}
 		aiResult, aiErr := t.ai.Refine(ctx, domain, current)
 		if aiErr == nil && aiResult.Verdict == analysis.VerdictMalicious {
+			aiPromoted = true
 			verdict = analysis.VerdictMalicious
 			if aiResult.Score > score {
 				score = aiResult.Score
@@ -361,8 +393,13 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 		score = 100
 	}
 
-	// Decision: auto-block if malicious with high confidence.
+	// Decision: with AutoEnforce off (the default) a malicious finding
+	// becomes a reviewable proposal; only explicit opt-in writes a
+	// durable global override directly.
 	if verdict == analysis.VerdictMalicious && confidence >= t.config.ConfidenceThreshold {
+		if !t.config.AutoEnforce {
+			return t.proposeBlock(ctx, domain, score, confidence, reasons, tlsResult, whoisResult, aiPromoted)
+		}
 		reason := fmt.Sprintf("agent: auto-block (enriched, score=%d, confidence=%.2f)", score, confidence)
 		if err := t.store.UpsertOverride(ctx, domain, "block", reason); err != nil {
 			return "", fmt.Errorf("upsert override: %w", err)
@@ -403,4 +440,43 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 	_ = t.store.RecordAgentEvent(ctx, "audit", "reviewed", domain, details)
 
 	return "reviewed", nil
+}
+
+// proposeBlock records a reviewable block proposal instead of writing a
+// durable override. The proposal carries its evidence, actor and scope so
+// a human reviewer can decide without re-running enrichment.
+func (t *AuditTask) proposeBlock(ctx context.Context, domain string, score int, confidence float64, reasons []string, tlsResult tlsinspect.Result, whoisResult whois.Result, aiPromoted bool) (string, error) {
+	evidence, err := json.Marshal(map[string]any{
+		"score":         score,
+		"confidence":    confidence,
+		"tls_score":     tlsResult.Score,
+		"tls_reasons":   tlsResult.Reasons,
+		"whois_score":   whoisResult.Score,
+		"whois_reasons": whoisResult.Reasons,
+		"ai_promoted":   aiPromoted,
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode proposal evidence: %w", err)
+	}
+	proposal := store.AgentProposal{
+		TaskName:   "audit",
+		Domain:     domain,
+		Action:     "block",
+		Score:      score,
+		Confidence: confidence,
+		Reasons:    append([]string(nil), reasons...),
+		Evidence:   string(evidence),
+		Actor:      "agent:audit",
+		Scope:      "exact",
+	}
+	if t.config.ProposalTTL > 0 {
+		proposal.ExpiresAt = time.Now().Add(t.config.ProposalTTL).UTC().Format(time.RFC3339Nano)
+	}
+	created, err := t.store.CreateAgentProposal(ctx, proposal)
+	if err != nil {
+		return "", fmt.Errorf("create proposal: %w", err)
+	}
+	_ = t.store.RecordAgentEvent(ctx, "audit", "proposal_created", domain,
+		fmt.Sprintf(`{"proposal_id":%d,"score":%d,"confidence":%.2f}`, created.ID, score, confidence))
+	return "proposed", nil
 }

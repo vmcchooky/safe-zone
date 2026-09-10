@@ -244,6 +244,28 @@ CREATE TABLE IF NOT EXISTS local_overrides (
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS agent_proposals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_name TEXT NOT NULL DEFAULT 'audit',
+    domain TEXT NOT NULL,
+    action TEXT NOT NULL CHECK(action IN ('allow', 'block')),
+    score INTEGER NOT NULL DEFAULT 0,
+    confidence REAL NOT NULL DEFAULT 0,
+    reasons TEXT NOT NULL DEFAULT '[]',
+    evidence TEXT NOT NULL DEFAULT '{}',
+    actor TEXT NOT NULL DEFAULT '',
+    scope TEXT NOT NULL DEFAULT 'exact',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'approved', 'rejected', 'expired')),
+    expires_at TEXT NOT NULL,
+    reviewer TEXT DEFAULT '',
+    review_reason TEXT DEFAULT '',
+    reviewed_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_agent_proposals_status ON agent_proposals(status);
+CREATE INDEX IF NOT EXISTS idx_agent_proposals_domain ON agent_proposals(domain);
+
 CREATE TABLE IF NOT EXISTS agent_audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     task_name TEXT NOT NULL,
