@@ -84,6 +84,7 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	mux.HandleFunc("/v1/reports", handler.RequireAdminFunc(handler.ListReportsHandler))
 	mux.HandleFunc("/v1/reports/status", handler.RequireAdminFunc(handler.UpdateReportStatusHandler))
 	mux.HandleFunc("/v1/agent/trigger", handler.RequireAdminFunc(AgentTriggerHandler(nil)))
+	mux.HandleFunc("/v1/agent/proposals", handler.RequireAdminForMutationFunc(handler.AgentProposalsHandler))
 
 	server := httptest.NewServer(serve.WithRequestID(httputil.LogRequests("core-api", handler.Metrics)(mux)))
 	t.Cleanup(server.Close)
