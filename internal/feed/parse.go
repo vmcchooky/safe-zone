@@ -15,10 +15,11 @@ import (
 )
 
 type ParseStats struct {
-	Valid      int `json:"valid"`
-	Invalid    int `json:"invalid"`
-	Duplicates int `json:"duplicates"`
-	Skipped    int `json:"skipped"`
+	Valid               int `json:"valid"`
+	Invalid             int `json:"invalid"`
+	Duplicates          int `json:"duplicates"`
+	Skipped             int `json:"skipped"`
+	SkippedPublicSuffix int `json:"skipped_public_suffix"`
 }
 
 type IndicatorKind string

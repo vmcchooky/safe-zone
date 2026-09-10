@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -18,6 +19,7 @@ import (
 	"safe-zone/internal/safefile"
 
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/net/publicsuffix"
 )
 
 const DefaultThreatFeedKey = "safe-zone:threat:feed"
@@ -29,6 +31,57 @@ const DefaultMaxFeedBytes int64 = 50 * 1024 * 1024
 // fallback so members never expire on diverging schedules.
 const DefaultSyncTTL = 14 * 24 * time.Hour
 const defaultRedisBatchSize = 1000
+
+// isPublicSuffixMember reports whether domain is itself a public suffix
+// (shared infrastructure root such as github.io, or a PSL-wildcard leaf
+// such as ec2-1-2-3.compute-1.amazonaws.com). Admitting it as a host IOC
+// lets the parent-walk matcher block everything at or beneath it, so sync
+// refuses such members in every admission mode. This deliberately trades a
+// small exact-match recall loss on ephemeral single-tenant leaves (which
+// lexical scoring still evaluates) for zero risk of blocking a shared
+// region endpoint or tenant root for the full entry TTL. IP literals are
+// never public suffixes: an address is already the narrowest host-level
+// identity available.
+func isPublicSuffixMember(domain string) bool {
+	value := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	if value == "" || net.ParseIP(value) != nil {
+		return false
+	}
+	suffix, _ := publicsuffix.PublicSuffix(value)
+	// Both ICANN and private sections count: either one marks a shared
+	// root whose tenants must not inherit a host block.
+	return suffix != "" && strings.EqualFold(suffix, value)
+}
+
+// admitFeedDomain reports whether domain may enter the threat feed,
+// counting refused public-suffix members in stats. Subdomains of shared
+// roots (evil.github.io) stay admissible: only the shared root itself is
+// refused.
+func admitFeedDomain(domain string, stats *ParseStats) bool {
+	if isPublicSuffixMember(domain) {
+		if stats != nil {
+			stats.SkippedPublicSuffix++
+		}
+		logjson.Warn("threat feed member is a public suffix; refusing to admit", map[string]any{
+			"service": "feed",
+			"domain":  domain,
+		})
+		return false
+	}
+	return true
+}
+
+// filterPublicSuffixMembers drops shared roots from a planned domain list
+// while recording how many were refused.
+func filterPublicSuffixMembers(domains []string, stats *ParseStats) []string {
+	kept := domains[:0]
+	for _, domain := range domains {
+		if admitFeedDomain(domain, stats) {
+			kept = append(kept, domain)
+		}
+	}
+	return kept
+}
 
 type SyncOptions struct {
 	Source                     string
@@ -144,6 +197,9 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		if admissionMode == AdmissionShadow {
 			plannedDomains = append(plannedDomains, plan.Contextual...)
 		}
+		// Refuse shared roots before they reach dry-run reports or the
+		// runtime queue below.
+		plannedDomains = filterPublicSuffixMembers(plannedDomains, &report.Stats)
 	}
 
 	if options.DryRun {
@@ -156,7 +212,10 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 			return report, nil
 		}
 		var stats ParseStats
-		err := ParseEach(reader, func(string) error { return nil }, &stats)
+		err := ParseEach(reader, func(domain string) error {
+			admitFeedDomain(domain, &stats)
+			return nil
+		}, &stats)
 		if err != nil {
 			return fail(err)
 		}
@@ -200,6 +259,9 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	}
 
 	queueDomain := func(domain string) error {
+		if !admitFeedDomain(domain, &stats) {
+			return nil
+		}
 		batch = append(batch, redis.Z{Score: expireScore, Member: domain})
 		if len(batch) >= defaultRedisBatchSize {
 			return flush()
