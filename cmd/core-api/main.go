@@ -120,6 +120,7 @@ func main() {
 			ratelimit.Tier{PathPrefix: "/app", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/dashboard", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/status", Limiter: dashboardLimiter},
+			ratelimit.Tier{PathPrefix: "/metrics", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/version", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/auth/session", Limiter: dashboardLimiter},
 			ratelimit.Tier{PathPrefix: "/v1/settings/bundle", Limiter: dashboardLimiter},
