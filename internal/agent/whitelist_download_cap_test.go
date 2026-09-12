@@ -24,10 +24,11 @@ func TestWhitelistDownloadEnforcesByteCap(t *testing.T) {
 	defer server.Close()
 
 	task := NewWhitelistUpdateTask(db, wl, WhitelistUpdateConfig{
-		SourceURL:        server.URL,
-		Timeout:          10 * time.Second,
-		Enabled:          true,
-		MaxDownloadBytes: 1024,
+		SourceURL:           server.URL,
+		Timeout:             10 * time.Second,
+		Enabled:             true,
+		MaxDownloadBytes:    1024,
+		AllowPrivateSources: true,
 	})
 	if err := task.Run(context.Background()); err == nil ||
 		!strings.Contains(err.Error(), "exceeds") {
@@ -35,10 +36,11 @@ func TestWhitelistDownloadEnforcesByteCap(t *testing.T) {
 	}
 
 	small := NewWhitelistUpdateTask(db, wl, WhitelistUpdateConfig{
-		SourceURL:        server.URL,
-		Timeout:          10 * time.Second,
-		Enabled:          true,
-		MaxDownloadBytes: 1 << 20,
+		SourceURL:           server.URL,
+		Timeout:             10 * time.Second,
+		Enabled:             true,
+		MaxDownloadBytes:    1 << 20,
+		AllowPrivateSources: true,
 	})
 	if _, err := small.downloadAndParse(context.Background()); err != nil {
 		t.Fatalf("small body under cap must download, got %v", err)

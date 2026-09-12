@@ -165,16 +165,26 @@ func IsCGNAT(ip net.IP) bool {
 // redirects and surface the error to the caller instead of silently
 // returning the redirect response.
 func CheckRedirect(req *http.Request, via []*http.Request) error {
-	if len(via) >= 10 {
-		return fmt.Errorf("stopped after 10 redirects")
+	return RedirectPolicy(false)(req, via)
+}
+
+// RedirectPolicy returns the same outbound redirect policy parameterized
+// by private-source allowance, so services that legitimately fetch from
+// private test or intranet hosts (explicit opt-in) keep working redirects
+// while metadata/link-local targets stay blocked unconditionally.
+func RedirectPolicy(allowPrivate bool) func(*http.Request, []*http.Request) error {
+	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if err := ValidateParsedURL(req.URL, allowPrivate); err != nil {
+			return fmt.Errorf("blocked redirect: %w", err)
+		}
+		if _, err := ResolveAllowedIPs(req.Context(), req.URL.Hostname(), allowPrivate); err != nil {
+			return fmt.Errorf("blocked redirect: %w", err)
+		}
+		return nil
 	}
-	if err := ValidateParsedURL(req.URL, false); err != nil {
-		return fmt.Errorf("blocked redirect: %w", err)
-	}
-	if _, err := ResolveAllowedIPs(req.Context(), req.URL.Hostname(), false); err != nil {
-		return fmt.Errorf("blocked redirect: %w", err)
-	}
-	return nil
 }
 
 func baseTransport(base http.RoundTripper) (*http.Transport, bool) {

@@ -66,9 +66,10 @@ func TestWhitelistUpdateTaskSuccess(t *testing.T) {
 	defer server.Close()
 
 	cfg := WhitelistUpdateConfig{
-		SourceURL: server.URL,
-		Timeout:   10 * time.Second,
-		Enabled:   true,
+		SourceURL:           server.URL,
+		Timeout:             10 * time.Second,
+		Enabled:             true,
+		AllowPrivateSources: true,
 	}
 
 	task := NewWhitelistUpdateTask(db, wl, cfg)
@@ -144,9 +145,10 @@ func TestWhitelistUpdateTaskHttpFailure(t *testing.T) {
 	defer server.Close()
 
 	cfg := WhitelistUpdateConfig{
-		SourceURL: server.URL,
-		Timeout:   10 * time.Second,
-		Enabled:   true,
+		SourceURL:           server.URL,
+		Timeout:             10 * time.Second,
+		Enabled:             true,
+		AllowPrivateSources: true,
 	}
 
 	task := NewWhitelistUpdateTask(db, wl, cfg)
@@ -180,9 +182,10 @@ func TestWhitelistUpdateTaskRawCsvFallback(t *testing.T) {
 	defer server.Close()
 
 	cfg := WhitelistUpdateConfig{
-		SourceURL: server.URL,
-		Timeout:   10 * time.Second,
-		Enabled:   true,
+		SourceURL:           server.URL,
+		Timeout:             10 * time.Second,
+		Enabled:             true,
+		AllowPrivateSources: true,
 	}
 
 	task := NewWhitelistUpdateTask(db, wl, cfg)

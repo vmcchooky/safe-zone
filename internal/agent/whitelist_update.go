@@ -15,6 +15,7 @@ import (
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 	"safe-zone/internal/risk"
 	"safe-zone/internal/store"
 )
@@ -28,6 +29,11 @@ type WhitelistUpdateConfig struct {
 	// parsing. Zero means DefaultWhitelistDownloadBytes. The parse stage
 	// keeps its own 128MiB reader cap; this one guards the buffer.
 	MaxDownloadBytes int64
+	// AllowPrivateSources permits fetching from private/test hosts.
+	// Default false: the updater is a scheduled background task, so its
+	// egress must pass the shared outbound policy like every other
+	// collector. Tests opt in for loopback fixtures.
+	AllowPrivateSources bool
 }
 
 // DefaultWhitelistDownloadBytes bounds the whitelist source download.
@@ -150,14 +156,16 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 }
 
 func (t *WhitelistUpdateTask) downloadAndParse(ctx context.Context) ([]string, error) {
+	if _, err := netguard.ValidateURL(t.config.SourceURL, t.config.AllowPrivateSources); err != nil {
+		return nil, fmt.Errorf("validate whitelist source: %w", err)
+	}
 	req, err := http.NewRequestWithContext(ctx, "GET", t.config.SourceURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	client := &http.Client{
-		Timeout: t.config.Timeout,
-	}
+	client := netguard.NewHTTPClient(nil, t.config.Timeout, t.config.AllowPrivateSources)
+	client.CheckRedirect = netguard.RedirectPolicy(t.config.AllowPrivateSources)
 
 	resp, err := client.Do(req)
 	if err != nil {
