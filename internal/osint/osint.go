@@ -24,6 +24,7 @@ import (
 	"safe-zone/internal/cache"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
+	"safe-zone/internal/netguard"
 )
 
 const (
@@ -394,12 +395,7 @@ func (s *Service) fetchSource(ctx context.Context, domain, source string) (Evide
 	req.Header.Set("User-Agent", "SafeRoad-OSINT/1.0")
 	client := *s.httpClient
 	client.Transport = s.validatedSourceTransport(client.Transport)
-	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 3 {
-			return errors.New("too many redirects")
-		}
-		return nil
-	}
+	client.CheckRedirect = netguard.RedirectPolicy(s.allowPrivateSources)
 
 	resp, err := client.Do(req)
 	if err != nil {
