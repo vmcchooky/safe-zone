@@ -101,3 +101,15 @@ func TestNewRouterRedirectsLegacyDashboardToReactApp(t *testing.T) {
 		t.Fatalf("unexpected redirect location %q", got)
 	}
 }
+
+func TestNewRouterRequiresAuthForStatus(t *testing.T) {
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/status", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthenticated /v1/status to be 401, got %d", rec.Code)
+	}
+}

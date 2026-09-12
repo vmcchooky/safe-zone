@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"runtime"
 	"time"
 
 	"safe-zone/internal/api/httputil"
@@ -113,28 +112,15 @@ func (h *Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Cheap runtime observability for capacity/soak tooling. ReadMemStats stops
-	// the world briefly; call sites poll this endpoint at most ~1 Hz.
-	var ms runtime.MemStats
-	runtime.ReadMemStats(&ms)
-	runtimeStatus := map[string]any{
-		"goroutines":    runtime.NumGoroutine(),
-		"heap_alloc_mb": float64(ms.HeapAlloc) / (1 << 20),
-		"sys_mb":        float64(ms.Sys) / (1 << 20),
-		"num_gc":        ms.NumGC,
-	}
-
+	// Public minimal surface for dashboards and scrapers: request counters
+	// only. Runtime internals (heap, goroutines) and subsystem details
+	// (redis, feed_sync, adblock, analysis_config_reload, ml) stay behind
+	// authenticated /v1/status. Keeping ReadMemStats out of this path also
+	// removes its stop-the-world cost from an unauthenticated endpoint.
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"service":                "core-api",
-		"status":                 "ok",
-		"runtime":                runtimeStatus,
-		"metrics":                h.Metrics.Snapshot(),
-		"redis":                  h.Risk.CacheStatus(r.Context()),
-		"feed_sync":              h.FeedStatus(r.Context()),
-		"adblock":                h.Risk.AdblockStatus(),
-		"analysis_config_reload": h.Risk.AnalysisConfigReloadStatus(),
-		"ml":                     h.Risk.MLStatus(),
-		"time":                   time.Now().UTC().Format(time.RFC3339Nano),
+		"service": "core-api",
+		"status":  "ok",
+		"metrics": h.Metrics.Snapshot(),
 	})
 }
 

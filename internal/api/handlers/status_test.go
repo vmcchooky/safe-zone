@@ -156,19 +156,13 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	if payload["service"] != "core-api" {
 		t.Fatalf("expected core-api service, got %#v", payload["service"])
 	}
-	feedSync, ok := payload["feed_sync"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected feed_sync object, got %#v", payload["feed_sync"])
-	}
-	if feedSync["status"] != "disabled" {
-		t.Fatalf("expected disabled feed_sync status, got %#v", feedSync["status"])
-	}
-	redisStatus, ok := payload["redis"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected redis status object, got %#v", payload["redis"])
-	}
-	if redisStatus["status"] != "disabled" {
-		t.Fatalf("expected disabled redis status, got %#v", redisStatus["status"])
+	// Public metrics expose only the request counters Grafana charts need.
+	// Internals (redis, feed_sync, adblock, analysis_config_reload, ml,
+	// runtime) moved behind authenticated /v1/status.
+	for _, forbidden := range []string{"redis", "feed_sync", "adblock", "analysis_config_reload", "ml", "runtime", "time"} {
+		if _, ok := payload[forbidden]; ok {
+			t.Fatalf("public /metrics must not expose %q", forbidden)
+		}
 	}
 	metrics, ok := payload["metrics"].(map[string]any)
 	if !ok {
@@ -176,13 +170,6 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	}
 	if _, ok := metrics["request_summary"].(map[string]any); !ok {
 		t.Fatalf("expected request_summary map, got %#v", metrics["request_summary"])
-	}
-	reloadStatus, ok := payload["analysis_config_reload"].(map[string]any)
-	if !ok {
-		t.Fatalf("expected analysis_config_reload object, got %#v", payload["analysis_config_reload"])
-	}
-	if reloadStatus["revision"] == "" {
-		t.Fatalf("expected analysis config revision, got %#v", reloadStatus["revision"])
 	}
 }
 
