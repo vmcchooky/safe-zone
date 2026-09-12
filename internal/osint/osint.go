@@ -3,7 +3,9 @@ package osint
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -312,7 +314,7 @@ func (s *Service) Cached(ctx context.Context, domain string) (Report, bool) {
 	if s.redis != nil && s.redis.Enabled() {
 		var report Report
 		err := s.withRedis(ctx, func(redisCtx context.Context) error {
-			found, err := s.redis.GetJSON(redisCtx, cacheKey(normalized), &report)
+			found, err := s.redis.GetJSON(redisCtx, s.evidenceCacheKey(normalized), &report)
 			if err != nil || !found {
 				return err
 			}
@@ -691,7 +693,7 @@ func (s *Service) store(ctx context.Context, domain string, report Report) {
 		return
 	}
 	if err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		return s.redis.SetJSON(redisCtx, cacheKey(domain), report, s.cacheTTL)
+		return s.redis.SetJSON(redisCtx, s.evidenceCacheKey(domain), report, s.cacheTTL)
 	}); err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("osint cache write failed", correlation.Fields(ctx, map[string]any{
 			"service": "osint",
@@ -710,8 +712,25 @@ func (s *Service) withRedis(parent context.Context, fn func(context.Context) err
 	return fn(ctx)
 }
 
-func cacheKey(domain string) string {
-	return "safe-zone:osint:evidence:" + cacheRevision + ":" + domain
+// sourceRevision fingerprints the producer configuration (sources plus
+// trusted domains) so evidence fetched under one configuration is never
+// reused after the operator changes what the service trusts or reads.
+func (s *Service) sourceRevision() string {
+	var material []string
+	if s != nil {
+		material = append(material, s.sources...)
+		material = append(material, s.trustedDomains...)
+	}
+	sorted := append([]string(nil), material...)
+	sort.Strings(sorted)
+	sum := sha256.Sum256([]byte(strings.Join(sorted, "\n")))
+	return hex.EncodeToString(sum[:])[:12]
+}
+
+// evidenceCacheKey scopes the evidence cache by producer configuration
+// in addition to the shared cache revision.
+func (s *Service) evidenceCacheKey(domain string) string {
+	return "safe-zone:osint:evidence:" + cacheRevision + ":" + s.sourceRevision() + ":" + domain
 }
 
 func expired(report Report) bool {
