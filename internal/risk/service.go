@@ -1917,10 +1917,21 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		} else {
 			assess.Skipped = append(assess.Skipped, skippedLayer(LayerOSINT, SkipCacheOnly))
 		}
-		if shouldEnqueueEnrichment(cached) && cachedEntryNeedsEnrichment(cachedEntry) {
+		var report osint.Report
+		var updated analysis.Result
+		timer.measure(LayerOSINT, func() {
+			report = s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
+			updated = s.applyOSINT(ctx, normalized, cached, report, currentRevision)
+		})
+		// Enqueue after the OSINT section so the worker snapshot is the
+		// latest evaluation, and after a cache entry is known to exist:
+		// the worker must never read an entry older than its own
+		// snapshot's prerequisites. QueuedAt ordering plus the in-flight
+		// guard gives exactly one lookup per episode.
+		if shouldEnqueueEnrichment(updated) && cachedEntryNeedsEnrichment(cachedEntry) {
 			s.enqueueEnrichment(ctx, enrichmentJob{
 				Domain:         normalized,
-				Result:         cached,
+				Result:         updated,
 				FeedRevision:   cachedEntry.FeedRevision,
 				BrandRevision:  cachedEntry.BrandRevision,
 				ConfigRevision: cachedEntry.ConfigRevision,
@@ -1928,12 +1939,6 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 				QueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 			})
 		}
-		var report osint.Report
-		var updated analysis.Result
-		timer.measure(LayerOSINT, func() {
-			report = s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
-			updated = s.applyOSINT(ctx, normalized, cached, report, currentRevision)
-		})
 		assess.Timings = timer.timings
 		return updated, true, report.Evidence, assess
 	}
@@ -1986,20 +1991,6 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			}
 		}
 	}
-	if shouldEnqueueEnrichment(result) {
-		assess.Skipped = append(assess.Skipped, skippedLayer(LayerEnrichment, SkipAsync))
-		s.enqueueEnrichment(ctx, enrichmentJob{
-			Domain:         normalized,
-			Result:         result,
-			FeedRevision:   currentRevision,
-			BrandRevision:  currentBrandRevision,
-			ConfigRevision: currentConfigRevision,
-			ModelRevision:  modelRevision,
-			QueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
-		})
-	} else {
-		assess.Skipped = append(assess.Skipped, skippedLayer(LayerEnrichment, SkipOutOfRange))
-	}
 	if !assessedLayer(assess.Evaluated, LayerDomainML) {
 		assess.Skipped = append(assess.Skipped, LayerDomainML, LayerAIRefine)
 	}
@@ -2032,7 +2023,11 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 				AnalysisRevision: analysisAlgorithmRevision,
 				ConfigRevision:   currentConfigRevision,
 				ModelRevision:    modelRevision,
-				AssessedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+				// NOTE: no AssessedAt here on purpose. The enrichment job for
+				// this evaluation is enqueued below with a later QueuedAt; a
+				// stamp here is unnecessary and would only confuse recency
+				// comparisons. AssessedAt is set by writers that add new
+				// evidence after the snapshot: worker enrichment and OSINT.
 			}, ttl)
 		})
 	})
@@ -2042,6 +2037,25 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			"domain":  normalized,
 			"error":   err.Error(),
 		}))
+	}
+
+	// Enqueue after the cache write (and after OSINT, whose output is now
+	// part of result): the worker must always find a cache entry, and its
+	// snapshot must include every synchronous signal, so a worker write
+	// can never clobber a same-request OSINT upgrade it never saw.
+	if shouldEnqueueEnrichment(result) {
+		assess.Skipped = append(assess.Skipped, skippedLayer(LayerEnrichment, SkipAsync))
+		s.enqueueEnrichment(ctx, enrichmentJob{
+			Domain:         normalized,
+			Result:         result,
+			FeedRevision:   currentRevision,
+			BrandRevision:  currentBrandRevision,
+			ConfigRevision: currentConfigRevision,
+			ModelRevision:  modelRevision,
+			QueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+		})
+	} else {
+		assess.Skipped = append(assess.Skipped, skippedLayer(LayerEnrichment, SkipOutOfRange))
 	}
 
 	assess.Timings = timer.timings
