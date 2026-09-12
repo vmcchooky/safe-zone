@@ -45,7 +45,41 @@ const (
 	contextRadius   = 220
 	maxRoleContexts = 4
 	cacheRevision   = "v2"
+	// maxMemoryReports bounds the in-memory evidence map. Expired reports
+	// are evicted first; if the map is still full the oldest report (by
+	// check time) is dropped. Reports also live in Redis with TTL, so an
+	// eviction only costs a refetch, never evidence.
+	maxMemoryReports = 4096
 )
+
+// evictForInsertLocked makes room for one more entry. Callers must hold s.mu.
+func (s *Service) evictForInsertLocked() {
+	if len(s.memory) < maxMemoryReports {
+		return
+	}
+	for domain, report := range s.memory {
+		if expired(report) {
+			delete(s.memory, domain)
+		}
+	}
+	if len(s.memory) < maxMemoryReports {
+		return
+	}
+	oldestDomain := ""
+	var oldest time.Time
+	for domain, report := range s.memory {
+		checked, err := time.Parse(time.RFC3339Nano, report.CheckedAt)
+		if err != nil {
+			checked = time.Time{}
+		}
+		if oldestDomain == "" || checked.Before(oldest) {
+			oldestDomain, oldest = domain, checked
+		}
+	}
+	if oldestDomain != "" {
+		delete(s.memory, oldestDomain)
+	}
+}
 
 // ModeBackgroundOnDemand is the only supported OSINT mode. It describes the
 // combined contract: the public API performs on-demand evidence lookups for a
@@ -682,6 +716,7 @@ func (s *Service) store(ctx context.Context, domain string, report Report) {
 		report.Domain = domain
 	}
 	s.mu.Lock()
+	s.evictForInsertLocked()
 	s.memory[domain] = report
 	s.mu.Unlock()
 

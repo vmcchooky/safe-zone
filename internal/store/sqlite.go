@@ -454,6 +454,11 @@ func New(path string, retentionDays int) (*DB, error) {
 		"PRAGMA cache_size=-8000",
 		"PRAGMA busy_timeout=5000",
 		"PRAGMA foreign_keys=ON",
+		// Incremental vacuum lets cleanup() return freelist pages without
+		// a full blocking rebuild on every cycle. It only takes effect
+		// for databases created after it is set; existing files are
+		// converted once below.
+		"PRAGMA auto_vacuum=INCREMENTAL",
 	}
 	for _, pragma := range pragmas {
 		if _, err := sqlDB.Exec(pragma); err != nil {
@@ -619,6 +624,14 @@ func New(path string, retentionDays int) (*DB, error) {
 	if err := d.loadCIDRCache(); err != nil {
 		_ = sqlDB.Close()
 		return nil, fmt.Errorf("load cidr cache: %w", err)
+	}
+
+	// One-time conversion of pre-existing database files to incremental
+	// vacuum. A full VACUUM rewrites the file, so it runs once, guarded
+	// by a system_config flag, and never on the request path.
+	if err := d.ensureIncrementalVacuum(context.Background()); err != nil {
+		_ = sqlDB.Close()
+		return nil, err
 	}
 
 	d.wg.Add(2)
@@ -1005,6 +1018,47 @@ func (d *DB) cleanup() {
 			"removed": n,
 		})
 	}
+	// Return a bounded number of freelist pages to the OS. Unlike a full
+	// VACUUM this never rewrites the whole file, so retention deletes do
+	// not grow the database file without bound.
+	if _, err := d.db.ExecContext(context.Background(), `PRAGMA incremental_vacuum(100)`); err != nil {
+		logjson.Warn("incremental vacuum failed", map[string]any{
+			"service": "store",
+			"error":   err.Error(),
+		})
+	}
+}
+
+// vacuumIncrementalDoneKey marks databases already converted to
+// incremental vacuum mode.
+const vacuumIncrementalDoneKey = "sqlite_vacuum_incremental_done"
+
+// ensureIncrementalVacuum converts pre-existing database files to
+// incremental vacuum mode exactly once. New files already inherit the
+// mode from the open-time pragma.
+func (d *DB) ensureIncrementalVacuum(ctx context.Context) error {
+	if !d.Enabled() {
+		return fmt.Errorf("sqlite store disabled")
+	}
+	done, err := d.GetSystemConfig(ctx, vacuumIncrementalDoneKey)
+	if err == nil && done == "1" {
+		return nil
+	}
+	var mode string
+	if err := d.db.QueryRowContext(ctx, `PRAGMA auto_vacuum`).Scan(&mode); err != nil {
+		return fmt.Errorf("inspect vacuum mode: %w", err)
+	}
+	// Modes: 0 = none (needs conversion), 1 = full (already self-
+	// maintaining), 2 = incremental (desired state).
+	if strings.TrimSpace(mode) == "0" {
+		if _, err := d.db.ExecContext(ctx, `VACUUM`); err != nil {
+			return fmt.Errorf("vacuum database: %w", err)
+		}
+	}
+	if err := d.SetSystemConfig(ctx, vacuumIncrementalDoneKey, "1"); err != nil {
+		return fmt.Errorf("record vacuum conversion: %w", err)
+	}
+	return nil
 }
 
 // --- Overrides ---
