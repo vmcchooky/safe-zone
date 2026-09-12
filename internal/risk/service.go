@@ -371,6 +371,10 @@ type Analysis struct {
 	// one (admin override/allowlist admission, legacy fused adblock). Nil
 	// on pure engine paths: no content or admin policy was involved.
 	Decision *PolicyDecision `json:"decision,omitempty"`
+	// DecisionID identifies this evaluation. It reuses the request
+	// correlation ID when present, otherwise a generated eval ID, so logs
+	// join to telemetry rows carrying the same value.
+	DecisionID string `json:"decision_id"`
 	// Assessment declares what was evaluated for the security verdict.
 	// Coverage is always "domain_only" until website inspection exists;
 	// Skipped uses bare layer names for short-circuited stages and
@@ -387,6 +391,8 @@ type Policy struct {
 	// model yet, and absent from legacy serialized payloads.
 	Decision *PolicyDecision `json:"decision,omitempty"`
 	CacheHit bool            `json:"cache_hit"`
+	// DecisionID mirrors Analysis.DecisionID for the same evaluation.
+	DecisionID string `json:"decision_id"`
 	// Assessment mirrors Analysis.Assessment for the security Result.
 	Assessment Assessment `json:"assessment"`
 }
@@ -414,6 +420,8 @@ const (
 	LayerGroupPolicy   = "group_policy"
 	LayerResultCache   = "result_cache"
 	LayerWebsite       = "website_content"
+	// LayerClientGroup times client-to-group resolution (SQLite lookup).
+	LayerClientGroup = "client_group"
 )
 
 // Skipped-layer reasons. Bare layer names mean short-circuited.
@@ -429,9 +437,59 @@ const (
 
 // Assessment describes which layers produced a security Result.
 type Assessment struct {
-	Coverage  string   `json:"coverage"`
-	Evaluated []string `json:"evaluated_layers"`
-	Skipped   []string `json:"skipped_layers"`
+	Coverage  string           `json:"coverage"`
+	Evaluated []string         `json:"evaluated_layers"`
+	Skipped   []string         `json:"skipped_layers"`
+	Timings   map[string]int64 `json:"timings_us,omitempty"`
+}
+
+// decisionIDFor returns the evaluation ID: the request correlation ID
+// when the caller propagated one, otherwise a generated eval ID.
+func decisionIDFor(ctx context.Context) string {
+	if id := correlation.RequestID(ctx); id != "" {
+		return id
+	}
+	return correlation.NewID("eval")
+}
+
+// layerTimer accumulates per-layer microseconds using only the bounded
+// layer vocabulary, so timing series cannot explode in cardinality.
+type layerTimer struct {
+	timings map[string]int64
+}
+
+func (t *layerTimer) measure(layer string, fn func()) {
+	start := time.Now()
+	fn()
+	if t.timings == nil {
+		t.timings = make(map[string]int64)
+	}
+	t.timings[layer] += time.Since(start).Microseconds()
+}
+
+func mergeTimings(maps ...map[string]int64) map[string]int64 {
+	merged := make(map[string]int64)
+	for _, m := range maps {
+		for layer, us := range m {
+			merged[layer] += us
+		}
+	}
+	if len(merged) == 0 {
+		return nil
+	}
+	return merged
+}
+
+// encodeTrace serializes the assessment for the telemetry trace column.
+// It never fails: on encoding error the timings are dropped but the
+// coverage marker survives, so a broken trace cannot lose the verdict.
+func encodeTrace(assess Assessment) string {
+	encoded, err := json.Marshal(assess)
+	if err != nil {
+		fallback, _ := json.Marshal(Assessment{Coverage: assess.Coverage})
+		return string(fallback)
+	}
+	return string(encoded)
 }
 
 // Policy decision kinds. "content" marks content-policy blocks,
@@ -1248,6 +1306,8 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 	var evidence []osint.Evidence
 	var decision *PolicyDecision
 	assess := newDomainAssessment()
+	decisionID := decisionIDFor(ctx)
+	var preTimer layerTimer
 
 	if err != nil {
 		result = s.analyzeLexical(domain)
@@ -1256,6 +1316,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		assess.Skipped = append(assess.Skipped, LayerOverride, LayerWhitelist,
 			LayerAdblock, LayerGroupPolicy)
 		assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
+		assess.Timings = preTimer.timings
 	} else {
 		// Get group
 		var group *store.ClientGroup
@@ -1264,8 +1325,12 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 			// policy must be derived from the trusted client IP only.
 			// The request context (not Background) bounds this lookup so a
 			// disconnected caller stops consuming database work.
-			g, err := s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
-			if err == nil {
+			var g *store.ClientGroup
+			var groupErr error
+			preTimer.measure(LayerClientGroup, func() {
+				g, groupErr = s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
+			})
+			if groupErr == nil {
 				group = g
 			}
 		}
@@ -1276,8 +1341,15 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		assess.Evaluated = append(assess.Evaluated, LayerIdentity, LayerOverride)
 		// 1. Check Overrides
 		if s.store != nil && s.store.Enabled() {
-			override, err := s.store.GetEffectiveOverride(ctx, group.ID, normalized)
-			if err == nil && override != nil {
+			var override *store.Override
+			preTimer.measure(LayerOverride, func() {
+				var overrideErr error
+				override, overrideErr = s.store.GetEffectiveOverride(ctx, group.ID, normalized)
+				if overrideErr != nil {
+					override = nil
+				}
+			})
+			if override != nil {
 				verdict := analysis.VerdictSafe
 				score := 0
 				if override.Action == "block" {
@@ -1304,7 +1376,13 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		}
 
 		// 2. Check Whitelist
-		if result.Domain == "" && s.whitelist.IsAllowed(normalized) {
+		whitelisted := false
+		if result.Domain == "" {
+			preTimer.measure(LayerWhitelist, func() {
+				whitelisted = s.whitelist.IsAllowed(normalized)
+			})
+		}
+		if result.Domain == "" && whitelisted {
 			result = analysis.Result{
 				Domain:     normalized,
 				Verdict:    analysis.VerdictSafe,
@@ -1352,6 +1430,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 			assess.Evaluated = prependLayers(engineAssess.Evaluated,
 				[]string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock})
 			assess.Skipped = engineAssess.Skipped
+			assess.Timings = engineAssess.Timings
 		}
 	}
 
@@ -1360,8 +1439,10 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		CacheHit:   cacheHit,
 		AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Decision:   decision,
+		DecisionID: decisionID,
 		Assessment: assess,
 	}
+	a.Assessment.Timings = mergeTimings(preTimer.timings, assess.Timings)
 	if options.IncludeEvidence {
 		a.Evidence = evidence
 	}
@@ -1378,17 +1459,21 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) Policy {
 	normalized, err := analysis.NormalizeDomain(domain)
 	assess := newDomainAssessment()
+	decisionID := decisionIDFor(ctx)
+	var preTimer layerTimer
 	if err != nil {
 		res := s.analyzeLexical(domain)
 		assess.Evaluated = append(assess.Evaluated, LayerIdentity)
 		assess.Skipped = append(assess.Skipped, LayerOverride, LayerWhitelist,
 			LayerAdblock, LayerGroupPolicy)
 		assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
+		assess.Timings = preTimer.timings
 		return Policy{
 			Domain:     domain,
 			Policy:     "block",
 			Result:     res,
 			CacheHit:   false,
+			DecisionID: decisionID,
 			Assessment: assess,
 		}
 	}
@@ -1400,8 +1485,12 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		// policy must be derived from the trusted client IP only.
 		// The request context (not Background) bounds this lookup so a
 		// disconnected caller stops consuming database work.
-		g, err := s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
-		if err == nil {
+		var g *store.ClientGroup
+		var groupErr error
+		preTimer.measure(LayerClientGroup, func() {
+			g, groupErr = s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
+		})
+		if groupErr == nil {
 			group = g
 		}
 	}
@@ -1416,8 +1505,15 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 
 	// 2. Check Overrides
 	if s.store != nil && s.store.Enabled() {
-		override, err := s.store.GetEffectiveOverride(ctx, group.ID, normalized)
-		if err == nil && override != nil {
+		var override *store.Override
+		preTimer.measure(LayerOverride, func() {
+			var overrideErr error
+			override, overrideErr = s.store.GetEffectiveOverride(ctx, group.ID, normalized)
+			if overrideErr != nil {
+				override = nil
+			}
+		})
+		if override != nil {
 			policyAction := override.Action
 			verdict := analysis.VerdictSafe
 			score := 0
@@ -1449,11 +1545,14 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
 				LayerWhitelist, LayerAdblock, LayerGroupPolicy)
 			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
+			policyResult.Assessment.Timings = preTimer.timings
+			policyResult.DecisionID = decisionID
 			s.recordTelemetry(Analysis{
 				Result:     policyResult.Result,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 				Decision:   decision,
+				DecisionID: decisionID,
 				Assessment: policyResult.Assessment,
 			}, client)
 			return policyResult
@@ -1461,7 +1560,11 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	}
 
 	// 3. Check Whitelist
-	if s.whitelist.IsAllowed(normalized) {
+	whitelisted := false
+	preTimer.measure(LayerWhitelist, func() {
+		whitelisted = s.whitelist.IsAllowed(normalized)
+	})
+	if whitelisted {
 		decision := allowlistPolicyDecision()
 		policyResult := Policy{
 			Domain: normalized,
@@ -1482,11 +1585,14 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
 			LayerAdblock, LayerGroupPolicy)
 		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
+		policyResult.Assessment.Timings = preTimer.timings
+		policyResult.DecisionID = decisionID
 		s.recordTelemetry(Analysis{
 			Result:     policyResult.Result,
 			CacheHit:   false,
 			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 			Decision:   decision,
+			DecisionID: decisionID,
 			Assessment: policyResult.Assessment,
 		}, client)
 		return policyResult
@@ -1536,11 +1642,14 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
 			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
 				skippedLayer("security_assessment", SkipLegacyFused))
+			policyResult.Assessment.Timings = preTimer.timings
+			policyResult.DecisionID = decisionID
 			s.recordTelemetry(Analysis{
 				Result:     policyResult.Result,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 				Decision:   legacyDecision,
+				DecisionID: decisionID,
 				Assessment: policyResult.Assessment,
 			}, client)
 			return policyResult
@@ -1582,11 +1691,14 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 				LayerLexicalLocal, LayerContentPolicy)
 			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, LayerGroupPolicy)
 			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
+			policyResult.Assessment.Timings = preTimer.timings
+			policyResult.DecisionID = decisionID
 			s.recordTelemetryWithSource(Analysis{
 				Result:     lexicalResult,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 				Decision:   &decision,
+				DecisionID: decisionID,
 				Assessment: policyResult.Assessment,
 			}, client, "adblock")
 			return policyResult
@@ -1598,42 +1710,46 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 
 	// 5. Dynamic enforcement
 	policy := "allow"
-	if result.Verdict == analysis.VerdictMalicious && group.StrictMalware {
-		policy = "block"
-	}
-
-	if group.StrictPhishing {
-		isPhishing := false
-		for _, r := range result.Reasons {
-			if strings.Contains(strings.ToLower(r), "phishing") {
-				isPhishing = true
-				break
-			}
-		}
-		if result.Score >= 40 && (isPhishing || result.Category == "phishing") {
+	preTimer.measure(LayerGroupPolicy, func() {
+		if result.Verdict == analysis.VerdictMalicious && group.StrictMalware {
 			policy = "block"
 		}
-	}
 
-	if len(group.BlockCategories) > 0 && result.Category != "" && result.Category != "uncategorized" {
-		for _, blockedCat := range group.BlockCategories {
-			if strings.EqualFold(strings.TrimSpace(blockedCat), result.Category) {
+		if group.StrictPhishing {
+			isPhishing := false
+			for _, r := range result.Reasons {
+				if strings.Contains(strings.ToLower(r), "phishing") {
+					isPhishing = true
+					break
+				}
+			}
+			if result.Score >= 40 && (isPhishing || result.Category == "phishing") {
 				policy = "block"
-				break
 			}
 		}
-	}
+
+		if len(group.BlockCategories) > 0 && result.Category != "" && result.Category != "uncategorized" {
+			for _, blockedCat := range group.BlockCategories {
+				if strings.EqualFold(strings.TrimSpace(blockedCat), result.Category) {
+					policy = "block"
+					break
+				}
+			}
+		}
+	})
 
 	policyResult := Policy{
-		Domain:   result.Domain,
-		Policy:   policy,
-		Result:   result,
-		CacheHit: cacheHit,
+		Domain:     result.Domain,
+		Policy:     policy,
+		Result:     result,
+		CacheHit:   cacheHit,
+		DecisionID: decisionID,
 	}
 	policyResult.Assessment.Evaluated = prependLayers(engineAssess.Evaluated,
 		[]string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerGroupPolicy})
 	policyResult.Assessment.Coverage = engineAssess.Coverage
 	policyResult.Assessment.Skipped = engineAssess.Skipped
+	policyResult.Assessment.Timings = mergeTimings(preTimer.timings, engineAssess.Timings)
 	if excRule != nil {
 		// Content axis only: the exception suppresses the adblock block, so
 		// the decision is allow while the overall policy above still follows
@@ -1648,6 +1764,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		CacheHit:   cacheHit,
 		AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 		Decision:   policyResult.Decision,
+		DecisionID: decisionID,
 		Assessment: policyResult.Assessment,
 	}, client)
 
@@ -1755,6 +1872,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	}
 
 	// 1. Check Cache
+	var timer layerTimer
 	modelRevision := s.currentMLPolicyRevision()
 	cacheKey := analysisCacheKey(normalized, modelRevision)
 	currentRevision, feedKnown := s.currentFeedRevision(ctx)
@@ -1771,21 +1889,23 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	}
 	var cached analysis.Result
 	var cachedEntry analysisCacheEntry
-	err = s.withRedis(ctx, func(redisCtx context.Context) error {
-		var entry analysisCacheEntry
-		found, err := s.redis.GetJSON(redisCtx, cacheKey, &entry)
-		if err == nil && found && entryMatchesRevision(entry, epoch) {
-			cached = entry.Result
-			cachedEntry = entry
-			return nil
-		}
+	timer.measure(LayerResultCache, func() {
+		err = s.withRedis(ctx, func(redisCtx context.Context) error {
+			var entry analysisCacheEntry
+			found, err := s.redis.GetJSON(redisCtx, cacheKey, &entry)
+			if err == nil && found && entryMatchesRevision(entry, epoch) {
+				cached = entry.Result
+				cachedEntry = entry
+				return nil
+			}
 
-		var legacy analysis.Result
-		found, err = s.redis.GetJSON(redisCtx, cacheKey, &legacy)
-		if err != nil || !found {
-			return err
-		}
-		return nil
+			var legacy analysis.Result
+			found, err = s.redis.GetJSON(redisCtx, cacheKey, &legacy)
+			if err != nil || !found {
+				return err
+			}
+			return nil
+		})
 	})
 	if err == nil && cached.Domain != "" {
 		assess := newDomainAssessment()
@@ -1808,8 +1928,13 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 				QueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 			})
 		}
-		report := s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
-		updated := s.applyOSINT(ctx, normalized, cached, report, currentRevision)
+		var report osint.Report
+		var updated analysis.Result
+		timer.measure(LayerOSINT, func() {
+			report = s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
+			updated = s.applyOSINT(ctx, normalized, cached, report, currentRevision)
+		})
+		assess.Timings = timer.timings
 		return updated, true, report.Evidence, assess
 	}
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
@@ -1823,11 +1948,16 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	// 2. Check Threat Feed
 	assess := newDomainAssessment()
 	assess.Evaluated = append(assess.Evaluated, LayerThreatFeed)
-	result := s.feedResult(ctx, normalized)
+	var result analysis.Result
+	timer.measure(LayerThreatFeed, func() {
+		result = s.feedResult(ctx, normalized)
+	})
 	feedHit := result.Domain != ""
 	if !feedHit {
 		// 3. Lexical Analysis
-		result = s.analyzeLexical(normalized)
+		timer.measure(LayerLexical, func() {
+			result = s.analyzeLexical(normalized)
+		})
 		assess.Evaluated = append(assess.Evaluated, LayerLexical)
 	} else {
 		assess.Skipped = append(assess.Skipped, LayerLexical)
@@ -1838,10 +1968,15 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	mlPromoted := false
 	if result.Verdict == analysis.VerdictSuspicious {
 		assess.Evaluated = append(assess.Evaluated, LayerDomainML)
-		result, mlPromoted = s.classifyML(ctx, result)
+		timer.measure(LayerDomainML, func() {
+			result, mlPromoted = s.classifyML(ctx, result)
+		})
 		if !mlPromoted {
 			assess.Evaluated = append(assess.Evaluated, LayerAIRefine)
-			refined := s.refineWithAI(ctx, result)
+			var refined analysis.Result
+			timer.measure(LayerAIRefine, func() {
+				refined = s.refineWithAI(ctx, result)
+			})
 			if refined.Verdict != result.Verdict || len(refined.Reasons) > len(result.Reasons) {
 				aiContributed = true
 			}
@@ -1875,25 +2010,31 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	} else {
 		assess.Skipped = append(assess.Skipped, skippedLayer(LayerOSINT, SkipCacheOnly))
 	}
-	report := s.lookupOSINT(ctx, normalized, result, lookupMode, forceOSINT)
-	result = s.applyOSINT(ctx, normalized, result, report, currentRevision)
+	var report osint.Report
+	timer.measure(LayerOSINT, func() {
+		report = s.lookupOSINT(ctx, normalized, result, lookupMode, forceOSINT)
+		result = s.applyOSINT(ctx, normalized, result, report, currentRevision)
+	})
 
 	// Cache the final result
-	err = s.withRedis(ctx, func(redisCtx context.Context) error {
-		ttl := s.ttlFor(result.Verdict)
-		// Nếu AI không contribute (timeout/lỗi), dùng TTL ngắn để retry sớm
-		if !aiContributed && result.Verdict == analysis.VerdictSuspicious {
-			ttl = negativeCacheTTL
-		}
-		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
-			Result:           result,
-			FeedRevision:     currentRevision,
-			BrandRevision:    currentBrandRevision,
-			AnalysisRevision: analysisAlgorithmRevision,
-			ConfigRevision:   currentConfigRevision,
-			ModelRevision:    modelRevision,
-			AssessedAt:       time.Now().UTC().Format(time.RFC3339Nano),
-		}, ttl)
+	err = nil
+	timer.measure(LayerResultCache, func() {
+		err = s.withRedis(ctx, func(redisCtx context.Context) error {
+			ttl := s.ttlFor(result.Verdict)
+			// Nếu AI không contribute (timeout/lỗi), dùng TTL ngắn để retry sớm
+			if !aiContributed && result.Verdict == analysis.VerdictSuspicious {
+				ttl = negativeCacheTTL
+			}
+			return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
+				Result:           result,
+				FeedRevision:     currentRevision,
+				BrandRevision:    currentBrandRevision,
+				AnalysisRevision: analysisAlgorithmRevision,
+				ConfigRevision:   currentConfigRevision,
+				ModelRevision:    modelRevision,
+				AssessedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+			}, ttl)
+		})
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("analysis cache write failed", correlation.Fields(ctx, map[string]any{
@@ -1903,6 +2044,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		}))
 	}
 
+	assess.Timings = timer.timings
 	return result, false, report.Evidence, assess
 }
 
@@ -3315,6 +3457,8 @@ func (s *Service) recordTelemetryWithSource(a Analysis, client ClientInfo, sourc
 		Source:         source,
 		PolicyAction:   policyAction,
 		PolicyCategory: policyCategory,
+		DecisionID:     a.DecisionID,
+		Trace:          encodeTrace(a.Assessment),
 		AnalyzedAt:     a.AnalyzedAt,
 		ClientIP:       client.IP,
 		ClientID:       client.ClientID,

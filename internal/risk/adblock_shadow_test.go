@@ -260,6 +260,12 @@ func TestShadowDisabledNoObservation(t *testing.T) {
 	for _, q := range []string{"sh.example.com", "sub.sh.example.com"} {
 		offPol := off.Policy(context.Background(), q, ClientInfo{})
 		onPol := on.Policy(context.Background(), q, ClientInfo{})
+		// Decision IDs and wall-clock timings differ per evaluation by
+		// design; the shadow invariant covers the decision itself, so
+		// compare everything else byte-for-byte (including assessment
+		// layers, which must also agree).
+		offPol.DecisionID, onPol.DecisionID = "", ""
+		offPol.Assessment.Timings, onPol.Assessment.Timings = nil, nil
 		offBytes, _ := json.Marshal(offPol)
 		onBytes, _ := json.Marshal(onPol)
 		if string(offBytes) != string(onBytes) {

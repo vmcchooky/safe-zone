@@ -34,6 +34,8 @@ type TelemetryEntry struct {
 	Source         string   `json:"source"`
 	PolicyAction   string   `json:"policy_action,omitempty"`
 	PolicyCategory string   `json:"policy_category,omitempty"`
+	DecisionID     string   `json:"decision_id,omitempty"`
+	Trace          string   `json:"trace,omitempty"`
 	AnalyzedAt     string   `json:"analyzed_at"`
 	CreatedAt      string   `json:"created_at,omitempty"`
 	ClientIP       string   `json:"client_ip,omitempty"`
@@ -230,6 +232,8 @@ CREATE TABLE IF NOT EXISTS analysis_log (
     source TEXT,
     policy_action TEXT DEFAULT '',
     policy_category TEXT DEFAULT '',
+    decision_id TEXT DEFAULT '',
+    trace TEXT DEFAULT '{}',
     analyzed_at TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     client_ip TEXT DEFAULT '',
@@ -501,6 +505,8 @@ func New(path string, retentionDays int) (*DB, error) {
 	}{
 		{"policy_action", "ALTER TABLE analysis_log ADD COLUMN policy_action TEXT DEFAULT ''"},
 		{"policy_category", "ALTER TABLE analysis_log ADD COLUMN policy_category TEXT DEFAULT ''"},
+		{"decision_id", "ALTER TABLE analysis_log ADD COLUMN decision_id TEXT DEFAULT ''"},
+		{"trace", "ALTER TABLE analysis_log ADD COLUMN trace TEXT DEFAULT '{}'"},
 	}
 	logColumns := make(map[string]bool)
 	if logRows, logErr := sqlDB.Query("PRAGMA table_info(analysis_log)"); logErr == nil {
@@ -720,11 +726,11 @@ func (d *DB) writeEntry(entry TelemetryEntry) {
 		cacheHit = 1
 	}
 	_, err := d.db.ExecContext(context.Background(),
-		`INSERT INTO analysis_log (domain, verdict, score, confidence, reasons, cache_hit, source, policy_action, policy_category, analyzed_at, client_ip, client_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO analysis_log (domain, verdict, score, confidence, reasons, cache_hit, source, policy_action, policy_category, decision_id, trace, analyzed_at, client_ip, client_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.Domain, entry.Verdict, entry.Score, entry.Confidence,
 		string(reasonsJSON), cacheHit, entry.Source, entry.PolicyAction, entry.PolicyCategory,
-		entry.AnalyzedAt, entry.ClientIP, entry.ClientID,
+		entry.DecisionID, entry.Trace, entry.AnalyzedAt, entry.ClientIP, entry.ClientID,
 	)
 	if err != nil {
 		logjson.Error("telemetry write failed", map[string]any{
@@ -759,6 +765,7 @@ func (d *DB) QueryRecentFiltered(ctx context.Context, filter TelemetryFilter, li
 		`SELECT id, domain, verdict, score, confidence,
 		        COALESCE(reasons, '[]'), cache_hit, COALESCE(source, ''),
 		        COALESCE(policy_action, ''), COALESCE(policy_category, ''),
+		        COALESCE(decision_id, ''), COALESCE(trace, '{}'),
 		        analyzed_at, created_at, COALESCE(client_ip, ''), COALESCE(client_id, '')
 		 FROM analysis_log `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
@@ -773,7 +780,7 @@ func (d *DB) QueryRecentFiltered(ctx context.Context, filter TelemetryFilter, li
 		var cacheHit int
 		if err := rows.Scan(&e.ID, &e.Domain, &e.Verdict, &e.Score, &e.Confidence,
 			&reasonsJSON, &cacheHit, &e.Source, &e.PolicyAction, &e.PolicyCategory,
-			&e.AnalyzedAt, &e.CreatedAt, &e.ClientIP, &e.ClientID); err != nil {
+			&e.DecisionID, &e.Trace, &e.AnalyzedAt, &e.CreatedAt, &e.ClientIP, &e.ClientID); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 		_ = json.Unmarshal([]byte(reasonsJSON), &e.Reasons)
