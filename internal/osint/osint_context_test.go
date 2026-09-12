@@ -142,7 +142,9 @@ func TestExtractContextPreservesValidUTF8(t *testing.T) {
 }
 
 func TestCacheKeyIncludesSmartOSINTRevision(t *testing.T) {
-	if got := cacheKey("evil.example"); got != "safe-zone:osint:evidence:v2:evil.example" {
-		t.Fatalf("unexpected cache key: %s", got)
+	service := NewService(Options{Enabled: true})
+	key := service.evidenceCacheKey("evil.example")
+	if !strings.HasPrefix(key, "safe-zone:osint:evidence:v2:") || !strings.HasSuffix(key, ":evil.example") {
+		t.Fatalf("unexpected cache key shape: %s", key)
 	}
 }

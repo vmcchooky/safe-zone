@@ -546,6 +546,10 @@ type analysisCacheEntry struct {
 	ModelRevision    string          `json:"model_revision,omitempty"`
 	OSINTCheckedAt   string          `json:"osint_checked_at,omitempty"`
 	EnrichedAt       string          `json:"enriched_at,omitempty"`
+	// AssessedAt marks when this evaluation was materialized. Background
+	// writers compare it (with the markers above) against their snapshot
+	// time and stand down when the cache is newer (PR-05/M1).
+	AssessedAt string `json:"assessed_at,omitempty"`
 }
 
 type enrichmentJob struct {
@@ -555,6 +559,64 @@ type enrichmentJob struct {
 	BrandRevision  string
 	ConfigRevision string
 	ModelRevision  string
+	// QueuedAt marks when the job snapshot was taken. The worker refuses
+	// to overwrite cache entries assessed after this time.
+	QueuedAt string
+}
+
+// cacheEpoch is the set of revisions a cached entry must match. Known is
+// false only when the revision could not be read: an unreadable revision
+// never equals a stored one, so partial Redis failures fail closed to a
+// miss instead of serving stale entries (PR-05/M2).
+type cacheEpoch struct {
+	AnalysisRevision string
+	ConfigRevision   string
+	ModelRevision    string
+	FeedRevision     string
+	FeedKnown        bool
+	BrandRevision    string
+	BrandKnown       bool
+}
+
+func entryMatchesRevision(entry analysisCacheEntry, current cacheEpoch) bool {
+	if entry.Result.Domain == "" {
+		return false
+	}
+	if entry.AnalysisRevision != current.AnalysisRevision ||
+		entry.ConfigRevision != current.ConfigRevision ||
+		entry.ModelRevision != current.ModelRevision {
+		return false
+	}
+	if !current.FeedKnown || !current.BrandKnown {
+		return false
+	}
+	return entry.FeedRevision == current.FeedRevision &&
+		entry.BrandRevision == current.BrandRevision
+}
+
+// entryAssessedAt returns the newest materialization marker on an entry.
+// Zero time when the entry predates markers.
+func entryAssessedAt(entry analysisCacheEntry) time.Time {
+	newest := time.Time{}
+	for _, raw := range []string{entry.AssessedAt, entry.EnrichedAt, entry.OSINTCheckedAt} {
+		if raw == "" {
+			continue
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, raw); err == nil && ts.After(newest) {
+			newest = ts
+		}
+	}
+	return newest
+}
+
+// jobQueuedAt parses a job snapshot time. Unparseable means oldest: the
+// worker proceeds, preserving the pre-PR-05 behavior for legacy callers.
+func jobQueuedAt(raw string) time.Time {
+	ts, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}
+	}
+	return ts
 }
 
 type enrichmentSignals struct {
@@ -1695,24 +1757,26 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	// 1. Check Cache
 	modelRevision := s.currentMLPolicyRevision()
 	cacheKey := analysisCacheKey(normalized, modelRevision)
-	currentRevision := s.currentFeedRevision(ctx)
-	currentBrandRevision := s.currentBrandRevision(ctx)
+	currentRevision, feedKnown := s.currentFeedRevision(ctx)
+	currentBrandRevision, brandKnown := s.currentBrandRevision(ctx)
 	currentConfigRevision := s.currentConfigRevision()
+	epoch := cacheEpoch{
+		AnalysisRevision: analysisAlgorithmRevision,
+		ConfigRevision:   currentConfigRevision,
+		ModelRevision:    modelRevision,
+		FeedRevision:     currentRevision,
+		FeedKnown:        feedKnown,
+		BrandRevision:    currentBrandRevision,
+		BrandKnown:       brandKnown,
+	}
 	var cached analysis.Result
 	var cachedEntry analysisCacheEntry
 	err = s.withRedis(ctx, func(redisCtx context.Context) error {
 		var entry analysisCacheEntry
 		found, err := s.redis.GetJSON(redisCtx, cacheKey, &entry)
-		if err == nil && found && entry.Result.Domain != "" {
-			if entry.AnalysisRevision == analysisAlgorithmRevision &&
-				entry.ConfigRevision == currentConfigRevision &&
-				entry.ModelRevision == modelRevision &&
-				(currentRevision == "" || entry.FeedRevision == currentRevision) &&
-				(currentBrandRevision == "" || entry.BrandRevision == currentBrandRevision) {
-				cached = entry.Result
-				cachedEntry = entry
-				return nil
-			}
+		if err == nil && found && entryMatchesRevision(entry, epoch) {
+			cached = entry.Result
+			cachedEntry = entry
 			return nil
 		}
 
@@ -1741,6 +1805,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 				BrandRevision:  cachedEntry.BrandRevision,
 				ConfigRevision: cachedEntry.ConfigRevision,
 				ModelRevision:  cachedEntry.ModelRevision,
+				QueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 			})
 		}
 		report := s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
@@ -1795,6 +1860,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			BrandRevision:  currentBrandRevision,
 			ConfigRevision: currentConfigRevision,
 			ModelRevision:  modelRevision,
+			QueuedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 		})
 	} else {
 		assess.Skipped = append(assess.Skipped, skippedLayer(LayerEnrichment, SkipOutOfRange))
@@ -1826,6 +1892,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			AnalysisRevision: analysisAlgorithmRevision,
 			ConfigRevision:   currentConfigRevision,
 			ModelRevision:    modelRevision,
+			AssessedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 		}, ttl)
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
@@ -2650,15 +2717,17 @@ func (s *Service) applyOSINT(ctx context.Context, domain string, result analysis
 
 	modelRevision := s.currentMLPolicyRevision()
 	cacheKey := analysisCacheKey(domain, modelRevision)
+	brandRevision, _ := s.currentBrandRevision(ctx)
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           updated,
 			FeedRevision:     feedRevision,
-			BrandRevision:    s.currentBrandRevision(ctx),
+			BrandRevision:    brandRevision,
 			AnalysisRevision: analysisAlgorithmRevision,
 			ConfigRevision:   s.currentConfigRevision(),
 			ModelRevision:    modelRevision,
 			OSINTCheckedAt:   report.CheckedAt,
+			AssessedAt:       time.Now().UTC().Format(time.RFC3339Nano),
 		}, s.ttlFor(updated.Verdict))
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
@@ -2757,10 +2826,10 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	if s == nil || s.redis == nil || !s.redis.Enabled() {
 		return
 	}
-	if current := s.currentFeedRevision(s.lifecycleCtx); current != "" && job.FeedRevision != "" && current != job.FeedRevision {
+	if current, known := s.currentFeedRevision(s.lifecycleCtx); known && current != "" && job.FeedRevision != "" && current != job.FeedRevision {
 		return
 	}
-	if current := s.currentBrandRevision(s.lifecycleCtx); current != "" && job.BrandRevision != "" && current != job.BrandRevision {
+	if current, known := s.currentBrandRevision(s.lifecycleCtx); known && current != "" && job.BrandRevision != "" && current != job.BrandRevision {
 		return
 	}
 	if current := s.currentConfigRevision(); current != job.ConfigRevision {
@@ -2777,8 +2846,24 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	enriched := job.Result
 	applyEnrichmentSignals(&enriched, signals)
 
+	now := time.Now().UTC().Format(time.RFC3339Nano)
 	cacheKey := analysisCacheKey(job.Domain, job.ModelRevision)
+	// Recency guard (M1): a job snapshot must not overwrite an evaluation
+	// materialized after the snapshot was taken. Cross-process races
+	// inside the read-modify-write window remain possible and are logged;
+	// full generation fencing belongs to the evidence ledger (PR-08).
+	skippedStale := false
 	err := s.withRedis(s.lifecycleCtx, func(redisCtx context.Context) error {
+		var current analysisCacheEntry
+		found, err := s.redis.GetJSON(redisCtx, cacheKey, &current)
+		if err != nil {
+			return err
+		}
+		if found && current.Result.Domain != "" &&
+			entryAssessedAt(current).After(jobQueuedAt(job.QueuedAt)) {
+			skippedStale = true
+			return nil
+		}
 		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
 			Result:           enriched,
 			FeedRevision:     job.FeedRevision,
@@ -2786,7 +2871,8 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 			AnalysisRevision: analysisAlgorithmRevision,
 			ConfigRevision:   job.ConfigRevision,
 			ModelRevision:    job.ModelRevision,
-			EnrichedAt:       time.Now().UTC().Format(time.RFC3339Nano),
+			EnrichedAt:       now,
+			AssessedAt:       now,
 		}, s.ttlFor(enriched.Verdict))
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
@@ -2794,6 +2880,12 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 			"service": "risk",
 			"domain":  job.Domain,
 			"error":   err.Error(),
+		})
+	}
+	if skippedStale {
+		logjson.Info("background enrichment skipped stale snapshot", map[string]any{
+			"service": "risk",
+			"domain":  job.Domain,
 		})
 	}
 }
@@ -3123,43 +3215,49 @@ func (s *Service) withRedis(parent context.Context, fn func(context.Context) err
 	return fn(ctx)
 }
 
-func (s *Service) currentFeedRevision(ctx context.Context) string {
+func (s *Service) currentFeedRevision(ctx context.Context) (string, bool) {
 	if s == nil || s.feedRevisionKey == "" {
-		return ""
+		return "", true
 	}
 
 	var revision string
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
 		value, err := s.redis.GetString(redisCtx, s.feedRevisionKey)
 		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				return nil
+			}
 			return err
 		}
 		revision = value
 		return nil
 	})
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return revision
+	return revision, true
 }
 
-func (s *Service) currentBrandRevision(ctx context.Context) string {
+func (s *Service) currentBrandRevision(ctx context.Context) (string, bool) {
 	if s == nil {
-		return ""
+		return "", true
 	}
 	var revision string
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
 		value, err := s.redis.GetString(redisCtx, brandRevisionKey)
 		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				return nil
+			}
 			return err
 		}
 		revision = value
 		return nil
 	})
 	if err != nil {
-		return ""
+		return "", false
 	}
-	return revision
+	return revision, true
 }
 
 func (s *Service) bumpBrandRevision(ctx context.Context) {
