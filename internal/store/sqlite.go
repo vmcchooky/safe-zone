@@ -987,6 +987,24 @@ func (d *DB) cleanup() {
 			"error":   err.Error(),
 		})
 	}
+	// Decided user reports (resolved/rejected) age out with telemetry
+	// retention. Pending reports are never auto-deleted: they are the
+	// operator's review queue. created_at uses CURRENT_TIMESTAMP (space
+	// separator), so the cutoff is formatted to match for correct
+	// lexicographic comparison.
+	if result, err := d.db.ExecContext(context.Background(),
+		`DELETE FROM block_reports WHERE status IN ('resolved', 'rejected') AND created_at < ?`,
+		time.Now().AddDate(0, 0, -d.GetRetentionDays(context.Background())).UTC().Format("2006-01-02 15:04:05")); err != nil {
+		logjson.Error("block report cleanup failed", map[string]any{
+			"service": "store",
+			"error":   err.Error(),
+		})
+	} else if n, _ := result.RowsAffected(); n > 0 {
+		logjson.Info("block report cleanup removed decided entries", map[string]any{
+			"service": "store",
+			"removed": n,
+		})
+	}
 }
 
 // --- Overrides ---

@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 
@@ -20,6 +21,13 @@ const (
 	BlockStrategyRefused  = "refused"
 	BlockStrategyNullIP   = "nullip"
 )
+
+// maxCNAMEPolicyChecks bounds how many CNAME targets of one upstream
+// response are policy-evaluated. Real chains are a handful of records; an
+// unbounded walk lets a hostile upstream turn one query into N full
+// evaluations. Overflow fails closed: truncated evaluation must not
+// silently allow, so callers surface SERVFAIL like any upstream failure.
+const maxCNAMEPolicyChecks = 8
 
 type Config struct {
 	BlockPageIP    string
@@ -90,10 +98,20 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 	}
 
 	// CNAME Uncloaking: chính sách cũng phải áp lên đích cuối cùng của CNAME.
+	checked := 0
 	for _, answer := range responseMsg.Answer {
 		cname, ok := answer.(*dns.CNAME)
 		if !ok || cname.Target == "" {
 			continue
+		}
+		checked++
+		if checked > maxCNAMEPolicyChecks {
+			logjson.Warn("cname policy check limit exceeded", correlation.Fields(ctx, map[string]any{
+				"service": "dns-resolver",
+				"domain":  questionDomain,
+				"checked": checked,
+			}))
+			return nil, fmt.Errorf("cname policy check limit exceeded (%d targets)", maxCNAMEPolicyChecks)
 		}
 		cnamePolicy := r.Risk.Policy(ctx, strings.TrimSuffix(cname.Target, "."), riskClient)
 		if cnamePolicy.Policy == "block" {

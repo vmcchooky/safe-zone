@@ -27,6 +27,15 @@ type blockPageData struct {
 	HTTPSLimitation bool
 }
 
+// Free-text bounds for user-submitted block reports. The 16KiB body cap
+// alone still admits kilobytes of junk per row into a table that only
+// shrinks through operator review and retention pruning.
+const (
+	maxReportContactLength = 256
+	maxReportNoteLength    = 2000
+	maxReportPathLength    = 2048
+)
+
 func (h *Handler) BlockPageHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		httputil.WriteError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -81,6 +90,20 @@ func (h *Handler) BlockReportHandler(w http.ResponseWriter, r *http.Request) {
 	requestedPath := firstNonEmpty(strings.TrimSpace(r.Form.Get("requested_path")), blockedPathFromRequest(r))
 	contact := strings.TrimSpace(r.Form.Get("contact"))
 	note := strings.TrimSpace(r.Form.Get("note"))
+	// Bound free-text fields: the body cap alone still admits kilobytes
+	// of junk per row into an unbounded, unpruned-unless-reviewed table.
+	if len(contact) > maxReportContactLength {
+		httputil.WriteError(w, http.StatusBadRequest, "contact is too long")
+		return
+	}
+	if len(note) > maxReportNoteLength {
+		httputil.WriteError(w, http.StatusBadRequest, "note is too long")
+		return
+	}
+	if len(requestedPath) > maxReportPathLength {
+		httputil.WriteError(w, http.StatusBadRequest, "requested path is too long")
+		return
+	}
 	reportDetails := map[string]any{
 		"domain":         domain,
 		"requested_path": requestedPath,
