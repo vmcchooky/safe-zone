@@ -24,18 +24,20 @@ import (
 
 // TelemetryEntry represents a single domain analysis record.
 type TelemetryEntry struct {
-	ID         int64    `json:"id,omitempty"`
-	Domain     string   `json:"domain"`
-	Verdict    string   `json:"verdict"`
-	Score      int      `json:"score"`
-	Confidence float64  `json:"confidence"`
-	Reasons    []string `json:"reasons"`
-	CacheHit   bool     `json:"cache_hit"`
-	Source     string   `json:"source"`
-	AnalyzedAt string   `json:"analyzed_at"`
-	CreatedAt  string   `json:"created_at,omitempty"`
-	ClientIP   string   `json:"client_ip,omitempty"`
-	ClientID   string   `json:"client_id,omitempty"`
+	ID             int64    `json:"id,omitempty"`
+	Domain         string   `json:"domain"`
+	Verdict        string   `json:"verdict"`
+	Score          int      `json:"score"`
+	Confidence     float64  `json:"confidence"`
+	Reasons        []string `json:"reasons"`
+	CacheHit       bool     `json:"cache_hit"`
+	Source         string   `json:"source"`
+	PolicyAction   string   `json:"policy_action,omitempty"`
+	PolicyCategory string   `json:"policy_category,omitempty"`
+	AnalyzedAt     string   `json:"analyzed_at"`
+	CreatedAt      string   `json:"created_at,omitempty"`
+	ClientIP       string   `json:"client_ip,omitempty"`
+	ClientID       string   `json:"client_id,omitempty"`
 }
 
 // TelemetryFilter constrains recent telemetry queries at the SQL layer.
@@ -226,6 +228,8 @@ CREATE TABLE IF NOT EXISTS analysis_log (
     reasons TEXT,
     cache_hit INTEGER NOT NULL DEFAULT 0,
     source TEXT,
+    policy_action TEXT DEFAULT '',
+    policy_category TEXT DEFAULT '',
     analyzed_at TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     client_ip TEXT DEFAULT '',
@@ -488,9 +492,39 @@ func New(path string, retentionDays int) (*DB, error) {
 		_, _ = sqlDB.Exec("ALTER TABLE analysis_log ADD COLUMN client_id TEXT DEFAULT ''")
 	}
 
-	// Extend databases created before the operator review queue captured
-	// decision provenance. These columns use empty defaults so the migration is
-	// safe for existing reports and does not rewrite signed or external evidence.
+	// Extend databases created before policy decisions were persisted
+	// alongside security verdicts. Empty defaults keep legacy rows
+	// readable as "no content-policy involved".
+	policyColumns := []struct {
+		name string
+		sql  string
+	}{
+		{"policy_action", "ALTER TABLE analysis_log ADD COLUMN policy_action TEXT DEFAULT ''"},
+		{"policy_category", "ALTER TABLE analysis_log ADD COLUMN policy_category TEXT DEFAULT ''"},
+	}
+	logColumns := make(map[string]bool)
+	if logRows, logErr := sqlDB.Query("PRAGMA table_info(analysis_log)"); logErr == nil {
+		for logRows.Next() {
+			var cid int
+			var name, columnType string
+			var notNull int
+			var defaultValue any
+			var primaryKey int
+			if err := logRows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err == nil {
+				logColumns[name] = true
+			}
+		}
+		_ = logRows.Close()
+	}
+	for _, migration := range policyColumns {
+		if logColumns[migration.name] {
+			continue
+		}
+		if _, err := sqlDB.Exec(migration.sql); err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("migrate analysis_log column %s: %w", migration.name, err)
+		}
+	}
 	blockReportColumns := make(map[string]bool)
 	rows, err = sqlDB.Query("PRAGMA table_info(block_reports)")
 	if err != nil {
@@ -686,11 +720,11 @@ func (d *DB) writeEntry(entry TelemetryEntry) {
 		cacheHit = 1
 	}
 	_, err := d.db.ExecContext(context.Background(),
-		`INSERT INTO analysis_log (domain, verdict, score, confidence, reasons, cache_hit, source, analyzed_at, client_ip, client_id)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO analysis_log (domain, verdict, score, confidence, reasons, cache_hit, source, policy_action, policy_category, analyzed_at, client_ip, client_id)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		entry.Domain, entry.Verdict, entry.Score, entry.Confidence,
-		string(reasonsJSON), cacheHit, entry.Source, entry.AnalyzedAt,
-		entry.ClientIP, entry.ClientID,
+		string(reasonsJSON), cacheHit, entry.Source, entry.PolicyAction, entry.PolicyCategory,
+		entry.AnalyzedAt, entry.ClientIP, entry.ClientID,
 	)
 	if err != nil {
 		logjson.Error("telemetry write failed", map[string]any{
@@ -724,6 +758,7 @@ func (d *DB) QueryRecentFiltered(ctx context.Context, filter TelemetryFilter, li
 	rows, err := d.db.QueryContext(ctx,
 		`SELECT id, domain, verdict, score, confidence,
 		        COALESCE(reasons, '[]'), cache_hit, COALESCE(source, ''),
+		        COALESCE(policy_action, ''), COALESCE(policy_category, ''),
 		        analyzed_at, created_at, COALESCE(client_ip, ''), COALESCE(client_id, '')
 		 FROM analysis_log `+where+` ORDER BY id DESC LIMIT ? OFFSET ?`, args...)
 	if err != nil {
@@ -737,7 +772,8 @@ func (d *DB) QueryRecentFiltered(ctx context.Context, filter TelemetryFilter, li
 		var reasonsJSON string
 		var cacheHit int
 		if err := rows.Scan(&e.ID, &e.Domain, &e.Verdict, &e.Score, &e.Confidence,
-			&reasonsJSON, &cacheHit, &e.Source, &e.AnalyzedAt, &e.CreatedAt, &e.ClientIP, &e.ClientID); err != nil {
+			&reasonsJSON, &cacheHit, &e.Source, &e.PolicyAction, &e.PolicyCategory,
+			&e.AnalyzedAt, &e.CreatedAt, &e.ClientIP, &e.ClientID); err != nil {
 			return nil, fmt.Errorf("scan row: %w", err)
 		}
 		_ = json.Unmarshal([]byte(reasonsJSON), &e.Reasons)

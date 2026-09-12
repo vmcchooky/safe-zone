@@ -367,6 +367,15 @@ type Analysis struct {
 	AnalyzedAt string            `json:"analyzed_at"`
 	Evidence   []osint.Evidence  `json:"evidence,omitempty"`
 	URLML      *URLMLObservation `json:"url_ml,omitempty"`
+	// Decision carries a policy action when this response already resolved
+	// one (admin override/allowlist admission, legacy fused adblock). Nil
+	// on pure engine paths: no content or admin policy was involved.
+	Decision *PolicyDecision `json:"decision,omitempty"`
+	// Assessment declares what was evaluated for the security verdict.
+	// Coverage is always "domain_only" until website inspection exists;
+	// Skipped uses bare layer names for short-circuited stages and
+	// "layer:reason" for conditional ones.
+	Assessment Assessment `json:"assessment"`
 }
 
 type Policy struct {
@@ -378,6 +387,128 @@ type Policy struct {
 	// model yet, and absent from legacy serialized payloads.
 	Decision *PolicyDecision `json:"decision,omitempty"`
 	CacheHit bool            `json:"cache_hit"`
+	// Assessment mirrors Analysis.Assessment for the security Result.
+	Assessment Assessment `json:"assessment"`
+}
+
+// Assessment coverage. Only domain_only exists today: no request path
+// observes website content yet.
+const AssessmentCoverageDomainOnly = "domain_only"
+
+// Evaluation layers named in assessments. Bounded vocabulary so coverage
+// stays measurable across API and DNS paths.
+const (
+	LayerIdentity      = "identity"
+	LayerOverride      = "override"
+	LayerWhitelist     = "whitelist"
+	LayerAdblock       = "adblock"
+	LayerContentPolicy = "content_policy"
+	LayerThreatFeed    = "threat_feed"
+	LayerLexical       = "lexical"
+	LayerLexicalLocal  = "lexical_local"
+	LayerDomainML      = "domain_ml"
+	LayerAIRefine      = "ai_refine"
+	LayerEnrichment    = "enrichment"
+	LayerOSINT         = "osint"
+	LayerURLML         = "url_ml"
+	LayerGroupPolicy   = "group_policy"
+	LayerResultCache   = "result_cache"
+	LayerWebsite       = "website_content"
+)
+
+// Skipped-layer reasons. Bare layer names mean short-circuited.
+const (
+	SkipNotObserved   = "not_observed"
+	SkipNoURLContext  = "no_url_context"
+	SkipLegacyFused   = "legacy_policy_fused"
+	SkipAsync         = "async_background"
+	SkipOutOfRange    = "score_out_of_range"
+	SkipCacheOnly     = "cache_only"
+	SkipNotApplicable = "not_applicable"
+)
+
+// Assessment describes which layers produced a security Result.
+type Assessment struct {
+	Coverage  string   `json:"coverage"`
+	Evaluated []string `json:"evaluated_layers"`
+	Skipped   []string `json:"skipped_layers"`
+}
+
+// Policy decision kinds. "content" marks content-policy blocks,
+// "admin"/"allowlist" mark operator-controlled admissions. Open string:
+// new policy surfaces add kinds without a storage migration.
+const (
+	PolicyKindContent   = "content"
+	PolicyKindAdmin     = "admin"
+	PolicyKindAllowlist = "allowlist"
+)
+
+func skippedLayer(layer, reason string) string {
+	if reason == "" {
+		return layer
+	}
+	return layer + ":" + reason
+}
+
+func newDomainAssessment() Assessment {
+	return Assessment{
+		Coverage: AssessmentCoverageDomainOnly,
+		Skipped:  []string{skippedLayer(LayerWebsite, SkipNotObserved)},
+	}
+}
+
+// engineSkippedLayers lists the assessment-engine stages bypassed by a
+// short-circuit return. Fresh slice per call so appends never alias.
+func engineSkippedLayers() []string {
+	return []string{
+		LayerThreatFeed, LayerLexical, LayerDomainML, LayerAIRefine,
+		LayerEnrichment, LayerOSINT,
+	}
+}
+
+func prependLayers(base, prefix []string) []string {
+	out := make([]string, 0, len(prefix)+len(base))
+	out = append(out, prefix...)
+	return append(out, base...)
+}
+
+// adminPolicyDecision describes an operator override on the policy axis
+// without rewriting the security verdict's meaning.
+func adminPolicyDecision(action string) *PolicyDecision {
+	return &PolicyDecision{
+		Action:   action,
+		Kind:     PolicyKindAdmin,
+		Category: "custom",
+		Reason:   "admin_override",
+		Source:   "override",
+	}
+}
+
+// allowlistPolicyDecision describes a whitelist admission.
+func allowlistPolicyDecision() *PolicyDecision {
+	return &PolicyDecision{
+		Action:   "allow",
+		Kind:     PolicyKindAllowlist,
+		Category: "custom",
+		Reason:   "whitelisted",
+		Source:   "whitelist",
+	}
+}
+
+const legacyFusedAssessmentMode = "legacy_fused_policy"
+
+// legacyPolicyDecision marks a fused legacy adblock verdict as
+// policy-derived so telemetry never mistakes it for security evidence.
+// The Result wire shape stays pinned for rollback compatibility.
+func legacyPolicyDecision() *PolicyDecision {
+	return &PolicyDecision{
+		Action:         "block",
+		Kind:           PolicyKindContent,
+		Category:       "unknown",
+		Reason:         "legacy_policy_fused",
+		Source:         "adblock",
+		AssessmentMode: legacyFusedAssessmentMode,
+	}
 }
 
 type CacheStatus struct {
@@ -1053,10 +1184,16 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 	var result analysis.Result
 	var cacheHit bool
 	var evidence []osint.Evidence
+	var decision *PolicyDecision
+	assess := newDomainAssessment()
 
 	if err != nil {
 		result = s.analyzeLexical(domain)
 		cacheHit = false
+		assess.Evaluated = append(assess.Evaluated, LayerIdentity)
+		assess.Skipped = append(assess.Skipped, LayerOverride, LayerWhitelist,
+			LayerAdblock, LayerGroupPolicy)
+		assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 	} else {
 		// Get group
 		var group *store.ClientGroup
@@ -1074,6 +1211,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 			group = &store.ClientGroup{ID: 1, Name: "default", StrictMalware: true}
 		}
 
+		assess.Evaluated = append(assess.Evaluated, LayerIdentity, LayerOverride)
 		// 1. Check Overrides
 		if s.store != nil && s.store.Enabled() {
 			override, err := s.store.GetEffectiveOverride(ctx, group.ID, normalized)
@@ -1097,6 +1235,9 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 					Category:   analysis.ClassifyCategory(normalized),
 				}
 				cacheHit = false
+				decision = adminPolicyDecision(override.Action)
+				assess.Skipped = append(assess.Skipped, LayerWhitelist, LayerAdblock)
+				assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 			}
 		}
 
@@ -1111,11 +1252,16 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 				Category:   "uncategorized",
 			}
 			cacheHit = false
+			decision = allowlistPolicyDecision()
+			assess.Evaluated = append(assess.Evaluated, LayerWhitelist)
+			assess.Skipped = append(assess.Skipped, LayerAdblock)
+			assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 		}
 
 		if result.Domain == "" {
 			// 2.5 Check Adblock Trie
 			adTrie := s.adblockTrie.Load()
+			assess.Evaluated = append(assess.Evaluated, LayerWhitelist, LayerAdblock)
 			if s.isAdblockEnabled() && adTrie != nil && adTrie.Match(normalized) {
 				if s.policySemantics == PolicySemanticsLegacy {
 					result = analysis.Result{
@@ -1127,6 +1273,9 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 						Category:   "adware",
 					}
 					cacheHit = false
+					decision = legacyPolicyDecision()
+					assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
+					assess.Skipped = append(assess.Skipped, skippedLayer("security_assessment", SkipLegacyFused))
 				}
 				// Separated semantics: an adblock match is content-policy
 				// evidence, not security evidence. The security pipeline below
@@ -1136,7 +1285,11 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 
 		if result.Domain == "" {
 			// 3. Fallback to threat assessment
-			result, cacheHit, evidence = s.analyze(ctx, normalized, osintLookupOnDemand, options.ForceOSINT)
+			var engineAssess Assessment
+			result, cacheHit, evidence, engineAssess = s.analyze(ctx, normalized, osintLookupOnDemand, options.ForceOSINT)
+			assess.Evaluated = prependLayers(engineAssess.Evaluated,
+				[]string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock})
+			assess.Skipped = engineAssess.Skipped
 		}
 	}
 
@@ -1144,12 +1297,17 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		Result:     result,
 		CacheHit:   cacheHit,
 		AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Decision:   decision,
+		Assessment: assess,
 	}
 	if options.IncludeEvidence {
 		a.Evidence = evidence
 	}
 	if options.URLContext != nil {
 		a.URLML = s.observeURLML(normalized, result.Verdict, *options.URLContext)
+		a.Assessment.Evaluated = append(a.Assessment.Evaluated, LayerURLML)
+	} else {
+		a.Assessment.Skipped = append(a.Assessment.Skipped, skippedLayer(LayerURLML, SkipNoURLContext))
 	}
 	s.recordTelemetry(a, client)
 	return a
@@ -1157,13 +1315,19 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 
 func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) Policy {
 	normalized, err := analysis.NormalizeDomain(domain)
+	assess := newDomainAssessment()
 	if err != nil {
 		res := s.analyzeLexical(domain)
+		assess.Evaluated = append(assess.Evaluated, LayerIdentity)
+		assess.Skipped = append(assess.Skipped, LayerOverride, LayerWhitelist,
+			LayerAdblock, LayerGroupPolicy)
+		assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 		return Policy{
-			Domain:   domain,
-			Policy:   "block",
-			Result:   res,
-			CacheHit: false,
+			Domain:     domain,
+			Policy:     "block",
+			Result:     res,
+			CacheHit:   false,
+			Assessment: assess,
 		}
 	}
 
@@ -1203,6 +1367,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 			if override.Reason != "" {
 				reason = fmt.Sprintf("admin override: %s (%s)", policyAction, override.Reason)
 			}
+			decision := adminPolicyDecision(policyAction)
 			policyResult := Policy{
 				Domain: normalized,
 				Policy: policyAction,
@@ -1214,12 +1379,20 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 					Reasons:    []string{reason},
 					Category:   analysis.ClassifyCategory(normalized),
 				},
-				CacheHit: false,
+				CacheHit:   false,
+				Assessment: assess,
 			}
+			policyResult.Assessment.Evaluated = append(policyResult.Assessment.Evaluated,
+				LayerIdentity, LayerOverride)
+			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
+				LayerWhitelist, LayerAdblock, LayerGroupPolicy)
+			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
 			s.recordTelemetry(Analysis{
 				Result:     policyResult.Result,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				Decision:   decision,
+				Assessment: policyResult.Assessment,
 			}, client)
 			return policyResult
 		}
@@ -1227,6 +1400,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 
 	// 3. Check Whitelist
 	if s.whitelist.IsAllowed(normalized) {
+		decision := allowlistPolicyDecision()
 		policyResult := Policy{
 			Domain: normalized,
 			Policy: "allow",
@@ -1238,12 +1412,20 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 				Reasons:    []string{"whitelisted"},
 				Category:   "uncategorized",
 			},
-			CacheHit: false,
+			CacheHit:   false,
+			Assessment: assess,
 		}
+		policyResult.Assessment.Evaluated = append(policyResult.Assessment.Evaluated,
+			LayerIdentity, LayerOverride, LayerWhitelist)
+		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
+			LayerAdblock, LayerGroupPolicy)
+		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
 		s.recordTelemetry(Analysis{
 			Result:     policyResult.Result,
 			CacheHit:   false,
 			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			Decision:   decision,
+			Assessment: policyResult.Assessment,
 		}, client)
 		return policyResult
 	}
@@ -1268,6 +1450,10 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	excID := ""
 	if adMatched {
 		if s.policySemantics == PolicySemanticsLegacy {
+			// Pinned rollback shape: Result stays fused MALICIOUS and no
+			// separated Decision is attached. Provenance flows to telemetry
+			// only, via the Analysis decision below.
+			legacyDecision := legacyPolicyDecision()
 			policyResult := Policy{
 				Domain: normalized,
 				Policy: "block",
@@ -1281,10 +1467,19 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 				},
 				CacheHit: false,
 			}
+			policyResult.Assessment = assess
+			policyResult.Assessment.Evaluated = append(policyResult.Assessment.Evaluated,
+				LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock)
+			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, LayerGroupPolicy)
+			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
+			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
+				skippedLayer("security_assessment", SkipLegacyFused))
 			s.recordTelemetry(Analysis{
 				Result:     policyResult.Result,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				Decision:   legacyDecision,
+				Assessment: policyResult.Assessment,
 			}, client)
 			return policyResult
 		}
@@ -1319,17 +1514,25 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 				Decision: &decision,
 				CacheHit: false,
 			}
+			policyResult.Assessment = assess
+			policyResult.Assessment.Evaluated = append(policyResult.Assessment.Evaluated,
+				LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock,
+				LayerLexicalLocal, LayerContentPolicy)
+			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, LayerGroupPolicy)
+			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
 			s.recordTelemetryWithSource(Analysis{
 				Result:     lexicalResult,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+				Decision:   &decision,
+				Assessment: policyResult.Assessment,
 			}, client, "adblock")
 			return policyResult
 		}
 	}
 
 	// 4. Get Threat Assessment
-	result, cacheHit, _ := s.analyze(ctx, normalized, osintLookupCachedOnly, false)
+	result, cacheHit, _, engineAssess := s.analyze(ctx, normalized, osintLookupCachedOnly, false)
 
 	// 5. Dynamic enforcement
 	policy := "allow"
@@ -1365,6 +1568,10 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		Result:   result,
 		CacheHit: cacheHit,
 	}
+	policyResult.Assessment.Evaluated = prependLayers(engineAssess.Evaluated,
+		[]string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerGroupPolicy})
+	policyResult.Assessment.Coverage = engineAssess.Coverage
+	policyResult.Assessment.Skipped = engineAssess.Skipped
 	if excRule != nil {
 		// Content axis only: the exception suppresses the adblock block, so
 		// the decision is allow while the overall policy above still follows
@@ -1378,6 +1585,8 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		Result:     result,
 		CacheHit:   cacheHit,
 		AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Decision:   policyResult.Decision,
+		Assessment: policyResult.Assessment,
 	}, client)
 
 	return policyResult
@@ -1477,10 +1686,10 @@ func analysisCacheKey(domain, modelRevision string) string {
 	return base + ":model:" + modelRevision
 }
 
-func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLookupMode, forceOSINT bool) (analysis.Result, bool, []osint.Evidence) {
+func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLookupMode, forceOSINT bool) (analysis.Result, bool, []osint.Evidence, Assessment) {
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {
-		return s.analyzeLexical(domain), false, nil
+		return s.analyzeLexical(domain), false, nil, newDomainAssessment()
 	}
 
 	// 1. Check Cache
@@ -1515,6 +1724,15 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		return nil
 	})
 	if err == nil && cached.Domain != "" {
+		assess := newDomainAssessment()
+		assess.Evaluated = append(assess.Evaluated, LayerResultCache)
+		assess.Skipped = append(assess.Skipped,
+			LayerThreatFeed, LayerLexical, LayerDomainML, LayerAIRefine)
+		if lookupMode == osintLookupOnDemand {
+			assess.Evaluated = append(assess.Evaluated, LayerOSINT)
+		} else {
+			assess.Skipped = append(assess.Skipped, skippedLayer(LayerOSINT, SkipCacheOnly))
+		}
 		if shouldEnqueueEnrichment(cached) && cachedEntryNeedsEnrichment(cachedEntry) {
 			s.enqueueEnrichment(ctx, enrichmentJob{
 				Domain:         normalized,
@@ -1527,7 +1745,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		}
 		report := s.lookupOSINT(ctx, normalized, cached, lookupMode, forceOSINT)
 		updated := s.applyOSINT(ctx, normalized, cached, report, currentRevision)
-		return updated, true, report.Evidence
+		return updated, true, report.Evidence, assess
 	}
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("analysis cache read failed", correlation.Fields(ctx, map[string]any{
@@ -1538,18 +1756,26 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	}
 
 	// 2. Check Threat Feed
+	assess := newDomainAssessment()
+	assess.Evaluated = append(assess.Evaluated, LayerThreatFeed)
 	result := s.feedResult(ctx, normalized)
-	if result.Domain == "" {
+	feedHit := result.Domain != ""
+	if !feedHit {
 		// 3. Lexical Analysis
 		result = s.analyzeLexical(normalized)
+		assess.Evaluated = append(assess.Evaluated, LayerLexical)
+	} else {
+		assess.Skipped = append(assess.Skipped, LayerLexical)
 	}
 	// 4. ML refinement/promotion, followed by the existing AI refinement unless
 	// ML enforce mode already promoted this suspicious result.
 	aiContributed := false
 	mlPromoted := false
 	if result.Verdict == analysis.VerdictSuspicious {
+		assess.Evaluated = append(assess.Evaluated, LayerDomainML)
 		result, mlPromoted = s.classifyML(ctx, result)
 		if !mlPromoted {
+			assess.Evaluated = append(assess.Evaluated, LayerAIRefine)
 			refined := s.refineWithAI(ctx, result)
 			if refined.Verdict != result.Verdict || len(refined.Reasons) > len(result.Reasons) {
 				aiContributed = true
@@ -1561,6 +1787,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		}
 	}
 	if shouldEnqueueEnrichment(result) {
+		assess.Skipped = append(assess.Skipped, skippedLayer(LayerEnrichment, SkipAsync))
 		s.enqueueEnrichment(ctx, enrichmentJob{
 			Domain:         normalized,
 			Result:         result,
@@ -1569,9 +1796,19 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 			ConfigRevision: currentConfigRevision,
 			ModelRevision:  modelRevision,
 		})
+	} else {
+		assess.Skipped = append(assess.Skipped, skippedLayer(LayerEnrichment, SkipOutOfRange))
+	}
+	if !assessedLayer(assess.Evaluated, LayerDomainML) {
+		assess.Skipped = append(assess.Skipped, LayerDomainML, LayerAIRefine)
 	}
 	// 5. OSINT public-warning evidence. API/dashboard can fetch on demand;
 	// resolver policy uses cached evidence only via lookupMode.
+	if lookupMode == osintLookupOnDemand {
+		assess.Evaluated = append(assess.Evaluated, LayerOSINT)
+	} else {
+		assess.Skipped = append(assess.Skipped, skippedLayer(LayerOSINT, SkipCacheOnly))
+	}
 	report := s.lookupOSINT(ctx, normalized, result, lookupMode, forceOSINT)
 	result = s.applyOSINT(ctx, normalized, result, report, currentRevision)
 
@@ -1599,7 +1836,16 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 		}))
 	}
 
-	return result, false, report.Evidence
+	return result, false, report.Evidence, assess
+}
+
+func assessedLayer(layers []string, layer string) bool {
+	for _, l := range layers {
+		if l == layer {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result {
@@ -2957,17 +3203,23 @@ func (s *Service) recordTelemetryWithSource(a Analysis, client ClientInfo, sourc
 	if source == "" {
 		source = inferSource(a)
 	}
+	policyAction, policyCategory := "", ""
+	if a.Decision != nil {
+		policyAction, policyCategory = a.Decision.Action, a.Decision.Category
+	}
 	s.store.RecordAnalysis(store.TelemetryEntry{
-		Domain:     a.Domain,
-		Verdict:    string(a.Verdict),
-		Score:      a.Score,
-		Confidence: a.Confidence,
-		Reasons:    a.Reasons,
-		CacheHit:   a.CacheHit,
-		Source:     source,
-		AnalyzedAt: a.AnalyzedAt,
-		ClientIP:   client.IP,
-		ClientID:   client.ClientID,
+		Domain:         a.Domain,
+		Verdict:        string(a.Verdict),
+		Score:          a.Score,
+		Confidence:     a.Confidence,
+		Reasons:        a.Reasons,
+		CacheHit:       a.CacheHit,
+		Source:         source,
+		PolicyAction:   policyAction,
+		PolicyCategory: policyCategory,
+		AnalyzedAt:     a.AnalyzedAt,
+		ClientIP:       client.IP,
+		ClientID:       client.ClientID,
 	})
 }
 
@@ -2984,6 +3236,9 @@ func inferSource(a Analysis) string {
 		}
 		if r == threatFeedReason {
 			return "feed"
+		}
+		if r == "adblock" {
+			return "adblock"
 		}
 	}
 	return "lexical"
