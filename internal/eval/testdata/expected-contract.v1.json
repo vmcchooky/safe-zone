@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "corpus": "safe-zone decision contract v1 (offline profile)",
+  "corpus_sha256": "bd900eea6d0ab6ae35305b78231f4e348b40b00e7a2e48b2b2dd9ce84c1f83b9",
+  "reviewed_by": "operator",
+  "reviewed_at": "2026-09-12",
+  "cases": {
+    "adb-001": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "block",
+      "decision": "block|content|unknown",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "adb-002": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "block",
+      "decision": "block|content|unknown",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "adb-003": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "block",
+      "decision": "block|content|unknown",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "adb-004": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "feed-001": {
+      "verdict": "MALICIOUS",
+      "score": 100,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "matched local threat feed"
+      ]
+    },
+    "feed-002": {
+      "verdict": "MALICIOUS",
+      "score": 100,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "matched local threat feed"
+      ]
+    },
+    "feed-003": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "gap-001": {
+      "verdict": "SUSPICIOUS",
+      "score": 40,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "phishing keyword pattern"
+      ]
+    },
+    "gap-002": {
+      "verdict": "SAFE",
+      "score": 10,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "many hyphens"
+      ]
+    },
+    "lex-001": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "many hyphens"
+      ]
+    }
+  }
+}

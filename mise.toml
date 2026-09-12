@@ -11,7 +11,7 @@ run = "echo Safe Zone default checks passed."
 
 [tasks.check]
 description = "Run the standard local verification suite"
-depends = ["go:lint", "go:test", "go:build"]
+depends = ["go:lint", "go:test", "go:build", "eval:decision"]
 run = "echo Safe Zone checks passed."
 
 [tasks.ci]
@@ -86,6 +86,13 @@ run = "go build ./..."
 [tasks."go:lint"]
 description = "Run the Go linter"
 run = "golangci-lint run"
+
+[tasks."eval:decision"]
+description = "Run the frozen offline decision evaluation (truth + contract corpora)"
+run = [
+  "go run ./cmd/eval-decision check --corpus internal/eval/testdata/corpus.v1.json --expected internal/eval/testdata/expected.v1.json",
+  "go run ./cmd/eval-decision check --corpus internal/eval/testdata/contract.v1.json --expected internal/eval/testdata/expected-contract.v1.json",
+]
 
 [tasks."go:security"]
 description = "Run the Go security scans used in CI"
