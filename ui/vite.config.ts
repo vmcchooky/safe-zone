@@ -58,6 +58,24 @@ export default defineConfig(({ mode }) => {
       outDir: 'dist',
       sourcemap: true,
       target: 'es2022',
+      // Split heavy vendor libraries out of page chunks: recharts dominates
+      // TelemetryPage and framer-motion is shared by the shell and most
+      // routes. Shared vendor chunks stay cached across route navigations
+      // instead of being duplicated per page.
+      rolldownOptions: {
+        output: {
+          advancedChunks: {
+            groups: [
+              { name: 'vendor-recharts', test: /node_modules\/recharts/ },
+              { name: 'vendor-motion', test: /node_modules\/framer-motion/ },
+              {
+                name: 'vendor-react',
+                test: /node_modules\/(react|react-dom|react-router-dom|scheduler|swr)/,
+              },
+            ],
+          },
+        },
+      },
     },
   };
 });

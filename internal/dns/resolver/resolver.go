@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync/atomic"
 
 	"github.com/miekg/dns"
 	"safe-zone/internal/correlation"
@@ -34,7 +35,17 @@ type Config struct {
 	BlockStrategy  string
 	DNSTTL         uint32
 	DeploymentTier string
+	// MaxConcurrentQueries bounds in-flight ResolveQuery calls across all
+	// transports. Per-IP rate limits stop single actors; this stops the
+	// aggregate from exhausting goroutines and upstream budget under a
+	// distributed flood. Zero means DefaultMaxConcurrentQueries.
+	MaxConcurrentQueries int
 }
+
+// DefaultMaxConcurrentQueries caps simultaneous DNS evaluations. A
+// household bursts dozens of queries; hundreds concurrent is already far
+// beyond legitimate peaks on a budget VPS.
+const DefaultMaxConcurrentQueries = 256
 
 // Resolver là tầng chính sách trung tâm: mọi transport (DoH, DoT) đều gọi
 // ResolveQuery thay vì tự triển khai logic chặn/forward/uncloak riêng.
@@ -46,6 +57,7 @@ type Resolver struct {
 	// DotLimiter giới hạn tần suất riêng cho transport DoT; DoH đi qua
 	// TieredMiddleware ở cạnh HTTP.
 	DotLimiter *ratelimit.Limiter
+	inflight   atomic.Int64
 }
 
 func New(riskService *risk.Service, metrics *observability.Registry, upstreams *doh.UpstreamResolver, cfg Config, dotLimiter *ratelimit.Limiter) *Resolver {
@@ -66,6 +78,20 @@ func New(riskService *risk.Service, metrics *observability.Registry, upstreams *
 // DoH → uncloaking CNAME. Trả về response hoàn chỉnh, hoặc error khi upstream
 // thất bại (transport sẽ phản hồi SERVFAIL theo đúng chuẩn của từng giao thức).
 func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.ClientInfo) (*dns.Msg, error) {
+	maxInflight := r.Config.MaxConcurrentQueries
+	if maxInflight <= 0 {
+		maxInflight = DefaultMaxConcurrentQueries
+	}
+	if r.inflight.Add(1) > int64(maxInflight) {
+		r.inflight.Add(-1)
+		logjson.Warn("dns concurrency limit exceeded", correlation.Fields(ctx, map[string]any{
+			"service": "dns-resolver",
+			"limit":   maxInflight,
+		}))
+		return nil, fmt.Errorf("too many concurrent dns queries (limit %d)", maxInflight)
+	}
+	defer r.inflight.Add(-1)
+
 	questionDomain := strings.TrimSuffix(query.Question[0].Name, ".")
 	riskClient := risk.ClientInfo{IP: client.IP, ClientID: client.ClientID}
 
