@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -883,8 +884,15 @@ func TestSuspiciousDomainEnrichmentRunsInBackgroundAndUpdatesCache(t *testing.T)
 
 	started := make(chan struct{})
 	release := make(chan struct{})
+	var startedOnce sync.Once
+	var lookups atomic.Int64
 	service.enrichmentLookup = func(ctx context.Context, domain string) enrichmentSignals {
-		close(started)
+		lookups.Add(1)
+		// Idempotent signal: a duplicate lookup is benign-wasteful work
+		// the recency guard drops, but it must never panic the package.
+		// Exactly-once is asserted cleanly at the end of the test, so an
+		// ordering regression still fails — with a message, not a panic.
+		startedOnce.Do(func() { close(started) })
 		select {
 		case <-release:
 		case <-ctx.Done():
@@ -932,6 +940,14 @@ func TestSuspiciousDomainEnrichmentRunsInBackgroundAndUpdatesCache(t *testing.T)
 	}
 	if second.Score <= first.Score {
 		t.Fatalf("expected enriched score to increase, first=%d second=%d", first.Score, second.Score)
+	}
+	// Exactly-one-lookup per episode (PR-54 ordering invariant): after the
+	// enriched entry is visible, no further lookup may start. A quiet
+	// window turns a duplicate into a clean failure instead of a
+	// close-of-closed-channel package panic on loaded CI runners.
+	time.Sleep(200 * time.Millisecond)
+	if got := lookups.Load(); got != 1 {
+		t.Fatalf("expected exactly one background lookup per episode, got %d", got)
 	}
 }
 

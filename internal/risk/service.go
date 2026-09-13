@@ -1463,7 +1463,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		a.Evidence = evidence
 	}
 	if options.URLContext != nil {
-		a.URLML = s.observeURLML(normalized, result.Verdict, *options.URLContext)
+		a.URLML = s.observeURLML(ctx, normalized, result.Verdict, *options.URLContext)
 		a.Assessment.Evaluated = append(a.Assessment.Evaluated, LayerURLML)
 	} else {
 		a.Assessment.Skipped = append(a.Assessment.Skipped, skippedLayer(LayerURLML, SkipNoURLContext))
