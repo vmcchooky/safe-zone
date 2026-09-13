@@ -68,6 +68,10 @@ recall tuyệt đối + ceiling residual, vai trò con người duyệt.
   compromise là FN đã biết khi thiếu exact IOC — để 08c/inspection.
 - Hồi quy: risk/analysis/eval/api xanh; eval v2+contract 0 drift; lint,
   gosec, gofmt sạch. URL chưa enforce nên prod verdict bất động.
+- CI flake vá cùng PR: `TestSuspiciousDomain...` panic close-of-closed-channel
+  trên runner tải nặng (lớp đã biết từ PR-05) — mock giờ `sync.Once` +
+  assert exactly-once sau quiet window 200ms: hồi quy ordering vẫn đỏ
+  (clean fail), package không còn panic.
 - Gitleaks `generic-api-key` báo đúng 1 chỗ (`token=AbC…` tổng hợp trong
   fixture): allowlist file-specific cho fixture trong `.gitleaks.toml`
   (đúng tiền lệ fixtures-tổng-hợp của repo), verify bằng binary gitleaks
