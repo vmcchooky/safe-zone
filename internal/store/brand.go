@@ -172,16 +172,16 @@ func (d *DB) SeedDefaultBrands(ctx context.Context) error {
 	if !d.Enabled() {
 		return nil
 	}
+	// PR-08a/M2: insert-only. The seed runs on every DB open, so DO UPDATE
+	// would clobber operator edits to default brands on each restart.
+	// Missing names (fresh DBs, newly added defaults) are still inserted.
 	for _, brand := range analysis.DefaultTrustedBrands() {
 		brand = normalizeBrandForStore(brand)
 		altJSON, _ := json.Marshal(brand.AltDomains)
 		_, err := d.db.ExecContext(ctx, `
 			INSERT INTO trusted_brands (name, official_domain, alt_domains, updated_at)
 			VALUES (?, ?, ?, datetime('now'))
-			ON CONFLICT(name) DO UPDATE SET
-				official_domain = excluded.official_domain,
-				alt_domains = excluded.alt_domains,
-				updated_at = datetime('now')`,
+			ON CONFLICT(name) DO NOTHING`,
 			brand.Name, brand.OfficialDomain, string(altJSON))
 		if err != nil {
 			return fmt.Errorf("seed brand %q: %w", brand.Name, err)
