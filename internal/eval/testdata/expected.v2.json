@@ -1,0 +1,278 @@
+{
+  "schema_version": 1,
+  "corpus": "safe-zone decision truth v2 (offline profile)",
+  "corpus_sha256": "c1f0a0d15ec6713f34318ee3ba63ffef9dc518b0d03c4e5cd2996a586f1c93ad",
+  "reviewed_by": "operator",
+  "reviewed_at": "2026-09-13",
+  "cases": {
+    "adv-001": {
+      "verdict": "INVALID",
+      "score": 100,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "domain label exceeds 63 bytes"
+      ]
+    },
+    "adv-002": {
+      "verdict": "INVALID",
+      "score": 100,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "domain contains an empty label"
+      ]
+    },
+    "benign-001": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-002": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-003": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-004": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-005": {
+      "verdict": "SAFE",
+      "score": 35,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "high_entropy_dga_suspected"
+      ]
+    },
+    "benign-006": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-007": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-008": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "many hyphens"
+      ]
+    },
+    "benign-009": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-010": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-011": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-012": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "benign-013": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "cdn-001": {
+      "verdict": "SUSPICIOUS",
+      "score": 55,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "suspicious brand subdomain usage (shopee)"
+      ]
+    },
+    "dead-001": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "dead-002": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "many hyphens"
+      ]
+    },
+    "infra-001": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "infra-002": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "infra-003": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "many hyphens"
+      ]
+    },
+    "infra-004": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "phish-001": {
+      "verdict": "MALICIOUS",
+      "score": 75,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "phishing keyword pattern",
+        "protected Vietnamese public-service keyword abuse (dichvucong)"
+      ]
+    },
+    "phish-002": {
+      "verdict": "MALICIOUS",
+      "score": 95,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "punycode detected",
+        "many hyphens",
+        "homoglyph visual spoofing of apple brand (xn--pple-43d)"
+      ]
+    },
+    "pol-001": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "block",
+      "decision": "block|content|unknown",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "pol-002": {
+      "verdict": "SAFE",
+      "score": 35,
+      "policy": "block",
+      "decision": "block|content|unknown",
+      "reasons": [
+        "high_entropy_dga_suspected"
+      ]
+    },
+    "pol-003": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "block",
+      "decision": "block|content|unknown",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "unk-001": {
+      "verdict": "SAFE",
+      "score": 10,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "high digit ratio"
+      ]
+    },
+    "unk-002": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "unk-003": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "unk-004": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "unk-005": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
+      ]
+    }
+  }
+}

@@ -90,7 +90,7 @@ run = "golangci-lint run"
 [tasks."eval:decision"]
 description = "Run the frozen offline decision evaluation (truth + contract corpora)"
 run = [
-  "go run ./cmd/eval-decision check --corpus internal/eval/testdata/corpus.v1.json --expected internal/eval/testdata/expected.v1.json",
+  "go run ./cmd/eval-decision check --corpus internal/eval/testdata/corpus.v2.json --expected internal/eval/testdata/expected.v2.json",
   "go run ./cmd/eval-decision check --corpus internal/eval/testdata/contract.v1.json --expected internal/eval/testdata/expected-contract.v1.json",
 ]
 

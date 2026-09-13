@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "corpus": "safe-zone decision contract v1 (offline profile)",
-  "corpus_sha256": "81705931e3f8407ac0bef489c443cae9eebaf35ec508df9e6b33c39fd72220ae",
+  "corpus_sha256": "a1f9ec286d351c4eee69f62546bab7c4af99bc95b74f8818530cc852a002c93d",
   "reviewed_by": "operator",
   "reviewed_at": "2026-09-13",
   "cases": {
@@ -66,6 +66,15 @@
         "matched local threat feed"
       ]
     },
+    "feed-004": {
+      "verdict": "MALICIOUS",
+      "score": 100,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "matched local threat feed"
+      ]
+    },
     "gap-001": {
       "verdict": "SUSPICIOUS",
       "score": 40,
@@ -85,6 +94,27 @@
         "many hyphens"
       ]
     },
+    "gap-003": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "gap-004": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "gap-005": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
     "lex-001": {
       "verdict": "SAFE",
       "score": 25,
@@ -93,6 +123,26 @@
       "reasons": [
         "domain is long",
         "many hyphens"
+      ]
+    },
+    "vn-001": {
+      "verdict": "MALICIOUS",
+      "score": 75,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "phishing keyword pattern",
+        "protected Vietnamese public-service keyword abuse (dichvucong)"
+      ]
+    },
+    "vn-002": {
+      "verdict": "MALICIOUS",
+      "score": 75,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "phishing keyword pattern",
+        "suspicious usage of trusted brand keyword (vietcombank)"
       ]
     }
   }
