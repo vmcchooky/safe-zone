@@ -2072,11 +2072,31 @@ func assessedLayer(layers []string, layer string) bool {
 }
 
 func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result {
+	// PR-08a/H2 scope authority: a live *exact* IOC is scoped evidence for
+	// this host and wins over the trusted-brand suffix bypass (a compromised
+	// tenant host stays blockable). A *parent-only* match under a trusted
+	// root keeps the bypass: one noisy IOC must not block a whole shared
+	// root. Redis errors stay fail-open, as before.
+	exactHit, err := s.matchExactThreatFeed(ctx, domain)
+	if err != nil {
+		if !errors.Is(err, cache.ErrDisabled) {
+			logjson.Warn("threat feed lookup failed", correlation.Fields(ctx, map[string]any{
+				"service": "risk",
+				"domain":  domain,
+				"error":   err.Error(),
+			}))
+		}
+		return analysis.Result{}
+	}
+	if exactHit {
+		return threatFeedHit(domain)
+	}
+
 	if analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) {
 		return analysis.Result{}
 	}
 
-	matched, err := s.matchThreatFeed(ctx, domain)
+	matched, err := s.matchParentThreatFeed(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
 			logjson.Warn("threat feed lookup failed", correlation.Fields(ctx, map[string]any{
@@ -2091,6 +2111,11 @@ func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result
 		return analysis.Result{}
 	}
 
+	return threatFeedHit(domain)
+}
+
+// threatFeedHit builds the malicious verdict for a live threat-feed match.
+func threatFeedHit(domain string) analysis.Result {
 	return analysis.Result{
 		Domain:     domain,
 		Verdict:    analysis.VerdictMalicious,
@@ -3133,9 +3158,26 @@ func minDuration(a, b time.Duration) time.Duration {
 	return b
 }
 
-func (s *Service) matchThreatFeed(parent context.Context, domain string) (bool, error) {
+// matchExactThreatFeed reports whether the exact domain itself is a live
+// (unexpired) threat-feed member. Used by feedResult before the
+// trusted-suffix bypass so scoped IOC evidence wins (PR-08a/H2).
+func (s *Service) matchExactThreatFeed(parent context.Context, domain string) (bool, error) {
 	candidates := ThreatFeedCandidates(domain)
-	return s.matchAnyThreatFeedCandidate(parent, candidates)
+	if len(candidates) == 0 {
+		return false, nil
+	}
+	return s.matchAnyThreatFeedCandidate(parent, candidates[:1])
+}
+
+// matchParentThreatFeed walks only the parent suffixes, skipping the exact
+// domain. A parent-only hit is noisy evidence: under a trusted root it is
+// bypassed by feedResult (PR-08a/H2).
+func (s *Service) matchParentThreatFeed(parent context.Context, domain string) (bool, error) {
+	candidates := ThreatFeedCandidates(domain)
+	if len(candidates) <= 1 {
+		return false, nil
+	}
+	return s.matchAnyThreatFeedCandidate(parent, candidates[1:])
 }
 
 func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (bool, error) {

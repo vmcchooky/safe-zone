@@ -10,6 +10,7 @@ import (
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/cache"
 	"safe-zone/internal/correlation"
+	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
 	"safe-zone/internal/osint"
 	"safe-zone/internal/store"
@@ -118,7 +119,40 @@ func (t *OSINTTask) Run(ctx context.Context) error {
 
 	summary := fmt.Sprintf(`{"checked":%d,"promoted":%d,"skipped":%d,"promotion_failures":%d}`, checked, promoted, skipped, failed)
 	_ = t.store.RecordAgentEvent(ctx, "osint-audit", "osint_audit_completed", "", summary)
+	if promoted > 0 {
+		// PR-08a/M2 parent-child coherence: threat-feed matching walks
+		// parents at read time, but a cached SAFE verdict on a *child*
+		// would shadow a freshly promoted parent. Exact-domain keys are
+		// already invalidated per promotion; bumping the feed revision
+		// once per cycle retires every stale child entry through the
+		// normal epoch check — the same contract feed.Sync uses when it
+		// writes members. At most one bump per hourly cycle.
+		t.bumpFeedRevision(ctx, promoted)
+	}
 	return nil
+}
+
+// bumpFeedRevision retires cached verdicts taken before this cycle's
+// promotions. It is best-effort: a failed bump only delays child
+// recomputation until entries expire naturally or the next cycle bumps.
+func (t *OSINTTask) bumpFeedRevision(ctx context.Context, promoted int) {
+	if t.redis == nil || !t.redis.Enabled() {
+		return
+	}
+	revision, err := t.redis.Increment(ctx, feed.RevisionKey(t.config.ThreatKey))
+	if err != nil {
+		logjson.Warn("agent osint feed revision bump failed", correlation.Fields(ctx, map[string]any{
+			"service":  "core-api",
+			"task":     "osint-audit",
+			"promoted": promoted,
+			"error":    err.Error(),
+		}))
+		_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_revision_bump_failed", "",
+			fmt.Sprintf(`{"promoted":%d,"error":%q}`, promoted, err.Error()))
+		return
+	}
+	_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_revision_bump", "",
+		fmt.Sprintf(`{"promoted":%d,"revision":%d}`, promoted, revision))
 }
 
 // preflightThreatKey verifies the threat key is compatible before any
@@ -150,6 +184,9 @@ func (t *OSINTTask) preflightThreatKey(ctx context.Context) error {
 // promote adds a domain to the threat feed ZSET with an expiry score and
 // invalidates the cached analysis for that exact domain. It reports success
 // only when both steps succeed so partial promotions are never counted.
+// Child-domain coherence is handled separately: Run bumps the feed revision
+// once per cycle with promotions, retiring stale child entries via the
+// normal cache epoch check.
 func (t *OSINTTask) promote(ctx context.Context, domain string, evidence int) bool {
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {

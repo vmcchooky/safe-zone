@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "corpus": "safe-zone decision contract v1 (offline profile)",
-  "corpus_sha256": "bd900eea6d0ab6ae35305b78231f4e348b40b00e7a2e48b2b2dd9ce84c1f83b9",
+  "corpus_sha256": "81705931e3f8407ac0bef489c443cae9eebaf35ec508df9e6b33c39fd72220ae",
   "reviewed_by": "operator",
-  "reviewed_at": "2026-09-12",
+  "reviewed_at": "2026-09-13",
   "cases": {
     "adb-001": {
       "verdict": "SAFE",
@@ -58,11 +58,13 @@
       ]
     },
     "feed-003": {
-      "verdict": "SAFE",
-      "score": 0,
-      "policy": "allow",
+      "verdict": "MALICIOUS",
+      "score": 100,
+      "policy": "block",
       "decision": "",
-      "reasons": null
+      "reasons": [
+        "matched local threat feed"
+      ]
     },
     "gap-001": {
       "verdict": "SUSPICIOUS",
