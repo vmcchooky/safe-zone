@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
@@ -30,6 +31,8 @@ type URLMLObservation struct {
 	Sampled       bool            `json:"sampled"`
 	Evaluated     bool            `json:"evaluated"`
 	WouldPromote  bool            `json:"would_promote"`
+	Held          bool            `json:"held,omitempty"`
+	HoldReason    string          `json:"hold_reason,omitempty"`
 	Probability   float64         `json:"probability,omitempty"`
 	Action        string          `json:"action,omitempty"`
 	ModelVersion  string          `json:"model_version,omitempty"`
@@ -37,6 +40,10 @@ type URLMLObservation struct {
 	ErrorClass    string          `json:"error_class,omitempty"`
 	LatencyMicros int64           `json:"latency_us,omitempty"`
 }
+
+// urlPromoteHoldTrustedHost is the hold reason when a model promote fires
+// on a trusted-brand host with no host-side evidence. Fixed vocabulary.
+const urlPromoteHoldTrustedHost = "trusted_host_without_host_evidence"
 
 type URLMLShadowConfig struct {
 	Percent int
@@ -75,6 +82,7 @@ type URLMLStatus struct {
 	ContextRequests       int64                  `json:"context_requests"`
 	PredictionAttempts    int64                  `json:"prediction_attempts"`
 	WouldPromote          int64                  `json:"would_promote"`
+	WouldPromoteHeld      int64                  `json:"would_promote_held"`
 	WouldPass             int64                  `json:"would_pass"`
 	Errors                int64                  `json:"errors"`
 	Skips                 int64                  `json:"skips"`
@@ -173,6 +181,7 @@ type urlMLTelemetry struct {
 	predictionAttempts    atomic.Int64
 	wouldPromote          atomic.Int64
 	wouldPass             atomic.Int64
+	heldPromote           atomic.Int64
 	errors                atomic.Int64
 	skips                 atomic.Int64
 	latencyCount          atomic.Int64
@@ -372,6 +381,7 @@ func (s *Service) URLMLStatus() URLMLStatus {
 		ContextRequests:      s.urlMLTelemetry.contextRequests.Load(),
 		PredictionAttempts:   s.urlMLTelemetry.predictionAttempts.Load(),
 		WouldPromote:         s.urlMLTelemetry.wouldPromote.Load(),
+		WouldPromoteHeld:     s.urlMLTelemetry.heldPromote.Load(),
 		WouldPass:            s.urlMLTelemetry.wouldPass.Load(),
 		Errors:               s.urlMLTelemetry.errors.Load(),
 		Skips:                s.urlMLTelemetry.skips.Load(),
@@ -441,7 +451,7 @@ func (s *Service) currentURLMLPolicyRevision() string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Service) observeURLML(domain string, primaryVerdict analysis.Verdict, context URLAnalysisContext) *URLMLObservation {
+func (s *Service) observeURLML(ctx context.Context, domain string, primaryVerdict analysis.Verdict, context URLAnalysisContext) *URLMLObservation {
 	if s == nil {
 		return &URLMLObservation{Mode: analysis.MLModeDisabled}
 	}
@@ -506,6 +516,14 @@ func (s *Service) observeURLML(domain string, primaryVerdict analysis.Verdict, c
 	observation.Revision = decision.Revision
 	s.urlMLTelemetry.observeProbability(decision.Probability)
 	if decision.Action == analysis.MLActionPromoteMalicious {
+		if reason := s.urlPromoteHoldReason(ctx, domain); reason != "" {
+			observation.Held = true
+			observation.HoldReason = reason
+			s.urlMLTelemetry.heldPromote.Add(1)
+			s.urlMLTelemetry.wouldPass.Add(1)
+			s.urlMLFeedback.record(context.EventID, decision.Probability, false)
+			return observation
+		}
 		observation.WouldPromote = true
 		s.urlMLTelemetry.wouldPromote.Add(1)
 		s.urlMLTelemetry.promoteVerdictBuckets[verdictIndex].Add(1)
@@ -514,6 +532,27 @@ func (s *Service) observeURLML(domain string, primaryVerdict analysis.Verdict, c
 	}
 	s.urlMLFeedback.record(context.EventID, decision.Probability, observation.WouldPromote)
 	return observation
+}
+
+// urlPromoteHoldReason reports why a model promote is held for host-side
+// evidence, or "" to let it stand. A path-only promote on a trusted-brand
+// host is held unless a live exact feed IOC names the host (scoped
+// evidence wins, the PR-59 principle at URL layer): lure words in a path
+// say nothing about who operates the host. Lookup errors fail open (no
+// hold): a blind guard must never suppress. Shadow-only effect — the URL
+// layer never enforces today.
+func (s *Service) urlPromoteHoldReason(ctx context.Context, domain string) string {
+	if !analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) {
+		return ""
+	}
+	hit, err := s.matchExactThreatFeed(ctx, domain)
+	if err != nil {
+		return ""
+	}
+	if hit {
+		return ""
+	}
+	return urlPromoteHoldTrustedHost
 }
 
 // RecordURLFeedback correlates a caller label with an earlier shadow event.
