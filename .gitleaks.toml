@@ -19,4 +19,7 @@ paths = [
   '''(^|/)\.env\.example$''',
   '''(^|/)ops/secrets/README\.md$''',
   '''(^|/)docs/runbooks/credential-rotation\.md$''',
+  # URL-shadow fixture: every token/query value is synthetic lure shape by
+  # design (see the fixture provenance field); generic-api-key misfires.
+  '''(^|/)internal/analysis/testdata/url_shadow_negatives\.v1\.json$''',
 ]

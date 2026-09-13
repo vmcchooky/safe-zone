@@ -68,6 +68,10 @@ recall tuyệt đối + ceiling residual, vai trò con người duyệt.
   compromise là FN đã biết khi thiếu exact IOC — để 08c/inspection.
 - Hồi quy: risk/analysis/eval/api xanh; eval v2+contract 0 drift; lint,
   gosec, gofmt sạch. URL chưa enforce nên prod verdict bất động.
+- Gitleaks `generic-api-key` báo đúng 1 chỗ (`token=AbC…` tổng hợp trong
+  fixture): allowlist file-specific cho fixture trong `.gitleaks.toml`
+  (đúng tiền lệ fixtures-tổng-hợp của repo), verify bằng binary gitleaks
+  8.30.1 local — đối chứng âm (bỏ allowlist) báo lại đúng chỗ.
 
 ### Liên kết Artifacts
 
