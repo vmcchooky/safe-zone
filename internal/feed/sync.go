@@ -116,6 +116,7 @@ type SyncReport struct {
 	CacheInvalidated  bool            `json:"cache_invalidated"`
 	FeedRevision      int64           `json:"feed_revision,omitempty"`
 	Admission         *AdmissionStats `json:"admission,omitempty"`
+	Shadow            *ShadowDiff     `json:"shadow,omitempty"`
 }
 
 type OpenSourceResponse struct {
@@ -195,6 +196,11 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		report.Admission = &plan.Stats
 		plannedDomains = plan.Authoritative
 		if admissionMode == AdmissionShadow {
+			// Measure the Filter gap before merging: contextual members
+			// this Shadow sync loads that the evaluation-only Filter
+			// mode would refuse. Observability only; the loaded set
+			// below is unchanged.
+			report.Shadow = SummarizeShadowGap(plan.Contextual)
 			plannedDomains = append(plannedDomains, plan.Contextual...)
 		}
 		// Refuse shared roots before they reach dry-run reports or the

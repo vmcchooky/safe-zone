@@ -33,6 +33,47 @@ type AdmissionPlan struct {
 	Stats         AdmissionStats `json:"admission_stats"`
 }
 
+// ShadowDiff measures what the evaluation-only Filter mode would drop from
+// a Shadow sync, without changing the loaded set. It answers the M7 sizing
+// question (how many runtime members are URL-only contextual) from real
+// sync data instead of estimates.
+type ShadowDiff struct {
+	// ContextualLoaded counts contextual members the Shadow sync loads
+	// that Filter would refuse.
+	ContextualLoaded int `json:"contextual_loaded"`
+	// ContextualPSLRefused counts contextual candidates already refused
+	// as shared roots before the Filter comparison.
+	ContextualPSLRefused int `json:"contextual_psl_refused"`
+	// Sample holds the first entries of the sorted contextual list,
+	// bounded so sync reports stay small.
+	Sample []string `json:"sample,omitempty"`
+}
+
+// shadowSampleCap bounds the ShadowDiff sample.
+const shadowSampleCap = 50
+
+// SummarizeShadowGap computes the Filter gap over one Shadow plan's
+// contextual list. Pure: shared-root refusal here never touches ParseStats
+// counters (the runtime list filter below records those). The caller passes
+// plan order (sorted); the sample is re-sorted defensively.
+func SummarizeShadowGap(contextual []string) *ShadowDiff {
+	diff := &ShadowDiff{}
+	for _, domain := range contextual {
+		if isPublicSuffixMember(domain) {
+			diff.ContextualPSLRefused++
+			continue
+		}
+		diff.ContextualLoaded++
+		if len(diff.Sample) < shadowSampleCap {
+			diff.Sample = append(diff.Sample, domain)
+		}
+	}
+	// Deterministic sample regardless of caller order (plan output is
+	// already sorted; defense in depth for report stability).
+	sort.Strings(diff.Sample)
+	return diff
+}
+
 type admissionState struct {
 	authoritative bool
 	urlSeen       bool

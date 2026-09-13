@@ -51,6 +51,7 @@ type SourceStatus struct {
 	CacheInvalidated  bool            `json:"cache_invalidated"`
 	FeedRevision      int64           `json:"feed_revision,omitempty"`
 	Admission         *AdmissionStats `json:"admission,omitempty"`
+	Shadow            *ShadowDiff     `json:"shadow,omitempty"`
 	Stale             bool            `json:"stale"`
 }
 
@@ -309,6 +310,7 @@ func recordSyncSuccess(ctx context.Context, redisCache *cache.Redis, report Sync
 		CacheInvalidated:  report.CacheInvalidated,
 		FeedRevision:      report.FeedRevision,
 		Admission:         report.Admission,
+		Shadow:            report.Shadow,
 	}
 
 	return redisCache.SetJSON(ctx, StatusKey(report.Key, report.Source), status, 0)

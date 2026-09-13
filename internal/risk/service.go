@@ -441,6 +441,21 @@ type Assessment struct {
 	Evaluated []string         `json:"evaluated_layers"`
 	Skipped   []string         `json:"skipped_layers"`
 	Timings   map[string]int64 `json:"timings_us,omitempty"`
+	// Feed records how the threat-feed layer resolved this evaluation:
+	// exact hit, parent hit at a depth, or trusted-suffix bypass.
+	// Nil when the layer missed without a bypass (miss-vs-skip already
+	// lives in Evaluated/Skipped) or when the verdict came from cache.
+	// Observability only; never gates a verdict (PR-08b/M7 shadow).
+	Feed *FeedScope `json:"feed_scope,omitempty"`
+}
+
+// FeedScope describes one threat-feed layer resolution. Depth counts
+// labels from the queried domain: 0 is the exact host.
+type FeedScope struct {
+	ExactMatch    bool   `json:"exact_match,omitempty"`
+	Candidate     string `json:"candidate,omitempty"`
+	Depth         int    `json:"depth,omitempty"`
+	TrustBypassed bool   `json:"trust_bypassed,omitempty"`
 }
 
 // decisionIDFor returns the evaluation ID: the request correlation ID
@@ -1431,6 +1446,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 				[]string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock})
 			assess.Skipped = engineAssess.Skipped
 			assess.Timings = engineAssess.Timings
+			assess.Feed = engineAssess.Feed
 		}
 	}
 
@@ -1750,6 +1766,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	policyResult.Assessment.Coverage = engineAssess.Coverage
 	policyResult.Assessment.Skipped = engineAssess.Skipped
 	policyResult.Assessment.Timings = mergeTimings(preTimer.timings, engineAssess.Timings)
+	policyResult.Assessment.Feed = engineAssess.Feed
 	if excRule != nil {
 		// Content axis only: the exception suppresses the adblock block, so
 		// the decision is allow while the overall policy above still follows
@@ -1954,9 +1971,15 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	assess := newDomainAssessment()
 	assess.Evaluated = append(assess.Evaluated, LayerThreatFeed)
 	var result analysis.Result
+	var feedScope FeedScope
 	timer.measure(LayerThreatFeed, func() {
-		result = s.feedResult(ctx, normalized)
+		result, feedScope = s.feedResult(ctx, normalized)
 	})
+	// Shadow scope trace (PR-08b/M7): record hits and trust bypasses in
+	// telemetry. Misses stay nil (miss-vs-skip already in the layer lists).
+	if feedHit := result.Domain != ""; feedHit || feedScope.TrustBypassed {
+		assess.Feed = &feedScope
+	}
 	feedHit := result.Domain != ""
 	if !feedHit {
 		// 3. Lexical Analysis
@@ -2071,12 +2094,14 @@ func assessedLayer(layers []string, layer string) bool {
 	return false
 }
 
-func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result {
+func (s *Service) feedResult(ctx context.Context, domain string) (analysis.Result, FeedScope) {
 	// PR-08a/H2 scope authority: a live *exact* IOC is scoped evidence for
 	// this host and wins over the trusted-brand suffix bypass (a compromised
 	// tenant host stays blockable). A *parent-only* match under a trusted
 	// root keeps the bypass: one noisy IOC must not block a whole shared
 	// root. Redis errors stay fail-open, as before.
+	// PR-08b/M7 shadow: the returned scope is observability only and never
+	// gates the verdict.
 	exactHit, err := s.matchExactThreatFeed(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
@@ -2086,17 +2111,17 @@ func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result
 				"error":   err.Error(),
 			}))
 		}
-		return analysis.Result{}
+		return analysis.Result{}, FeedScope{}
 	}
 	if exactHit {
-		return threatFeedHit(domain)
+		return threatFeedHit(domain), FeedScope{ExactMatch: true, Candidate: domain}
 	}
 
 	if analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) {
-		return analysis.Result{}
+		return analysis.Result{}, FeedScope{TrustBypassed: true}
 	}
 
-	matched, err := s.matchParentThreatFeed(ctx, domain)
+	candidate, err := s.matchParentCandidate(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
 			logjson.Warn("threat feed lookup failed", correlation.Fields(ctx, map[string]any{
@@ -2105,13 +2130,28 @@ func (s *Service) feedResult(ctx context.Context, domain string) analysis.Result
 				"error":   err.Error(),
 			}))
 		}
-		return analysis.Result{}
+		return analysis.Result{}, FeedScope{}
 	}
-	if !matched {
-		return analysis.Result{}
+	if candidate == "" {
+		return analysis.Result{}, FeedScope{}
 	}
 
-	return threatFeedHit(domain)
+	return threatFeedHit(domain), FeedScope{Candidate: candidate, Depth: feedMatchDepth(domain, candidate)}
+}
+
+// feedMatchDepth counts labels from the queried domain up to the matched
+// parent candidate: 0 is the exact host.
+func feedMatchDepth(domain, candidate string) int {
+	depth := 0
+	for d := domain; d != candidate; {
+		idx := strings.IndexByte(d, '.')
+		if idx < 0 {
+			break
+		}
+		d = d[idx+1:]
+		depth++
+	}
+	return depth
 }
 
 // threatFeedHit builds the malicious verdict for a live threat-feed match.
@@ -3166,22 +3206,25 @@ func (s *Service) matchExactThreatFeed(parent context.Context, domain string) (b
 	if len(candidates) == 0 {
 		return false, nil
 	}
-	return s.matchAnyThreatFeedCandidate(parent, candidates[:1])
+	matched, err := s.matchAnyThreatFeedCandidate(parent, candidates[:1])
+	return matched != "", err
 }
 
-// matchParentThreatFeed walks only the parent suffixes, skipping the exact
-// domain. A parent-only hit is noisy evidence: under a trusted root it is
-// bypassed by feedResult (PR-08a/H2).
-func (s *Service) matchParentThreatFeed(parent context.Context, domain string) (bool, error) {
+// matchParentCandidate walks only the parent suffixes, skipping the exact
+// domain, and returns the nearest live member ("" on miss). A parent-only
+// hit is noisy evidence: under a trusted root it is bypassed by feedResult
+// (PR-08a/H2). The returned candidate feeds the shadow scope trace
+// (PR-08b/M7).
+func (s *Service) matchParentCandidate(parent context.Context, domain string) (string, error) {
 	candidates := ThreatFeedCandidates(domain)
 	if len(candidates) <= 1 {
-		return false, nil
+		return "", nil
 	}
 	return s.matchAnyThreatFeedCandidate(parent, candidates[1:])
 }
 
-func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (bool, error) {
-	var matched bool
+func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (string, error) {
+	var matched string
 	currentTime := float64(time.Now().Unix())
 	err := s.withRedis(parent, func(ctx context.Context) error {
 		for _, candidate := range candidates {
@@ -3193,14 +3236,14 @@ func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates
 				return err
 			}
 			if score >= currentTime {
-				matched = true
+				matched = candidate
 				return nil
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		return false, err
+		return "", err
 	}
 
 	return matched, nil
