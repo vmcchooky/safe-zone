@@ -691,7 +691,7 @@ func entryAssessedAt(entry analysisCacheEntry) time.Time {
 }
 
 // jobQueuedAt parses a job snapshot time. Unparseable means oldest: the
-// worker proceeds, preserving the pre-PR-05 behavior for legacy callers.
+// worker proceeds and the CAS guard decides against the live entry.
 func jobQueuedAt(raw string) time.Time {
 	ts, err := time.Parse(time.RFC3339Nano, raw)
 	if err != nil {
@@ -3137,32 +3137,49 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	cacheKey := analysisCacheKey(job.Domain, job.ModelRevision)
-	// Recency guard (M1): a job snapshot must not overwrite an evaluation
-	// materialized after the snapshot was taken. Cross-process races
-	// inside the read-modify-write window remain possible and are logged;
-	// full generation fencing belongs to the evidence ledger (PR-08).
+	// Recency guard (M1/PR-05): a job snapshot must not overwrite an
+	// evaluation materialized after the snapshot was taken. The read and
+	// the conditional write run inside one WATCH transaction, so even
+	// cross-process races between two services sharing Redis converge on
+	// the fresher entry instead of last-writer-wins.
 	skippedStale := false
+	queuedAt := jobQueuedAt(job.QueuedAt)
 	err := s.withRedis(s.lifecycleCtx, func(redisCtx context.Context) error {
-		var current analysisCacheEntry
-		found, err := s.redis.GetJSON(redisCtx, cacheKey, &current)
+		swapped, err := s.redis.CompareAndSwapJSON(redisCtx, cacheKey,
+			func(raw []byte, found bool) (bool, error) {
+				if !found {
+					return true, nil
+				}
+				var current analysisCacheEntry
+				if err := json.Unmarshal(raw, &current); err != nil {
+					return false, err
+				}
+				if current.Result.Domain != "" &&
+					entryAssessedAt(current).After(queuedAt) {
+					return false, nil
+				}
+				return true, nil
+			}, analysisCacheEntry{
+				Result:           enriched,
+				FeedRevision:     job.FeedRevision,
+				BrandRevision:    job.BrandRevision,
+				AnalysisRevision: analysisAlgorithmRevision,
+				ConfigRevision:   job.ConfigRevision,
+				ModelRevision:    job.ModelRevision,
+				EnrichedAt:       now,
+				AssessedAt:       now,
+			}, s.ttlFor(enriched.Verdict))
 		if err != nil {
+			if errors.Is(err, cache.ErrCASConflict) {
+				skippedStale = true
+				return nil
+			}
 			return err
 		}
-		if found && current.Result.Domain != "" &&
-			entryAssessedAt(current).After(jobQueuedAt(job.QueuedAt)) {
+		if !swapped {
 			skippedStale = true
-			return nil
 		}
-		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
-			Result:           enriched,
-			FeedRevision:     job.FeedRevision,
-			BrandRevision:    job.BrandRevision,
-			AnalysisRevision: analysisAlgorithmRevision,
-			ConfigRevision:   job.ConfigRevision,
-			ModelRevision:    job.ModelRevision,
-			EnrichedAt:       now,
-			AssessedAt:       now,
-		}, s.ttlFor(enriched.Verdict))
+		return nil
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("background enrichment cache write failed", map[string]any{
@@ -3247,6 +3264,15 @@ func applyEnrichmentSignals(result *analysis.Result, signals enrichmentSignals) 
 		result.Score = 100
 	}
 	switch {
+	case result.Score >= 70:
+		result.Verdict = analysis.VerdictMalicious
+	case result.Score >= 40:
+		result.Verdict = analysis.VerdictSuspicious
+	default:
+		result.Verdict = analysis.VerdictSafe
+	}
+	result.Confidence = math.Min(1, 0.45+float64(result.Score)/120)
+}
 // maxTLSAdvisoryPromotion bounds how many weak-TLS points (SAN mismatch,
 // fresh certificate) can add when the pre-enrichment assessment shows no
 // independent suspicion (FP-guard 2026-09, M5). CDN edges serve default
@@ -3261,15 +3287,6 @@ const maxTLSAdvisoryPromotion = 10
 // SUSPICIOUS on lexical/feed merit).
 const minScoreForFullTLSWeight = 40
 
-	case result.Score >= 70:
-		result.Verdict = analysis.VerdictMalicious
-	case result.Score >= 40:
-		result.Verdict = analysis.VerdictSuspicious
-	default:
-		result.Verdict = analysis.VerdictSafe
-	}
-	result.Confidence = math.Min(1, 0.45+float64(result.Score)/120)
-}
 
 func enrichContextTimeout(ctx context.Context, fallback time.Duration) time.Duration {
 	deadline, ok := ctx.Deadline()
@@ -3330,16 +3347,17 @@ func (s *Service) matchParentCandidate(parent context.Context, domain string) (s
 func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (string, error) {
 	var matched string
 	currentTime := float64(time.Now().Unix())
+	// Single round trip for the whole suffix walk: a 253-octet normalized
+	// input fans out to at most ~127 candidates, and sequential ZSCOREs
+	// would multiply Redis RTT by attacker-controlled input length
+	// (PR-02/H4). Nearest-first and expiry semantics are unchanged.
 	err := s.withRedis(parent, func(ctx context.Context) error {
-		for _, candidate := range candidates {
-			score, err := s.redis.ZScore(ctx, s.threatFeedKey, candidate)
-			if err != nil {
-				if errors.Is(err, redis.Nil) {
-					continue
-				}
-				return err
-			}
-			if score >= currentTime {
+		scores, ok, err := s.redis.ZScores(ctx, s.threatFeedKey, candidates)
+		if err != nil {
+			return err
+		}
+		for i, candidate := range candidates {
+			if ok[i] && scores[i] >= currentTime {
 				matched = candidate
 				return nil
 			}

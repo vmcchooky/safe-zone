@@ -18,6 +18,11 @@ import (
 
 var ErrDisabled = errors.New("redis cache disabled")
 
+// ErrCASConflict reports a compare-and-swap that lost every attempt to a
+// concurrent writer. Callers treat it as a skipped write, not a failure:
+// the surviving entry is fresher by construction.
+var ErrCASConflict = errors.New("redis cas conflict")
+
 type Redis struct {
 	client *redis.Client
 }
@@ -397,12 +402,124 @@ func (r *Redis) ZAdd(ctx context.Context, key string, members ...redis.Z) (int64
 	return r.client.ZAdd(ctx, key, members...).Result()
 }
 
+// casMaxAttempts bounds WATCH retries so sustained contention degrades to
+// a skipped write instead of a hot loop.
+const casMaxAttempts = 5
+
+// CompareAndSwapJSON atomically replaces key when swap approves the
+// current value. The read and the conditional write execute inside one
+// WATCH transaction, closing the cross-process read-modify-write race
+// that a separate GET+SET leaves open (PR-05/M1). It returns swapped=true
+// when the write landed. A swap refusal (false, nil) and an exhausted
+// conflict budget (false, ErrCASConflict) both mean "leave it": the
+// surviving entry is newer or an equivalent writer won.
+func (r *Redis) CompareAndSwapJSON(
+	ctx context.Context,
+	key string,
+	swap func(current []byte, found bool) (bool, error),
+	value any,
+	ttl time.Duration,
+) (bool, error) {
+	if !r.Enabled() {
+		return false, ErrDisabled
+	}
+
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return false, err
+	}
+
+	for attempt := 0; attempt < casMaxAttempts; attempt++ {
+		swapped, conflict, err := r.casOnce(ctx, key, swap, encoded, ttl)
+		if err != nil {
+			return false, err
+		}
+		if swapped || !conflict {
+			return swapped, nil
+		}
+	}
+	return false, ErrCASConflict
+}
+
+func (r *Redis) casOnce(
+	ctx context.Context,
+	key string,
+	swap func(current []byte, found bool) (bool, error),
+	encoded []byte,
+	ttl time.Duration,
+) (swapped, conflict bool, err error) {
+	err = r.client.Watch(ctx, func(tx *redis.Tx) error {
+		raw, err := tx.Get(ctx, key).Bytes()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			return err
+		}
+		approve, err := swap(raw, err == nil)
+		if err != nil {
+			return err
+		}
+		if !approve {
+			return nil
+		}
+		_, err = tx.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
+			pipe.Set(ctx, key, encoded, ttl)
+			return nil
+		})
+		swapped = err == nil
+		return err
+	}, key)
+	if errors.Is(err, redis.TxFailedErr) {
+		return false, true, nil
+	}
+	return swapped, false, err
+}
+
 func (r *Redis) ZScore(ctx context.Context, key, member string) (float64, error) {
 	if !r.Enabled() {
 		return 0, ErrDisabled
 	}
 
 	return r.client.ZScore(ctx, key, member).Result()
+}
+
+// ZScores fetches scores for many members in a single round trip, so an
+// input-controlled fan-out (parent-suffix walk) cannot multiply Redis
+// round trips (PR-02/H4, OWASP input-based function interaction). ok[i] is
+// false when the member is missing (redis.Nil); any other error fails the
+// whole batch so callers keep fail-open semantics.
+func (r *Redis) ZScores(ctx context.Context, key string, members []string) ([]float64, []bool, error) {
+	if !r.Enabled() {
+		return nil, nil, ErrDisabled
+	}
+	if len(members) == 0 {
+		return nil, nil, nil
+	}
+
+	cmds := make([]*redis.FloatCmd, len(members))
+	// A missing member surfaces as redis.Nil at both levels: the pipeline
+	// reports the first command error, and each command keeps its own.
+	// Nil here is data (absence), not failure — only non-Nil errors fail
+	// the batch so callers keep fail-open semantics.
+	if _, err := r.client.Pipelined(ctx, func(pipe redis.Pipeliner) error {
+		for i, member := range members {
+			cmds[i] = pipe.ZScore(ctx, key, member)
+		}
+		return nil
+	}); err != nil && !errors.Is(err, redis.Nil) {
+		return nil, nil, err
+	}
+	scores := make([]float64, len(members))
+	ok := make([]bool, len(members))
+	for i, cmd := range cmds {
+		value, err := cmd.Result()
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
+				continue
+			}
+			return nil, nil, err
+		}
+		scores[i], ok[i] = value, true
+	}
+	return scores, ok, nil
 }
 
 func (r *Redis) ZCount(ctx context.Context, key, min, max string) (int64, error) {
