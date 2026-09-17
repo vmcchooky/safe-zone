@@ -125,10 +125,42 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 	if identity, ok := authIdentityFromRequest(r); ok && strings.TrimSpace(identity.Username) != "" {
 		reviewer = identity.Username
 	}
-	resolutionAction := "resolve"
-	if req.Status == "rejected" {
-		resolutionAction = "reject"
+	if req.Status == "resolved" {
+		// Resolved means accepted as a false positive: it must run the
+		// same atomic transaction as the FP-review path (allow override
+		// + resolve + audit). A record-only "resolved" that leaves the
+		// block enforced is a coherence trap; "rejected" below keeps the
+		// block and stays record-only by design.
+		report, err := db.GetBlockReport(r.Context(), req.ID)
+		if err != nil {
+			if errors.Is(err, store.ErrBlockReportNotFound) {
+				httputil.WriteError(w, http.StatusNotFound, "block report not found")
+				return
+			}
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to load report: "+err.Error())
+			return
+		}
+		resolvedReports, err := db.ApproveFalsePositive(
+			r.Context(), req.ID, report.Domain,
+			"false-positive review: "+req.Reason, req.Reason, reviewer, "report-status", report.Status,
+		)
+		if err != nil {
+			if errors.Is(err, store.ErrBlockReportNotFound) {
+				httputil.WriteError(w, http.StatusNotFound, "block report not found")
+				return
+			}
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to apply false-positive review: "+err.Error())
+			return
+		}
+		httputil.WriteJSON(w, http.StatusOK, map[string]any{
+			"status":            "ok",
+			"decision":          req.Status,
+			"resolution_action": "allow",
+			"resolved_reports":  resolvedReports,
+		})
+		return
 	}
+	resolutionAction := "reject"
 	if err := db.ReviewBlockReport(r.Context(), req.ID, req.Status, req.Reason, reviewer, resolutionAction); err != nil {
 		if errors.Is(err, store.ErrBlockReportNotFound) {
 			httputil.WriteError(w, http.StatusNotFound, "block report not found")

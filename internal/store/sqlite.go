@@ -2459,6 +2459,30 @@ func (d *DB) ReviewBlockReport(ctx context.Context, id int64, status, reason, re
 	return nil
 }
 
+// GetBlockReport loads one user report by ID for review routing.
+func (d *DB) GetBlockReport(ctx context.Context, id int64) (BlockReport, error) {
+	if !d.Enabled() {
+		return BlockReport{}, fmt.Errorf("sqlite store disabled")
+	}
+
+	var report BlockReport
+	err := d.db.QueryRowContext(ctx, `
+		SELECT id, domain, contact, note, status, created_at,
+			review_reason, reviewed_by, reviewed_at, resolution_action
+		FROM block_reports WHERE id = ?`, id).Scan(
+		&report.ID, &report.Domain, &report.Contact, &report.Note, &report.Status,
+		&report.CreatedAt, &report.ReviewReason, &report.ReviewedBy,
+		&report.ReviewedAt, &report.ResolutionAction,
+	)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return BlockReport{}, ErrBlockReportNotFound
+		}
+		return BlockReport{}, fmt.Errorf("load block report: %w", err)
+	}
+	return report, nil
+}
+
 // ApproveFalsePositive creates the allow override, updates related reports, and
 // records the operator decision as one transaction. reportID is optional to
 // preserve the existing review endpoint contract for reviews started elsewhere.
