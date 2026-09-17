@@ -145,7 +145,9 @@ func TestEnrichmentTimeoutOutcomePreservesCachedVerdict(t *testing.T) {
 
 	domain := "zshopeevod.v.baishan-cloud.net"
 	lexical := svc.analyzeLexical(domain)
-	if lexical.Verdict != analysis.VerdictSuspicious || lexical.Score != 55 {
+	// FP-guard 2026-09: brand-subdomain similarity under a shared CDN root
+	// is advisory, so this fixture now scores long(15)+advisory(10)=25.
+	if lexical.Verdict != analysis.VerdictSafe || lexical.Score != 25 {
 		t.Fatalf("fixture lexical changed: %+v", lexical)
 	}
 	svc.enrichmentLookup = func(context.Context, string) enrichmentSignals {
@@ -164,7 +166,7 @@ func TestEnrichmentTimeoutOutcomePreservesCachedVerdict(t *testing.T) {
 	if err != nil || !found {
 		t.Fatalf("expected worker cache write, found=%v err=%v", found, err)
 	}
-	if after.Result.Verdict != analysis.VerdictSuspicious || after.Result.Score != 55 {
+	if after.Result.Verdict != analysis.VerdictSafe || after.Result.Score != 25 {
 		t.Fatalf("timeout outcome rewrote evaluation: %+v", after.Result)
 	}
 	if after.EnrichedAt == "" {

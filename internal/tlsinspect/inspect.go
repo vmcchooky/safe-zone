@@ -24,7 +24,13 @@ type Result struct {
 	NotBefore   time.Time `json:"not_before"`
 	NotAfter    time.Time `json:"not_after"`
 	Score       int       `json:"score"`
-	Reasons     []string  `json:"reasons"`
+	// AdvisoryScore is the weak-metadata subset of Score (SAN mismatch +
+	// fresh-certificate points). Consumers must not let advisory points
+	// alone promote a host: they need independent lexical/feed
+	// corroboration (FP-guard 2026-09, M5). Strong signals (expired,
+	// self-signed) keep full weight.
+	AdvisoryScore int      `json:"advisory_score"`
+	Reasons       []string `json:"reasons"`
 }
 
 // Package-level resolver function supporting test mock injection
@@ -136,18 +142,25 @@ func scoreResult(domain string, cert *x509.Certificate) Result {
 		r.Reasons = append(r.Reasons, "tls: self-signed certificate")
 	}
 
-	// Certificate age
+	// Certificate age: fresh certificates on their own are weak evidence
+	// (CDN edges rotate constantly), so these points are advisory.
 	certAge := now.Sub(cert.NotBefore)
 	r.CertAgeDays = int(certAge.Hours() / 24)
 	if r.CertAgeDays < 7 && !r.Expired {
 		r.Score += 15
+		r.AdvisoryScore += 15
 		r.Reasons = append(r.Reasons, "tls: certificate issued < 7 days ago")
 	}
 
-	// SAN / CN mismatch
+	// SAN / CN mismatch: expected on CDN-fronted hosts (edge serves a
+	// default cert for the CNAME chain), so mismatch points are advisory
+	// unless the caller sees independent suspicion. Validation itself
+	// stays strict (RFC 9525 single-label wildcard); only the authority
+	// of the signal is reduced, never the match semantics.
 	r.SANMatch = certMatchesDomain(cert, domain)
 	if !r.SANMatch {
 		r.Score += 30
+		r.AdvisoryScore += 30
 		r.Reasons = append(r.Reasons, "tls: certificate name does not match domain")
 	}
 

@@ -345,6 +345,85 @@ var keyboardAdjacency = map[rune]string{
 	'y': "tghu67", 'z': "asx",
 }
 
+// cdnInfraAdvisoryPenalty caps fuzzy brand-similarity signals observed on
+// labels delegated beneath a shared CDN/cloud root (FP-guard 2026-09).
+// Tenant namespaces under shared infrastructure legitimately embed customer
+// brand names (e.g. twitter under map.fastly.net, delegated Shopee hosts
+// under baishan-cloud.net), so typosquat and subdomain-usage matches there
+// are advisory only: they can contribute to SUSPICIOUS but never alone
+// promote to MALICIOUS. Exact homoglyph visual spoofing keeps full weight,
+// and exact threat-feed IOCs still win over everything (PR-08a/H2).
+const cdnInfraAdvisoryPenalty = 10
+
+// shortBrandTyposquatMaxLen bounds the length-scaled typosquat rule below:
+// brands and labels at or below this length only match on edit distance 1.
+// Distance-2 matches on 4-character names (miui~tiki, zoho~momo) are
+// chance collisions, not typosquats.
+const shortBrandTyposquatMaxLen = 4
+
+// trustedInfraSuffixes lists shared developer/corporate infrastructure
+// roots that are trusted as a suffix (FP-guard 2026-09). They are kept
+// OUT of DefaultTrustedBrands on purpose: the default brand seed is
+// frozen by the ML feature contract (brands.v1.json, golden vectors), so
+// brand-shaped detection (typosquat distances, ML brand features) must not
+// shift. Infrastructure trust only gates the suffix bypass in lexical
+// spoof checks and the threat-feed parent walk; exact feed IOCs beneath
+// these roots still block (PR-08a/H2). github.io stays OUT: tenant pages
+// there keep full scrutiny. Additions need code review.
+var trustedInfraSuffixes = map[string]bool{
+	"github.com": true,
+	"taobao.com": true,
+}
+
+// IsTrustedInfraSuffix reports whether domain is one of the trusted
+// infrastructure roots above or a subdomain beneath one.
+func IsTrustedInfraSuffix(domain string) bool {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if domain == "" {
+		return false
+	}
+	for root := range trustedInfraSuffixes {
+		if domain == root || strings.HasSuffix(domain, "."+root) {
+			return true
+		}
+	}
+	return false
+}
+
+// brandLabelMatchKind classifies HOW a domain label references a brand.
+type brandLabelMatchKind int
+
+const (
+	brandLabelNoMatch brandLabelMatchKind = iota
+	brandLabelExact
+	brandLabelContains
+	// brandLabelHyphenPart marks attacker-style composition
+	// (paypal-login): unlike wholesale delegated naming (an exact or
+	// containing customer label under shared infra), hyphen composition
+	// keeps full weight everywhere.
+	brandLabelHyphenPart
+)
+
+func classifyBrandLabel(label, brandName string) brandLabelMatchKind {
+	label = strings.ToLower(label)
+	brandName = strings.ToLower(brandName)
+	if label == "" || brandName == "" {
+		return brandLabelNoMatch
+	}
+	if label == brandName {
+		return brandLabelExact
+	}
+	for _, part := range strings.Split(label, "-") {
+		if part == brandName {
+			return brandLabelHyphenPart
+		}
+	}
+	if len(brandName) >= 6 && strings.Contains(label, brandName) {
+		return brandLabelContains
+	}
+	return brandLabelNoMatch
+}
+
 // brandKeywordExemptRoots lists roots whose own names legitimately embed a
 // trusted brand keyword (amazonaws holds amazon, googleadservices holds
 // google). Only the main-label keyword rule skips these roots; typosquat,
@@ -390,12 +469,15 @@ var cdnRoots = map[string]bool{
 	"akamaihd.net":          true,
 	"akamaized.net":         true,
 	"amazonaws.com":         true,
+	"ampproject.org":        true,
 	"azurecontainerapps.io": true,
 	"azureedge.net":         true,
 	"azurefd.net":           true,
 	"azurestaticapps.net":   true,
 	"azurewebsites.net":     true,
 	"b-cdn.net":             true,
+	"b-msedge.net":          true,
+	"baishan-cloud.net":     true,
 	"cachefly.net":          true,
 	"cdn77.org":             true,
 	"cloudflare.net":        true,
@@ -411,6 +493,8 @@ var cdnRoots = map[string]bool{
 	"glitch.me":             true,
 	"herokuapp.com":         true,
 	"hwcdn.net":             true,
+	"jsdelivr.net":          true,
+	"msedge.net":            true,
 	"netlify.app":           true,
 	"onrender.com":          true,
 	"pages.dev":             true,
@@ -418,6 +502,7 @@ var cdnRoots = map[string]bool{
 	"repl.co":               true,
 	"replit.app":            true,
 	"r2.dev":                true,
+	"susercontent.com":      true,
 	"stackpathdns.com":      true,
 	"surge.sh":              true,
 	"trafficmanager.net":    true,
@@ -610,8 +695,9 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 		return false, "", 0
 	}
 
-	// If the domain already belongs to a trusted brand suffix, bypass spoofing checks.
-	if IsTrustedBrandSuffix(domain, brands) {
+	// If the domain already belongs to a trusted brand suffix or to
+	// trusted shared infrastructure, bypass spoofing checks.
+	if IsTrustedBrandSuffix(domain, brands) || IsTrustedInfraSuffix(domain) {
 		return false, "", 0
 	}
 
@@ -628,6 +714,10 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 	skeletonLabels := strings.Split(skeletonDomain, ".")
 
 	isHomoglyphSpoof := skeletonDomain != unicodeDomain
+
+	// cdnInfra marks delegations beneath shared infrastructure: fuzzy
+	// brand similarity there is advisory (see cdnInfraAdvisoryPenalty).
+	cdnInfra := IsCDNRoot(rootDomain)
 
 	for _, brand := range brands {
 		brand = normalizeBrandRecord(brand)
@@ -682,10 +772,21 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 				return true, "homoglyph visual spoofing of " + brand.Name + " brand (" + label + ")", penalty
 			}
 
-			// B. Keyboard Weighted Typosquatting
+			// B. Keyboard Weighted Typosquatting. Short names need a
+			// near-exact match: distance-1.5 on 4-character names is a
+			// chance collision (miui~tiki), not a typosquat.
 			wDist := WeightedLevenshteinDistance(skLabel, brand.Name)
-			if wDist > 0 && wDist <= 1.5 {
+			maxWDist := 1.5
+			maxDist := 2
+			if minLen <= shortBrandTyposquatMaxLen {
+				maxWDist = 1.0
+				maxDist = 1
+			}
+			if wDist > 0 && wDist <= maxWDist {
 				penalty := brandSpoofingScore
+				if cdnInfra {
+					penalty = cdnInfraAdvisoryPenalty
+				}
 				if suspiciousTLDs[tld] {
 					penalty += 20
 				}
@@ -696,10 +797,13 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 				return true, reason, penalty
 			}
 
-			// C. Classic Levenshtein Distance
+			// C. Classic Levenshtein Distance (length-scaled as above).
 			dist := LevenshteinDistance(skLabel, brand.Name)
-			if dist > 0 && dist <= 2 {
+			if dist > 0 && dist <= maxDist {
 				penalty := brandSpoofingScore
+				if cdnInfra {
+					penalty = cdnInfraAdvisoryPenalty
+				}
 				if suspiciousTLDs[tld] {
 					penalty += 20
 				}
@@ -735,8 +839,18 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 			}
 
 			if i < len(labels)-rootPartsCount {
-				if isSuspiciousLabel(label, brand.Name) || isSuspiciousLabel(skLabel, brand.Name) {
+				// Delegated customer naming under shared infrastructure
+				// (exact or containing label) is advisory; hyphen-composed
+				// labels keep full weight as attacker-style composition.
+				kind := classifyBrandLabel(label, brand.Name)
+				if skKind := classifyBrandLabel(skLabel, brand.Name); skKind > kind {
+					kind = skKind
+				}
+				if kind != brandLabelNoMatch {
 					penalty := brandSpoofingScore - 10
+					if cdnInfra && kind != brandLabelHyphenPart {
+						penalty = cdnInfraAdvisoryPenalty
+					}
 					if suspiciousTLDs[tld] {
 						penalty += 20
 					}
