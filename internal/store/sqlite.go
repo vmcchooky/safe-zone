@@ -435,17 +435,17 @@ func New(path string, retentionDays int) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
 	}
-	if strings.Contains(path, ":memory:") {
-		sqlDB.SetMaxOpenConns(1)
-		sqlDB.SetMaxIdleConns(1)
-	} else {
-		// modernc.org/sqlite serializes writes internally. Limiting open
-		// connections prevents OS-level thread contention on the DB lock
-		// and avoids "database is locked" under concurrent load.
-		sqlDB.SetMaxOpenConns(2)
-		sqlDB.SetMaxIdleConns(2)
-		sqlDB.SetConnMaxLifetime(0) // reuse indefinitely
-	}
+	// Single pooled connection: PRAGMAs below (busy_timeout, foreign_keys,
+	// synchronous, cache_size) apply per-connection in SQLite, so a second
+	// pooled connection would run with busy_timeout 0 and surface
+	// SQLITE_BUSY under concurrent writers (telemetry background writer
+	// racing an operator transaction) instead of waiting. Serializing all
+	// queries through one connection keeps every pragma effective; the
+	// workload is indexed point queries on a single VPS, so this costs
+	// negligible latency and removes the whole lock-contention class.
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
+	sqlDB.SetConnMaxLifetime(0) // reuse indefinitely
 
 	// Apply performance pragmas.
 	pragmas := []string{
