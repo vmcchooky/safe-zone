@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "corpus": "safe-zone FP-guard v1 contract pins (offline profile)",
+  "corpus_sha256": "c3106b889980b3240e6568577d625cc4c84cca77b0451771292e533c1560811b",
+  "reviewed_by": "operator",
+  "reviewed_at": "2026-09-16",
+  "cases": {
+    "fpc-001": {
+      "verdict": "MALICIOUS",
+      "score": 80,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "phishing keyword pattern",
+        "suspicious brand subdomain usage (vietcombank)"
+      ]
+    },
+    "fpc-002": {
+      "verdict": "MALICIOUS",
+      "score": 100,
+      "policy": "block",
+      "decision": "",
+      "reasons": [
+        "matched local threat feed"
+      ]
+    },
+    "fpc-003": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "fpc-004": {
+      "verdict": "SUSPICIOUS",
+      "score": 65,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "phishing keyword pattern",
+        "suspicious brand subdomain usage (paypal)"
+      ]
+    }
+  }
+}

@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "corpus": "safe-zone decision truth v2 (offline profile)",
-  "corpus_sha256": "c1f0a0d15ec6713f34318ee3ba63ffef9dc518b0d03c4e5cd2996a586f1c93ad",
+  "corpus_sha256": "24e1f06ae4270e0b00ab954e598fb49b6c43834c2f6868fcb5b1add1f936f134",
   "reviewed_by": "operator",
-  "reviewed_at": "2026-09-13",
+  "reviewed_at": "2026-09-16",
   "cases": {
     "adv-001": {
       "verdict": "INVALID",
@@ -120,8 +120,8 @@
       "reasons": null
     },
     "cdn-001": {
-      "verdict": "SUSPICIOUS",
-      "score": 55,
+      "verdict": "SAFE",
+      "score": 25,
       "policy": "allow",
       "decision": "",
       "reasons": [

@@ -92,6 +92,8 @@ description = "Run the frozen offline decision evaluation (truth + contract corp
 run = [
   "go run ./cmd/eval-decision check --corpus internal/eval/testdata/corpus.v2.json --expected internal/eval/testdata/expected.v2.json",
   "go run ./cmd/eval-decision check --corpus internal/eval/testdata/contract.v1.json --expected internal/eval/testdata/expected-contract.v1.json",
+  "go run ./cmd/eval-decision check --corpus internal/eval/testdata/corpus-fpguard.v1.json --expected internal/eval/testdata/expected-fpguard.v1.json",
+  "go run ./cmd/eval-decision check --corpus internal/eval/testdata/contract-fpguard.v1.json --expected internal/eval/testdata/expected-contract-fpguard.v1.json",
 ]
 
 [tasks."go:security"]
