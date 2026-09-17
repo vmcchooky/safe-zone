@@ -1,0 +1,179 @@
+{
+  "schema_version": 1,
+  "corpus": "safe-zone FP-guard v1: production shared-infrastructure (offline profile)",
+  "corpus_sha256": "0a317b1e8d39741698fa801cc62d9298be67062e70238d9bfc015f53833ca2cb",
+  "reviewed_by": "operator",
+  "reviewed_at": "2026-09-16",
+  "cases": {
+    "fp-001": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "suspicious brand subdomain usage (twitter)"
+      ]
+    },
+    "fp-002": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "suspicious brand subdomain usage (twitter)"
+      ]
+    },
+    "fp-003": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "suspicious brand subdomain usage (microsoft)"
+      ]
+    },
+    "fp-004": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "phishing keyword pattern"
+      ]
+    },
+    "fp-005": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "phishing keyword pattern"
+      ]
+    },
+    "fp-006": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "fp-007": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "fp-008": {
+      "verdict": "SUSPICIOUS",
+      "score": 40,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "matched local threat feed",
+        "shared infrastructure host in threat feed (contextual, needs corroboration)"
+      ]
+    },
+    "fp-009": {
+      "verdict": "SUSPICIOUS",
+      "score": 40,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "matched local threat feed",
+        "shared infrastructure host in threat feed (contextual, needs corroboration)"
+      ]
+    },
+    "fp-010": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
+      ]
+    },
+    "fp-011": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "many hyphens"
+      ]
+    },
+    "fp-012": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "many hyphens"
+      ]
+    },
+    "fp-013": {
+      "verdict": "SAFE",
+      "score": 35,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "high_entropy_dga_suspected"
+      ]
+    },
+    "fp-014": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "suspicious brand subdomain usage (shopee)"
+      ]
+    },
+    "fp-015": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "suspicious brand subdomain usage (shopee)"
+      ]
+    },
+    "fp-016": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "many hyphens"
+      ]
+    },
+    "fp-017": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "keyboard typosquatting of shopee brand (zshopee)"
+      ]
+    },
+    "fp-018": {
+      "verdict": "SAFE",
+      "score": 25,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long",
+        "suspicious brand subdomain usage (shopee)"
+      ]
+    }
+  }
+}

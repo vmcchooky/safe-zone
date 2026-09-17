@@ -20,6 +20,45 @@ type analyzeRequest struct {
 	CallerClass string `json:"caller_class,omitempty"`
 }
 
+// Admission bounds for analyze inputs (PR-02/H4, OWASP Input Validation +
+// API4:2023 max-size-on-all-params). The domain bound admits pasted URLs
+// (scheme/host/path) while rejecting megabyte query strings before any
+// analysis work; NormalizeDomain still enforces RFC 1035 wire bounds
+// (253/63) downstream. URL-context bounds sit strictly above the URL
+// bundle product caps (MaximumRedirects 5, MaximumURLBytes 4096), so the
+// bundle keeps enforcing its contract — the handler only bounds copy and
+// telemetry memory for pathological callers.
+const (
+	maxDomainParamChars = 4096
+	maxURLContextBytes  = 8192
+	maxRedirectChainLen = 16
+)
+
+// admitDomainParam rejects oversized domain inputs at the HTTP boundary.
+func admitDomainParam(domain string) string {
+	if len([]byte(domain)) > maxDomainParamChars {
+		return "domain parameter too long"
+	}
+	return ""
+}
+
+// admitURLContext bounds caller-supplied URL evidence before it is copied
+// into the analysis request.
+func admitURLContext(requestedURL string, chain []string) string {
+	if len([]byte(requestedURL)) > maxURLContextBytes {
+		return "requested_url too long"
+	}
+	if len(chain) > maxRedirectChainLen {
+		return "redirect_chain too long"
+	}
+	for _, entry := range chain {
+		if len([]byte(entry)) > maxURLContextBytes {
+			return "redirect_chain entry too long"
+		}
+	}
+	return ""
+}
+
 func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	var domain string
 	var urlContext *risk.URLAnalysisContext
@@ -30,6 +69,10 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		domain = r.URL.Query().Get("domain")
+		if msg := admitDomainParam(domain); msg != "" {
+			httputil.WriteError(w, http.StatusBadRequest, msg)
+			return
+		}
 		missingContextReason = "get_domain_only"
 	case http.MethodPost:
 		r.Body = http.MaxBytesReader(w, r.Body, 32768)
@@ -37,6 +80,14 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		var req analyzeRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")
+			return
+		}
+		if msg := admitDomainParam(req.Domain); msg != "" {
+			httputil.WriteError(w, http.StatusBadRequest, msg)
+			return
+		}
+		if msg := admitURLContext(req.RequestedURL, req.RedirectChain); msg != "" {
+			httputil.WriteError(w, http.StatusBadRequest, msg)
 			return
 		}
 		domain = req.Domain
@@ -104,6 +155,10 @@ func (h *Handler) RawDataHandler(w http.ResponseWriter, r *http.Request) {
 	domain := r.URL.Query().Get("domain")
 	if domain == "" {
 		httputil.WriteError(w, http.StatusBadRequest, "domain query parameter is required")
+		return
+	}
+	if msg := admitDomainParam(domain); msg != "" {
+		httputil.WriteError(w, http.StatusBadRequest, msg)
 		return
 	}
 	result := h.Risk.InspectRawData(r.Context(), domain)

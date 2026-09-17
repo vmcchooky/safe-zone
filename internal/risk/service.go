@@ -40,7 +40,12 @@ const defaultThreatFeedKey = "safe-zone:threat:feed"
 const brandRevisionKey = "safe-zone:analysis:trusted-brands:revision"
 const defaultAnalysisConfigReloadChannel = "safe-zone:config:analysis:updated"
 const threatFeedReason = "matched local threat feed"
-const analysisAlgorithmRevision = "2026-09-dns-outcome-v1"
+
+// sharedFeedApexReason marks an exact feed IOC on shared infrastructure as
+// contextual evidence (FP-guard 2026-09, M7): the host was reported, but a
+// whole CDN apex is never host-blocked on that alone.
+const sharedFeedApexReason = "shared infrastructure host in threat feed (contextual, needs corroboration)"
+const analysisAlgorithmRevision = "2026-09-fp-guard-v1"
 const geminiKeySyncCooldown = 10 * time.Second
 const defaultAnalysisConfigReloadPollInterval = 30 * time.Second
 const analysisConfigReloadBackoffMin = 250 * time.Millisecond
@@ -456,6 +461,9 @@ type FeedScope struct {
 	Candidate     string `json:"candidate,omitempty"`
 	Depth         int    `json:"depth,omitempty"`
 	TrustBypassed bool   `json:"trust_bypassed,omitempty"`
+	// SharedApex marks an exact IOC on shared infrastructure that was
+	// downgraded to contextual evidence (FP-guard 2026-09, M7).
+	SharedApex bool `json:"shared_apex,omitempty"`
 }
 
 // decisionIDFor returns the evaluation ID: the request correlation ID
@@ -683,7 +691,7 @@ func entryAssessedAt(entry analysisCacheEntry) time.Time {
 }
 
 // jobQueuedAt parses a job snapshot time. Unparseable means oldest: the
-// worker proceeds, preserving the pre-PR-05 behavior for legacy callers.
+// worker proceeds and the CAS guard decides against the live entry.
 func jobQueuedAt(raw string) time.Time {
 	ts, err := time.Parse(time.RFC3339Nano, raw)
 	if err != nil {
@@ -2114,10 +2122,18 @@ func (s *Service) feedResult(ctx context.Context, domain string) (analysis.Resul
 		return analysis.Result{}, FeedScope{}
 	}
 	if exactHit {
+		// FP-guard 2026-09/M7: an exact feed IOC on shared
+		// infrastructure (a whole CDN apex, github.com) is contextual,
+		// not authoritative. URL-only IOCs ingested as host entries must
+		// not block shared apexes; tenant subdomains beneath them still
+		// match exactly and keep full weight.
+		if isSharedFeedApex(domain) {
+			return sharedApexFeedHit(domain), FeedScope{ExactMatch: true, Candidate: domain, SharedApex: true}
+		}
 		return threatFeedHit(domain), FeedScope{ExactMatch: true, Candidate: domain}
 	}
 
-	if analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) {
+	if analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) || analysis.IsTrustedInfraSuffix(domain) {
 		return analysis.Result{}, FeedScope{TrustBypassed: true}
 	}
 
@@ -2163,6 +2179,47 @@ func threatFeedHit(domain string) analysis.Result {
 		Score:      100,
 		Reasons:    []string{threatFeedReason},
 	}
+}
+
+// sharedApexFeedHit builds the contextual verdict for a live threat-feed
+// member that IS shared infrastructure. The report is preserved as
+// evidence (SUSPICIOUS so policy never hard-blocks on it alone) while the
+// apex keeps serving.
+func sharedApexFeedHit(domain string) analysis.Result {
+	return analysis.Result{
+		Domain:     domain,
+		Verdict:    analysis.VerdictSuspicious,
+		Confidence: 0.6,
+		Score:      40,
+		Reasons:    []string{threatFeedReason, sharedFeedApexReason},
+	}
+}
+
+// sharedFeedApexHosts lists shared serving hostnames that are not DNS
+// roots themselves (tenants share the exact hostname, split by URL path)
+// yet must never inherit a host block from a feed member (FP-guard
+// 2026-09, M7). Tenant subdomains beneath shared roots are NOT listed:
+// their exact IOCs keep full weight.
+var sharedFeedApexHosts = map[string]bool{
+	"github.com":         true,
+	"cdn.jsdelivr.net":   true,
+	"cdn.ampproject.org": true,
+}
+
+// isSharedFeedApex reports whether host is shared infrastructure whose own
+// feed membership (or inheritance by its children) must stay contextual:
+// an explicitly listed serving hostname, or a known CDN/cloud root
+// queried at the root itself. Tenant subdomains (evil.github.io,
+// x.amazonaws.com) are never apexes: exact IOCs on them still block.
+func isSharedFeedApex(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	if h == "" {
+		return false
+	}
+	if sharedFeedApexHosts[h] {
+		return true
+	}
+	return h == whois.RegisteredDomain(h) && analysis.IsCDNRoot(h)
 }
 
 func (s *Service) isAdblockEnabled() bool {
@@ -2992,7 +3049,18 @@ func (s *Service) recordOSINTEvidence(report osint.Report) {
 }
 
 func shouldEnqueueEnrichment(result analysis.Result) bool {
-	return result.Domain != "" && result.Score >= 20 && result.Score < 70
+	if result.Domain == "" || result.Score < 20 || result.Score >= 70 {
+		return false
+	}
+	// Contextual shared-infrastructure verdicts (FP-guard 2026-09, M7)
+	// never spend inspection budget: TLS/WHOIS metadata must not promote
+	// them, so there is nothing for the worker to add.
+	for _, reason := range result.Reasons {
+		if reason == sharedFeedApexReason {
+			return false
+		}
+	}
+	return true
 }
 
 func cachedEntryNeedsEnrichment(entry analysisCacheEntry) bool {
@@ -3069,32 +3137,49 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	cacheKey := analysisCacheKey(job.Domain, job.ModelRevision)
-	// Recency guard (M1): a job snapshot must not overwrite an evaluation
-	// materialized after the snapshot was taken. Cross-process races
-	// inside the read-modify-write window remain possible and are logged;
-	// full generation fencing belongs to the evidence ledger (PR-08).
+	// Recency guard (M1/PR-05): a job snapshot must not overwrite an
+	// evaluation materialized after the snapshot was taken. The read and
+	// the conditional write run inside one WATCH transaction, so even
+	// cross-process races between two services sharing Redis converge on
+	// the fresher entry instead of last-writer-wins.
 	skippedStale := false
+	queuedAt := jobQueuedAt(job.QueuedAt)
 	err := s.withRedis(s.lifecycleCtx, func(redisCtx context.Context) error {
-		var current analysisCacheEntry
-		found, err := s.redis.GetJSON(redisCtx, cacheKey, &current)
+		swapped, err := s.redis.CompareAndSwapJSON(redisCtx, cacheKey,
+			func(raw []byte, found bool) (bool, error) {
+				if !found {
+					return true, nil
+				}
+				var current analysisCacheEntry
+				if err := json.Unmarshal(raw, &current); err != nil {
+					return false, err
+				}
+				if current.Result.Domain != "" &&
+					entryAssessedAt(current).After(queuedAt) {
+					return false, nil
+				}
+				return true, nil
+			}, analysisCacheEntry{
+				Result:           enriched,
+				FeedRevision:     job.FeedRevision,
+				BrandRevision:    job.BrandRevision,
+				AnalysisRevision: analysisAlgorithmRevision,
+				ConfigRevision:   job.ConfigRevision,
+				ModelRevision:    job.ModelRevision,
+				EnrichedAt:       now,
+				AssessedAt:       now,
+			}, s.ttlFor(enriched.Verdict))
 		if err != nil {
+			if errors.Is(err, cache.ErrCASConflict) {
+				skippedStale = true
+				return nil
+			}
 			return err
 		}
-		if found && current.Result.Domain != "" &&
-			entryAssessedAt(current).After(jobQueuedAt(job.QueuedAt)) {
+		if !swapped {
 			skippedStale = true
-			return nil
 		}
-		return s.redis.SetJSON(redisCtx, cacheKey, analysisCacheEntry{
-			Result:           enriched,
-			FeedRevision:     job.FeedRevision,
-			BrandRevision:    job.BrandRevision,
-			AnalysisRevision: analysisAlgorithmRevision,
-			ConfigRevision:   job.ConfigRevision,
-			ModelRevision:    job.ModelRevision,
-			EnrichedAt:       now,
-			AssessedAt:       now,
-		}, s.ttlFor(enriched.Verdict))
+		return nil
 	})
 	if err != nil && !errors.Is(err, cache.ErrDisabled) {
 		logjson.Warn("background enrichment cache write failed", map[string]any{
@@ -3162,7 +3247,17 @@ func applyEnrichmentSignals(result *analysis.Result, signals enrichmentSignals) 
 	if signals.DNS != DNSOutcomeOK {
 		result.Reasons = append(result.Reasons, signals.DNS.String())
 	}
-	result.Score += signals.TLS.Score + signals.WHOIS.Score
+	tlsScore := signals.TLS.Score
+	if signals.TLS.AdvisoryScore > 0 && result.Score < minScoreForFullTLSWeight {
+		strong := tlsScore - signals.TLS.AdvisoryScore
+		if strong < 0 {
+			strong = 0
+		}
+		if tlsScore > strong+maxTLSAdvisoryPromotion {
+			tlsScore = strong + maxTLSAdvisoryPromotion
+		}
+	}
+	result.Score += tlsScore + signals.WHOIS.Score
 	result.Reasons = append(result.Reasons, signals.TLS.Reasons...)
 	result.Reasons = append(result.Reasons, signals.WHOIS.Reasons...)
 	if result.Score > 100 {
@@ -3178,6 +3273,20 @@ func applyEnrichmentSignals(result *analysis.Result, signals enrichmentSignals) 
 	}
 	result.Confidence = math.Min(1, 0.45+float64(result.Score)/120)
 }
+// maxTLSAdvisoryPromotion bounds how many weak-TLS points (SAN mismatch,
+// fresh certificate) can add when the pre-enrichment assessment shows no
+// independent suspicion (FP-guard 2026-09, M5). CDN edges serve default
+// certificates for CNAME chains and rotate constantly, so mismatch/fresh
+// metadata alone must never create a MALICIOUS verdict; it can only add a
+// small advisory bump or promote an already-suspicious host. Strong TLS
+// signals (expired, self-signed) keep full weight.
+const maxTLSAdvisoryPromotion = 10
+
+// minScoreForFullTLSWeight is the pre-enrichment score at or above which
+// weak TLS metadata applies at full weight (the host is already
+// SUSPICIOUS on lexical/feed merit).
+const minScoreForFullTLSWeight = 40
+
 
 func enrichContextTimeout(ctx context.Context, fallback time.Duration) time.Duration {
 	deadline, ok := ctx.Deadline()
@@ -3213,29 +3322,42 @@ func (s *Service) matchExactThreatFeed(parent context.Context, domain string) (b
 // matchParentCandidate walks only the parent suffixes, skipping the exact
 // domain, and returns the nearest live member ("" on miss). A parent-only
 // hit is noisy evidence: under a trusted root it is bypassed by feedResult
-// (PR-08a/H2). The returned candidate feeds the shadow scope trace
-// (PR-08b/M7).
+// (PR-08a/H2). Shared-infrastructure apexes are skipped as candidates so a
+// noisy apex IOC cannot block its tenants (FP-guard 2026-09, M7). The
+// returned candidate feeds the shadow scope trace (PR-08b/M7).
 func (s *Service) matchParentCandidate(parent context.Context, domain string) (string, error) {
 	candidates := ThreatFeedCandidates(domain)
 	if len(candidates) <= 1 {
 		return "", nil
 	}
-	return s.matchAnyThreatFeedCandidate(parent, candidates[1:])
+	parents := candidates[1:]
+	kept := parents[:0]
+	for _, c := range parents {
+		if isSharedFeedApex(c) {
+			continue
+		}
+		kept = append(kept, c)
+	}
+	if len(kept) == 0 {
+		return "", nil
+	}
+	return s.matchAnyThreatFeedCandidate(parent, kept)
 }
 
 func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (string, error) {
 	var matched string
 	currentTime := float64(time.Now().Unix())
+	// Single round trip for the whole suffix walk: a 253-octet normalized
+	// input fans out to at most ~127 candidates, and sequential ZSCOREs
+	// would multiply Redis RTT by attacker-controlled input length
+	// (PR-02/H4). Nearest-first and expiry semantics are unchanged.
 	err := s.withRedis(parent, func(ctx context.Context) error {
-		for _, candidate := range candidates {
-			score, err := s.redis.ZScore(ctx, s.threatFeedKey, candidate)
-			if err != nil {
-				if errors.Is(err, redis.Nil) {
-					continue
-				}
-				return err
-			}
-			if score >= currentTime {
+		scores, ok, err := s.redis.ZScores(ctx, s.threatFeedKey, candidates)
+		if err != nil {
+			return err
+		}
+		for i, candidate := range candidates {
+			if ok[i] && scores[i] >= currentTime {
 				matched = candidate
 				return nil
 			}
