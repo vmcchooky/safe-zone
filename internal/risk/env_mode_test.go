@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -37,6 +38,38 @@ func TestDNSResolverIgnoresCoreOnlyURLMLConfiguration(t *testing.T) {
 	status := service.URLMLStatus()
 	if status.Mode != "disabled" || status.Enabled || status.State != "disabled" {
 		t.Fatalf("expected URL ML to stay disabled in DNS resolver, got %+v", status)
+	}
+}
+
+// RB-3: production must fail startup when SQLite persistence is
+// unavailable instead of silently dropping overrides and auditability;
+// non-production keeps warn-and-continue for database-less development.
+func TestSQLiteFailureFailsFastInProductionOnly(t *testing.T) {
+	blocker, err := os.Create(filepath.Join(t.TempDir(), "not-a-dir"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := blocker.Close(); err != nil {
+		t.Fatal(err)
+	}
+	badPath := blocker.Name() + string(os.PathSeparator) + "safe-zone.db"
+
+	t.Setenv("SAFE_ZONE_SQLITE_PATH", badPath)
+	t.Setenv("SAFE_ZONE_ENV", "production")
+	if _, err := NewServiceFromEnvForRoleE("core-api"); err == nil {
+		t.Fatal("production must fail startup without persistence")
+	} else if !strings.Contains(err.Error(), "without persistence") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	t.Setenv("SAFE_ZONE_ENV", "local")
+	service, err := NewServiceFromEnvForRoleE("core-api")
+	if err != nil {
+		t.Fatalf("local must continue without persistence, got %v", err)
+	}
+	defer func() { _ = service.Close() }()
+	if service.StoreDB() != nil && service.StoreDB().Enabled() {
+		t.Fatal("expected no usable store without persistence")
 	}
 }
 

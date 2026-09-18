@@ -74,6 +74,14 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	retentionDays := config.Int("SAFE_ZONE_TELEMETRY_RETENTION_DAYS", 30)
 	storeDB, err := store.New(sqlitePath, retentionDays)
 	if err != nil {
+		// RB-3: overrides, groups, mappings and telemetry all live in
+		// SQLite. Starting production without persistence would silently
+		// drop the security control plane and auditability, so fail
+		// startup instead. Non-production keeps the old warn-and-continue
+		// behavior for local development without a database.
+		if config.IsProduction() {
+			return nil, fmt.Errorf("sqlite store initialization failed in production; refusing to serve without persistence: %w", err)
+		}
 		logjson.Warn("sqlite store initialization failed; continuing without persistence", map[string]any{
 			"service": "risk",
 			"path":    sqlitePath,
