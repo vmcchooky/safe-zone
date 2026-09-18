@@ -2429,6 +2429,46 @@ func (s *Service) saveAdblockMeta(metaPath string, meta map[string]adblockSource
 // error (if any) so callers can decide whether the staging state is committable.
 // The stream itself is never buffered as []Rule/[]byte; only parsed rules
 // accumulate in the staging trie.
+// adblockSectionCategories maps merged-list section names (the "# Start
+// <name>" markers of composite hosts files such as StevenBlack's unified
+// list) to closed-vocab content categories. Every mapping is evidenced by
+// the section's own documented purpose, quoted below. Sections without an
+// unambiguous documented purpose keep the source-level category (unknown
+// by default): the parser never infers from entry text, so a reorganized
+// upstream degrades to today's behavior instead of mislabeling.
+var adblockSectionCategories = map[string]string{
+	// "Blocking mobile ad providers and some analytics providers"
+	"adaway.org": "tracking",
+	// "Only include advertisers in Vietnam"
+	"hostsVN": "ads",
+	// "minecraft-hosts - Tracking Domains"
+	"minecraft-hosts": "tracking",
+}
+
+func parseAdblockSectionMarker(raw string) (name string, end bool) {
+	line := strings.TrimSpace(raw)
+	if !strings.HasPrefix(line, "#") {
+		return "", false
+	}
+	fields := strings.Fields(strings.TrimSpace(line[1:]))
+	if len(fields) == 0 {
+		return "", false
+	}
+	switch fields[0] {
+	case "Start":
+		// Single-token names only: "# Start your engines" prose must
+		// never flip section state.
+		if len(fields) == 2 {
+			return fields[1], false
+		}
+		return "", false
+	case "End":
+		return "", true
+	default:
+		return "", false
+	}
+}
+
 func (s *Service) parseAdblockSourceInto(reader io.Reader, staging *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
 	if staging == nil {
 		return errors.New("adblock staging trie is nil")
@@ -2436,8 +2476,24 @@ func (s *Service) parseAdblockSourceInto(reader io.Reader, staging *domaintrie.T
 	scanner := bufio.NewScanner(reader)
 	buf := make([]byte, 64*1024)
 	scanner.Buffer(buf, 10*1024*1024)
+	section := ""
 	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+		raw := scanner.Text()
+		if name, end := parseAdblockSectionMarker(raw); name != "" || end {
+			if end {
+				section = ""
+			} else {
+				section = name
+			}
+			continue
+		}
+		ruleCategory := category
+		if section != "" {
+			if mapped, ok := adblockSectionCategories[section]; ok {
+				ruleCategory = mapped
+			}
+		}
+		line := strings.TrimSpace(raw)
 		if idx := strings.IndexByte(line, '#'); idx >= 0 {
 			line = strings.TrimSpace(line[:idx])
 		}
@@ -2462,7 +2518,7 @@ func (s *Service) parseAdblockSourceInto(reader io.Reader, staging *domaintrie.T
 					Domain:   domain,
 					Scope:    scope,
 					SourceID: sourceID,
-					Category: category,
+					Category: ruleCategory,
 					Action:   domaintrie.RuleActionBlock,
 					Origin:   origin,
 				})
@@ -3273,6 +3329,7 @@ func applyEnrichmentSignals(result *analysis.Result, signals enrichmentSignals) 
 	}
 	result.Confidence = math.Min(1, 0.45+float64(result.Score)/120)
 }
+
 // maxTLSAdvisoryPromotion bounds how many weak-TLS points (SAN mismatch,
 // fresh certificate) can add when the pre-enrichment assessment shows no
 // independent suspicion (FP-guard 2026-09, M5). CDN edges serve default
@@ -3286,7 +3343,6 @@ const maxTLSAdvisoryPromotion = 10
 // weak TLS metadata applies at full weight (the host is already
 // SUSPICIOUS on lexical/feed merit).
 const minScoreForFullTLSWeight = 40
-
 
 func enrichContextTimeout(ctx context.Context, fallback time.Duration) time.Duration {
 	deadline, ok := ctx.Deadline()
