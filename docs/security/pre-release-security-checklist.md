@@ -50,7 +50,7 @@ rg -n "SAFE_ZONE_ADMIN_|SAFE_ZONE_GEMINI_|SAFE_ZONE_DUCKDNS_|SAFE_ZONE_AGENT_" .
 
 ## 6. Release gate alignment
 
-- [ ] Complete [pre-release-checklist.md](D:/Quorix/services/safe-zone/docs/runbooks/pre-release-checklist.md).
+- [ ] Complete [pre-release-checklist.md](../runbooks/pre-release-checklist.md).
 - [ ] Confirm rollback inputs are available and current.
 - [ ] Confirm the latest restore-drill evidence is attached.
 - [ ] Record any accepted security exceptions explicitly with owner and expiry date.

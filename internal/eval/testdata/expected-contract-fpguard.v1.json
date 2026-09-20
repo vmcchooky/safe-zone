@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "corpus": "safe-zone FP-guard v1 contract pins (offline profile)",
-  "corpus_sha256": "c3106b889980b3240e6568577d625cc4c84cca77b0451771292e533c1560811b",
+  "corpus_sha256": "5234ba87171806e799d72bc17fb2bf714ffebd9094a63f3156ec47ecbc1dc273",
   "reviewed_by": "operator",
-  "reviewed_at": "2026-09-16",
+  "reviewed_at": "2026-09-20",
   "cases": {
     "fpc-001": {
       "verdict": "MALICIOUS",
@@ -40,6 +40,16 @@
       "reasons": [
         "phishing keyword pattern",
         "suspicious brand subdomain usage (paypal)"
+      ]
+    },
+    "fpc-005": {
+      "verdict": "SUSPICIOUS",
+      "score": 40,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "matched local threat feed",
+        "shared infrastructure host in threat feed (contextual, needs corroboration)"
       ]
     }
   }

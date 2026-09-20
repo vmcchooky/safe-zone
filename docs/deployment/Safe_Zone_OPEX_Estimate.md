@@ -3,7 +3,9 @@
 > **Lưu ý:** Chỉ tính chi phí vận hành (OPEX). Không bao gồm chi phí phát triển (dev cost) vì bạn tự code bằng AI free.
 > Tỷ giá tham khảo: **1 USD ≈ 25,000 VND** (2026).
 >
-> Cost-sensitive roadmap changes should also follow [docs/specs/opex-cost-optimization/policy.md](specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](../.github/pull_request_template.md).
+> Cost-sensitive roadmap changes should also follow
+[docs/specs/opex-cost-optimization/policy.md](../specs/opex-cost-optimization/policy.md) and the PR checklist at
+[.github/pull_request_template.md](../../.github/pull_request_template.md).
 
 ---
 
@@ -50,7 +52,7 @@
 | **Google Safe Browsing API v4** | 10,000 req / 100 giây (~8.6M/ngày) | Không cần paid cho quy mô này | **$0** |
 | **VirusTotal API v3** | 500 lookups / ngày | Enterprise ~$10,000–50,000/năm (quá đắt) | **$0** *(chiến lược dùng bên dưới)* |
 | **WHOIS (command line)** | Không giới hạn rõ ràng, nhưng rate limit thấp | WHOIS API paid ~$3–5/tháng | **$0** *(dùng CLI + cache)* |
-| **Google Gemini 1.5 Flash** | 60 req/phút (~86,400/ngày) | Pay-as-you-go sau quota | **$0** |
+| **Google Gemini 2.5 Flash-Lite** | 60 req/phút (~86,400/ngày) | Pay-as-you-go sau quota | **$0** |
 | **OpenAI GPT-4o-mini** | Free credits ban đầu (~$5) | ~$0.60 / 1M tokens | **$0–5** |
 | **AbuseIPDB** | 1,000 lookups / ngày | $5–150/tháng | **$0** *(dự phòng VT)* |
 | **URLhaus** | Unlimited (miễn phí) | Không có paid tier | **$0** |

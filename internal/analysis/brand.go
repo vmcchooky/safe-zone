@@ -509,9 +509,15 @@ const shortBrandTyposquatMaxLen = 4
 // spoof checks and the threat-feed parent walk; exact feed IOCs beneath
 // these roots still block (PR-08a/H2). github.io stays OUT: tenant pages
 // there keep full scrutiny. Additions need code review.
+// alibabadns.com (Alibaba Cloud DNS/GDS delegation root, 2026-09-20):
+// names beneath it are operator-assigned (e.g. Lazada SG messaging chain
+// ...gds.alibabadns.com, the new delegation leg of already-guarded
+// fp-010 under taobao.com); attackers cannot self-register there. Same
+// trust argument as the taobao.com precedent.
 var trustedInfraSuffixes = map[string]bool{
-	"github.com": true,
-	"taobao.com": true,
+	"github.com":     true,
+	"taobao.com":     true,
+	"alibabadns.com": true,
 }
 
 // IsTrustedInfraSuffix reports whether domain is one of the trusted
@@ -523,6 +529,41 @@ func IsTrustedInfraSuffix(domain string) bool {
 	}
 	for root := range trustedInfraSuffixes {
 		if domain == root || strings.HasSuffix(domain, "."+root) {
+			return true
+		}
+	}
+	return false
+}
+
+// officialDomainAliases extends the isOfficial skip in spoof checking
+// WITHOUT entering DefaultTrustedBrands, DetectionBrands, the DB seed,
+// ML brand features, or the suffix-trust bypass. It is a narrow ownership
+// statement ("this root belongs to the brand") used only to stop the
+// engine from firing typosquat/keyword/subdomain signals on the brand's
+// own regional and CDN domains. Parent-feed behavior, exact-IOC blocking
+// and ML inputs are untouched, so the blast radius is one skip per listed
+// root. Each entry needs owner-confirmed first-party provenance:
+//   - lazada (lazada.sg, lazcdn.com): owner-confirmed Lazada first-party
+//     2026-09-20 + single-app-session co-resolution with acs-m.lazada.sg
+//     in VPS telemetry 2026-09-18/20. Kills the keyword fire on Lazada's
+//     own regional domain and the dist-2 typosquat fire on its CDN.
+func officialDomainAliases() map[string][]string {
+	return map[string][]string{
+		"lazada": {"lazada.sg", "lazcdn.com"},
+	}
+}
+
+// isOfficialAlias reports whether rootDomain is a listed owned alias of
+// the brand, independent of the brand record source (seed, detection
+// extras, or operator store): ownership facts outlive record provenance.
+func isOfficialAlias(brandName, rootDomain string) bool {
+	aliases, ok := officialDomainAliases()[strings.ToLower(strings.TrimSpace(brandName))]
+	if !ok {
+		return false
+	}
+	rootDomain = strings.ToLower(strings.TrimSpace(rootDomain))
+	for _, alias := range aliases {
+		if rootDomain == strings.ToLower(strings.TrimSpace(alias)) {
 			return true
 		}
 	}
@@ -994,6 +1035,9 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 					break
 				}
 			}
+		}
+		if !isOfficial && isOfficialAlias(brand.Name, rootDomain) {
+			isOfficial = true
 		}
 
 		if isOfficial {

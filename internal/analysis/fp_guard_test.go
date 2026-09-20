@@ -92,7 +92,9 @@ func TestTrustedInfraBrands(t *testing.T) {
 		"cafe.github.com",
 		"github.com",
 		"msgacs-lazada-sg.m.taobao.com",
+		"acs-lazada-sg.m.taobao.com.gds.alibabadns.com",
 		"taobao.com",
+		"alibabadns.com",
 	} {
 		if !IsTrustedInfraSuffix(domain) {
 			t.Errorf("IsTrustedInfraSuffix(%q) = false; want true", domain)
@@ -134,6 +136,9 @@ func TestProductionFPLexicalVerdicts(t *testing.T) {
 		"cafe.github.com",
 		"cdn.jsdelivr.net",
 		"cdn.ampproject.org",
+		"acs-m.lazada.sg",
+		"img.lazcdn.com",
+		"acs-lazada-sg.m.taobao.com.gds.alibabadns.com",
 	}
 	for _, h := range fpHosts {
 		r := a.Analyze(h)
@@ -141,14 +146,28 @@ func TestProductionFPLexicalVerdicts(t *testing.T) {
 			t.Errorf("Analyze(%q) = MALICIOUS %d %q; want at most SUSPICIOUS", h, r.Score, r.Reasons)
 		}
 	}
+	// Lazada first-party (owner-confirmed 2026-09-20): no lazada-brand
+	// fire on the regional domain, the CDN, or the Alibaba DNS chain.
+	for _, h := range []string{"acs-m.lazada.sg", "img.lazcdn.com", "acs-lazada-sg.m.taobao.com.gds.alibabadns.com"} {
+		if spoof, reason, _ := CheckBrandSpoofing(h, 50); spoof {
+			t.Errorf("CheckBrandSpoofing(%q) = spoof (%q); want first-party clean", h, reason)
+		}
+	}
+	// Alias boundary: the brand name composed off-root still fires.
+	if spoof, _, _ := CheckBrandSpoofing("login-lazada.evil.com", 50); !spoof {
+		t.Error("CheckBrandSpoofing(login-lazada.evil.com) = clean; want spoof (alias covers roots, not attacker composition)")
+	}
 	// Spot-check the exact scores behind the 7-day telemetry rows.
 	spots := map[string]int{
-		"update.intl.miui.com":                   25,
-		"accounts.zoho.com":                      25,
-		"dualstack.video.twitter.map.fastly.net": 25,
-		"msgacs-lazada-sg.m.taobao.com":          15,
-		"zshopee.v.baishan-cloud.net":            25,
-		"v45.gpm.byteoversea.net":                35,
+		"update.intl.miui.com":                          25,
+		"accounts.zoho.com":                             25,
+		"dualstack.video.twitter.map.fastly.net":        25,
+		"msgacs-lazada-sg.m.taobao.com":                 15,
+		"zshopee.v.baishan-cloud.net":                   25,
+		"v45.gpm.byteoversea.net":                       35,
+		"acs-m.lazada.sg":                               0,
+		"img.lazcdn.com":                                0,
+		"acs-lazada-sg.m.taobao.com.gds.alibabadns.com": 15,
 	}
 	for h, want := range spots {
 		if got := a.Analyze(h).Score; got != want {

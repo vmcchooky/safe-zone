@@ -2,6 +2,12 @@
 
 Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert rules live in `ops/alerts/safe-zone-alert-rules.yaml`.
 
+> Subsystem detail (redis, `feed_sync`, `ml`, analysis config) lives behind
+> authenticated `GET /v1/status`, not on public `/metrics` (request counters
+> only). Every `curl` below targeting `/v1/status` needs admin auth, e.g.
+> `-H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY"`. The YAML rule file
+> already uses these exact sources and field paths.
+
 ## Covered alerts
 
 - core-api down
@@ -23,7 +29,8 @@ Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert ru
 ## Data sources
 
 ```sh
-curl -fsS http://127.0.0.1:8080/
+AUTH_HEADER="Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY"
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status
 curl -fsS http://127.0.0.1:8080/metrics
 curl -fsS http://127.0.0.1:8081/
 curl -fsS http://127.0.0.1:8081/metrics
@@ -31,29 +38,30 @@ curl -fsS http://127.0.0.1:8081/metrics
 
 ## Runtime Memory & Observability Metrics
 
-Endpoint `GET /metrics` trên `core-api` cung cấp trực tiếp các thông số runtime cơ bản (qua `runtime.ReadMemStats` với chu kỳ thăm dò khuyến nghị ~1 Hz) để phục vụ giám sát tải và soak test mà không bắt buộc phải kích hoạt profiler:
+Heap/goroutine internals are intentionally NOT on public `/metrics`
+(stop-the-world cost + info minimization). For soak/load diagnosis use
+`docker stats` (container RSS) plus the authenticated status surface:
 
-```json
-{
-  "runtime": {
-    "goroutines": 15,
-    "heap_alloc_mb": 6.39,
-    "sys_mb": 25.12,
-    "num_gc": 42
-  }
-}
+```sh
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status \
+  | jq '{redis: .redis, feed_sync: {status: .feed_sync.status, active_entries: .feed_sync.active_entries}, ml: .ml}'
 ```
 
 ### Phân biệt Container RSS và Go Live Heap:
-- **Go Live Heap (`heap_alloc_mb`):** Đo lường lượng bộ nhớ thực tế đang được các đối tượng Go đang hoạt động sử dụng. Trong soak test tải cao, heap live-set đạt bình nguyên (plateau) tại **~7 MB**.
-- **Container RSS (`docker stats`):** Thường dao động 28–40 MB. Sự gia tăng của RSS trong container SQLite chủ yếu do Linux kernel page cache (bộ đệm file database/WAL trên cgroup `file` thay vì `anon`).
-- **Quy tắc chẩn đoán:** Việc Container RSS tăng nhưng `heap_alloc_mb` và `goroutines` đạt trạng thái bình nguyên (hoặc quay về baseline 15 sau khi hết tải) **hoàn toàn KHÔNG phải là memory leak**.
+- **Container RSS (`docker stats`):** Thường dao động 28–40 MB cho core-api.
+  Sự gia tăng của RSS trong container SQLite chủ yếu do Linux kernel page
+  cache (bộ đệm file database/WAL trên cgroup `file` thay vì `anon`).
+- **Quy tắc chẩn đoán:** RSS tăng trong khi verdict/latency/5xx-rate giữ
+  baseline và không có OOM **hoàn toàn KHÔNG phải là memory leak**. Đối
+  chiếu bằng pprof nội bộ khi cần số heap chính xác (không expose public).
 
 ### URL ML Shadow & Feedback Persistence Metrics:
-`GET /metrics` cung cấp aggregate metrics bảo đảm an toàn quyền riêng tư (tuyệt đối không chứa raw URL, query parameters hay credentials):
+`GET /v1/status` cung cấp aggregate metrics bảo đảm an toàn quyền riêng tư
+(tuyệt đối không chứa raw URL, query parameters hay credentials):
 
 ```sh
-curl -fsS http://127.0.0.1:8080/metrics | jq '.ml.url | {state, prediction_attempts, error_histogram, latency_p95_us, sampling, drift, feedback}'
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status \
+  | jq '.ml.url | {state, prediction_attempts, error_histogram, latency_p95_us, sampling, drift, feedback}'
 ```
 
 - **Health checks:**
@@ -75,7 +83,7 @@ When following logs during an incident, group HTTP traffic with `request_id` and
 Redis health:
 
 ```sh
-curl -fsS http://127.0.0.1:8080/ | jq '.redis'
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status | jq '.redis'
 ```
 
 The shared Redis is safe for the non-expiring threat-feed key when
@@ -86,7 +94,7 @@ feed key under memory pressure.
 Threat-feed freshness:
 
 ```sh
-curl -fsS http://127.0.0.1:8080/ | jq '.feed_sync'
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status | jq '.feed_sync'
 ```
 
 After at least one successful sync, `active_entries` must stay above zero. A
@@ -99,10 +107,11 @@ Upstream DoH failure count:
 curl -fsS http://127.0.0.1:8081/metrics | jq '.upstream_doh.failures_total'
 ```
 
-Runtime memory status:
+Runtime memory status (request counters; heap internals are not public —
+see the section above):
 
 ```sh
-curl -fsS http://127.0.0.1:8080/metrics | jq '.runtime'
+curl -fsS http://127.0.0.1:8080/metrics | jq '.metrics.request_summary'
 ```
 
 ## Log retention

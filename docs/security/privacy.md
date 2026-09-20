@@ -93,11 +93,13 @@ Hệ thống Safe Zone **KHÔNG BAO GIỜ** thu thập, lưu trữ, hoặc xử 
 Theo quy định tại **Điều 2, Nghị định 13/2023/NĐ-CP**, Quorix Việt Nam tuyên bố:
 
 > Bộ dữ liệu của hệ thống Safe Zone **KHÔNG** chứa thông tin định danh cá nhân (Personally Identifiable Information — PII). Hệ thống chỉ thu thập và xử lý tên miền đầy đủ (FQDN — Fully Qualified Domain Name) và các thông tin phân loại kỹ thuật thuần túy. Toàn bộ các trường thông tin cá nhân từ WHOIS (nếu có) đều bị **loại bỏ hoàn toàn** trước khi dữ liệu được đưa vào hệ thống.
+>
+> Ngoại lệ kỹ thuật duy nhất: địa chỉ IP client ở §4.2/§8.1 (rate-limiting, chống lạm dụng, gỡ lỗi). Owner cần rà soát pháp lý để xác nhận cơ sở xử lý tại §5 bao phủ trường hợp này trước public release.
 
 ### 4.2 Loại bỏ Chủ động Dữ liệu Nhạy cảm
 Bộ lọc AI của Safe Zone chủ động thực hiện các bước sau:
 - **Tước bỏ (Stripping)**: Loại bỏ tất cả các trường chứa tên cá nhân, email, số điện thoại, địa chỉ vật lý từ dữ liệu WHOIS/RDAP
-- **Không lưu trữ IP người dùng cuối**: Hệ thống DNS Resolver không ghi nhận (log) địa chỉ IP của người dùng gửi truy vấn DNS
+- **Địa chỉ IP ở mức kỹ thuật tối thiểu**: địa chỉ IP client được hệ thống ghi nhận trong request log có cấu trúc và telemetry phân tích (`analysis_log`, mặc định sample ở production, retention 30 ngày) để phục vụ rate-limiting, chống lạm dụng và gỡ lỗi — không dùng cho tracking hành vi, không gắn cookie. Chi tiết tại §8.1
 - **Mã hóa truyền tải**: Hỗ trợ DNS-over-HTTPS (DoH) và DNS-over-TLS (DoT) để bảo vệ tính riêng tư của truy vấn DNS
 
 ### 4.3 Xử lý Dữ liệu Đã Công khai
@@ -175,9 +177,8 @@ Trong trường hợp không hài lòng với kết quả xử lý của Quorix 
 
 ### 8.1 Khi Sử dụng DNS Resolver
 Khi người dùng cuối sử dụng dịch vụ DNS Resolver của Safe Zone:
-- Truy vấn DNS được xử lý theo thời gian thực và **KHÔNG** được ghi nhật ký (No DNS Query Logging)
-- Hệ thống chỉ kiểm tra tên miền truy vấn với cơ sở dữ liệu nội bộ và trả về kết quả phân loại
-- Không có thông tin định danh người dùng nào được thu thập hoặc lưu trữ
+- Truy vấn được xử lý theo thời gian thực; metadata kỹ thuật (tên miền truy vấn, verdict, timestamp, địa chỉ IP client) **CÓ** được ghi vào structured request log và telemetry phân tích để rate-limiting, chống lạm dụng và gỡ lỗi — production sample theo `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` (mặc định 5%), retention mặc định 30 ngày
+- Không có cookie theo dõi hoặc profiling hành vi người dùng nào được thu thập
 
 ### 8.2 Khi Truy cập Giao diện Vận hành
 Giao diện vận hành (Operator Dashboard) chỉ dành cho quản trị viên hệ thống:

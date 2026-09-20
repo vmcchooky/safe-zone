@@ -7,10 +7,13 @@ This document is the first formal threat model for Safe Zone. It is intentionall
 
 It complements:
 
-- `docs/analysis/safe-zone-project-assessment.md`
 - `docs/production-completion-checklist.md`
+- `docs/deployment/release-manifest-r5.md`
 - `docs/adr/0001-fail-open-runtime-behavior.md`
 - `docs/runbooks/credential-rotation.md`
+
+(Historical reference `docs/analysis/safe-zone-project-assessment.md` no
+longer exists in the tree; assessment history lives under `docs/specs/`.)
 
 ## 1. Scope
 
@@ -92,9 +95,9 @@ These items block a public production release until they are closed or explicitl
 
 | ID | Risk | Why it blocks release | Closure needed |
 | --- | --- | --- | --- |
-| RB-1 | Public-edge exposure is not yet verified on the target VPS. | A misconfigured firewall, security group, or Compose binding could expose internal admin or service ports, or publish DoH/DoT incorrectly. | Capture and retain real execution records for port checks, firewall validation, DoH through Caddy, and DoT on `853`. |
-| RB-2 | Backup confidentiality and recoverability are not yet proven. | Current backup flow snapshots sensitive config and can copy it offsite, but there is no documented encryption requirement, checksum record, or clean restore drill. | Add backup secrets handling guidance or encryption, record checksums, and complete a clean-machine restore drill with RTO/RPO evidence. |
-| RB-3 | Production currently continues when SQLite persistence initialization fails. | SQLite stores overrides, groups, mappings, and telemetry. Starting in a degraded mode can silently remove security control-plane state and auditability. | Either fail startup in production when SQLite is unavailable, or define an explicit degraded-mode policy with hard release approval and visible alerts. |
+| RB-1 | Public-edge exposure is not yet verified on the target VPS. | A misconfigured firewall, security group, or Compose binding could expose internal admin or service ports, or publish DoH/DoT incorrectly. | Capture and retain real execution records for port checks, firewall validation, DoH through Caddy, and DoT on `853`. Evidence collected 2026-09-20 (`docs/deployment/edge-verification-2026-09-20.md` + `scripts/ops/check-production-ports.sh`); closure still needs Azure NSG audit + informed owner review. |
+| RB-2 | Backup confidentiality and recoverability are not yet proven. | Current backup flow snapshots sensitive config and can copy it offsite. SHA-256 manifests and GPG bundles are implemented (`scripts/ops/safe-zone.sh`) and a restore drill is documented (`docs/runbooks/restore-drill.md`); a clean-machine drill with RTO/RPO evidence is still missing. | Complete a clean-machine restore drill with RTO/RPO evidence. |
+| RB-3 | ~~Production currently continues when SQLite persistence initialization fails.~~ **CLOSED 2026-09-18 (PR #65):** production now fails startup when SQLite init fails (`internal/risk/env.go`); non-prod keeps warn-and-continue for local dev. | SQLite stores overrides, groups, mappings, and telemetry. Starting in a degraded mode can silently remove security control-plane state and auditability. | Done — fail startup in production. |
 | RB-4 | Public DoT is unsafe to release if it still relies on the self-signed fallback certificate path. | Clients cannot establish trusted DoT to a public service with a temporary self-signed cert; this also increases misconfiguration risk at the edge. | For any public DoT release, require configured certificate files and verified handshake evidence. |
 
 Notes:
@@ -163,7 +166,7 @@ Notes:
 | Threat | Current mitigation | Residual risk | Status |
 | --- | --- | --- | --- |
 | Tampering | Parameterized SQL, WAL mode, `busy_timeout`, and foreign keys are enabled. | Host compromise or file corruption can still alter persistent operator state. | Medium |
-| Repudiation | Telemetry and override history improve traceability. | Startup currently continues if SQLite initialization fails, reducing auditability silently. | `RB-3` |
+| Repudiation | Telemetry and override history improve traceability. | Startup fails fast in production if SQLite initialization fails (RB-3 closed 2026-09-18); non-prod keeps warn-and-continue. | Closed (`RB-3`) |
 | Information disclosure | DB stays local to the deployment by default. | Backup snapshots can copy the DB without encryption requirements. | Tied to `RB-2` |
 | Denial of service | Query limits and SQLite pragmas reduce abuse risk. | Disk exhaustion or DB corruption scenarios still need restore evidence. | Medium |
 
@@ -221,7 +224,7 @@ The following abuse cases should be assumed possible and reviewed before each pu
 | DNS amplification or query-flooding | Public DoH or DoT | Resource exhaustion, edge instability, degraded resolver quality | Rate limiting, request timeouts, block strategies, shared policy service | Public target-VPS proof is still required for confidence under real traffic |
 | SSRF through OSINT or enrichment fetches | Operator-configured remote source, future private-source toggle, outbound enrichment targets | Internal network probing, metadata exposure, unexpected outbound traffic | Private-address blocking by default, timeout limits, redirect and byte caps | Operator misconfiguration or future feature drift could reopen SSRF paths |
 | Redis exposure or poisoning | Internal network, bad Compose binding, leaked Redis credentials | Feed tampering, cache poisoning, degraded policy correctness | Redis expected to stay internal, credentials configurable, fail-open behavior | Internal network trust is still important; Redis is not an immutable source of truth |
-| SQLite corruption or deletion | Host compromise, disk failure, unsafe restore, file tampering | Loss of overrides, groups, mappings, telemetry, and admin intent | WAL mode, foreign keys, backups, store APIs | Startup currently tolerates DB init failure unless production policy changes |
+| SQLite corruption or deletion | Host compromise, disk failure, unsafe restore, file tampering | Loss of overrides, groups, mappings, telemetry, and admin intent | WAL mode, foreign keys, backups, store APIs | Production refuses to start without the DB (RB-3 closed); non-prod still tolerates init failure |
 | Abuse of background enrichment queue | Many suspicious domains through public APIs | Outbound connection spikes, increased CPU, delayed cache enrichment | Queueing, timeouts, in-flight deduplication, initial response path stays non-blocking | Queue pressure is still a capacity concern on the single-node MVP |
 | OSINT false-warning manipulation | Compromised public warning page or weakly reviewed source | Malicious escalation of suspicious domains to blocked | Trusted-domain allowlists, private-IP blocking, cached-evidence path separation | Trust still inherits from source-domain correctness and operator review |
 

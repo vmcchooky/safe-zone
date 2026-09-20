@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "corpus": "safe-zone FP-guard v1: production shared-infrastructure (offline profile)",
-  "corpus_sha256": "0a317b1e8d39741698fa801cc62d9298be67062e70238d9bfc015f53833ca2cb",
+  "corpus_sha256": "a32f59c9d5899d878ed72f64e43f57448f954064d91894936e53da8720d96178",
   "reviewed_by": "operator",
-  "reviewed_at": "2026-09-16",
+  "reviewed_at": "2026-09-20",
   "cases": {
     "fp-001": {
       "verdict": "SAFE",
@@ -173,6 +173,29 @@
       "reasons": [
         "domain is long",
         "suspicious brand subdomain usage (shopee)"
+      ]
+    },
+    "fp-019": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "fp-020": {
+      "verdict": "SAFE",
+      "score": 0,
+      "policy": "allow",
+      "decision": "",
+      "reasons": null
+    },
+    "fp-021": {
+      "verdict": "SAFE",
+      "score": 15,
+      "policy": "allow",
+      "decision": "",
+      "reasons": [
+        "domain is long"
       ]
     }
   }

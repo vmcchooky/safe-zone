@@ -2199,11 +2199,16 @@ func sharedApexFeedHit(domain string) analysis.Result {
 // roots themselves (tenants share the exact hostname, split by URL path)
 // yet must never inherit a host block from a feed member (FP-guard
 // 2026-09, M7). Tenant subdomains beneath shared roots are NOT listed:
-// their exact IOCs keep full weight.
+// their exact IOCs keep full weight. raw.githubusercontent.com is the
+// path-split twin of cdn.jsdelivr.net: every GitHub repo shares the exact
+// hostname, so an exact feed IOC there is URL-scoped (a file in one repo),
+// never grounds to block the host (prod 2026-09-20: exact member blocked
+// the apex at MALICIOUS/100).
 var sharedFeedApexHosts = map[string]bool{
-	"github.com":         true,
-	"cdn.jsdelivr.net":   true,
-	"cdn.ampproject.org": true,
+	"github.com":                true,
+	"raw.githubusercontent.com": true,
+	"cdn.jsdelivr.net":          true,
+	"cdn.ampproject.org":        true,
 }
 
 // isSharedFeedApex reports whether host is shared infrastructure whose own
