@@ -155,7 +155,7 @@ var localBrandSeed = func() []Brand {
 	for i := range seed {
 		seed[i] = normalizeBrandRecord(seed[i])
 	}
-	return seed
+	return DetectionBrands(seed)
 }()
 
 // AnalyzeLocal scores a domain without touching any BrandStore: no Redis, no
@@ -286,13 +286,13 @@ func (a *Analyzer) analyzeWithBrands(input string, brands []Brand) Result {
 
 func (a *Analyzer) trustedBrands() []Brand {
 	if a == nil || a.brandStore == nil {
-		return DefaultTrustedBrands()
+		return DetectionBrands(DefaultTrustedBrands())
 	}
 	brands, err := a.brandStore.ListBrands(context.Background())
 	if err != nil || len(brands) == 0 {
-		return DefaultTrustedBrands()
+		return DetectionBrands(DefaultTrustedBrands())
 	}
-	return brands
+	return DetectionBrands(brands)
 }
 
 func isProtectedVietnamPublicServiceAbuse(domain string) bool {
