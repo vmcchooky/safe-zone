@@ -18,7 +18,9 @@ docker compose restart redis
 docker compose exec redis redis-cli ping
 ```
 
-If Redis data is corrupt, restore the newest known-good RDB:
+If Redis data is corrupt, restore the newest known-good snapshot (a file path
+resolves to its snapshot directory; services are stopped and the whole
+snapshot — Redis RDB plus SQLite — is restored):
 
 ```sh
 scripts/ops/safe-zone.sh restore backups/<timestamp>/redis-dump.rdb
@@ -30,7 +32,7 @@ scripts/ops/safe-zone.sh restore backups/<timestamp>/redis-dump.rdb
 - Run `scripts/ops/safe-zone.sh feed-sync` to repopulate threat feeds if needed.
 - Check memory pressure against `SAFE_ZONE_REDIS_MAXMEMORY`.
 - Confirm `.redis.maxmemory_policy` is `volatile-lru` (or `noeviction`) and
-  `.redis.eviction_policy_safe` is `true` on `/v1/status`.
+  `.redis.eviction_policy_safe` is `true` on authenticated `/v1/status`.
 - Confirm `.feed_sync.active_entries` is greater than zero after a successful
   sync. A `missing` feed status is critical even while Redis still answers
   `PING`.
@@ -50,7 +52,8 @@ will fail once memory is full.
 ### Verify
 
 ```sh
-curl -fsS http://127.0.0.1:8080/v1/status | jq '{redis: .redis, feed_sync: {status: .feed_sync.status, active_entries: .feed_sync.active_entries}}'
+curl -fsS -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" \
+  http://127.0.0.1:8080/v1/status | jq '{redis: .redis, feed_sync: {status: .feed_sync.status, active_entries: .feed_sync.active_entries}}'
 docker compose exec redis redis-cli CONFIG GET maxmemory-policy
 docker compose exec redis redis-cli ZCOUNT safe-zone:threat:feed "$(date +%s)" +inf
 ```

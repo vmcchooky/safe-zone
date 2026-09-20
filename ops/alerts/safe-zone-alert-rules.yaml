@@ -1,7 +1,12 @@
 version: 1
 metrics_format: json
+# 2026-09-20: core_api_status moved from "/" to authenticated /v1/status.
+# "/" now serves the dashboard redirect (or authed status on UI-less builds)
+# and /metrics is request counters only. The scraper MUST authenticate
+# (admin API key Bearer or session) for core_api_status; dns-resolver
+# /metrics stays public with redis/ml/upstream_doh attached.
 source_endpoints:
-  core_api_status: http://127.0.0.1:8080/
+  core_api_status: http://127.0.0.1:8080/v1/status
   core_api_metrics: http://127.0.0.1:8080/metrics
   dns_resolver_status: http://127.0.0.1:8081/
   dns_resolver_metrics: http://127.0.0.1:8081/metrics
@@ -29,7 +34,7 @@ rules:
 
   - id: redis-memory-pressure
     severity: warning
-    condition: core_api_metrics.json.redis.maxmemory_bytes > 0 and core_api_metrics.json.redis.used_memory_bytes / core_api_metrics.json.redis.maxmemory_bytes > 0.90 for 10m
+    condition: core_api_status.json.redis.maxmemory_bytes > 0 and core_api_status.json.redis.used_memory_bytes / core_api_status.json.redis.maxmemory_bytes > 0.90 for 10m
     action: inspect cache churn and feed growth; raise the bounded Redis memory budget or reduce expiring cache pressure before feed sync returns OOM
 
   - id: threat-feed-stale
@@ -49,7 +54,7 @@ rules:
 
   - id: high-http-5xx-rate
     severity: warning
-    condition: sum request_summary[* where status>=500].count increases by > 10 over 5m
+    condition: sum core_api_metrics.json.metrics.request_summary[* where status>=500].count increases by > 10 over 5m
     action: inspect request logs with matching request IDs
 
   - id: doh-upstream-failure
@@ -59,7 +64,7 @@ rules:
 
   - id: high-doh-latency
     severity: warning
-    condition: average request_summary["POST /dns-query 200"].total_duration_ms / count > 150 over 10m
+    condition: average dns_resolver_metrics.json.metrics.request_summary["POST /dns-query 200"].total_duration_ms / count > 150 over 10m
     action: inspect upstream latency, Redis, and TLS/WHOIS enrichment settings
 
   - id: url-ml-shadow-degraded
@@ -69,22 +74,22 @@ rules:
 
   - id: url-ml-prediction-errors
     severity: warning
-    condition: core_api_metrics.json.ml.url.error_histogram.prediction_error increases by > 0 over 5m
+    condition: core_api_status.json.ml.url.error_histogram.prediction_error increases by > 0 over 5m
     action: inspect bundle/runtime errors; URL ML remains fail-open and must not be promoted to canary
 
   - id: url-ml-invalid-context-rate
     severity: warning
-    condition: core_api_metrics.json.ml.url.prediction_attempts >= 100 and invalid_url_context / prediction_attempts > 0.05 for 15m
+    condition: core_api_status.json.ml.url.prediction_attempts >= 100 and error_histogram.invalid_url_context / prediction_attempts > 0.05 for 15m
     action: inspect caller contract compliance without logging raw URL or query values
 
   - id: url-ml-high-latency
     severity: warning
-    condition: core_api_metrics.json.ml.url.latency_p95_us > 2000 for 10m
+    condition: core_api_status.json.ml.url.latency_p95_us > 2000 for 10m
     action: reduce SAFE_ZONE_URL_ML_SHADOW_PERCENT or disable URL ML and inspect CPU/allocation pressure
 
   - id: url-ml-operational-drift
     severity: warning
-    condition: core_api_metrics.json.ml.url.drift.operational_reference == true and core_api_metrics.json.ml.url.drift.state == "alert" for 30m
+    condition: core_api_status.json.ml.url.drift.operational_reference == true and core_api_status.json.ml.url.drift.state == "alert" for 30m
     action: hold canary progression and compare the live aggregate histogram with the frozen operational baseline
 
   - id: url-ml-context-coverage-drop

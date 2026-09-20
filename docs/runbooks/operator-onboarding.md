@@ -11,7 +11,7 @@ Get a new operator from first login to first backup and first restore reference 
 1. Open `/app/` (the primary React UI). `/dashboard` is the legacy compatibility UI.
 2. Sign in with the admin password for the target environment.
 3. Confirm `core-api`, Redis, and metrics cards load in the dashboard.
-4. If login fails, use [credential-rotation.md](D:/Quorix/services/safe-zone/docs/runbooks/credential-rotation.md).
+4. If login fails, use [credential-rotation.md](credential-rotation.md).
 
 ## 2. First health check
 
@@ -111,6 +111,6 @@ During the first week of ownership, confirm:
 
 Related docs:
 
-- [release-gate.md](D:/Quorix/services/safe-zone/docs/runbooks/release-gate.md)
-- [release-rollback.md](D:/Quorix/services/safe-zone/docs/runbooks/release-rollback.md)
-- [data-retention-privacy.md](D:/Quorix/services/safe-zone/docs/security/data-retention-privacy.md)
+- [release-gate.md](release-gate.md)
+- [release-rollback.md](release-rollback.md)
+- [data-retention-privacy.md](../security/data-retention-privacy.md)

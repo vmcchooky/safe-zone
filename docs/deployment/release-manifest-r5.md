@@ -1,7 +1,8 @@
 # Release Manifest — Round 5 (Release Convergence & Shadow Launch Candidate)
 
 > **Canonical Release Status Document**
-> Ngày: 2026-08-27 · Branch: `main` · Base commit: `4f1f323`
+> Ngày: 2026-09-20 · Branch: `main` · Base commit: `7a4cb6f` (merge PR #70)
+> Production đang chạy `f87f923` (PR #65); các thay đổi sau đó (labeling categories, agent scoring guard, perf batch, detection brands, TP corpus, README) chờ deploy sau gate quan sát ~25/09.
 > Hai release gates độc lập được định nghĩa tại [docs/runbooks/release-gate.md](../runbooks/release-gate.md) (Section 8).
 
 ---
@@ -27,8 +28,8 @@ Gate B (URL ML Promotion Gate):   SHADOW_OBSERVER_ONLY (Promotion: PENDING_EXTER
 
 | Thành phần | Giá trị / Nguồn bằng chứng |
 |---|---|
-| Source Commit | `4f1f323` (hoặc commit mới nhất trên `main` khi phát hành) |
-| Runtime Go Toolchain | Go `1.26.7` (`mise.toml`, `Dockerfile`) · Target language `1.25.0` (`go.mod`) |
+| Source Commit | `7a4cb6f` (hoặc commit mới nhất trên `main` khi phát hành) |
+| Runtime Go Toolchain | Go `1.27.1` build image (`Dockerfile`) · Target language `1.26.0` (`go.mod`) |
 | URL ML Bundle | `ml/models/url-v1/` — `url_model.v1.json` (`eea78a5d…`), golden vectors (`0c00aa15…`), checksums tại `SHA256SUMS` |
 | Operational Drift Baseline | `ml/models/url-baseline/operational-baseline.json` — SHA-256 `29b8bb723cc6f9e0cac0aac81c264efb4462f7eee358d7e47b70d5129924445f1`<br>*(Lưu ý: Đây là **staging operational baseline** từ 34 mẫu canary staging, KHÔNG phải production baseline)* |
 | Domain ML Bundle | Mount `${SAFE_ZONE_ML_BUNDLE_HOST_DIR}`; mặc định production là `disabled` |
@@ -104,12 +105,12 @@ Cơ chế tương quan nhãn URL phản hồi đảm bảo:
 |---|---|---|---|
 | A1 | Full test, race test, vet trên release commit | **PASS** | `go test ./...`, race tests, golangci-lint v2 đạt 0 issue |
 | A2 | Fail-fast khi thiếu production secrets | **PASS** | `SAFE_ZONE_ENV=production` kiểm tra bắt buộc secret |
-| A3 | Loopback-only cho internal ports, Caddy public edge | **PASS** | Kiểm tra cấu hình Compose production |
+| A3 | Loopback-only cho internal ports, Caddy public edge | **PASS** | Compose production + biên bản thực thi trên VPS 2026-09-20 (`docs/deployment/edge-verification-2026-09-20.md`, `scripts/ops/check-production-ports.sh` 24/24 PASS); RB-1 còn chờ Azure NSG audit + owner review |
 | A4 | Health/Readiness sau restart | **PASS** | Restart drill đạt downtime 2.2s dưới tải nặng |
 | A5 | Image provenance & tag pinning | **PASS** | Preflight helper ghi nhận metadata đầy đủ |
 | A6 | Load test trên VPS đích | **PENDING_VPS** | Local capacity test đã PASS (`LOCAL_CAPACITY_PASS_BELOW_200K`); cần chạy bài rút gọn trên VPS đích theo runbook |
 | A7 | Rollback & dependency fault drills | **PASS** | Redis pause/unpause drill và URL rollback 5/5 đạt PASS |
-| A8 | JSON metrics & alerts tối thiểu | **PASS** | Endpoint `/metrics` tích hợp khối `runtime` memory và alert rules |
+| A8 | JSON metrics & alerts tối thiểu | **PASS** | `/metrics` counters + chi tiết subsystem sau auth `/v1/status`; alert rules remap 2026-09-20 (`ops/alerts/safe-zone-alert-rules.yaml`) |
 | A9 | Runbooks cài đặt, nâng cấp, rollback, privacy | **PASS** | Toàn bộ runbooks đã được đồng bộ hóa |
 | A10 | UI/API compatibility & degraded mode | **PASS** | Browser E2E Playwright 4/4 PASS; degraded UI hoạt động |
 | A11 | Safe URL ML profile | **PASS** | Shadow-only, enforce rejected, fail-open độc lập |

@@ -1,6 +1,6 @@
 # Safe Zone Production Completion Checklist
 
-Date: 2026-08-08
+Date: 2026-09-20 (main `7a4cb6f`; production runs `f87f923`, post-gate deploy pending ~25/09)
 
 This file is the single operational/release checklist for moving Safe Zone from the current repository state to production-ready, and then to "perfect production". For AI Engine, the only detailed technical source is `docs/specs/safe-zone-ai-plan.md`; all AI release evidence and completion status are tracked here.
 
@@ -61,7 +61,7 @@ Goal: expose only the intended production surface to the internet.
 - `[x]` DoT can be published on `853`.
 - `[x]` Repeatable public-edge checks exist through audited `scripts/ops/check-production-ports.sh` and `scripts/ops/public-edge-smoke.sh`.
 - `[x]` Lock down host exposure of internal ports `8080` and `8081` in production. Production Compose binds both to `127.0.0.1` only.
-- `[~]` Firewall/security-group validation is scripted for SSH, `80`, `443`, and `853`; each real environment still needs its execution record captured.
+- `[~]` Firewall/security-group validation is scripted for SSH, `80`, `443`, and `853`; host execution record captured 2026-09-20 (`docs/deployment/edge-verification-2026-09-20.md`); Azure NSG audit still needed per environment.
 - `[x]` Decide how DoT receives a trusted certificate in production. Production Compose mounts a dedicated certificate directory and the renewal runbook documents the export process.
 
 Steps:
@@ -461,9 +461,9 @@ Steps:
 
 Safe Zone can be called production MVP when all of these are true:
 
-- `[~]` Public traffic only enters through intended ports. Compose bindings and validation scripts are complete; a real environment execution record is still needed.
+- `[~]` Public traffic only enters through intended ports. Compose bindings and validation scripts are complete; host execution record captured 2026-09-20 (re-run after re-deploy).
 - `[x]` Production secrets are explicit, strong, and not printed in logs.
-- `[~]` DoH over HTTPS works through the Caddy production edge; public-internet execution still needs to be recorded per deployment.
+- `[~]` DoH over HTTPS works through the Caddy production edge; execution recorded 2026-09-20 (HTTP 200, rcode 0); re-record per deployment.
 - `[x]` DoT uses a trusted certificate path or documented client trust model, and configured TLS key failures now fail fast.
 - `[x]` Block page and configurable DNS blocking strategies work for blocked DNS answers.
 - `[x]` Threat feeds sync from the official preset and stale status is visible.

@@ -5,12 +5,16 @@ Threat feeds are defense-in-depth. If feed sync fails, Safe Zone continues to an
 ## Detect
 
 ```sh
-docker compose logs feed-syncd --tail=200
+# feed-syncd only runs under the feed-sync Compose profile
+docker compose --profile feed-sync logs feed-syncd --tail=200
+# file log exists only when cron file-logging is enabled
 grep -i "feed" logs/feed-sync.log
 ```
 
 When the agent is enabled, feed sync events are recorded in SQLite agent events.
-`core-api` also exposes feed freshness on `/` and `/metrics` under `feed_sync`.
+Authenticated `GET /v1/status` carries feed freshness under `feed_sync`
+(`curl` needs `Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY`); the public
+`/metrics` endpoint exposes request counters only.
 
 ## Manual sync
 
