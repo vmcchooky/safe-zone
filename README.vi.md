@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="ui/public/favicon.svg" width="96" alt="Safe Zone logo">
   <h1>Safe Zone</h1>
   <p><strong>Chống lừa đảo ở tầng DNS cho Việt Nam.</strong></p>
   <p>
