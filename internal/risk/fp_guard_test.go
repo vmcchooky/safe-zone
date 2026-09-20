@@ -61,13 +61,13 @@ func TestSharedApexExactIsContextual(t *testing.T) {
 	defer closeService()
 
 	live := float64(time.Now().Add(time.Hour).Unix())
-	for _, m := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org", "github.com"} {
+	for _, m := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org", "github.com", "raw.githubusercontent.com"} {
 		if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{Score: live, Member: m}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	for _, domain := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org"} {
+	for _, domain := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org", "raw.githubusercontent.com"} {
 		result := service.Analyze(context.Background(), domain, ClientInfo{})
 		if result.Verdict == analysis.VerdictMalicious {
 			t.Errorf("Analyze(%q) = MALICIOUS; want contextual SUSPICIOUS", domain)
@@ -138,11 +138,12 @@ func TestNoisySharedParentSkipped(t *testing.T) {
 
 func TestIsSharedFeedApex(t *testing.T) {
 	apex := map[string]bool{
-		"github.com":         true,
-		"cdn.jsdelivr.net":   true,
-		"cdn.ampproject.org": true,
-		"fastly.net":         true,
-		"jsdelivr.net":       true,
+		"github.com":                true,
+		"raw.githubusercontent.com": true,
+		"cdn.jsdelivr.net":          true,
+		"cdn.ampproject.org":        true,
+		"fastly.net":                true,
+		"jsdelivr.net":              true,
 	}
 	for host := range apex {
 		if !isSharedFeedApex(host) {
@@ -153,6 +154,8 @@ func TestIsSharedFeedApex(t *testing.T) {
 		"",
 		"evil-phish-tenant.github.io",
 		"api.github.com",
+		"evil-raw.githubusercontent.com",
+		"raw.githubusercontent.com.evil.com",
 		"evil.sharepoint.com",
 		"deep.feed-parent.test",
 		"bad.test",
