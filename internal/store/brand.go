@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
+	"sync/atomic"
 	"time"
 
 	"safe-zone/internal/analysis"
@@ -17,6 +17,15 @@ import (
 const defaultBrandCacheKey = "safe-zone:analysis:trusted-brands"
 const defaultBrandCacheTTL = 5 * time.Minute
 
+// brandSnapshot is one immutable publication of the brand list. The slice
+// is never mutated after publication: writers build a fresh slice and swap
+// the pointer, so readers share without cloning and without locks. Callers
+// MUST treat the returned slice as read-only.
+type brandSnapshot struct {
+	brands    []analysis.Brand
+	expiresAt time.Time
+}
+
 // BrandStore wraps SQLite with process memory and Redis caching for hot-path analysis reads.
 type BrandStore struct {
 	db           *DB
@@ -25,9 +34,7 @@ type BrandStore struct {
 	cacheKey     string
 	cacheTTL     time.Duration
 
-	mu        sync.RWMutex
-	brands    []analysis.Brand
-	expiresAt time.Time
+	snapshot atomic.Pointer[brandSnapshot]
 }
 
 func NewBrandStore(db *DB, redis *cache.Redis, redisTimeout, cacheTTL time.Duration) *BrandStore {
@@ -71,7 +78,9 @@ func (s *BrandStore) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
 	}
 	s.setMemoryBrands(brands)
 	s.setRedisBrands(ctx, brands)
-	return cloneAnalysisBrands(brands), nil
+	// Freshly built above (DB rows or package defaults): exclusively owned,
+	// safe to share without clone. setMemoryBrands cloned for storage.
+	return brands, nil
 }
 
 func (s *BrandStore) GetBrand(ctx context.Context, id int64) (analysis.Brand, error) {
@@ -117,19 +126,18 @@ func (s *BrandStore) DeleteBrand(ctx context.Context, id int64) error {
 }
 
 func (s *BrandStore) memoryBrands() ([]analysis.Brand, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	if len(s.brands) == 0 || time.Now().After(s.expiresAt) {
+	snap := s.snapshot.Load()
+	if snap == nil || len(snap.brands) == 0 || time.Now().After(snap.expiresAt) {
 		return nil, false
 	}
-	return cloneAnalysisBrands(s.brands), true
+	return snap.brands, true
 }
 
 func (s *BrandStore) setMemoryBrands(brands []analysis.Brand) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.brands = cloneAnalysisBrands(brands)
-	s.expiresAt = time.Now().Add(s.cacheTTL)
+	s.snapshot.Store(&brandSnapshot{
+		brands:    cloneAnalysisBrands(brands),
+		expiresAt: time.Now().Add(s.cacheTTL),
+	})
 }
 
 func (s *BrandStore) redisBrands(parent context.Context) ([]analysis.Brand, bool) {
@@ -143,7 +151,8 @@ func (s *BrandStore) redisBrands(parent context.Context) ([]analysis.Brand, bool
 	if err != nil || !found || len(brands) == 0 {
 		return nil, false
 	}
-	return cloneAnalysisBrands(brands), true
+	// Freshly unmarshalled: exclusively owned, safe to share without clone.
+	return brands, true
 }
 
 func (s *BrandStore) setRedisBrands(parent context.Context, brands []analysis.Brand) {
@@ -156,10 +165,7 @@ func (s *BrandStore) setRedisBrands(parent context.Context, brands []analysis.Br
 }
 
 func (s *BrandStore) invalidate(parent context.Context) {
-	s.mu.Lock()
-	s.brands = nil
-	s.expiresAt = time.Time{}
-	s.mu.Unlock()
+	s.snapshot.Store(nil)
 	if s.redis == nil || !s.redis.Enabled() {
 		return
 	}

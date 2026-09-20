@@ -51,6 +51,33 @@ const (
 	defaultAuditMaxPerTime = 24 * time.Hour
 )
 
+// maxAgentAdvisoryPromotion bounds weak-TLS metadata (SAN mismatch, fresh
+// certificate) to an advisory bump in agent scoring, mirroring the engine's
+// FP-guard rule: mismatch/fresh alone must not manufacture a MALICIOUS
+// proposal. Results predating the AdvisoryScore split carry 0 and keep
+// full weight (backward compatible). WHOIS keeps full weight, matching the
+// engine: production evidence never showed WHOIS-driven false promotion.
+const maxAgentAdvisoryPromotion = 10
+
+// agentScore merges TLS/WHOIS enrichment into one score with the advisory
+// cap above. Strong signals (expired, self-signed, newly-registered) keep
+// full weight, so genuinely egregious certificates still flag.
+func agentScore(tls tlsinspect.Result, whois whois.Result) int {
+	strong := tls.Score - tls.AdvisoryScore
+	if strong < 0 {
+		strong = 0
+	}
+	advisory := tls.AdvisoryScore
+	if advisory > maxAgentAdvisoryPromotion {
+		advisory = maxAgentAdvisoryPromotion
+	}
+	total := strong + advisory + whois.Score
+	if total > 100 {
+		total = 100
+	}
+	return total
+}
+
 // AuditTask scans the telemetry log for frequently-seen suspicious domains,
 // enriches them with TLS/WHOIS/AI, and auto-blocks high-confidence malicious ones.
 type AuditTask struct {
@@ -345,8 +372,9 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 	// Run TLS + WHOIS enrichment (parallel live lookups by default).
 	tlsResult, whoisResult := t.enrich(ctx, domain)
 
-	// Build a merged score from enrichment signals.
-	score := tlsResult.Score + whoisResult.Score
+	// Build a merged score from enrichment signals, with weak TLS
+	// metadata capped to advisory (see agentScore).
+	score := agentScore(tlsResult, whoisResult)
 	var reasons []string
 	reasons = append(reasons, tlsResult.Reasons...)
 	reasons = append(reasons, whoisResult.Reasons...)
@@ -450,6 +478,7 @@ func (t *AuditTask) proposeBlock(ctx context.Context, domain string, score int, 
 		"score":         score,
 		"confidence":    confidence,
 		"tls_score":     tlsResult.Score,
+		"tls_advisory":  tlsResult.AdvisoryScore,
 		"tls_reasons":   tlsResult.Reasons,
 		"whois_score":   whoisResult.Score,
 		"whois_reasons": whoisResult.Reasons,
