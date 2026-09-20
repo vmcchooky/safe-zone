@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Safe Zone hero</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Geist', system-ui, sans-serif;
+      background: #FAF8F3;
+      color: #3A3530;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .hero { width: 1160px; text-align: center; }
+    .hero img.mark { width: 104px; height: 104px; }
+    .hero h1 {
+      font-family: 'Instrument Serif', serif;
+      font-size: 76px;
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      margin: 1.25rem 0 0.75rem;
+    }
+    .hero p.tag {
+      font-size: 19px;
+      color: #5C544B;
+      max-width: 640px;
+      margin: 0 auto;
+      line-height: 1.5;
+    }
+    .hero .rule {
+      width: 72px;
+      height: 3px;
+      background: #2E5A46;
+      margin: 1.5rem auto 1.25rem;
+    }
+    .hero p.meta {
+      font-family: 'Geist Mono', monospace;
+      font-size: 12px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #5C544B;
+    }
+    .hero p.meta b { color: #2E5A46; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="hero">
+    <img class="mark" src="../../ui/src/assets/logo.png" alt="Safe Zone mark">
+    <h1>Safe Zone</h1>
+    <p class="tag">DNS-level anti-phishing for Vietnam. Malicious domains never resolve — decided locally, on infrastructure you own.</p>
+    <div class="rule"></div>
+    <p class="meta">Open source · <b>MIT</b> · DoH + DoT · Self-hosted</p>
+  </div>
+</body>
+</html>
