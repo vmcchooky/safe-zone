@@ -2996,16 +2996,16 @@ func (s *Service) refineWithAI(ctx context.Context, current analysis.Result) ana
 
 func (s *Service) trustedBrands(ctx context.Context) []analysis.Brand {
 	if s == nil || s.brandStore == nil {
-		return analysis.DefaultTrustedBrands()
+		return analysis.DetectionBrands(analysis.DefaultTrustedBrands())
 	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	brands, err := s.brandStore.ListBrands(ctx)
 	if err != nil || len(brands) == 0 {
-		return analysis.DefaultTrustedBrands()
+		return analysis.DetectionBrands(analysis.DefaultTrustedBrands())
 	}
-	return brands
+	return analysis.DetectionBrands(brands)
 }
 
 func (s *Service) lookupOSINT(ctx context.Context, domain string, result analysis.Result, mode osintLookupMode, force bool) osint.Report {

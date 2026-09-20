@@ -92,6 +92,52 @@ func DefaultTrustedBrands() []Brand {
 	})
 }
 
+// detectionBrandExtras are evidence-backed detection brands that extend
+// lexical spoof detection WITHOUT entering DefaultTrustedBrands. The
+// default seed is frozen by the ML feature contract (brands.v1.json,
+// golden vectors): adding names there would shift model inputs for every
+// domain. Detection extras apply to spoof checking and suffix trust only.
+//
+// Each entry needs in-repo or independently verified abuse evidence:
+//   - allegro (allegro.pl): Allegro Lokalnie phishing-kit campaign —
+//     screenshot-confirmed sibling replay-0072, PhishStats campaign
+//     reports on same-kit siblings.
+//   - spotify (spotify.com): vendor-impersonation hostnames such as
+//     pl.spotify-original.com (main-label keyword pattern).
+func detectionBrandExtras() []Brand {
+	return []Brand{
+		{Name: "allegro", OfficialDomain: "allegro.pl"},
+		{Name: "spotify", OfficialDomain: "spotify.com"},
+	}
+}
+
+// DetectionBrands returns base plus the evidence-backed detection extras,
+// skipping any name the operator already manages (operator intent wins).
+// The result is freshly built per call; treat it as read-only.
+func DetectionBrands(base []Brand) []Brand {
+	seen := make(map[string]struct{}, len(base)+2)
+	out := make([]Brand, 0, len(base)+2)
+	for _, brand := range base {
+		brand = normalizeBrandRecord(brand)
+		key := strings.ToLower(strings.TrimSpace(brand.Name))
+		if _, dup := seen[key]; dup || key == "" {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, brand)
+	}
+	for _, extra := range detectionBrandExtras() {
+		extra = normalizeBrandRecord(extra)
+		key := strings.ToLower(strings.TrimSpace(extra.Name))
+		if _, dup := seen[key]; dup || key == "" {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, extra)
+	}
+	return out
+}
+
 type MemoryBrandStore struct {
 	mu       sync.RWMutex
 	nextID   int64
@@ -887,7 +933,7 @@ func IsTrustedBrandSuffix(domain string, brands []Brand) bool {
 // CheckBrandSpoofing analyzes a domain to detect typosquatting, brand keyword mentions, or subdomain abuse.
 // Trả về: (isSpoof, reason, penaltyScore)
 func CheckBrandSpoofing(domain string, brandSpoofingScore int) (bool, string, int) {
-	return CheckBrandSpoofingWithBrands(domain, brandSpoofingScore, DefaultTrustedBrands())
+	return CheckBrandSpoofingWithBrands(domain, brandSpoofingScore, DetectionBrands(DefaultTrustedBrands()))
 }
 
 func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands []Brand) (bool, string, int) {
@@ -896,7 +942,7 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 		return false, "", 0
 	}
 	if len(brands) == 0 {
-		brands = DefaultTrustedBrands()
+		brands = DetectionBrands(DefaultTrustedBrands())
 	}
 
 	// 0. Decode Punycode (IDN) to Unicode to handle homoglyphs
