@@ -1,255 +1,244 @@
-# Safe Zone
+# 🛡️ Safe Zone
+
+[![CI](https://github.com/vmcchooky/safe-zone/actions/workflows/ci.yml/badge.svg)](https://github.com/vmcchooky/safe-zone/actions/workflows/ci.yml)
+[![Security](https://github.com/vmcchooky/safe-zone/actions/workflows/security.yml/badge.svg)](https://github.com/vmcchooky/safe-zone/actions/workflows/security.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/vmcchooky/safe-zone)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![DNS](https://img.shields.io/badge/DNS-DoH_%2F_DoT-blue)](docs/runbooks/production-edge.md)
+[![Platform](https://img.shields.io/badge/platform-linux--amd64-lightgrey)](docker-compose.production.yml)
 
 🌐 **Language / Ngôn ngữ:** [English](README.md) | [Tiếng Việt](README.vi.md)
 
-Safe Zone là dự án mã nguồn mở, phi lợi nhuận phát triển hệ thống chống lừa đảo giả mạo ở cấp độ phân giải DNS, nhằm bảo vệ người dùng và tổ chức tại Việt Nam khỏi các trang web lừa đảo (phishing) và giả mạo thương hiệu.
+**Chống lừa đảo ở tầng DNS cho Việt Nam.** Safe Zone là dự án mã nguồn mở,
+phi lợi nhuận, chặn website phishing và giả mạo thương hiệu ngay tại lớp DNS —
+trước khi trình duyệt kịp tải chúng — cùng một control plane self-hosted mà bạn
+sở hữu hoàn toàn: không tài khoản SaaS, không control plane của bên thứ ba,
+không dữ liệu nào rời khỏi VPS của bạn.
 
-Dự án đang trong giai đoạn phát triển tích cực. Kho chứa mã nguồn này mô tả kiến trúc và mã nguồn liên tục được hoàn thiện nhằm cung cấp một công cụ hữu ích cho cộng đồng; hệ thống không cam kết bao phủ 100% mối đe dọa hoặc sẵn sàng cho mọi kịch bản triển khai. Định hướng công khai được tóm tắt tại [trang dự án Safe Zone](https://www.quorix.io.vn/projects/safe-zone/).
+> **Trạng thái: Release Candidate** (`RELEASE_CANDIDATE_SHADOW_READY`). Engine
+> lõi và URL-ML shadow đã vượt qua kiểm tra công suất cục bộ; xác thực cuối
+> trên VPS đang tiến hành. Không phải mọi kịch bản triển khai đều sẵn sàng
+> production — xem [Trạng thái dự án](#️-trạng-thái-dự-án) và nguồn sự thật cho
+> người vận hành,
+> [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
 
-Tài liệu chuẩn cho người vận hành triển khai production được lưu trữ tại [docs/production-completion-checklist.md](docs/production-completion-checklist.md). Trạng thái release canonical và manifest chính thức được lưu trữ tại [docs/deployment/release-manifest-r5.md](docs/deployment/release-manifest-r5.md). Các ghi chú thiết kế và tài liệu lịch sử nằm tại thư mục [docs/specs/](docs/specs/).
+## 📑 Mục lục
 
-## Định hướng dự án
+- [✨ Tính năng](#-tính-năng)
+- [🏗️ Kiến trúc](#️-kiến-trúc)
+- [🚀 Bắt đầu nhanh](#-bắt-đầu-nhanh)
+- [🔍 Dùng thử](#-dùng-thử)
+- [⚙️ Cấu hình](#️-cấu-hình)
+- [🧠 Threat intel & ML](#-threat-intel--ml)
+- [🧪 Đánh giá](#-đánh-giá)
+- [🔒 Bảo mật](#-bảo-mật)
+- [📦 Triển khai](#-triển-khai)
+- [🗺️ Trạng thái dự án](#️-trạng-thái-dự-án)
+- [🤝 Đóng góp](#-đóng-góp)
+- [🙏 Ghi nhận](#-ghi-nhận)
+- [📄 Giấy phép](#-giấy-phép)
 
-- **Phạm vi (Scope):** Chống lừa đảo ở cấp độ DNS và phân tích rủi ro tên miền cho người dùng và tổ chức tại Việt Nam.
-- **Trạng thái hiện tại:** Release Candidate (`RELEASE_CANDIDATE_SHADOW_READY`). Hệ thống lõi và URL ML shadow integration đã vượt qua kiểm tra công suất cục bộ (`LOCAL_CAPACITY_PASS_BELOW_200K`); xác thực triển khai cuối cùng đang chờ trên VPS đích (`PENDING_VPS`, xem [docs/runbooks/vps-load-test.md](docs/runbooks/vps-load-test.md)). URL ML promotion duy trì `SHADOW_OBSERVER_ONLY` (chờ dữ liệu traffic external).
-- **Mục tiêu:** Hệ thống mã nguồn mở phục vụ cộng đồng, hỗ trợ lọc tên miền độc hại thông qua chính sách nội bộ và dữ liệu đe dọa (threat intelligence).
-- **Phương pháp cốt lõi:** Các dịch vụ viết bằng Go, hỗ trợ DoH và DoT, phân tích cấu trúc ký tự (lexical analysis), dữ liệu đe dọa, tinh chỉnh tùy chọn qua AI nội bộ, và giao diện quản trị self-hosted.
+## ✨ Tính năng
 
-## Các thành phần hiện tại
+**Bảo vệ**
+- 🧬 **Verdict nhiều lớp** — chấm điểm lexical deterministic (typosquat,
+  lạm dụng thương hiệu, DGA/entropy, homoglyph IDN), đối chiếu threat-feed
+  trực tiếp, và enrichment TLS/WHOIS nền chỉ được promote khi có corroboration.
+- 📡 **DoH + DoT sẵn dùng** — DNS-over-HTTPS tại `/dns-query` và DNS-over-TLS
+  tại `:853`, kèm bóc CNAME và các chiến lược chặn sinkhole / NXDOMAIN /
+  refused / null-IP.
+- 🚫 **Ads, tracker & telemetry là policy** — chặn nội dung luôn là *policy
+  action*, không bao giờ bị gán nhãn malware (ví dụ endpoint telemetry chỉ
+  `SUSPICIOUS`/policy-block, không phải `MALICIOUS`).
 
-- `core-api`: HTTP API cung cấp kiểm tra trạng thái, cache kết quả phân tích tên miền, endpoint `/metrics`, và giao diện quản trị React self-hosted.
-- `dns-resolver`: Dịch vụ chính sách phân giải DNS nội bộ hỗ trợ DoH (`/dns-query`), tùy chọn DoT, và `/metrics`.
-- `feed-syncd`: Daemon chạy định kỳ tùy chọn để đồng bộ dữ liệu đe dọa từ các nguồn bên ngoài.
-- `redis`: Bộ nhớ đệm (cache) tùy chọn lưu trữ kết quả phân tích và lịch sử dashboard.
-- `internal/analysis`: Thư viện tính điểm rủi ro tên miền dựa trên quy tắc cấu trúc ký tự (lexical scoring).
-- `internal/cache`: Thư viện thao tác Redis JSON hỗ trợ cơ chế fail-open.
-- `internal/feed`: Thư viện phân tích và đồng bộ feed dùng chung cho CLI và daemon.
-- `internal/ai`: Tùy chọn tinh chỉnh phân tích tên miền nghi ngờ qua Gemini 2.5 Flash Lite.
-- `internal/observability`: Thư viện ghi nhận metrics trong bộ nhớ dùng chung cho các HTTP service.
-- `internal/risk`: Dịch vụ phân tích rủi ro, cache, chính sách và trạng thái dùng chung.
-- `internal/serve`: Thư viện hỗ trợ graceful shutdown cho container và runtime cục bộ.
+**Vận hành**
+- 🖥️ **UI + API cho operator** — dashboard React tại `/app/`, phân tích có
+  cache, override, nhóm client, báo cáo và `/metrics` kiểu Prometheus.
+- 🔁 **Fail-open theo thiết kế** — sự cố Redis, feed, OSINT, AI hay enrichment
+  chỉ giảm độ bao phủ, không bao giờ làm sập phân giải. SQLite bắt buộc ở
+  production để ý chí operator không bao giờ mất trong im lặng.
+- 📉 **Thân thiện VPS giá rẻ** — stack Compose một node, baseline ~$10/tháng,
+  production sample 5% telemetry write.
 
-## Không gian làm việc Frontend
+**Mở rộng**
+- 🤖 **AI/ML local tùy chọn** — tinh chỉnh Gemini/Ollama và classifier LightGBM
+  với cổng `disabled → shadow → canary → enforce`. Mặc định tắt.
+- 🧩 **Đánh giá dựa trên evidence** — corpora truth/contract phiên bản hóa với
+  kỷ luật provenance (`unknown` không bao giờ lọt vào tử số/mẫu số
+  precision/recall).
 
-- `ui/`: Mã nguồn React cho giao diện quản trị chính, được đóng gói và phục vụ bởi `core-api` tại `/app/*`.
-- `internal/api/views`: HTML template tương thích cho legacy dashboard, màn hình đăng nhập và trang cảnh báo chặn.
-- `internal/api/assets`: Tài nguyên CSS, JS, font được phục vụ tại `/assets/*` bởi `core-api`.
-- `internal/api/handlers`: Xử lý logic cho các HTTP endpoint.
+## 🏗️ Kiến trúc
 
-## Chạy cục bộ (Local Run)
+```mermaid
+flowchart LR
+    Client["Client\n(trình duyệt, OS, app)"] --> Caddy["Caddy :80/:443\nTLS + routing"]
+    Client --> DoT["DoT :853"]
+    Caddy --> API["core-api :8080\nanalysis API + UI + agent"]
+    Caddy --> DNS["dns-resolver :8081\nDoH /dns-query + policy"]
+    DoT --> DNS
+    API <--> Risk["risk.Service\nverdict + policy engine"]
+    DNS <--> Risk
+    Risk <--> Redis[("Redis\nfeeds + cache")]
+    Risk <--> DB[("SQLite\ntelemetry + overrides\n+ brands + config")]
+    Risk --> Feeds["Threat feeds\n(URLhaus, OpenPhish, ... )"]
+    Risk -.-> Enrich["TLS / WHOIS / OSINT / AI\n(nền, fail-open)"]
+```
+
+Các cổng nội bộ `:8080`/`:8081` **chỉ mở trên loopback** ở production; bên
+ngoài chỉ thấy `80`, `443` và `853` (đã kiểm chứng — xem
+[edge verification](docs/deployment/edge-verification-2026-09-20.md)).
+
+## 🚀 Bắt đầu nhanh
+
+Yêu cầu: Go 1.26+ (hoặc Docker).
 
 ```bash
+git clone https://github.com/vmcchooky/safe-zone.git
+cd safe-zone
+
+# Terminal 1 — API + dashboard tại http://localhost:8080/app/
 go run ./cmd/core-api
+
+# Terminal 2 — DNS policy + DoH tại http://localhost:8081/dns-query
 go run ./cmd/dns-resolver
 ```
 
-Cấu hình mặc định:
-
-- `core-api` lắng nghe tại cổng `:8080`
-- `dns-resolver` lắng nghe tại cổng `:8081`
-- Redis mặc định tắt trừ khi biến `SAFE_ZONE_REDIS_ADDR` được thiết lập
-- Dashboard chính: <http://localhost:8080/app/>
-- Đường dẫn `/` sẽ tự động chuyển hướng về dashboard chính
-- Đường dẫn `/dashboard` sẽ tự động chuyển hướng về dashboard chính
-
-Bật Redis cục bộ tùy chọn:
+Với Docker (dev stack, binding loopback-only):
 
 ```bash
-docker run --rm -p 6379:6379 redis:7-alpine
-$env:SAFE_ZONE_REDIS_ADDR = "localhost:6379"
-```
-
-Các endpoint hữu ích:
-
-```bash
-curl "http://localhost:8080/v1/status"
-curl "http://localhost:8080/metrics"
-curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
-curl "http://localhost:8081/"
-curl "http://localhost:8081/metrics"
-curl "http://localhost:8081/v1/policy?domain=secure-login-wallet-example.com"
-```
-
-Trải nghiệm trang cảnh báo chặn (Block Page):
-
-- `http://blocked.example.test/` có thể được điều hướng về trang cảnh báo Safe Zone trên môi trường production.
-- `https://$SAFE_ZONE_PUBLIC_HOST/block?domain=blocked.example.test` cung cấp trang giải thích HTTPS chuẩn.
-- Truy cập HTTPS trực tiếp tới tên miền bên thứ ba bị chặn vẫn phụ thuộc vào chứng chỉ SSL của tên miền đó và có thể hiển thị cảnh báo từ trình duyệt trước khi nạp trang block.
-
-## Dữ liệu đe dọa (Threat Feed)
-
-Danh sách tên miền đe dọa được chuẩn hóa và lưu trữ tại Redis Set `safe-zone:threat:feed`. Chạy đồng bộ thủ công qua `feed-sync`:
-
-```bash
-go run ./cmd/feed-sync -source ./feeds/local.txt -dry-run
-go run ./cmd/feed-sync -source ./feeds/local.txt -redis-addr localhost:6379
-```
-
-Công cụ đồng bộ hỗ trợ các tệp tin `.gz` qua đường dẫn cục bộ hoặc URL HTTP(S).
-Daemon tùy chọn có thể chạy bằng `go run ./cmd/feed-syncd --once` hoặc qua Docker Compose profile `feed-sync`.
-
-Định dạng feed hỗ trợ gồm TXT, CSV, tệp nén gzip, và danh sách URL phân tách bằng khoảng trắng như OpenPhish. Các tên miền khớp chính xác hoặc khớp tên miền con đều trả về kết quả `MALICIOUS` với lý do `matched local threat feed`.
-
-Đối với cấu hình production miễn phí chuẩn, thiết lập:
-
-```env
-SAFE_ZONE_AGENT_FEED_PRESET=production-free
-```
-
-Cấu hình này tự động mở rộng sang dữ liệu URLhaus CSV mới nhất và OpenPhish community feed. `core-api` cung cấp thông tin độ tươi dữ liệu, cảnh báo dữ liệu cũ, và metadata phiên bản feed trên endpoint `/v1/status` và `/metrics` khi Redis hoạt động.
-
-Để mở rộng tập quét cho môi trường Việt Nam, sử dụng:
-`SAFE_ZONE_AGENT_FEED_PRESET=production-vn`. Cấu hình này bổ sung PhishDestroy Primary Active và Phishing.Database Active vào tập toàn cầu. Đây là các tập dữ liệu toàn cầu được lựa chọn làm baseline mở rộng cho Việt Nam, không phải dữ liệu riêng biệt của Việt Nam. Các danh sách chặn quảng cáo/tracker thông thường được loại trừ chủ đích vì mọi kết quả khớp feed đe dọa đều xử lý ở mức độc hại (`MALICIOUS`). Chi tiết xem tại `docs/research/security/threat-intelligence-sources.md`.
-
-Endpoint DoH hỗ trợ các yêu cầu DNS chuẩn dạng GET hoặc POST tại:
-
-```text
-http://localhost:8081/dns-query
-```
-
-Khi chạy Docker dev stack, dịch vụ DoT hỗ trợ tại:
-
-```text
-tls://127.0.0.1:1853
-```
-
-## Động cơ AI (AI Engine)
-
-Safe Zone duy trì cơ chế phân tích deterministic sẵn có và hỗ trợ tinh chỉnh các kết quả nghi ngờ thông qua các provider: `none`, `gemini`, `ollama`, hoặc chế độ ưu tiên Ollama `hybrid`. Bộ phân loại ML tên miền tùy chỉnh (Custom Domain ML) đã được tích hợp thành lớp chấm điểm local độc lập với các chế độ `disabled`, `shadow`, và `enforce`; provisioning artifact, shadow observation ở staging và rollback mechanics của Phase 5 đã được kiểm chứng, nhưng mặc định vẫn là `disabled` cho tới khi có evidence với human label, canary và phê duyệt product/security.
-
-Các sự cố từ AI/ML/provider luôn tuân thủ nguyên tắc **fail-open** ngoại trừ trường hợp người vận hành yêu cầu bắt buộc bundle mô hình khi khởi động. Chi tiết kiến trúc, cấu hình, vòng đời dữ liệu và quy trình vận hành được mô tả tại [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md). Trạng thái phát hành được theo dõi tại [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
-
-Cấu hình runtime Custom ML:
-
-```env
-SAFE_ZONE_ML_MODE=disabled
-SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
-SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
-SAFE_ZONE_ML_REQUIRED=false
-SAFE_ZONE_ML_BLOCK_THRESHOLD=
-```
-
-Bundle v1 gồm 534 features, suy luận LightGBM bằng `leaves`, Platt calibration, policy metadata và kiểm tra SHA-256. Dùng `mise run ops:ml-provision` để provision bundle đã được phê duyệt; Compose mount bản `current` ở chế độ read-only cho cả hai service. `shadow` ghi aggregate prediction evidence nhưng không đổi verdict; `enforce` chỉ được promote kết quả lexical `SUSPICIOUS` khi xác suất calibrated đạt threshold đã phê duyệt. Bundle lỗi vẫn fail-open, trừ khi đặt `SAFE_ZONE_ML_REQUIRED=true`.
-
-## Cấu hình Phân tích Động (Dynamic Analysis Configuration)
-
-Phản hồi WHOIS được cache trong SQLite mặc định 7 ngày. Có thể ghi đè thời gian sống qua biến `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS`.
-
-Quản trị viên có thể xem và tinh chỉnh cấu hình chấm điểm cấu trúc ký tự mà không cần khởi động lại dịch vụ:
-
-- `GET /v1/config/analysis`
-- `PUT /v1/config/analysis`
-- `POST /v1/config/analysis/reset`
-
-Các cập nhật được xác thực, lưu vào SQLite, nạp lại tự động vào bộ phân tích (hot-reload), và hủy hiệu lực cache qua phiên bản cấu hình.
-
-Trong môi trường triển khai multi-node, việc đồng bộ cấu hình giữa các node được kiểm soát qua:
-
-- `SAFE_ZONE_CONFIG_RELOAD_ENABLED=true`
-- `SAFE_ZONE_CONFIG_RELOAD_CHANNEL=safe-zone:config:analysis:updated`
-- `SAFE_ZONE_CONFIG_RELOAD_POLL_SECONDS=30`
-
-## Môi trường Bảo mật (Secrets)
-
-Cấu hình bảo mật có thể truyền qua biến môi trường `VAR=value` hoặc tệp tin `VAR_FILE=./ops/secrets/name`.
-
-Thư mục bí mật dùng chung [ops/secrets/README.md](ops/secrets/README.md) áp dụng cho:
-
-- Lệnh `go run` cục bộ từ gốc dự án
-- Các dịch vụ Docker Compose (gắn kết `./ops/secrets` vào `/app/ops/secrets`)
-- Cập nhật DuckDNS từ phía host
-
-Khi cấu hình `SAFE_ZONE_ENV=production`, `core-api` sẽ dừng khởi động nếu:
-
-- `SAFE_ZONE_ADMIN_PASSWORD` thiếu hoặc yếu
-- `SAFE_ZONE_ADMIN_API_KEY` thiếu hoặc yếu
-
-Tên đăng nhập quản trị lấy từ `SAFE_ZONE_ADMIN_USERNAME` (mặc định là `admin`); có thể đổi mà không cần sửa code, sau đó recreate `core-api` để Compose nạp giá trị mới.
-
-Ở chế độ cục bộ, các khóa thiếu sẽ tự động sinh giá trị tạm thời để thuận tiện phát triển.
-
-## Tiến trình Agent (Agent Workflow)
-
-`core-api` có thể kích hoạt Agent Engine nội bộ phục vụ kiểm toán, đồng bộ đa nguồn feed, kiểm toán OSINT, phát cảnh báo đa kênh và làm sạch danh sách trắng (whitelist). Dashboard cung cấp giao diện theo dõi trạng thái và kích hoạt thủ công cho admin.
-
-## Ghi nhật ký và Cảnh báo (Logging and Alerts)
-
-Phản hồi HTTP trả về header `X-Request-ID`. Pipeline yêu cầu chính xuất log JSON có cấu trúc cho `core-api` và `dns-resolver`, các tác vụ nền sử dụng chung `run_id` để liên kết nhật ký.
-
-Bộ quy tắc cảnh báo JSON metrics nằm tại [ops/alerts/safe-zone-alert-rules.yaml](ops/alerts/safe-zone-alert-rules.yaml), quy trình kiểm tra nằm tại [docs/runbooks/alert-rules.md](docs/runbooks/alert-rules.md).
-
-## Kiểm tra Bảo mật (Security Review)
-
-Trước khi phát hành bản phát hành lớn, sử dụng danh sách kiểm tra bảo mật tiền phát hành tại [docs/security/pre-release-security-checklist.md](docs/security/pre-release-security-checklist.md) kết hợp với [docs/runbooks/pre-release-checklist.md](docs/runbooks/pre-release-checklist.md).
-
-## Biên dịch (Build)
-
-```bash
-go build ./...
-```
-
-## Kiểm thử CI (CI Release Gate)
-
-GitHub Actions chạy lệnh `mise run ci` trên mỗi lượt push và pull request. Tiến trình kiểm tra bao gồm Go lint/test/build, kiểm tra kiểu React và đóng gói bundle, kiểm thử E2E Playwright cô lập, `gosec`, `govulncheck`, và đóng gói Docker cho từng dịch vụ.
-
-## Docker
-
-```bash
-# Base development stack (100% telemetry write)
 cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
 
-# Production stack (5% telemetry write sampling mặc định, loopback internal ports)
+Trỏ client thử nghiệm vào đó rồi truy vấn:
+
+```bash
+# DNS-over-HTTPS (RFC 8484): example.com IN A
+curl -s 'http://localhost:8081/dns-query?dns=EjQBAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE' \
+  -H 'accept: application/dns-message' | xxd | head -3
+```
+
+## 🔍 Dùng thử
+
+```bash
+# Verdict + lý do cho một tên miền nghi ngờ
+curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
+
+# Quyết định policy mà lớp DNS sẽ thực thi
+curl "http://localhost:8081/v1/policy?domain=secure-login-wallet-example.com"
+
+# Sức khỏe dịch vụ và độ tươi của feed
+curl "http://localhost:8080/v1/status"
+curl "http://localhost:8080/metrics"
+```
+
+Trải nghiệm chặn: sinkhole HTTP thường render trang block kèm form báo cáo
+người dùng; `https://$SAFE_ZONE_PUBLIC_HOST/block?domain=…` là trang giải
+thích HTTPS chuẩn. (Truy cập HTTPS trực tiếp vào tên miền bên thứ ba bị chặn
+vẫn hiện cảnh báo chứng chỉ của chính tên miền đó trước — giới hạn TLS chung
+của mọi DNS filter không MITM, không phải bug.)
+
+## ⚙️ Cấu hình
+
+| Biến | Mặc định | Tác dụng |
+|---|---|---|
+| `SAFE_ZONE_ENV` | `local` | Đặt `production` để bắt buộc admin secret mạnh và SQLite |
+| `SAFE_ZONE_REDIS_ADDR` | _(trống)_ | Bật cache/feed Redis, ví dụ `localhost:6379` |
+| `SAFE_ZONE_PUBLIC_HOST` | `localhost` | Hostname công khai cho Caddy TLS + DoH |
+| `SAFE_ZONE_ADMIN_PASSWORD` / `SAFE_ZONE_ADMIN_API_KEY` | _(tự sinh local)_ | Bắt buộc (hoặc `*_FILE`) ở production |
+| `SAFE_ZONE_ML_MODE` | `disabled` | `disabled` / `shadow` / canary / `enforce` (có cổng) |
+| `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` local, `5` prod | Sample telemetry ([cách tính](docs/runbooks/production-edge.md)) |
+| `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS` | `7` | TTL cache WHOIS trong SQLite |
+
+Secret nhận `VAR_FILE=./ops/secrets/name` (dùng chung cho local run, Compose
+và helper phía host — xem [ops/secrets/README.md](ops/secrets/README.md)).
+Admin có thể chỉnh lexical scoring nóng không cần restart qua
+`GET/PUT /v1/config/analysis` (có revision, có lan truyền multi-node).
+
+## 🧠 Threat intel & ML
+
+- **Feed** nằm trong Redis set `safe-zone:threat:feed`. Chạy tay trước, rồi
+  đặt lịch daemon:
+  ```bash
+  go run ./cmd/feed-sync -source ./feeds/local.txt -dry-run
+  go run ./cmd/feed-sync -source ./feeds/local.txt -redis-addr localhost:6379
+  ```
+  Preset miễn phí: `SAFE_ZONE_AGENT_FEED_PRESET=production-free` (URLhaus +
+  OpenPhish) hoặc `production-vn` (thêm PhishDestroy + Phishing.Database cho
+  triển khai Việt Nam). Chính sách nguồn:
+  [threat-intelligence-sources.md](docs/research/security/threat-intelligence-sources.md).
+- **Domain ML** (LightGBM, 534 feature, đã calibrate) phân phối dưới dạng bundle
+  ký số mount read-only; `shadow` chỉ quan sát, không đổi verdict cho tới khi
+  vượt cổng. Xem [safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md).
+- **Agent engine** (audit, sync feed, OSINT, cảnh báo, refresh whitelist) là
+  opt-in với config từng task và drill rollback — đừng bật lịch production từ
+  ví dụ tối thiểu.
+
+## 🧪 Đánh giá
+
+Hành vi được ghim bằng corpora offline đóng băng — truth, contract và FP-guard
+(21 host production, 21/21 allow, FPR 0):
+
+```bash
+mise run eval:decision
+# go run ./cmd/eval-decision check --corpus internal/eval/testdata/corpus.v2.json \
+#   --expected internal/eval/testdata/expected.v2.json   (+ 3 cặp nữa)
+```
+
+Nhãn yêu cầu provenance (capture, warning, ownership-doc hoặc owner review có
+ghi nhận). `unknown` không bao giờ vào tử số/mẫu số precision/recall/FPR.
+Định nghĩa cổng đầy đủ:
+[decision-engine-rebuttal-plan.md](docs/research/security/decision-engine-rebuttal-plan.md).
+
+## 🔒 Bảo mật
+
+- Threat model và release blocker: [docs/security/threat-model.md](docs/security/threat-model.md)
+- Checklist tiền phát hành: [docs/security/pre-release-security-checklist.md](docs/security/pre-release-security-checklist.md)
+- Phát hiện lỗ hổng? **Đừng mở issue công khai.** Xem
+  [docs/runbooks/credential-rotation.md](docs/runbooks/credential-rotation.md)
+  về xử lý secret, và liên hệ maintainer riêng qua trang dự án:
+  <https://www.quorix.io.vn/projects/safe-zone/>.
+
+## 📦 Triển khai
+
+Một VPS giá rẻ (lớp Hetzner CPX21, 2 vCPU / 4 GB, trần ~$10/tháng):
+
+```bash
 docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 ```
 
-Môi trường dev chỉ lắng nghe cổng loopback cho `core-api`, `dns-resolver`, và DoT với 100% telemetry write. Môi trường production sử dụng `docker-compose.production.yml`, giữ `8080` và `8081` trên loopback, chỉ mở công khai cổng `80`, `443`, và `853`, đồng thời bật telemetry write sampling mặc định ở mức **5%** (có thể ghi đè thành 1% bằng `SAFE_ZONE_TELEMETRY_WRITE_PERCENT`). Để kiểm tra công suất cô lập, sử dụng `docker-compose.loadtest.yml` ([docs/runbooks/vps-load-test.md](docs/runbooks/vps-load-test.md)).
+Vận hành hàng ngày (`pwsh ./scripts/ops/safe-zone.ps1 …` hoặc
+`scripts/ops/safe-zone.sh` trên Linux): `deploy`, `status`, `backup`,
+`restore`, `prune`, `feed-sync`. Hướng dẫn edge đầy đủ (firewall, cert DoT,
+DuckDNS, cron): [production-edge.md](docs/runbooks/production-edge.md).
+Chính sách chi phí: [Safe_Zone_OPEX_Estimate.md](docs/deployment/Safe_Zone_OPEX_Estimate.md).
 
-## Vận hành (Operations)
+## 🗺️ Trạng thái dự án
 
-Sử dụng công cụ PowerShell helper cho công việc vận hành và bảo trì hàng ngày:
+Release Candidate (`RELEASE_CANDIDATE_SHADOW_READY`): engine + URL-ML shadow
+đã qua kiểm tra công suất cục bộ (`LOCAL_CAPACITY_PASS_BELOW_200K`); xác thực
+traffic production đang `PENDING_VPS`, và URL-ML promotion giữ
+`SHADOW_OBSERVER_ONLY` cho tới khi có evidence external. Trạng thái chuẩn:
+[release-manifest-r5.md](docs/deployment/release-manifest-r5.md) ·
+[production-completion-checklist.md](docs/production-completion-checklist.md).
 
-```powershell
-pwsh ./scripts/ops/safe-zone.ps1 deploy
-pwsh ./scripts/ops/safe-zone.ps1 deploy-dev
-pwsh ./scripts/ops/safe-zone.ps1 status
-pwsh ./scripts/ops/safe-zone.ps1 backup
-pwsh ./scripts/ops/safe-zone.ps1 restore
-pwsh ./scripts/ops/safe-zone.ps1 prune
-pwsh ./scripts/ops/safe-zone.ps1 feed-sync
-```
+## 🤝 Đóng góp
 
-- `deploy`: Biên dịch, khởi chạy Compose stack, và chờ kiểm tra sức khỏe dịch vụ.
-- `deploy-dev`: Khởi chạy dev stack nội bộ lắng nghe cổng loopback.
-- `backup`: Tạo bản sao lưu Redis RDB vào `backups/redis/<timestamp>/dump.rdb`.
-- `restore`: Nạp lại dữ liệu Redis từ bản sao lưu mới nhất hoặc đường dẫn chỉ định.
-- `prune`: Dọn dẹp bản sao lưu cũ và xóa các tệp `tmp/*.log` hết hạn.
-- `feed-sync`: Đồng bộ dữ liệu đe dọa từ các nguồn cấu hình.
+Chào đón issue và PR. Vui lòng đọc
+[PR template](.github/pull_request_template.md) (kèm checklist chi phí) và chạy
+`mise run ci` trước khi push — CI gồm lint, test, typecheck React, E2E
+Playwright, `gosec`, `govulncheck` và build Docker. Mọi claim trong PR cần
+evidence: test đã chạy, số đã đo, docs đã cập nhật.
 
-Trên Linux host, script tương đương `scripts/ops/safe-zone.sh` hỗ trợ các tham số tương tự.
-Các thao tác trên cũng có sẵn dưới dạng các task `mise` định nghĩa tại [mise.toml](mise.toml).
+## 🙏 Ghi nhận
 
-## Cấu hình Hạ tầng Cơ bản (Deployment Baseline)
-
-- Mục tiêu triển khai production mặc định: 1 máy chủ VPS tiết kiệm chi phí
-- Cấu hình đề xuất: Hetzner CPX21 hoặc tương đương (2 vCPU / 4 GB RAM)
-- Ngân sách hạ tầng tối đa: khoảng $10/tháng
-
-## Dịch vụ Tùy chọn (Optional Services)
-
-- Redis là tùy chọn cho môi trường phát triển cục bộ và giữ trạng thái tắt trừ khi cài đặt `SAFE_ZONE_REDIS_ADDR`.
-- `feed-syncd` là tùy chọn và chỉ chạy khi kích hoạt profile Compose `feed-sync`.
-- Metrics, kiểm tra sức khỏe và giao diện quản trị hoạt động ở chế độ self-hosted, không phụ thuộc vào hạ tầng SaaS bên ngoài.
-
-## Contributor và credit công cụ
-
-Các công cụ và tổ chức sau đã hỗ trợ quá trình phát triển Safe Zone:
+Các công cụ và tổ chức đã hỗ trợ phát triển:
 
 - [Codex](https://github.com/codex)
 - [Google Antigravity](https://github.com/google-antigravity)
 - [Z.ai](https://github.com/zai-org)
 - [dependabot\[bot\]](https://github.com/apps/dependabot) — bot tự động cập nhật dependency
 
-## Giấy phép (License)
+## 📄 Giấy phép
 
-Dự án được phân phối theo giấy phép mã nguồn mở MIT - xem chi tiết tại tệp [LICENSE](LICENSE).
+MIT — xem [LICENSE](LICENSE).

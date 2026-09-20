@@ -1,300 +1,240 @@
-# Safe Zone
+# 🛡️ Safe Zone
+
+[![CI](https://github.com/vmcchooky/safe-zone/actions/workflows/ci.yml/badge.svg)](https://github.com/vmcchooky/safe-zone/actions/workflows/ci.yml)
+[![Security](https://github.com/vmcchooky/safe-zone/actions/workflows/security.yml/badge.svg)](https://github.com/vmcchooky/safe-zone/actions/workflows/security.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/vmcchooky/safe-zone)](https://go.dev/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![DNS](https://img.shields.io/badge/DNS-DoH_%2F_DoT-blue)](docs/runbooks/production-edge.md)
+[![Platform](https://img.shields.io/badge/platform-linux--amd64-lightgrey)](docker-compose.production.yml)
 
 🌐 **Language / Ngôn ngữ:** [English](README.md) | [Tiếng Việt](README.vi.md)
 
-Safe Zone is an open-source, nonprofit project developing a DNS-level anti-phishing system for protecting users and organizations from phishing and impersonation websites in Vietnam.
+**DNS-level anti-phishing for Vietnam.** Safe Zone is an open-source, nonprofit
+project that blocks phishing and impersonation websites at the DNS layer —
+before the browser ever loads them — with a self-hosted operator control plane
+you fully own: no SaaS account, no third-party control plane, no data leaving
+your VPS.
 
-The project is currently in active development. This repository describes an evolving implementation intended to become a useful community-serving tool; it does not claim complete coverage or production readiness for every deployment scenario. The public project direction is summarized on the [Safe Zone project page](https://www.quorix.io.vn/projects/safe-zone/).
+> **Status: Release Candidate** (`RELEASE_CANDIDATE_SHADOW_READY`). Core engine
+> and URL-ML shadow integration passed local capacity testing; final VPS
+> validation is in progress. Not every deployment scenario is production-ready —
+> see [Project status](#-project-status) and the operator source of truth,
+> [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
 
-The operator-facing production source of truth is [docs/production-completion-checklist.md](docs/production-completion-checklist.md). The canonical release status and manifest is [docs/deployment/release-manifest-r5.md](docs/deployment/release-manifest-r5.md). Historical design notes and implementation records remain under [docs/specs/](docs/specs/).
+## 📑 Contents
 
-## Project direction
+- [✨ Features](#-features)
+- [🏗️ Architecture](#️-architecture)
+- [🚀 Quickstart](#-quickstart)
+- [🔍 Try it](#-try-it)
+- [⚙️ Configuration](#️-configuration)
+- [🧠 Threat intel & ML](#-threat-intel--ml)
+- [🧪 Evaluation](#-evaluation)
+- [🔒 Security](#-security)
+- [📦 Deployment](#-deployment)
+- [🗺️ Project status](#️-project-status)
+- [🤝 Contributing](#-contributing)
+- [🙏 Credits](#-credits)
+- [📄 License](#-license)
 
-- **Scope:** DNS-level anti-phishing and domain-risk analysis for Vietnamese users and organizations.
-- **Current status:** Release Candidate (`RELEASE_CANDIDATE_SHADOW_READY`). Core engine and URL ML shadow integration passed local capacity testing (`LOCAL_CAPACITY_PASS_BELOW_200K`); final deployment validation is `PENDING_VPS` ([docs/runbooks/vps-load-test.md](docs/runbooks/vps-load-test.md)). URL ML promotion remains `SHADOW_OBSERVER_ONLY` (pending external traffic evidence).
-- **Target outcome:** An open-source, community-serving system for filtering malicious domains through local policy and threat intelligence.
-- **Core approach:** Go services, DoH and DoT, lexical analysis, threat feeds, optional local AI refinement, and a self-hosted operator control plane.
+## ✨ Features
 
-## Current build
+**Protect**
+- 🧬 **Layered domain verdicts** — deterministic lexical scoring (typosquat,
+  brand-abuse, DGA/entropy, IDN homoglyphs), live threat-feed matching, and
+  background TLS/WHOIS enrichment that can only promote with corroboration.
+- 📡 **DoH + DoT out of the box** — DNS-over-HTTPS at `/dns-query` and
+  DNS-over-TLS on `:853`, with CNAME uncloaking and sinkhole / NXDOMAIN /
+  refused / null-IP block strategies.
+- 🚫 **Ads, trackers & telemetry as policy** — content blocking stays a
+  *policy action*, never mislabeled as malware (e.g. telemetry endpoints are
+  `SUSPICIOUS`/policy-block, not `MALICIOUS`).
 
-- `core-api`: HTTP API for health checks, cached domain analysis, `/metrics`, and the self-hosted operator UI
-- `dns-resolver`: local policy service with DoH `/dns-query`, optional DoT, and `/metrics`
-- `feed-syncd`: optional interval-based threat-feed sync daemon for scheduled updates
-- `redis`: optional local cache for analysis results and dashboard history
-- `internal/analysis`: deterministic lexical scoring foundation
-- `internal/cache`: Redis JSON helpers with fail-open behavior
-- `internal/feed`: feed parsing and sync helpers shared by the CLI and daemon
-- `internal/ai`: optional Gemini 2.5 Flash Lite refinement for ambiguous domains
-- `internal/observability`: in-memory request metrics registry used by both HTTP services
-- `internal/risk`: shared analysis, cache, policy, and status service used by both binaries
-- `internal/serve`: graceful shutdown helper for local and container runs
+**Operate**
+- 🖥️ **Operator UI + API** — React dashboard at `/app/`, cached analysis,
+  overrides, groups, reports, and Prometheus-style `/metrics`.
+- 🔁 **Fail-open by design** — Redis, feeds, OSINT, AI, and enrichment outages
+  degrade coverage, never take down resolution. SQLite persistence is required
+  in production so operator intent is never lost silently.
+- 📉 **Budget-VPS friendly** — single-node Compose stack, ~$10/month baseline,
+  5% telemetry write sampling in production.
 
-## Frontend workspaces
+**Extend**
+- 🤖 **Optional local AI/ML** — Gemini/Ollama refinement and a LightGBM domain
+  classifier with `disabled → shadow → canary → enforce` gates. Off by default.
+- 🧩 **Evidence-led evaluation** — versioned truth/contract corpora with
+  provenance discipline (`unknown` never counts toward precision/recall).
 
-- `ui/`: React source workspace for the primary operator UI, embedded and served by `core-api` at `/app/*`
-- `internal/api/views`: embedded HTML templates for the legacy compatibility dashboard, login, and block page
-- `internal/api/assets`: embedded CSS, JS, and font assets served at `/assets/*` by `core-api`
-- `internal/api/handlers`: HTTP handler logic only
+## 🏗️ Architecture
 
-## Run locally
+```mermaid
+flowchart LR
+    Client["Clients\n(browsers, OS, apps)"] --> Caddy["Caddy :80/:443\nTLS + routing"]
+    Client --> DoT["DoT :853"]
+    Caddy --> API["core-api :8080\nanalysis API + UI + agent"]
+    Caddy --> DNS["dns-resolver :8081\nDoH /dns-query + policy"]
+    DoT --> DNS
+    API <--> Risk["risk.Service\nverdict + policy engine"]
+    DNS <--> Risk
+    Risk <--> Redis[("Redis\nfeeds + cache")]
+    Risk <--> DB[("SQLite\ntelemetry + overrides\n+ brands + config")]
+    Risk --> Feeds["Threat feeds\n(URLhaus, OpenPhish, ... )"]
+    Risk -.-> Enrich["TLS / WHOIS / OSINT / AI\n(background, fail-open)"]
+```
+
+Internal ports `:8080`/`:8081` stay **loopback-only** in production; only
+`80`, `443`, and `853` are published (verified — see
+[edge verification](docs/deployment/edge-verification-2026-09-20.md)).
+
+## 🚀 Quickstart
+
+Prerequisites: Go 1.26+ (or Docker).
 
 ```bash
+git clone https://github.com/vmcchooky/safe-zone.git
+cd safe-zone
+
+# Terminal 1 — API + dashboard at http://localhost:8080/app/
 go run ./cmd/core-api
+
+# Terminal 2 — DNS policy + DoH at http://localhost:8081/dns-query
 go run ./cmd/dns-resolver
 ```
 
-Defaults:
-
-- `core-api` listens on `:8080`
-- `dns-resolver` listens on `:8081`
-- Redis is disabled unless `SAFE_ZONE_REDIS_ADDR` is set
-- Primary dashboard: <http://localhost:8080/app/>
-- `/` redirects to the primary dashboard
-- `/dashboard` redirects to the primary dashboard
-
-`/app/*` is the production UI path. Existing `/dashboard` bookmarks redirect
-to `/app/` so every operator reaches the React UI.
-
-Optional local Redis:
+With Docker (dev stack, loopback-only bindings):
 
 ```bash
-docker run --rm -p 6379:6379 redis:7-alpine
-$env:SAFE_ZONE_REDIS_ADDR = "localhost:6379"
-```
-
-Useful endpoints:
-
-```bash
-curl "http://localhost:8080/v1/status"
-curl "http://localhost:8080/metrics"
-curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
-curl "http://localhost:8081/"
-curl "http://localhost:8081/metrics"
-curl "http://localhost:8081/v1/policy?domain=secure-login-wallet-example.com"
-```
-
-Blocked-domain UX:
-
-- `http://blocked.example.test/` can be sinkholed to the Safe Zone block page in production.
-- `https://$SAFE_ZONE_PUBLIC_HOST/block?domain=blocked.example.test` provides the canonical HTTPS explanation page.
-- Direct HTTPS to an arbitrary blocked third-party domain still depends on that domain's certificate and may show a browser warning before any block page can render.
-
-## Threat feed
-
-Threat feed entries are normalized domains stored in Redis Set `safe-zone:threat:feed`. Use `feed-sync` manually first:
-
-```bash
-go run ./cmd/feed-sync -source ./feeds/local.txt -dry-run
-go run ./cmd/feed-sync -source ./feeds/local.txt -redis-addr localhost:6379
-```
-
-Threat feed sync also accepts `.gz` feeds over local file paths or HTTP(S) URLs.
-The optional daemon is available as `go run ./cmd/feed-syncd --once` or through the Compose `feed-sync` profile.
-
-Accepted feed formats are TXT, CSV, gzip-compressed files, and whitespace-separated URL lists such as the OpenPhish community feed. Exact matches and subdomain suffix matches return `MALICIOUS` with reason `matched local threat feed`.
-
-For the first-class free production preset, set:
-
-```env
-SAFE_ZONE_AGENT_FEED_PRESET=production-free
-```
-
-That preset currently expands to URLhaus recent CSV plus the OpenPhish community feed. `core-api` exposes feed freshness, stale warnings, parser-drift warnings, and feed revision metadata on `/v1/status` and `/metrics` when Redis is enabled.
-
-For a broader phishing/scam set suited to Vietnamese deployments, use
-`SAFE_ZONE_AGENT_FEED_PRESET=production-vn`. It adds PhishDestroy Primary
-Active and Phishing.Database Active to the minimal global preset. These are
-global feeds selected as a broader baseline for Vietnamese deployments, not
-Vietnam-specific feeds. General ad/tracker hosts lists are intentionally
-excluded because every threat-feed match is treated as malicious. See
-`docs/research/security/threat-intelligence-sources.md` for the source policy, additive-sync
-retention limitation, and planned API/DNSBL/STIX/TAXII connectors.
-
-The DoH endpoint accepts standard DNS wire-format GET or POST requests at:
-
-```text
-http://localhost:8081/dns-query
-```
-
-If you start the Docker dev stack, DoT is also exposed on loopback at:
-
-```text
-tls://127.0.0.1:1853
-```
-
-## AI Engine
-
-Safe Zone keeps deterministic analysis available and can optionally refine ambiguous results through `none`, `gemini`, `ollama`, or Ollama-first `hybrid` provider modes. The Custom Domain ML classifier is implemented as a separate local scoring layer with `disabled`, `shadow`, and controlled `enforce` rollout modes; it remains `disabled` by default until human-labelled rollout evidence, canary approval, and product/security gates are complete. Phase 5 provisioning, staging shadow observation, and rollback mechanics have been validated.
-
-AI/ML/provider failures remain fail-open unless an operator explicitly makes a validated model bundle a startup requirement. For the complete architecture, configuration matrix, data/ML lifecycle, Agent workflow, deployment procedure and incident response, see [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md). Release status and required evidence are tracked only in [docs/production-completion-checklist.md](docs/production-completion-checklist.md).
-
-Custom ML runtime configuration:
-
-```env
-SAFE_ZONE_ML_MODE=disabled
-SAFE_ZONE_ML_BUNDLE_HOST_DIR=./deploy/model-bundle/current
-SAFE_ZONE_ML_BUNDLE_DIR=/app/models/safe-zone/current
-SAFE_ZONE_ML_REQUIRED=false
-SAFE_ZONE_ML_BLOCK_THRESHOLD=
-SAFE_ZONE_ML_CANARY_PERCENT=0
-SAFE_ZONE_ML_CANARY_SEED=
-```
-
-The v1 bundle contains 534 features, LightGBM leaves inference, Platt calibration, policy metadata, and SHA-256 verification. Provision the approved bundle with `mise run ops:ml-provision`; Compose mounts the active `current` release read-only into both services. `shadow` records aggregate prediction evidence without changing verdicts. A configured canary observes the deterministic normalized-domain cohort in `shadow`; `enforce` is rejected at startup unless a percentage and stable seed bound the eligible cohort. Bundle errors fail open unless `SAFE_ZONE_ML_REQUIRED=true`.
-
-For supplemental false-positive measurement, `cmd/ml-fp-candidates` exports only operator-confirmed `resolved + allow` reports that still enter the counterfactual lexical `SUSPICIOUS` path. It pins the active config, trusted brands, and model contract, removes contact/note/reason from output, and refuses to publish labels when the queue is empty. See [the false-positive workflow](docs/runbooks/false-positive-workflow.md) and [shadow replay runbook](docs/runbooks/ml-shadow-representative-replay.md).
-
-## Dynamic Analysis Configuration
-
-WHOIS responses are cached in SQLite for seven days by default. Override the
-TTL with `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS`.
-
-Authenticated administrators can inspect and tune lexical scoring without
-restarting the service:
-
-- `GET /v1/config/analysis`
-- `PUT /v1/config/analysis`
-- `POST /v1/config/analysis/reset`
-
-Updates are validated, persisted in SQLite, hot-reloaded into the analyzer, and
-invalidate analysis cache entries through a deterministic configuration
-revision.
-
-For multi-node deployments, analysis-config propagation is controlled by:
-
-- `SAFE_ZONE_CONFIG_RELOAD_ENABLED=true`
-- `SAFE_ZONE_CONFIG_RELOAD_CHANNEL=safe-zone:config:analysis:updated`
-- `SAFE_ZONE_CONFIG_RELOAD_POLL_SECONDS=30`
-
-`core-api` and `dns-resolver` now tag reload events with their process role by
-default, publish only revision invalidations over Redis Pub/Sub, and fall back
-to periodic SQLite reconciliation when a node misses an event.
-
-Operator visibility:
-
-- `GET /v1/status` exposes `analysis_config_reload` with the loaded revision, last reload source, channel, and runtime subscriber/reconciler state.
-- `GET /metrics` includes the same `analysis_config_reload` snapshot for lightweight debugging.
-- Structured logs now show publish success/failure, duplicate or self-loop ignores, subscriber retries, Pub/Sub applies, and reconciliation self-heals.
-
-## Secrets
-
-Sensitive settings can be supplied either directly as `VAR=value` or indirectly through `VAR_FILE=./ops/secrets/name`.
-
-The shared [ops/secrets/README.md](ops/secrets/README.md) path works for:
-
-- local `go run` from the repo root
-- Docker Compose services, which mount `./ops/secrets` into `/app/ops/secrets`
-- host-side DuckDNS updates
-
-Production should set `SAFE_ZONE_ENV=production`. In that mode, `core-api` now fails startup when:
-
-- `SAFE_ZONE_ADMIN_PASSWORD` is missing or weak
-- `SAFE_ZONE_ADMIN_API_KEY` is missing or weak
-
-In local mode, missing admin secrets still fall back to generated temporary values for convenience.
-
-## Agent workflow
-
-`core-api` can optionally start the internal Agent Engine for audit, multi-source feed sync, OSINT audit, multi-channel alerts and whitelist refresh. The dashboard exposes authenticated status and admin-only triggers.
-
-Do not enable Agent production schedules from a minimal example alone: due tasks run immediately at startup, and whitelist refresh currently defaults enabled when the Agent Engine is enabled. Follow the per-task configuration, smoke drills and rollback procedure in [docs/specs/safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md).
-
-## Logging and alerts
-
-HTTP responses now carry `X-Request-ID`, the main request pipeline emits structured JSON request logs for `core-api` and `dns-resolver`, and scheduled/background jobs emit a shared `run_id` for log correlation.
-
-The baseline JSON-metrics alert rules live in [ops/alerts/safe-zone-alert-rules.yaml](ops/alerts/safe-zone-alert-rules.yaml), and the operator checklist is in [docs/runbooks/alert-rules.md](docs/runbooks/alert-rules.md).
-
-## Security review
-
-Before major releases, use the formal pre-release security checklist at [docs/security/pre-release-security-checklist.md](docs/security/pre-release-security-checklist.md) together with the main [docs/runbooks/pre-release-checklist.md](docs/runbooks/pre-release-checklist.md).
-
-## Build
-
-```bash
-go build ./...
-```
-
-## CI release gate
-
-GitHub Actions runs `mise run ci` on every push and pull request. The gate
-includes Go lint/test/build, the React typecheck and embedded bundle build,
-isolated Playwright E2E, `gosec`, `govulncheck`, and Docker builds for every
-service. Playwright uses private test ports `15173` and `18080`, so it never
-attaches to the normal local development pair on `5173` and `8080`.
-
-## Docker
-
-```bash
-# Base development stack (100% telemetry write)
 cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
 
-# Production stack (5% telemetry write sampling default, loopback internal ports)
+Point a test client at it and query:
+
+```bash
+# DNS-over-HTTPS (RFC 8484): example.com IN A
+curl -s 'http://localhost:8081/dns-query?dns=EjQBAAABAAAAAAAAB2V4YW1wbGUDY29tAAABAAE' \
+  -H 'accept: application/dns-message' | xxd | head -3
+```
+
+## 🔍 Try it
+
+```bash
+# Verdict + reasons for a suspicious domain
+curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
+
+# Policy decision the DNS layer will enforce
+curl "http://localhost:8081/v1/policy?domain=secure-login-wallet-example.com"
+
+# Service health and feed freshness
+curl "http://localhost:8080/v1/status"
+curl "http://localhost:8080/metrics"
+```
+
+Blocked-domain UX: plain-HTTP sinkhole renders the block page with a user
+report form; `https://$SAFE_ZONE_PUBLIC_HOST/block?domain=…` is the canonical
+HTTPS explanation page. (Direct HTTPS to an arbitrary blocked third-party
+domain still shows that domain's certificate warning first — a TLS limit shared
+by every non-MITM DNS filter, not a bug.)
+
+## ⚙️ Configuration
+
+| Variable | Default | What it does |
+|---|---|---|
+| `SAFE_ZONE_ENV` | `local` | Set `production` to require strong admin secrets and SQLite |
+| `SAFE_ZONE_REDIS_ADDR` | _(unset)_ | Enables Redis cache/feeds, e.g. `localhost:6379` |
+| `SAFE_ZONE_PUBLIC_HOST` | `localhost` | Public hostname for Caddy TLS + DoH |
+| `SAFE_ZONE_ADMIN_PASSWORD` / `SAFE_ZONE_ADMIN_API_KEY` | _(generated locally)_ | Required (or `*_FILE`) in production |
+| `SAFE_ZONE_ML_MODE` | `disabled` | `disabled` / `shadow` / canary / `enforce` (gated) |
+| `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` locally, `5` prod | Telemetry sampling ([sizing](docs/runbooks/production-edge.md)) |
+| `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS` | `7` | WHOIS cache TTL in SQLite |
+
+Secrets accept `VAR_FILE=./ops/secrets/name` (works for local runs, Compose,
+and host-side helpers — see [ops/secrets/README.md](ops/secrets/README.md)).
+Admins can hot-tune lexical scoring without restarts via
+`GET/PUT /v1/config/analysis` (revisioned, with multi-node propagation).
+
+## 🧠 Threat intel & ML
+
+- **Feeds** live in Redis set `safe-zone:threat:feed`. Start manually, then
+  schedule the daemon:
+  ```bash
+  go run ./cmd/feed-sync -source ./feeds/local.txt -dry-run
+  go run ./cmd/feed-sync -source ./feeds/local.txt -redis-addr localhost:6379
+  ```
+  Free presets: `SAFE_ZONE_AGENT_FEED_PRESET=production-free` (URLhaus +
+  OpenPhish) or `production-vn` (adds PhishDestroy + Phishing.Database for
+  Vietnamese deployments). Source policy:
+  [threat-intelligence-sources.md](docs/research/security/threat-intelligence-sources.md).
+- **Domain ML** (LightGBM, 534 features, calibrated) ships as a signed bundle
+  mounted read-only; `shadow` observes without changing verdicts until gates
+  pass. See [safe-zone-ai-plan.md](docs/specs/safe-zone-ai-plan.md).
+- **Agent engine** (audit, feed sync, OSINT, alerts, whitelist refresh) is
+  opt-in with per-task config and rollback drills — don't enable production
+  schedules from the minimal example alone.
+
+## 🧪 Evaluation
+
+Behavior is pinned by frozen offline corpora — truth, contract, and FP-guard
+(21 production hosts, 21/21 allow, FPR 0):
+
+```bash
+mise run eval:decision
+# go run ./cmd/eval-decision check --corpus internal/eval/testdata/corpus.v2.json \
+#   --expected internal/eval/testdata/expected.v2.json   (+ 3 more pairs)
+```
+
+Labels require provenance (capture, warning, ownership doc, or recorded owner
+review). `unknown` never enters precision/recall/FPR denominators. Full gate
+definition: [decision-engine-rebuttal-plan.md](docs/research/security/decision-engine-rebuttal-plan.md).
+
+## 🔒 Security
+
+- Threat model with release blockers: [docs/security/threat-model.md](docs/security/threat-model.md)
+- Pre-release checklist: [docs/security/pre-release-security-checklist.md](docs/security/pre-release-security-checklist.md)
+- Found a vulnerability? **Do not open a public issue.** See
+  [docs/runbooks/credential-rotation.md](docs/runbooks/credential-rotation.md)
+  for secret handling, and contact the maintainers privately via the project
+  page: <https://www.quorix.io.vn/projects/safe-zone/>.
+
+## 📦 Deployment
+
+Single budget VPS (Hetzner CPX21-class, 2 vCPU / 4 GB, ~$10/mo ceiling):
+
+```bash
 docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
 ```
 
-The dev stack binds `core-api`, `dns-resolver`, and DoT to loopback only for local validation.
-The production stack uses `docker-compose.production.yml`, keeps `8080` and `8081` on loopback, publishes only `80`, `443`, and `853`, and defaults telemetry write sampling to **5%** (overridable to 1% via `SAFE_ZONE_TELEMETRY_WRITE_PERCENT`).
-The runtime image includes an internal HTTP healthcheck, and the optional `feed-syncd` service is gated behind the `feed-sync` Compose profile.
-For isolated capacity load testing, use `docker-compose.loadtest.yml` ([docs/runbooks/vps-load-test.md](docs/runbooks/vps-load-test.md)).
+Day-to-day ops (`pwsh ./scripts/ops/safe-zone.ps1 …` or `scripts/ops/safe-zone.sh`
+on Linux): `deploy`, `status`, `backup`, `restore`, `prune`, `feed-sync`.
+Full edge guide (firewall, DoT certs, DuckDNS, cron): [production-edge.md](docs/runbooks/production-edge.md).
+Cost policy: [Safe_Zone_OPEX_Estimate.md](docs/deployment/Safe_Zone_OPEX_Estimate.md).
 
-## Operations
+## 🗺️ Project status
 
-Use the PowerShell helper for day-to-day deployment and storage maintenance:
+Release Candidate (`RELEASE_CANDIDATE_SHADOW_READY`): engine + URL-ML shadow
+passed local capacity (`LOCAL_CAPACITY_PASS_BELOW_200K`); production traffic
+validation is `PENDING_VPS`, and URL-ML promotion stays `SHADOW_OBSERVER_ONLY`
+until external evidence lands. Canonical status:
+[release-manifest-r5.md](docs/deployment/release-manifest-r5.md) ·
+[production-completion-checklist.md](docs/production-completion-checklist.md).
 
-```powershell
-pwsh ./scripts/ops/safe-zone.ps1 deploy
-pwsh ./scripts/ops/safe-zone.ps1 deploy-dev
-pwsh ./scripts/ops/safe-zone.ps1 status
-pwsh ./scripts/ops/safe-zone.ps1 backup
-pwsh ./scripts/ops/safe-zone.ps1 restore
-pwsh ./scripts/ops/safe-zone.ps1 prune
-pwsh ./scripts/ops/safe-zone.ps1 feed-sync
-```
+## 🤝 Contributing
 
-- `deploy` builds and starts the Compose stack, then waits for the health endpoints.
-- `deploy-dev` starts the local dev stack with loopback-only bindings.
-- `backup` writes a Redis RDB snapshot to `backups/redis/<timestamp>/dump.rdb`.
-- `restore` reloads Redis from the newest snapshot or a path you pass in.
-- `prune` keeps the newest backups and removes stale `tmp/*.log` files.
-- `feed-sync` resolves `SAFE_ZONE_AGENT_FEED_SOURCES`, then `SAFE_ZONE_AGENT_FEED_PRESET`, then `SAFE_ZONE_THREAT_FEED_SOURCE`, and runs each source once.
+Issues and PRs are welcome. Please read the
+[PR template](.github/pull_request_template.md) (cost-sensitive checklist
+included) and run `mise run ci` before pushing — CI covers lint, tests, React
+typecheck, Playwright E2E, `gosec`, `govulncheck`, and Docker builds. Every
+claim in a PR needs evidence: tests run, numbers measured, docs updated.
 
-For Linux hosts, the equivalent shell helper `scripts/ops/safe-zone.sh` supports `deploy`, `deploy-dev`, and the `SAFE_ZONE_STACK=production|dev` selector for status/log/backup helpers.
+## 🙏 Credits
 
-The same actions are also available as `mise` tasks defined in [mise.toml](mise.toml).
-
-For a Linux VPS, [ops/cron/safe-zone.cron.example](ops/cron/safe-zone.cron.example) provides a ready-made cron template for daily backup and prune jobs.
-
-## Deployment Baseline
-
-- Default production target: single budget VPS
-- Preferred node: Hetzner CPX21 or equivalent 2 vCPU / 4 GB RAM
-- Budget ceiling for the baseline path: about $10/month
-- Higher tiers such as Vultr, DigitalOcean, Linode, or HA multi-node setups require explicit exception and cost justification
-
-## Optional Services
-
-- Redis is optional for local development and stays disabled unless `SAFE_ZONE_REDIS_ADDR` is set.
-- `feed-syncd` is optional and only runs when the `feed-sync` Compose profile is enabled.
-- Metrics, health checks, and the operator UI remain self-hosted; the runtime does not depend on a hosted SaaS control plane.
-
-## Notes
-
-This project remains in active development. DoT, Gemini, public TLS, DuckDNS, and production Caddy wiring are available as optional capabilities, while real-environment validation and release hardening continue.
-Roadmap decisions should follow [docs/deployment/Safe_Zone_OPEX_Estimate.md](docs/deployment/Safe_Zone_OPEX_Estimate.md) as the source of truth for cost and deployment targets.
-Cost-sensitive changes should follow [docs/specs/opex-cost-optimization/policy.md](docs/specs/opex-cost-optimization/policy.md) and the PR checklist at [.github/pull_request_template.md](.github/pull_request_template.md).
-
-## Contributors & tooling credits
-
-The following tools and organizations supported development of Safe Zone:
+Tools and organizations that supported development:
 
 - [Codex](https://github.com/codex)
 - [Google Antigravity](https://github.com/google-antigravity)
 - [Z.ai](https://github.com/zai-org)
-- [dependabot\[bot\]](https://github.com/apps/dependabot) — automated dependency update bot
+- [dependabot\[bot\]](https://github.com/apps/dependabot) — automated dependency updates
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
+MIT — see [LICENSE](LICENSE).
