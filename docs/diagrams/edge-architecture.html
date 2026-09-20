@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public edge to verdict — Safe Zone</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #FAF8F3;
+      --color-paper-2: #F4F0E8;
+      --color-ink:     #3A3530;
+      --color-muted:   #5C544B;
+      --color-accent:  #2E5A46;
+      --color-link:    #2F4A8F;
+      --color-hairline:#E3D9CB;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1200px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+
+    svg { width: 100%; min-width: 900px; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">ARCHITECTURE - SAFE ZONE</p>
+    <h1>Public edge to verdict</h1>
+
+    <svg viewBox="0 0 1000 620" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="edge-architecture-title edge-architecture-desc">
+      <title id="edge-architecture-title">Public edge to verdict</title>
+      <desc id="edge-architecture-desc">Client traffic enters through Caddy at the public edge and flows through core-api and dns-resolver to the risk.Service verdict engine backed by Redis, SQLite, and optional async enrichment.</desc>
+      <defs>
+        <marker id="edge-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5C544B"/></marker>
+        <marker id="edge-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2E5A46"/></marker>
+        <pattern id="edge-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20,0 H 0 V 20" fill="none" stroke="#E3D9CB" stroke-width="0.5" opacity="0.6"/>
+        </pattern>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#FAF8F3"/>
+      <rect width="100%" height="100%" fill="url(#edge-grid)" opacity="0.55"/>
+
+      <!-- trust-boundary zones (bg -> zones -> arrows -> nodes -> labels) -->
+      <rect x="240" y="192" width="172" height="140" rx="8" fill="#58A67A1A" stroke="#2E5A46" stroke-width="1.2" stroke-dasharray="5,4"/>
+      <rect x="464" y="96" width="484" height="388" rx="8" fill="#F4F0E8" stroke="#5C544B" stroke-opacity="0.45" stroke-width="1" stroke-dasharray="5,4"/>
+
+      <!-- arrows (orthogonal elbows, r=8) -->
+      <line x1="188" y1="262" x2="248" y2="262" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow)"/>
+      <path d="M 112,300 V 512 Q 112,520 120,520 H 568 Q 576,520 576,512 V 332" fill="none" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow)"/>
+      <path d="M 380,224 V 174 Q 380,166 388,166 H 476" fill="none" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow)"/>
+      <line x1="396" y1="286" x2="476" y2="286" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow)"/>
+      <line x1="668" y1="180" x2="712" y2="180" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow-accent)"/>
+      <path d="M 668,270 H 762 Q 770,270 770,262 V 236" fill="none" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow-accent)"/>
+      <line x1="770" y1="228" x2="770" y2="268" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow)"/>
+      <line x1="874" y1="228" x2="874" y2="268" stroke="#5C544B" stroke-width="1.2" marker-end="url(#edge-arrow)"/>
+      <path d="M 924,200 H 932 Q 940,200 940,208 V 404 Q 940,412 932,412" fill="none" stroke="#5C544B" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#edge-arrow)"/>
+
+      <!-- nodes -->
+      <g font-family="'Geist', system-ui, sans-serif">
+        <rect x="36" y="224" width="152" height="76" rx="6" fill="#FAF8F3" stroke="#5C544B" stroke-opacity="0.5" stroke-width="1.2"/>
+        <text x="112" y="252" text-anchor="middle" font-size="13" font-weight="600" fill="#3A3530">Clients</text>
+        <text x="112" y="268" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">input &#183; HTTPS / DoT</text>
+
+        <rect x="256" y="224" width="140" height="76" rx="6" fill="#FAF8F3" stroke="#5C544B" stroke-opacity="0.5" stroke-width="1.2"/>
+        <text x="326" y="248" text-anchor="middle" font-size="13" font-weight="600" fill="#3A3530">Caddy</text>
+        <text x="326" y="262" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">:80 / :443</text>
+        <text x="326" y="274" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">HTTPS + DoH routing</text>
+
+        <rect x="484" y="128" width="184" height="76" rx="6" fill="#FAF8F3" stroke="#5C544B" stroke-opacity="0.5" stroke-width="1.2"/>
+        <text x="576" y="152" text-anchor="middle" font-size="13" font-weight="600" fill="#3A3530">core-api</text>
+        <text x="576" y="166" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">:8080</text>
+        <text x="576" y="178" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">analysis API &#183; UI &#183; agent</text>
+
+        <rect x="484" y="248" width="184" height="76" rx="6" fill="#FAF8F3" stroke="#5C544B" stroke-opacity="0.5" stroke-width="1.2"/>
+        <text x="576" y="272" text-anchor="middle" font-size="13" font-weight="600" fill="#3A3530">dns-resolver</text>
+        <text x="576" y="286" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">:8081</text>
+        <text x="576" y="298" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">DoH /dns-query &#183; policy</text>
+
+        <rect x="720" y="140" width="204" height="88" rx="6" fill="#FAF8F3" stroke="#2E5A46" stroke-width="2"/>
+        <rect x="793" y="148" width="58" height="15" rx="3" fill="#2E5A46"/>
+        <text x="822" y="159" text-anchor="middle" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.12em" fill="#FAF8F3">FOCAL</text>
+        <text x="822" y="180" text-anchor="middle" font-size="14" font-weight="600" fill="#3A3530">risk.Service</text>
+        <text x="822" y="196" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">verdict + policy engine</text>
+
+        <rect x="720" y="276" width="99" height="76" rx="6" fill="#F4F0E8" stroke="#5C544B" stroke-opacity="0.5" stroke-width="1.2"/>
+        <text x="769" y="290" text-anchor="middle" font-size="6.5" font-family="'Geist Mono', monospace" letter-spacing="0.14em" fill="#5C544B">STORE</text>
+        <text x="769" y="306" text-anchor="middle" font-size="13" font-weight="600" fill="#3A3530">Redis</text>
+        <text x="769" y="320" text-anchor="middle" font-size="7" font-family="'Geist Mono', monospace" fill="#5C544B">threat feed + cache</text>
+
+        <rect x="825" y="276" width="99" height="76" rx="6" fill="#F4F0E8" stroke="#5C544B" stroke-opacity="0.5" stroke-width="1.2"/>
+        <text x="874" y="290" text-anchor="middle" font-size="6.5" font-family="'Geist Mono', monospace" letter-spacing="0.14em" fill="#5C544B">STORE</text>
+        <text x="874" y="306" text-anchor="middle" font-size="13" font-weight="600" fill="#3A3530">SQLite</text>
+        <text x="874" y="318" text-anchor="middle" font-size="7" font-family="'Geist Mono', monospace" fill="#5C544B">telemetry + overrides</text>
+        <text x="874" y="329" text-anchor="middle" font-size="7" font-family="'Geist Mono', monospace" fill="#5C544B">+ brands</text>
+
+        <rect x="720" y="384" width="204" height="68" rx="6" fill="#FAF8F3" stroke="#5C544B" stroke-opacity="0.55" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="822" y="408" text-anchor="middle" font-size="13" font-weight="600" fill="#3A3530">Enrichment</text>
+        <text x="822" y="422" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">TLS &#183; WHOIS &#183; OSINT &#183; AI</text>
+        <text x="822" y="434" text-anchor="middle" font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">optional &#183; async</text>
+      </g>
+
+      <!-- zone labels on paper masks -->
+      <rect x="281" y="196" width="90" height="14" rx="2" fill="#FAF8F3"/>
+      <text x="326" y="206" text-anchor="middle" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" fill="#5C544B">PUBLIC EDGE</text>
+      <rect x="641" y="100" width="130" height="14" rx="2" fill="#FAF8F3"/>
+      <text x="706" y="110" text-anchor="middle" font-size="7" font-family="'Geist Mono', monospace" letter-spacing="0.14em" fill="#5C544B">LOOPBACK / INTERNAL</text>
+
+      <!-- arrow labels on opaque paper masks (6-10px gaps) -->
+      <g font-size="9" font-family="'Geist Mono', monospace" fill="#2F4A8F">
+        <rect x="182" y="242" width="72" height="13" rx="2" fill="#FAF8F3"/>
+        <text x="218" y="252" text-anchor="middle">HTTPS / DoH</text>
+        <rect x="312" y="500" width="68" height="13" rx="2" fill="#FAF8F3"/>
+        <text x="346" y="510" text-anchor="middle">DoT :853</text>
+        <rect x="412" y="265" width="60" height="14" rx="2" fill="#FAF8F3"/>
+        <text x="442" y="276" text-anchor="middle">/dns-query</text>
+        <rect x="820" y="358" width="114" height="14" rx="2" fill="#F4F0E8"/>
+        <text x="932" y="369" text-anchor="end">background, fail-open</text>
+      </g>
+
+      <!-- legend: bottom strip -->
+      <g font-size="8" font-family="'Geist Mono', monospace" fill="#5C544B">
+        <rect x="36" y="544" width="912" height="38" rx="8" fill="#F4F0E8" stroke="#E3D9CB" stroke-width="1"/>
+        <line x1="52" y1="563" x2="76" y2="563" stroke="#5C544B" stroke-width="1.2"/>
+        <text x="82" y="566">sync request</text>
+        <line x1="190" y1="563" x2="214" y2="563" stroke="#5C544B" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="220" y="566">optional &#183; async &#183; fail-open</text>
+        <rect x="410" y="556" width="14" height="12" rx="2" fill="#FAF8F3" stroke="#2E5A46" stroke-width="1.5"/>
+        <text x="430" y="566">focal &#183; verdict + policy</text>
+        <rect x="588" y="556" width="20" height="12" rx="2" fill="none" stroke="#2E5A46" stroke-width="1" stroke-dasharray="5,4"/>
+        <text x="614" y="566">trust boundary</text>
+        <rect x="736" y="556" width="14" height="12" rx="2" fill="#F4F0E8" stroke="#5C544B" stroke-width="1"/>
+        <text x="756" y="566">store</text>
+      </g>
+
+    </svg>
+  </div>
+</body>
+</html>

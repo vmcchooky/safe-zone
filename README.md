@@ -86,6 +86,14 @@ Internal ports `:8080`/`:8081` stay **loopback-only** in production; only
 `80`, `443`, and `853` are published (verified — see
 [edge verification](docs/deployment/edge-verification-2026-09-20.md)).
 
+**Visual guides** (`docs/diagrams/`, self-contained HTML, Quorix skin):
+[edge architecture](docs/diagrams/edge-architecture.html) ·
+[deployment](docs/diagrams/deployment.html) ·
+[verdict pipeline](docs/diagrams/verdict-pipeline.html) ·
+[scoring](docs/diagrams/scoring.html) ·
+[DoH sequence](docs/diagrams/doh-sequence.html) ·
+[defense layers](docs/diagrams/defense-layers.html).
+
 ## 🚀 Quickstart
 
 Prerequisites: Go 1.26+ (or Docker).
@@ -231,6 +239,8 @@ claim in a PR needs evidence: tests run, numbers measured, docs updated.
 Tools and organizations that supported development:
 
 - [Codex](https://github.com/codex)
+- [OpenCode](https://opencode.ai)
+- [Kiro](https://kiro.dev)
 - [Google Antigravity](https://github.com/google-antigravity)
 - [Z.ai](https://github.com/zai-org)
 - [dependabot\[bot\]](https://github.com/apps/dependabot) — automated dependency updates
