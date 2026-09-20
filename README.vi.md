@@ -88,6 +88,14 @@ Các cổng nội bộ `:8080`/`:8081` **chỉ mở trên loopback** ở product
 ngoài chỉ thấy `80`, `443` và `853` (đã kiểm chứng — xem
 [edge verification](docs/deployment/edge-verification-2026-09-20.md)).
 
+**Sơ đồ minh họa** (`docs/diagrams/`, HTML tự chứa, skin Quorix):
+[edge architecture](docs/diagrams/edge-architecture.html) ·
+[deployment](docs/diagrams/deployment.html) ·
+[verdict pipeline](docs/diagrams/verdict-pipeline.html) ·
+[scoring](docs/diagrams/scoring.html) ·
+[DoH sequence](docs/diagrams/doh-sequence.html) ·
+[defense layers](docs/diagrams/defense-layers.html).
+
 ## 🚀 Bắt đầu nhanh
 
 Yêu cầu: Go 1.26+ (hoặc Docker).
@@ -235,6 +243,8 @@ evidence: test đã chạy, số đã đo, docs đã cập nhật.
 Các công cụ và tổ chức đã hỗ trợ phát triển:
 
 - [Codex](https://github.com/codex)
+- [OpenCode](https://opencode.ai)
+- [Kiro](https://kiro.dev)
 - [Google Antigravity](https://github.com/google-antigravity)
 - [Z.ai](https://github.com/zai-org)
 - [dependabot\[bot\]](https://github.com/apps/dependabot) — bot tự động cập nhật dependency

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>One query through the edge · Sequence</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #FAF8F3;
+      --color-paper-2: #F4F0E8;
+      --color-ink:     #3A3530;
+      --color-muted:   #5C544B;
+      --color-accent:  #2E5A46;
+      --color-link:    #2F4A8F;
+      --color-hairline:#E3D9CB;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 960px; width: 100%; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; display: block; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">SEQUENCE - DOH QUERY</p>
+    <h1>One query through the edge.</h1>
+
+    <svg viewBox="0 0 960 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="doh-sequence-title doh-sequence-desc">
+      <title id="doh-sequence-title">One query through the edge.</title>
+      <desc id="doh-sequence-desc">A DoH query travels from client through Caddy to the resolver, passes a focal policy gate, then either returns a block or uncloaks CNAMEs via upstream before answering.</desc>
+      <defs>
+        <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#5C544B"/></marker>
+        <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2E5A46"/></marker>
+        <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2F4A8F"/></marker>
+        <marker id="arrow-open" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polyline points="0 0, 8 3, 0 6" fill="none" stroke="#5C544B" stroke-width="1.2"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#FAF8F3"/>
+
+      <!-- Lifelines: Client 140 · Caddy 380 · dns-resolver 600 · Upstream 820 -->
+      <line x1="140" y1="120" x2="140" y2="528" stroke="rgba(58,53,48,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="380" y1="120" x2="380" y2="528" stroke="rgba(58,53,48,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="600" y1="120" x2="600" y2="528" stroke="rgba(58,53,48,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+      <line x1="820" y1="120" x2="820" y2="528" stroke="rgba(58,53,48,0.20)" stroke-width="1" stroke-dasharray="3,3"/>
+
+      <!-- Activation bars -->
+      <rect x="376" y="168" width="8" height="40" fill="rgba(58,53,48,0.06)" stroke="#5C544B" stroke-width="0.8"/>
+      <rect x="596" y="208" width="8" height="308" fill="rgba(58,53,48,0.06)" stroke="#5C544B" stroke-width="0.8"/>
+      <rect x="816" y="436" width="8" height="28" fill="rgba(58,53,48,0.06)" stroke="#5C544B" stroke-width="0.8"/>
+
+      <!-- M1: Client -> Caddy  POST /dns-query (DoH, TLS) -->
+      <line x1="140" y1="168" x2="376" y2="168" stroke="#2F4A8F" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <rect x="200" y="148" width="116" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="258" y="157" fill="#2F4A8F" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">POST /DNS-QUERY</text>
+
+      <!-- M2: Caddy -> dns-resolver  forward -->
+      <line x1="384" y1="208" x2="596" y2="208" stroke="#5C544B" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="458" y="188" width="64" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="490" y="197" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FORWARD</text>
+
+      <!-- M3: dns-resolver self  policy verdict (FOCAL) -->
+      <path d="M 600 248 H 632 Q 640 248 640 256 V 264 Q 640 272 632 272 H 600" fill="none" stroke="#2E5A46" stroke-width="1.4" marker-end="url(#arrow-accent)"/>
+      <rect x="648" y="254" width="104" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="652" y="263" fill="#2E5A46" font-size="8" font-family="'Geist Mono', monospace" text-anchor="start" letter-spacing="0.06em">POLICY VERDICT</text>
+
+      <!-- ALT fragment: x96 y280 w768 h212 -->
+      <rect x="96" y="280" width="768" height="212" rx="4" fill="rgba(58,53,48,0.02)" stroke="rgba(58,53,48,0.22)" stroke-width="1"/>
+      <rect x="96" y="280" width="40" height="16" rx="2" fill="#FAF8F3" stroke="rgba(58,53,48,0.22)" stroke-width="1"/>
+      <text x="116" y="292" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.12em">ALT</text>
+
+      <!-- Region 1 guard -->
+      <text x="108" y="308" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[block: sinkhole / NXDOMAIN / refused / nullip]</text>
+
+      <!-- M4a: dns-resolver -> Client  sinkhole return -->
+      <line x1="596" y1="332" x2="148" y2="332" stroke="#5C544B" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <rect x="338" y="312" width="68" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="372" y="321" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">SINKHOLE</text>
+
+      <!-- alt divider -->
+      <line x1="104" y1="360" x2="856" y2="360" stroke="rgba(58,53,48,0.20)" stroke-width="1" stroke-dasharray="4,3"/>
+
+      <!-- Region 2 guard -->
+      <text x="108" y="384" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.04em">[allow: CNAME uncloak ≤ 8 → upstream]</text>
+
+      <!-- M4b self: CNAME uncloak -->
+      <path d="M 600 408 H 632 Q 640 408 640 416 V 424 Q 640 432 632 432 H 600" fill="none" stroke="#5C544B" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="648" y="412" width="84" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="652" y="421" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="start" letter-spacing="0.06em">UNCLOAK ≤8</text>
+
+      <!-- M4b forward: dns-resolver -> Upstream -->
+      <line x1="604" y1="436" x2="816" y2="436" stroke="#5C544B" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <rect x="678" y="416" width="64" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="710" y="425" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">FORWARD</text>
+
+      <!-- M4b response: Upstream -> dns-resolver  Cache-Control: private -->
+      <line x1="816" y1="464" x2="604" y2="464" stroke="#5C544B" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <rect x="658" y="444" width="104" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="710" y="453" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">CACHE: PRIVATE</text>
+
+      <!-- M5: dns-resolver -> Client  DNS answer -->
+      <line x1="596" y1="516" x2="148" y2="516" stroke="#5C544B" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <rect x="330" y="496" width="84" height="12" rx="2" fill="#FAF8F3"/>
+      <text x="372" y="505" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.06em">DNS ANSWER</text>
+
+      <!-- Actor boxes drawn after arrows -->
+      <!-- Client -->
+      <rect x="68" y="64" width="144" height="56" rx="6" fill="#FAF8F3"/>
+      <rect x="68" y="64" width="144" height="56" rx="6" fill="rgba(92,84,75,0.10)" stroke="#5C544B" stroke-width="1" stroke-opacity="0.5"/>
+      <rect x="76" y="70" width="40" height="12" rx="2" fill="none" stroke="#5C544B" stroke-opacity="0.4" stroke-width="0.8"/>
+      <text x="96" y="79" fill="#5C544B" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">USER</text>
+      <text x="140" y="98" fill="#3A3530" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Client</text>
+      <text x="140" y="112" fill="#5C544B" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">DoH · TLS</text>
+
+      <!-- Caddy -->
+      <rect x="308" y="64" width="144" height="56" rx="6" fill="#FAF8F3"/>
+      <rect x="308" y="64" width="144" height="56" rx="6" fill="#FFFFFF" stroke="#3A3530" stroke-width="1"/>
+      <rect x="316" y="70" width="40" height="12" rx="2" fill="none" stroke="#3A3530" stroke-opacity="0.3" stroke-width="0.8"/>
+      <text x="336" y="79" fill="#5C544B" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EDGE</text>
+      <text x="380" y="98" fill="#3A3530" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Caddy</text>
+      <text x="380" y="112" fill="#5C544B" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">:443 · proxy</text>
+
+      <!-- dns-resolver (FOCAL) -->
+      <rect x="528" y="64" width="144" height="56" rx="6" fill="#FAF8F3"/>
+      <rect x="528" y="64" width="144" height="56" rx="6" fill="#58A67A1A" stroke="#2E5A46" stroke-width="1"/>
+      <rect x="536" y="70" width="52" height="12" rx="2" fill="none" stroke="#2E5A46" stroke-opacity="0.5" stroke-width="0.8"/>
+      <text x="562" y="79" fill="#2E5A46" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">POLICY</text>
+      <text x="600" y="98" fill="#3A3530" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">dns-resolver</text>
+      <text x="600" y="112" fill="#5C544B" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">policy gate</text>
+
+      <!-- Upstream -->
+      <rect x="748" y="64" width="144" height="56" rx="6" fill="#FAF8F3"/>
+      <rect x="748" y="64" width="144" height="56" rx="6" fill="rgba(58,53,48,0.03)" stroke="rgba(58,53,48,0.30)" stroke-width="1"/>
+      <rect x="756" y="70" width="32" height="12" rx="2" fill="none" stroke="rgba(58,53,48,0.30)" stroke-width="0.8"/>
+      <text x="772" y="79" fill="#5C544B" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXT</text>
+      <text x="820" y="98" fill="#3A3530" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Upstream</text>
+      <text x="820" y="112" fill="#5C544B" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">recursive</text>
+
+      <!-- Legend -->
+      <line x1="40" y1="540" x2="920" y2="540" stroke="rgba(58,53,48,0.10)" stroke-width="0.8"/>
+      <text x="40" y="556" fill="#5C544B" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <rect x="40" y="564" width="14" height="10" rx="2" fill="#58A67A1A" stroke="#2E5A46" stroke-width="1"/>
+      <text x="60" y="572" fill="#5C544B" font-size="8.5" font-family="'Geist', sans-serif">Focal · policy gate</text>
+
+      <rect x="200" y="562" width="28" height="14" rx="2" fill="rgba(58,53,48,0.02)" stroke="rgba(58,53,48,0.22)" stroke-width="1"/>
+      <text x="214" y="572" fill="#5C544B" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle">ALT</text>
+      <text x="234" y="572" fill="#5C544B" font-size="8.5" font-family="'Geist', sans-serif">Fragment</text>
+
+      <line x1="320" y1="569" x2="348" y2="569" stroke="#2F4A8F" stroke-width="1.2" marker-end="url(#arrow-link)"/>
+      <text x="356" y="572" fill="#5C544B" font-size="8.5" font-family="'Geist', sans-serif">DoH call</text>
+
+      <line x1="448" y1="569" x2="476" y2="569" stroke="#5C544B" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <text x="484" y="572" fill="#5C544B" font-size="8.5" font-family="'Geist', sans-serif">Forward</text>
+
+      <line x1="568" y1="569" x2="596" y2="569" stroke="#5C544B" stroke-width="1.2" stroke-dasharray="5,4" marker-end="url(#arrow)"/>
+      <text x="604" y="572" fill="#5C544B" font-size="8.5" font-family="'Geist', sans-serif">Return</text>
+    </svg>
+  </div>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>From query to verdict</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Noto+Serif:ital@0;1&family=Noto+Sans+KR:wght@400;500;600&family=Noto+Serif+KR:wght@400&family=Noto+Sans+TC:wght@400;500;600&family=Noto+Serif+TC:wght@400&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #FAF8F3;
+      --color-paper-2: #F4F0E8;
+      --color-ink:     #3A3530;
+      --color-muted:   #5C544B;
+      --color-accent:  #2E5A46;
+      --color-accent-tint: #58A67A1A;
+      --color-link:    #2F4A8F;
+      --color-hairline: #E3D9CB;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', 'Noto Serif', 'Noto Serif KR', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+
+    .frame { max-width: 1088px; width: 100%; }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.66rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.5rem, 2.4vw + 0.75rem, 2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 0.5rem;
+    }
+
+    .deck {
+      font-family: var(--font-sans);
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: var(--color-muted);
+      margin-bottom: 1.5rem;
+      max-width: 72ch;
+    }
+
+    svg { width: 100%; height: auto; display: block; }
+    svg text { user-select: none; }
+    .nm { font-family: 'Geist', system-ui, sans-serif; }
+    .mo { font-family: 'Geist Mono', ui-monospace, monospace; }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <p class="eyebrow">DATA FLOW - DECISION ENGINE</p>
+    <h1>From query to verdict</h1>
+    <p class="deck">A DNS query travels eight ordered stages from query to verdict while async enrichment promotes only with corroboration.</p>
+
+    <svg viewBox="0 0 1088 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="verdict-pipeline-title verdict-pipeline-desc">
+      <title id="verdict-pipeline-title">From query to verdict</title>
+      <desc id="verdict-pipeline-desc">A DNS query travels eight ordered stages from query to verdict while async enrichment promotes only with corroboration.</desc>
+      <defs>
+        <pattern id="verdict-dots" width="20" height="20" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.9" fill="#3A3530" opacity="0.10"/>
+        </pattern>
+        <marker id="verdict-arr-muted" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#5C544B"/></marker>
+        <marker id="verdict-arr-accent" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 Z" fill="#2E5A46"/></marker>
+      </defs>
+
+      <rect width="1088" height="512" fill="#FAF8F3"/>
+      <rect width="1088" height="512" fill="url(#verdict-dots)"/>
+
+      <!-- ============ STEP HEADERS 01..08 ============ -->
+      <g>
+        <rect x="62" y="8" width="40" height="16" rx="8" fill="#3A3530" opacity="0.12"/>
+        <text class="mo" x="82" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#3A3530">01</text>
+        <text class="mo" x="82" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">QUERY</text>
+
+        <rect x="194" y="8" width="40" height="16" rx="8" fill="#3A3530" opacity="0.12"/>
+        <text class="mo" x="214" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#3A3530">02</text>
+        <text class="mo" x="214" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">IDENTITY</text>
+
+        <rect x="326" y="8" width="40" height="16" rx="8" fill="#3A3530" opacity="0.12"/>
+        <text class="mo" x="346" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#3A3530">03</text>
+        <text class="mo" x="346" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">OVERRIDE</text>
+
+        <rect x="458" y="8" width="40" height="16" rx="8" fill="#3A3530" opacity="0.12"/>
+        <text class="mo" x="478" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#3A3530">04</text>
+        <text class="mo" x="478" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">THREAT FEED</text>
+
+        <rect x="590" y="8" width="40" height="16" rx="8" fill="#3A3530" opacity="0.12"/>
+        <text class="mo" x="610" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#3A3530">05</text>
+        <text class="mo" x="610" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">LEXICAL</text>
+
+        <rect x="722" y="8" width="40" height="16" rx="8" fill="#3A3530" opacity="0.12"/>
+        <text class="mo" x="742" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#3A3530">06</text>
+        <text class="mo" x="742" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">DOMAIN ML</text>
+
+        <rect x="854" y="8" width="40" height="16" rx="8" fill="#2E5A46"/>
+        <text class="mo" x="874" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#FAF8F3">07</text>
+        <text class="mo" x="874" y="40" text-anchor="middle" font-size="9" font-weight="600" fill="#2E5A46">APPLY POLICY</text>
+
+        <rect x="986" y="8" width="40" height="16" rx="8" fill="#3A3530" opacity="0.12"/>
+        <text class="mo" x="1006" y="20" text-anchor="middle" font-size="9" font-weight="600" fill="#3A3530">08</text>
+        <text class="mo" x="1006" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">OUTCOME</text>
+      </g>
+
+      <!-- ============ ARROWS (before nodes, z-order) ============ -->
+      <g fill="none">
+        <!-- sync handoffs -->
+        <line x1="140" y1="126" x2="152" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="272" y1="126" x2="284" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="404" y1="126" x2="416" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="536" y1="126" x2="548" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="668" y1="126" x2="680" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <!-- focal handoff: Domain ML -> ApplyPolicy -->
+        <line x1="800" y1="126" x2="812" y2="126" stroke="#2E5A46" stroke-width="1.5" marker-end="url(#verdict-arr-accent)"/>
+        <line x1="932" y1="126" x2="944" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <!-- async feeds: Enrichment -> Lexical (vertical) -->
+        <line x1="610" y1="258" x2="610" y2="176" stroke="#5C544B" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#verdict-arr-muted)"/>
+        <!-- async feed: Enrichment -> Outcome (orthogonal elbow, r=8) -->
+        <path d="M724,300 L998,300 Q1006,300 1006,292 L1006,176" stroke="#5C544B" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#verdict-arr-muted)"/>
+      </g>
+
+      <!-- masked arrow labels -->
+      <g>
+        <rect x="764" y="100" width="88" height="16" rx="4" fill="#FAF8F3"/>
+        <text class="mo" x="808" y="112" text-anchor="middle" font-size="8" font-weight="600" fill="#2E5A46">scored domain</text>
+        <rect x="800" y="280" width="120" height="16" rx="4" fill="#FAF8F3"/>
+        <text class="mo" x="860" y="292" text-anchor="middle" font-size="8" font-weight="500" fill="#5C544B">corroborated only</text>
+      </g>
+
+      <!-- ============ SYNC DECISION RAIL ============ -->
+      <g>
+        <rect x="16" y="52" width="1056" height="144" rx="8" fill="#F4F0E8" stroke="#E3D9CB" stroke-width="1"/>
+        <rect x="28" y="60" width="132" height="16" rx="4" fill="#FAF8F3"/>
+        <text class="mo" x="94" y="72" text-anchor="middle" font-size="8" font-weight="600" letter-spacing="1.5" fill="#5C544B">SYNC DECISION RAIL</text>
+      </g>
+
+      <!-- ============ STAGE NODES ============ -->
+      <g text-anchor="middle">
+        <g>
+          <rect x="24" y="84" width="116" height="84" rx="8" fill="#FAF8F3" stroke="#E3D9CB" stroke-width="1"/>
+          <text class="nm" x="82" y="108" font-size="11" font-weight="600" fill="#3A3530">Query</text>
+          <text class="mo" x="82" y="126" font-size="8" fill="#5C544B">domain</text>
+          <text class="mo" x="82" y="140" font-size="8" fill="#5C544B">qname · qtype in</text>
+          <text class="mo" x="82" y="156" font-size="7.5" fill="#2F4A8F">DNS query entry</text>
+        </g>
+        <g>
+          <rect x="156" y="84" width="116" height="84" rx="8" fill="#FAF8F3" stroke="#E3D9CB" stroke-width="1"/>
+          <text class="nm" x="214" y="108" font-size="11" font-weight="600" fill="#3A3530">Identity</text>
+          <text class="mo" x="214" y="126" font-size="8" fill="#5C544B">normalize</text>
+          <text class="mo" x="214" y="140" font-size="8" fill="#5C544B">lower · trim · punycode</text>
+          <text class="mo" x="214" y="156" font-size="7.5" fill="#2F4A8F">canonical domain</text>
+        </g>
+        <g>
+          <rect x="288" y="84" width="116" height="84" rx="8" fill="#FAF8F3" stroke="#E3D9CB" stroke-width="1"/>
+          <text class="nm" x="346" y="108" font-size="11" font-weight="600" fill="#3A3530">Override</text>
+          <text class="mo" x="346" y="126" font-size="8" fill="#5C544B">scope-explicit</text>
+          <text class="mo" x="346" y="140" font-size="8" fill="#5C544B">exact scope wins</text>
+          <text class="mo" x="346" y="156" font-size="7.5" fill="#2F4A8F">manual allow/block</text>
+        </g>
+        <g>
+          <rect x="420" y="84" width="116" height="84" rx="8" fill="#FAF8F3" stroke="#E3D9CB" stroke-width="1"/>
+          <text class="nm" x="478" y="108" font-size="11" font-weight="600" fill="#3A3530">Threat feed</text>
+          <text class="mo" x="478" y="126" font-size="8" fill="#5C544B">exact vs parent</text>
+          <text class="mo" x="478" y="140" font-size="8" fill="#5C544B">feed hit · revision</text>
+          <text class="mo" x="478" y="156" font-size="7.5" fill="#2F4A8F">intel match</text>
+        </g>
+        <g>
+          <rect x="552" y="84" width="116" height="84" rx="8" fill="#FAF8F3" stroke="#E3D9CB" stroke-width="1"/>
+          <text class="nm" x="610" y="108" font-size="11" font-weight="600" fill="#3A3530">Lexical</text>
+          <text class="mo" x="610" y="126" font-size="8" fill="#5C544B">brand · typo · DGA</text>
+          <text class="mo" x="610" y="140" font-size="8" fill="#5C544B">score + reasons</text>
+          <text class="mo" x="610" y="156" font-size="7.5" fill="#2F4A8F">heuristic signal</text>
+        </g>
+        <g opacity="0.8">
+          <rect x="684" y="84" width="116" height="84" rx="8" fill="#FAF8F3" stroke="#5C544B" stroke-width="1" stroke-dasharray="4 3"/>
+          <text class="nm" x="742" y="108" font-size="11" font-weight="600" fill="#5C544B">Domain ML</text>
+          <text class="mo" x="742" y="126" font-size="8" fill="#5C544B">disabled · shadow</text>
+          <text class="mo" x="742" y="140" font-size="8" fill="#5C544B">scores, never enforces</text>
+          <text class="mo" x="742" y="156" font-size="7.5" fill="#5C544B">SHADOW ONLY</text>
+        </g>
+        <g>
+          <rect x="816" y="84" width="116" height="84" rx="8" fill="#58A67A1A" stroke="#2E5A46" stroke-width="1.5"/>
+          <rect x="850" y="76" width="48" height="15" rx="7" fill="#2E5A46"/>
+          <text class="mo" x="874" y="87" font-size="7.5" font-weight="600" fill="#FAF8F3">FOCAL</text>
+          <text class="nm" x="874" y="110" font-size="11" font-weight="600" fill="#3A3530">ApplyPolicy</text>
+          <text class="mo" x="874" y="128" font-size="8" fill="#3A3530">action + category</text>
+          <text class="mo" x="874" y="142" font-size="8" fill="#5C544B">policy decision</text>
+          <text class="mo" x="874" y="156" font-size="7.5" fill="#2F4A8F">binding verdict input</text>
+        </g>
+        <g>
+          <rect x="948" y="84" width="116" height="84" rx="8" fill="#FAF8F3" stroke="#E3D9CB" stroke-width="1"/>
+          <text class="nm" x="1006" y="108" font-size="11" font-weight="600" fill="#3A3530">Outcome</text>
+          <text class="mo" x="1006" y="126" font-size="8" fill="#5C544B">verdict + DNS action</text>
+          <text class="mo" x="1006" y="140" font-size="8" fill="#5C544B">SAFE · SUSP · MAL</text>
+          <text class="mo" x="1006" y="156" font-size="7.5" fill="#2F4A8F">allow · block · sinkhole</text>
+        </g>
+      </g>
+
+      <!-- ============ ASYNC SIDE-LANE ============ -->
+      <g>
+        <rect x="16" y="228" width="1056" height="132" rx="8" fill="none" stroke="#E3D9CB" stroke-width="1" stroke-dasharray="6 4"/>
+        <rect x="28" y="236" width="228" height="16" rx="4" fill="#FAF8F3"/>
+        <text class="mo" x="142" y="248" text-anchor="middle" font-size="8" font-weight="600" letter-spacing="1.5" fill="#5C544B">ASYNC SIDE-LANE · DASHED</text>
+        <g text-anchor="middle">
+          <rect x="500" y="262" width="220" height="76" rx="8" fill="#FAF8F3" stroke="#5C544B" stroke-width="1" stroke-dasharray="4 3"/>
+          <text class="nm" x="610" y="286" font-size="11" font-weight="600" fill="#3A3530">Enrichment</text>
+          <text class="mo" x="610" y="304" font-size="8" fill="#5C544B">TLS · WHOIS</text>
+          <text class="mo" x="610" y="320" font-size="8" fill="#5C544B">promotes only with corroboration</text>
+        </g>
+      </g>
+
+      <!-- ============ BOTTOM LEGEND ============ -->
+      <g>
+        <line x1="16" y1="384" x2="1072" y2="384" stroke="#E3D9CB" stroke-width="1"/>
+        <text class="mo" x="28" y="412" font-size="8" font-weight="600" letter-spacing="1.5" fill="#5C544B">FLOW</text>
+        <line x1="100" y1="408" x2="140" y2="408" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <text class="mo" x="148" y="412" font-size="8" fill="#5C544B">sync handoff</text>
+        <line x1="260" y1="408" x2="300" y2="408" stroke="#2E5A46" stroke-width="1.5" marker-end="url(#verdict-arr-accent)"/>
+        <text class="mo" x="308" y="412" font-size="8" fill="#5C544B">focal handoff</text>
+        <line x1="428" y1="408" x2="468" y2="408" stroke="#5C544B" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#verdict-arr-muted)"/>
+        <text class="mo" x="476" y="412" font-size="8" fill="#5C544B">async enrichment</text>
+
+        <text class="mo" x="28" y="444" font-size="8" font-weight="600" letter-spacing="1.5" fill="#5C544B">NODES</text>
+        <rect x="100" y="432" width="28" height="16" rx="4" fill="#58A67A1A" stroke="#2E5A46" stroke-width="1.5"/>
+        <text class="mo" x="136" y="444" font-size="8" fill="#5C544B">ApplyPolicy = focal decision</text>
+        <rect x="332" y="432" width="28" height="16" rx="4" fill="#FAF8F3" stroke="#5C544B" stroke-width="1" stroke-dasharray="4 3"/>
+        <text class="mo" x="368" y="444" font-size="8" fill="#5C544B">Domain ML = disabled · shadow</text>
+
+        <text class="mo" x="28" y="476" font-size="8" font-weight="600" letter-spacing="1.5" fill="#5C544B">CUTS</text>
+        <text class="mo" x="100" y="476" font-size="8" fill="#5C544B">Cut for budget: whitelist · adblock · group substages omitted (no enforcement change)</text>
+      </g>
+    </svg>
+  </div>
+</body>
+</html>
