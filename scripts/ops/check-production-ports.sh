@@ -1,7 +1,39 @@
 #!/usr/bin/env sh
 set -eu
 
-target="${1:-}"
+target=""
+evidence_dir=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --evidence-dir)
+      evidence_dir="${2:-}"
+      shift 2
+      ;;
+    -h|--help)
+      cat <<'USAGE'
+Usage: check-production-ports.sh [target] [--evidence-dir <path>]
+
+  No arguments: audit listeners, health, firewall, container bindings
+  and the DoT certificate on this host.
+  target: also probe public/internal ports on a remote host.
+  --evidence-dir: retain the full run output under <path>/run.log.
+USAGE
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      printf 'ERROR: unknown option: %s\n' "$1" >&2
+      exit 2
+      ;;
+    *)
+      target="$1"
+      shift
+      ;;
+  esac
+done
 health_core="http://127.0.0.1:8080/healthz"
 health_dns="http://127.0.0.1:8081/healthz"
 internal_ports="8080 8081 6379 11434"
@@ -199,6 +231,119 @@ run_local_audit() {
   for port in $internal_ports; do
     audit_local_port "$tool" "$port"
   done
+
+  section "Host Firewall (UFW)"
+  audit_ufw
+
+  section "Container Bindings"
+  audit_docker_bindings
+
+  section "DoT Certificate (informational)"
+  audit_dot_cert
+}
+
+# ufw needs root; prefer passwordless sudo, non-interactive only (sudo -n
+# never prompts, so this cannot hang waiting for input).
+ufw_status() {
+  if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+    sudo -n ufw status numbered
+  else
+    ufw status numbered
+  fi
+}
+
+audit_ufw() {
+  if ! command -v ufw >/dev/null 2>&1; then
+    warn "ufw not installed; firewall state unverifiable on this host"
+    return
+  fi
+  rules="$(ufw_status 2>&1)" || {
+    warn "ufw status unreadable (needs root without passwordless sudo)"
+    return
+  }
+  case "$rules" in
+    *'Status: active'*) pass "ufw active" ;;
+    *) fail "ufw not active"; return ;;
+  esac
+  for port in 22 80 443 853; do
+    if printf '%s\n' "$rules" | grep -Eq "ALLOW.*${port}/tcp|${port}/tcp.*ALLOW"; then
+      pass "ufw allows ${port}/tcp"
+    else
+      fail "ufw missing allow for ${port}/tcp"
+    fi
+  done
+  # Any ALLOW outside the intended set is a violation, not a warning:
+  # unexpected holes are exactly what RB-1 guards against.
+  if printf '%s\n' "$rules" | grep 'ALLOW' | grep -vE '22/tcp|80/tcp|443/tcp|853/tcp' | grep -q .; then
+    fail "ufw has ALLOW rules outside 22/80/443/853"
+  else
+    pass "no ufw ALLOW outside 22/80/443/853"
+  fi
+}
+
+compose_container() {
+  # Match "<project>-<service>-1" regardless of compose project name.
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -E "(^|[-_])$1-1\$" | head -n 1
+}
+
+audit_docker_bindings() {
+  if ! command -v docker >/dev/null 2>&1; then
+    warn "docker not available; container bindings unverifiable"
+    return
+  fi
+  api="$(compose_container 'core-api')"
+  dns="$(compose_container 'dns-resolver')"
+  caddy="$(compose_container 'caddy')"
+  redis="$(compose_container 'redis')"
+  if [ -z "$api$dns$caddy$redis" ]; then
+    warn "Safe Zone containers not found; bindings unchecked"
+    return
+  fi
+  case "$(docker port "$api" 2>/dev/null)" in
+    *127.0.0.1:8080*) pass "core-api published on 127.0.0.1:8080" ;;
+    *) fail "core-api not on 127.0.0.1:8080" ;;
+  esac
+  dns_ports="$(docker port "$dns" 2>/dev/null)"
+  case "$dns_ports" in
+    *127.0.0.1:8081*) pass "dns-resolver published on 127.0.0.1:8081" ;;
+    *) fail "dns-resolver not on 127.0.0.1:8081" ;;
+  esac
+  case "$dns_ports" in
+    *0.0.0.0:853*|*'[::]:853'*) pass "dns-resolver publishes DoT 853" ;;
+    *) fail "dns-resolver does not publish DoT 853" ;;
+  esac
+  if [ -z "$(docker port "$redis" 2>/dev/null | tr -d '[:space:]')" ]; then
+    pass "redis publishes no ports"
+  else
+    fail "redis publishes ports"
+  fi
+  caddy_ports="$(docker port "$caddy" 2>/dev/null)"
+  case "$caddy_ports" in
+    *'0.0.0.0:80'*|*'[::]:80'*) pass "caddy publishes 80" ;;
+    *) fail "caddy does not publish 80" ;;
+  esac
+  case "$caddy_ports" in
+    *'0.0.0.0:443'*|*'[::]:443'*) pass "caddy publishes 443" ;;
+    *) fail "caddy does not publish 443" ;;
+  esac
+  case "$caddy_ports" in
+    *'0.0.0.0:2019'*|*'[::]:2019'*) fail "caddy admin 2019 published (must stay internal)" ;;
+    *) pass "caddy admin 2019 not published" ;;
+  esac
+}
+
+audit_dot_cert() {
+  if ! command -v openssl >/dev/null 2>&1; then
+    warn "openssl missing; DoT cert unchecked"
+    return
+  fi
+  out="$(printf '' | openssl s_client -connect 127.0.0.1:853 -servername localhost 2>&1)" || {
+    warn "DoT handshake on 127.0.0.1:853 failed"
+    return
+  }
+  subject="$(printf '%s\n' "$out" | grep -m1 'subject=' || true)"
+  issuer="$(printf '%s\n' "$out" | grep -m1 'issuer=' || true)"
+  ok "DoT cert ${subject} ${issuer}"
 }
 
 probe_with_nc() {
@@ -359,10 +504,25 @@ print_summary_and_exit() {
   exit 1
 }
 
-if [ -n "$target" ]; then
-  run_remote_scan "$target"
-else
-  run_local_audit
+main() {
+  if [ -n "$target" ]; then
+    run_remote_scan "$target"
+  else
+    run_local_audit
+  fi
+  print_summary_and_exit
+}
+
+if [ -n "$evidence_dir" ]; then
+  mkdir -p "$evidence_dir" || {
+    printf 'ERROR: cannot create evidence dir %s\n' "$evidence_dir" >&2
+    exit 2
+  }
+  # Subshell so print_summary_and_exit's exit code is captured, not acted on.
+  ( main ) >"$evidence_dir/run.log" 2>&1
+  status=$?
+  cat "$evidence_dir/run.log"
+  exit $status
 fi
 
-print_summary_and_exit
+main
