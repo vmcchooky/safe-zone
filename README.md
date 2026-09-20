@@ -1,5 +1,4 @@
 <div align="center">
-  <img src="ui/public/favicon.svg" width="96" alt="Safe Zone logo">
   <h1>Safe Zone</h1>
   <p><strong>DNS-level anti-phishing for Vietnam.</strong></p>
   <p>
