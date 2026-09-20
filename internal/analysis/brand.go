@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -92,15 +93,26 @@ func DefaultTrustedBrands() []Brand {
 }
 
 type MemoryBrandStore struct {
-	mu     sync.RWMutex
-	nextID int64
-	items  []Brand
+	mu       sync.RWMutex
+	nextID   int64
+	items    []Brand
+	snapshot atomic.Pointer[memoryBrandSnapshot]
+}
+
+// memoryBrandSnapshot is one immutable publication of the brand list.
+// Readers share it without cloning and without locks; writers rebuild and
+// swap. Callers MUST treat the returned slice as read-only.
+type memoryBrandSnapshot struct {
+	items []Brand
 }
 
 func NewMemoryBrandStore(brands []Brand) *MemoryBrandStore {
 	store := &MemoryBrandStore{nextID: 1}
 	for _, brand := range brands {
 		brand = normalizeBrandRecord(brand)
+		// Own the array: the fast path above may alias the caller's
+		// slice, and snapshots published below are shared read-only.
+		brand.AltDomains = append([]string(nil), brand.AltDomains...)
 		if brand.ID == 0 {
 			brand.ID = store.nextID
 			store.nextID++
@@ -109,16 +121,30 @@ func NewMemoryBrandStore(brands []Brand) *MemoryBrandStore {
 		}
 		store.items = append(store.items, brand)
 	}
+	store.publishLocked()
 	return store
+}
+
+// publishLocked swaps in a fresh immutable snapshot. Callers must hold mu
+// (writers) or call it from construction where no readers exist yet.
+func (s *MemoryBrandStore) publishLocked() {
+	s.snapshot.Store(&memoryBrandSnapshot{items: cloneBrands(s.items)})
+}
+
+// detachLocked gives writers a private backing array so published
+// snapshots (which share the old array) are never mutated in place.
+func (s *MemoryBrandStore) detachLocked() {
+	s.items = append([]Brand(nil), s.items...)
 }
 
 func (s *MemoryBrandStore) ListBrands(_ context.Context) ([]Brand, error) {
 	if s == nil {
 		return DefaultTrustedBrands(), nil
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneBrands(s.items), nil
+	if snap := s.snapshot.Load(); snap != nil {
+		return snap.items, nil
+	}
+	return DefaultTrustedBrands(), nil
 }
 
 func (s *MemoryBrandStore) GetBrand(_ context.Context, id int64) (Brand, error) {
@@ -144,7 +170,10 @@ func (s *MemoryBrandStore) CreateBrand(_ context.Context, brand Brand) (Brand, e
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	brand.CreatedAt = now
 	brand.UpdatedAt = now
+	brand.AltDomains = append([]string(nil), brand.AltDomains...)
+	s.detachLocked()
 	s.items = append(s.items, brand)
+	s.publishLocked()
 	return cloneBrand(brand), nil
 }
 
@@ -160,7 +189,10 @@ func (s *MemoryBrandStore) UpdateBrand(_ context.Context, id int64, brand Brand)
 			updated.ID = id
 			updated.CreatedAt = s.items[i].CreatedAt
 			updated.UpdatedAt = time.Now().UTC().Format(time.RFC3339Nano)
+			updated.AltDomains = append([]string(nil), updated.AltDomains...)
+			s.detachLocked()
 			s.items[i] = updated
+			s.publishLocked()
 			return cloneBrand(updated), nil
 		}
 	}
@@ -175,7 +207,9 @@ func (s *MemoryBrandStore) DeleteBrand(_ context.Context, id int64) error {
 	defer s.mu.Unlock()
 	for i := range s.items {
 		if s.items[i].ID == id {
+			s.detachLocked()
 			s.items = append(s.items[:i], s.items[i+1:]...)
+			s.publishLocked()
 			return nil
 		}
 	}
@@ -242,6 +276,65 @@ func LevenshteinDistance(s1, s2 string) int {
 			column[y] = minInt(column[y]+1, column[y-1]+1, lastkey+incr)
 			lastkey = oldkey
 		}
+	}
+	return column[len1]
+}
+
+// LevenshteinDistanceCapped computes the edit distance but stops early:
+// it returns the exact distance when it does not exceed cap, otherwise
+// cap+1. Any path through the DP grid crosses every row with non-negative
+// edge costs, so a row whose minimum already exceeds cap proves the final
+// distance does too. Callers comparing against a threshold maxDist must
+// pass cap >= maxDist; the result is then interchangeable with
+// LevenshteinDistance for that comparison.
+func LevenshteinDistanceCapped(s1, s2 string, limit int) int {
+	r1, r2 := []rune(s1), []rune(s2)
+	len1, len2 := len(r1), len(r2)
+
+	if len1 == 0 {
+		return len2
+	}
+	if len2 == 0 {
+		return len1
+	}
+
+	ptr := intSlicePool.Get().(*[]int)
+	column := *ptr
+	if cap(column) < len1+1 {
+		column = make([]int, len1+1)
+	} else {
+		column = column[:len1+1]
+	}
+	defer func() {
+		*ptr = column
+		intSlicePool.Put(ptr)
+	}()
+	for y := 1; y <= len1; y++ {
+		column[y] = y
+	}
+
+	for x := 1; x <= len2; x++ {
+		column[0] = x
+		lastkey := x - 1
+		rowMin := x
+		for y := 1; y <= len1; y++ {
+			oldkey := column[y]
+			incr := 0
+			if r1[y-1] != r2[x-1] {
+				incr = 1
+			}
+			column[y] = minInt(column[y]+1, column[y-1]+1, lastkey+incr)
+			if column[y] < rowMin {
+				rowMin = column[y]
+			}
+			lastkey = oldkey
+		}
+		if rowMin > limit {
+			return limit + 1
+		}
+	}
+	if column[len1] > limit {
+		return limit + 1
 	}
 	return column[len1]
 }
@@ -598,6 +691,72 @@ func WeightedLevenshteinDistance(s1, s2 string) float64 {
 	return dp[len1]
 }
 
+// WeightedLevenshteinDistanceCapped is the early-exit variant of
+// WeightedLevenshteinDistance with the same row-minimum argument as
+// LevenshteinDistanceCapped: exact result at or below cap, cap+1.0 above.
+// Callers comparing against a threshold must pass cap >= that threshold.
+func WeightedLevenshteinDistanceCapped(s1, s2 string, limit float64) float64 {
+	r1, r2 := []rune(s1), []rune(s2)
+	len1, len2 := len(r1), len(r2)
+
+	if len1 == 0 {
+		return float64(len2)
+	}
+	if len2 == 0 {
+		return float64(len1)
+	}
+
+	ptr := floatSlicePool.Get().(*[]float64)
+	dp := *ptr
+	if cap(dp) < len1+1 {
+		dp = make([]float64, len1+1)
+	} else {
+		dp = dp[:len1+1]
+	}
+	defer func() {
+		*ptr = dp
+		floatSlicePool.Put(ptr)
+	}()
+	for y := 1; y <= len1; y++ {
+		dp[y] = float64(y)
+	}
+
+	for x := 1; x <= len2; x++ {
+		dp[0] = float64(x)
+		lastkey := float64(x - 1)
+		rowMin := float64(x)
+		for y := 1; y <= len1; y++ {
+			oldkey := dp[y]
+			incr := 1.0
+			if r1[y-1] == r2[x-1] {
+				incr = 0.0
+			} else {
+				c1 := r1[y-1]
+				c2 := r2[x-1]
+				c1Low := unicode.ToLower(c1)
+				c2Low := unicode.ToLower(c2)
+				if adj, ok := keyboardAdjacency[c1Low]; ok && strings.ContainsRune(adj, c2Low) {
+					incr = 0.5
+				} else if adj2, ok2 := keyboardAdjacency[c2Low]; ok2 && strings.ContainsRune(adj2, c1Low) {
+					incr = 0.5
+				}
+			}
+			dp[y] = minFloat(dp[y]+1.0, dp[y-1]+1.0, lastkey+incr)
+			if dp[y] < rowMin {
+				rowMin = dp[y]
+			}
+			lastkey = oldkey
+		}
+		if rowMin > limit {
+			return limit + 1.0
+		}
+	}
+	if dp[len1] > limit {
+		return limit + 1.0
+	}
+	return dp[len1]
+}
+
 func minFloat(a, b, c float64) float64 {
 	if a < b {
 		if a < c {
@@ -612,6 +771,19 @@ func minFloat(a, b, c float64) float64 {
 }
 
 func normalizeBrandRecord(brand Brand) Brand {
+	// Fast path: records already at rest are normalized (lowercase,
+	// trimmed, deduped). Detecting that is a zero-alloc scan, while the
+	// slow path rebuilds slices and a dedup map per call — and this runs
+	// once per brand per analyzed domain on the hot path. Mutation paths
+	// (store inserts/updates) copy on write separately, so sharing the
+	// input array here is safe: all readers below only read.
+	if isNormalizedBrandRecord(brand) {
+		return brand
+	}
+	return normalizeBrandRecordSlow(brand)
+}
+
+func normalizeBrandRecordSlow(brand Brand) Brand {
 	brand.Name = strings.ToLower(strings.TrimSpace(brand.Name))
 	brand.OfficialDomain = strings.ToLower(strings.TrimSpace(brand.OfficialDomain))
 	alts := make([]string, 0, len(brand.AltDomains))
@@ -629,6 +801,49 @@ func normalizeBrandRecord(brand Brand) Brand {
 	}
 	brand.AltDomains = alts
 	return brand
+}
+
+// isNormalizedBrandRecord reports whether normalizeBrandRecord would
+// return its input unchanged: fields already lowercase and trimmed, alts
+// non-empty, trimmed, lowercase and unique. It must evolve together with
+// normalizeBrandRecord — the equivalence test below pins them.
+func isNormalizedBrandRecord(brand Brand) bool {
+	if !isNormalizedToken(brand.Name) || !isNormalizedToken(brand.OfficialDomain) {
+		return false
+	}
+	// A nil AltDomains must take the slow path: it always materializes a
+	// non-nil empty slice, which marshals differently (null vs []).
+	if brand.AltDomains == nil {
+		return false
+	}
+	alts := brand.AltDomains
+	for i, alt := range alts {
+		if alt == "" || !isNormalizedToken(alt) {
+			return false
+		}
+		for _, other := range alts[:i] {
+			if other == alt {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isNormalizedToken(s string) bool {
+	if s == "" {
+		return true
+	}
+	for _, r := range s {
+		// Conservative: any whitespace anywhere (edge or interior)
+		// sends the record down the slow path. Interior spaces would
+		// still be fixpoints, but brand tokens never legitimately
+		// contain them — and the slow path returns identical output.
+		if unicode.IsSpace(r) || unicode.ToLower(r) != r {
+			return false
+		}
+	}
+	return true
 }
 
 func cloneBrand(brand Brand) Brand {
@@ -775,13 +990,13 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 			// B. Keyboard Weighted Typosquatting. Short names need a
 			// near-exact match: distance-1.5 on 4-character names is a
 			// chance collision (miui~tiki), not a typosquat.
-			wDist := WeightedLevenshteinDistance(skLabel, brand.Name)
 			maxWDist := 1.5
 			maxDist := 2
 			if minLen <= shortBrandTyposquatMaxLen {
 				maxWDist = 1.0
 				maxDist = 1
 			}
+			wDist := WeightedLevenshteinDistanceCapped(skLabel, brand.Name, maxWDist)
 			if wDist > 0 && wDist <= maxWDist {
 				penalty := brandSpoofingScore
 				if cdnInfra {
@@ -798,7 +1013,7 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 			}
 
 			// C. Classic Levenshtein Distance (length-scaled as above).
-			dist := LevenshteinDistance(skLabel, brand.Name)
+			dist := LevenshteinDistanceCapped(skLabel, brand.Name, maxDist)
 			if dist > 0 && dist <= maxDist {
 				penalty := brandSpoofingScore
 				if cdnInfra {

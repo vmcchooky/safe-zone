@@ -147,8 +147,16 @@ func (a *Analyzer) Analyze(input string) Result {
 
 // localBrandSeed is the built-in brand seed captured once at startup and
 // treated as immutable by the scoring path; nothing in analyzeWithBrands
-// mutates the slice or its brands.
-var localBrandSeed = DefaultTrustedBrands()
+// mutates the slice or its brands. Records are normalized once here so the
+// per-query fast path in normalizeBrandRecord applies (nil AltDomains
+// would force the slow path every time).
+var localBrandSeed = func() []Brand {
+	seed := DefaultTrustedBrands()
+	for i := range seed {
+		seed[i] = normalizeBrandRecord(seed[i])
+	}
+	return seed
+}()
 
 // AnalyzeLocal scores a domain without touching any BrandStore: no Redis, no
 // SQLite, no HTTP, no context, no AI/OSINT. Brand spoofing is evaluated
