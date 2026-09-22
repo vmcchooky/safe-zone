@@ -9,9 +9,10 @@ import (
 
 const RevisionPlaceholder = "__SAFE_ZONE_ASSET_REV__"
 
-// FS exposes the browser-facing CSS, JS, and font assets served by core-api.
+// FS exposes the browser-facing CSS, JS, font, and image assets served by
+// core-api.
 //
-//go:embed *.css *.js *.woff2
+//go:embed *.css *.js *.woff2 *.png
 var FS embed.FS
 
 func Revision() string {

@@ -19,7 +19,7 @@ curl -fsS \
   -H "Host: ${blocked_domain}" \
   "http://${public_ip}/" \
   -o "$tmp_html"
-grep -q "This site was blocked" "$tmp_html"
+grep -q "Trang web đã bị chặn" "$tmp_html"
 grep -q "$blocked_domain" "$tmp_html"
 
 echo "Checking HTTP sinkhole block page assets..."
@@ -39,7 +39,7 @@ echo "Checking HTTPS canonical block page..."
 curl -fsS \
   "https://${public_host}/block?domain=${blocked_domain}&path=%2F" \
   -o "$tmp_html"
-grep -q "This site was blocked" "$tmp_html"
+grep -q "Trang web đã bị chặn" "$tmp_html"
 grep -q "$blocked_domain" "$tmp_html"
 
 echo "Block page checks passed for ${blocked_domain}."
