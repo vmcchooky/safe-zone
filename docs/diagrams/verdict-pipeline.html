@@ -124,30 +124,8 @@
         <text class="mo" x="1006" y="40" text-anchor="middle" font-size="9" font-weight="500" fill="#5C544B">OUTCOME</text>
       </g>
 
-      <!-- ============ ARROWS (before nodes, z-order) ============ -->
-      <g fill="none">
-        <!-- sync handoffs -->
-        <line x1="140" y1="126" x2="152" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
-        <line x1="272" y1="126" x2="284" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
-        <line x1="404" y1="126" x2="416" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
-        <line x1="536" y1="126" x2="548" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
-        <line x1="668" y1="126" x2="680" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
-        <!-- focal handoff: Domain ML -> ApplyPolicy -->
-        <line x1="800" y1="126" x2="812" y2="126" stroke="#2E5A46" stroke-width="1.5" marker-end="url(#verdict-arr-accent)"/>
-        <line x1="932" y1="126" x2="944" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
-        <!-- async feeds: Enrichment -> Lexical (vertical) -->
-        <line x1="610" y1="258" x2="610" y2="176" stroke="#5C544B" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#verdict-arr-muted)"/>
-        <!-- async feed: Enrichment -> Outcome (orthogonal elbow, r=8) -->
-        <path d="M724,300 L998,300 Q1006,300 1006,292 L1006,176" stroke="#5C544B" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#verdict-arr-muted)"/>
-      </g>
-
-      <!-- masked arrow labels -->
-      <g>
-        <rect x="764" y="100" width="88" height="16" rx="4" fill="#FAF8F3"/>
-        <text class="mo" x="808" y="112" text-anchor="middle" font-size="8" font-weight="600" fill="#2E5A46">scored domain</text>
-        <rect x="800" y="280" width="120" height="16" rx="4" fill="#FAF8F3"/>
-        <text class="mo" x="860" y="292" text-anchor="middle" font-size="8" font-weight="500" fill="#5C544B">corroborated only</text>
-      </g>
+      <!-- Arrows live AFTER the rail + nodes (z-order): the opaque rail
+           background would otherwise bury them. See below. -->
 
       <!-- ============ SYNC DECISION RAIL ============ -->
       <g>
@@ -216,6 +194,29 @@
           <text class="mo" x="1006" y="140" font-size="8" fill="#5C544B">SAFE · SUSP · MAL</text>
           <text class="mo" x="1006" y="156" font-size="7.5" fill="#2F4A8F">allow · block · sinkhole</text>
         </g>
+      </g>
+
+      <!-- ============ ARROWS (after rail + nodes: opaque fills would bury them) ============ -->
+      <g fill="none">
+        <!-- sync handoffs (12px, centered in the 16px inter-box gaps) -->
+        <line x1="140" y1="126" x2="152" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="272" y1="126" x2="284" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="404" y1="126" x2="416" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="536" y1="126" x2="548" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <line x1="668" y1="126" x2="680" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <!-- focal handoff: Domain ML -> ApplyPolicy (legend carries the meaning; no floating label: the 16px gap cannot mask one without covering box edges) -->
+        <line x1="800" y1="126" x2="812" y2="126" stroke="#2E5A46" stroke-width="1.5" marker-end="url(#verdict-arr-accent)"/>
+        <line x1="932" y1="126" x2="944" y2="126" stroke="#5C544B" stroke-width="1" marker-end="url(#verdict-arr-muted)"/>
+        <!-- async feeds: Enrichment -> Lexical (vertical) -->
+        <line x1="610" y1="258" x2="610" y2="176" stroke="#5C544B" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#verdict-arr-muted)"/>
+        <!-- async feed: Enrichment -> Outcome (orthogonal elbow, r=8) -->
+        <path d="M724,300 L998,300 Q1006,300 1006,292 L1006,176" stroke="#5C544B" stroke-width="1" stroke-dasharray="5 4" marker-end="url(#verdict-arr-muted)"/>
+      </g>
+
+      <!-- masked arrow label -->
+      <g>
+        <rect x="800" y="280" width="120" height="16" rx="4" fill="#FAF8F3"/>
+        <text class="mo" x="860" y="292" text-anchor="middle" font-size="8" font-weight="500" fill="#5C544B">corroborated only</text>
       </g>
 
       <!-- ============ ASYNC SIDE-LANE ============ -->
