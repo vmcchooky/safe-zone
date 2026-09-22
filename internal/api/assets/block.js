@@ -30,7 +30,7 @@
 
     if (submit) {
       submit.disabled = true;
-      submit.textContent = 'Submitting report...';
+      submit.textContent = 'Đang gửi...';
     }
 
     try {
@@ -42,7 +42,7 @@
         throw new Error('Request failed');
       }
       blockStatus.classList.add('show');
-      showBlockToast('Your review request was sent successfully.');
+      showBlockToast('Đã gửi yêu cầu của bạn.');
       blockForm.reset();
     } catch {
       blockForm.submit();

@@ -26,7 +26,7 @@ func TestBlockPageHandlerRendersBlockedContext(t *testing.T) {
 	}
 
 	body := recorder.Body.String()
-	for _, fragment := range []string{"login.example.com", "/signin", "Matched Safe Zone policy", "Submit review request"} {
+	for _, fragment := range []string{"login.example.com", "/signin", "Trang web đã bị chặn", "Gửi yêu cầu xem xét"} {
 		if !strings.Contains(body, fragment) {
 			t.Fatalf("expected block page to contain %q, got: %s", fragment, body)
 		}
