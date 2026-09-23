@@ -97,6 +97,43 @@ func TestRouterRequiresAuthForURLMLFeedback(t *testing.T) {
 	}
 }
 
+func TestRouterAuthMethodsAndPaths(t *testing.T) {
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, nil)
+
+	cases := []struct {
+		name       string
+		method     string
+		path       string
+		wantStatus int
+		// wantOKExactly pins deterministic behavior; otherwise only the
+		// no-bypass property (never 200) is asserted to avoid coupling
+		// to net/http mux-version path-cleaning details.
+		wantOKExactly bool
+	}{
+		// Authed debug/counter writers: every method must 401 first
+		// (auth middleware runs before handler method checks).
+		{"raw POST anon", http.MethodPost, "/v1/analyze/raw?domain=x.test", http.StatusUnauthorized, true},
+		{"raw PUT anon", http.MethodPut, "/v1/analyze/raw?domain=x.test", http.StatusUnauthorized, true},
+		{"feedback GET anon", http.MethodGet, "/v1/url-ml/feedback", http.StatusUnauthorized, true},
+		// Path confusion must never resolve to a 200 from the handler.
+		{"raw trailing slash", http.MethodGet, "/v1/analyze/raw/", 0, false},
+		{"raw doubled slash", http.MethodGet, "//v1/analyze/raw", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if tc.wantOKExactly && rec.Code != tc.wantStatus {
+				t.Fatalf("expected %d, got %d", tc.wantStatus, rec.Code)
+			}
+			if rec.Code == http.StatusOK {
+				t.Fatalf("path confusion must never yield 200, got it for %s %s", tc.method, tc.path)
+			}
+		})
+	}
+}
+
 func TestNewRouterRedirectsPublicRootToReactApp(t *testing.T) {
 	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},

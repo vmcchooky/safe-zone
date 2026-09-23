@@ -400,17 +400,11 @@ func OpenSourceResponseWithin(ctx context.Context, source string, client *http.C
 		// Downgrade protection: a source fetched over https must never
 		// slide to plain http mid-redirect (the F2 gate only sees the
 		// initial string). Explicit opt-out via allowInsecureHTTP.
-		startHTTPS := strings.HasPrefix(strings.ToLower(strings.TrimSpace(source)), "https://")
 		basePolicy := netguard.CheckRedirect
-		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-			if err := basePolicy(req, via); err != nil {
-				return err
-			}
-			if startHTTPS && !allowInsecureHTTP && !strings.EqualFold(req.URL.Scheme, "https") {
-				return fmt.Errorf("blocked redirect: https source must not downgrade to %q", req.URL.Scheme)
-			}
-			return nil
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(source)), "https://") && !allowInsecureHTTP {
+			basePolicy = netguard.RedirectPolicyHTTPS(false)
 		}
+		client.CheckRedirect = basePolicy
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 		if err != nil {

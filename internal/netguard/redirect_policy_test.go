@@ -50,3 +50,27 @@ func TestRedirectPolicy(t *testing.T) {
 		})
 	}
 }
+
+// Downgrade protection for https-gated fetches (threat feeds): an https
+// start must never slide to a plain-http hop.
+func TestRedirectPolicyHTTPSRejectsDowngrade(t *testing.T) {
+	for _, target := range []string{"http://93.184.216.34/x", "http://[2001:db8::1]/x"} {
+		req, err := http.NewRequest(http.MethodGet, target, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := RedirectPolicyHTTPS(false)(req, make([]*http.Request, 1)); err == nil {
+			t.Fatalf("expected downgrade to %q to be blocked", target)
+		}
+	}
+	req, err := http.NewRequest(http.MethodGet, "https://93.184.216.34/x", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 93.184.216.34 is documentation space: ResolveAllowedIPs does real
+	// DNS here and may fail offline — accept either pass or DNS error,
+	// but never a downgrade-shaped error and never silent pass on http.
+	if err := RedirectPolicyHTTPS(false)(req, make([]*http.Request, 1)); err != nil {
+		t.Fatalf("https hop must not be refused as downgrade, got %v", err)
+	}
+}

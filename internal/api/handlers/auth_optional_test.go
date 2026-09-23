@@ -62,6 +62,21 @@ func TestAttachAuthIdentityNeverRejects(t *testing.T) {
 	}
 }
 
+// /v1/analyze stays public: anonymous callers (even with force_osint=1)
+// get a normal verdict, never a rejection and never forced OSINT.
+func TestAnonymousAnalyzeStaysPublic(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	wrapped := ts.Handler.AttachAuthIdentityFunc(ts.Handler.AnalyzeHandler)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/analyze?domain=x.test&force_osint=1", nil)
+	rec := httptest.NewRecorder()
+	wrapped(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected anonymous analyze to stay 200, got %d", rec.Code)
+	}
+}
+
 // force_osint=1 only takes effect for authenticated callers; anonymous
 // callers get normal analysis without forced outbound OSINT.
 func TestForceOSINTForRequestRequiresAuth(t *testing.T) {
