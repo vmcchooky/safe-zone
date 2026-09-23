@@ -86,16 +86,29 @@ func TestBuildSyncOptionsCarriesTTL(t *testing.T) {
 
 // AllowInsecureHTTP must default false and pass through to feed.Sync so
 // the daemon never silently fetches plain-HTTP feeds.
-func TestBuildSyncOptionsCarriesAllowInsecure(t *testing.T) {
-	settings := syncSettings{
-		Source:        "https://feeds.example.test/list.txt",
-		AllowInsecure: true,
+func TestSyncSettingsAllowInsecureDefaultsFalse(t *testing.T) {
+	t.Setenv("SAFE_ZONE_THREAT_FEED_SOURCE", "https://feeds.example.test/list.txt")
+	t.Setenv("SAFE_ZONE_FEED_ADMISSION_MODE", "")
+	t.Setenv("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", "")
+
+	settings, err := parseSyncSettings(newTestFlagSet(t), nil)
+	if err != nil {
+		t.Fatalf("parse default settings: %v", err)
+	}
+	if settings.AllowInsecure {
+		t.Fatal("expected AllowInsecure default false")
+	}
+	if options := buildSyncOptions(settings, http.DefaultClient); options.AllowInsecureHTTP {
+		t.Fatal("expected AllowInsecureHTTP passthrough false")
+	}
+
+	t.Setenv("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", "true")
+	settings, err = parseSyncSettings(newTestFlagSet(t), []string{"-allow-insecure-http"})
+	if err != nil {
+		t.Fatalf("parse opt-in settings: %v", err)
 	}
 	if options := buildSyncOptions(settings, http.DefaultClient); !options.AllowInsecureHTTP {
-		t.Fatalf("expected AllowInsecureHTTP passthrough, got %+v", options)
-	}
-	if options := buildSyncOptions(syncSettings{}, http.DefaultClient); options.AllowInsecureHTTP {
-		t.Fatal("expected AllowInsecureHTTP default false")
+		t.Fatal("expected AllowInsecureHTTP passthrough true")
 	}
 }
 
