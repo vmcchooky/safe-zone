@@ -90,7 +90,6 @@ func BenchmarkWhitelistLookup(b *testing.B) {
 	_ = db.UpdateWhitelist(context.Background(), domains)
 	_ = wl.LoadFromDB()
 
-	b.ResetTimer()
 	for b.Loop() {
 		// Mostly negative hits in real-world DNS blocking (which skips SQLite lookup)
 		wl.IsAllowed("not-whitelisted-domain.com")

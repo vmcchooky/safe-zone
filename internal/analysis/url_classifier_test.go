@@ -116,8 +116,7 @@ func BenchmarkURLBundleClassifier(b *testing.B) {
 		},
 	}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for index := 0; index < b.N; index++ {
+	for b.Loop() {
 		if _, err := classifier.ClassifyURL(context); err != nil {
 			b.Fatal(err)
 		}
