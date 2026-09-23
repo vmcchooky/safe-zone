@@ -187,6 +187,22 @@ func RedirectPolicy(allowPrivate bool) func(*http.Request, []*http.Request) erro
 	}
 }
 
+// RedirectPolicyHTTPS is RedirectPolicy with scheme-downgrade protection:
+// every hop must stay on https. It exists for fetches whose initial URL
+// was already gated to https (threat feeds): without it, a 302 to a
+// plain-http URL would smuggle MITM-able bytes past a string-prefix gate.
+// Downgrade protection is hop-absolute, not relative to the start URL, so
+// callers that legitimately begin on http keep using RedirectPolicy.
+func RedirectPolicyHTTPS(allowPrivate bool) func(*http.Request, []*http.Request) error {
+	base := RedirectPolicy(allowPrivate)
+	return func(req *http.Request, via []*http.Request) error {
+		if !strings.EqualFold(req.URL.Scheme, "https") {
+			return fmt.Errorf("blocked redirect: https-only fetch must not downgrade to %q", req.URL.Scheme)
+		}
+		return base(req, via)
+	}
+}
+
 func baseTransport(base http.RoundTripper) (*http.Transport, bool) {
 	if base == nil {
 		base = http.DefaultTransport
