@@ -84,6 +84,21 @@ func TestBuildSyncOptionsCarriesTTL(t *testing.T) {
 	}
 }
 
+// AllowInsecureHTTP must default false and pass through to feed.Sync so
+// the daemon never silently fetches plain-HTTP feeds.
+func TestBuildSyncOptionsCarriesAllowInsecure(t *testing.T) {
+	settings := syncSettings{
+		Source:        "https://feeds.example.test/list.txt",
+		AllowInsecure: true,
+	}
+	if options := buildSyncOptions(settings, http.DefaultClient); !options.AllowInsecureHTTP {
+		t.Fatalf("expected AllowInsecureHTTP passthrough, got %+v", options)
+	}
+	if options := buildSyncOptions(syncSettings{}, http.DefaultClient); options.AllowInsecureHTTP {
+		t.Fatal("expected AllowInsecureHTTP default false")
+	}
+}
+
 func newTestFlagSet(t *testing.T) *flag.FlagSet {
 	t.Helper()
 	return flag.NewFlagSet("feed-syncd-test", flag.ContinueOnError)
