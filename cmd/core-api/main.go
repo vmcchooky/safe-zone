@@ -153,6 +153,7 @@ func main() {
 				CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_AGENT_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
 				TTL:                        feedTTL,
 				AdmissionMode:              feedAdmissionMode,
+				AllowInsecureHTTP:          config.Bool("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", false),
 			},
 		)
 		agentEngine.Register(

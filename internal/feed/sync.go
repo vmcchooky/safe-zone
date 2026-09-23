@@ -93,6 +93,12 @@ type SyncOptions struct {
 	Key                        string
 	DryRun                     bool
 	Replace                    bool
+	// AllowInsecureHTTP opts a single operator-controlled source out of
+	// the plain-HTTP refusal below. Default false: HTTP feed fetches
+	// are MITM-able and a poisoned feed maps directly to mass
+	// MALICIOUS/100 blocks, so insecurity must be explicit, never
+	// accidental.
+	AllowInsecureHTTP          bool
 	Timeout                    time.Duration
 	Client                     *http.Client
 	ParserDriftInvalidRatio    float64
@@ -126,9 +132,22 @@ type OpenSourceResponse struct {
 	Header     http.Header
 }
 
+// isPlainHTTPSource reports whether source is a remote fetch over
+// unencrypted HTTP. Local files, gzip paths, and https:// are not
+// affected; matching is case-insensitive on the trimmed source.
+func isPlainHTTPSource(source string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(source)), "http://")
+}
+
 func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	if strings.TrimSpace(options.Source) == "" {
 		return SyncReport{}, errors.New("feed source is required")
+	}
+	// Security gate (F2): refuse plain-HTTP fetches unless the operator
+	// explicitly opts out. This runs before any network or dry-run
+	// parsing so a misconfigured source fails closed and loud.
+	if isPlainHTTPSource(options.Source) && !options.AllowInsecureHTTP {
+		return SyncReport{}, fmt.Errorf("refusing plain-HTTP feed source %q: serve it over https:// or set AllowInsecureHTTP explicitly", strings.TrimSpace(options.Source))
 	}
 	if strings.TrimSpace(options.Key) == "" {
 		options.Key = DefaultThreatFeedKey
@@ -310,17 +329,18 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	}
 
 	if stagingKey != "" {
+		// Security guard (F1): never wipe the live feed on an empty
+		// parse. A 200 with garbage/captive-portal/empty body yields
+		// Valid==0; deleting the live key here would drop all
+		// feed-backed blocking in one sync. Fail instead and keep
+		// serving the previous generation.
 		if stats.Valid == 0 {
-			if err := redisCache.Delete(ctx, options.Key); err != nil {
-				_ = redisCache.Delete(ctx, stagingKey)
-				return fail(err)
-			}
 			_ = redisCache.Delete(ctx, stagingKey)
-		} else {
-			if err := redisCache.Rename(ctx, stagingKey, options.Key); err != nil {
-				_ = redisCache.Delete(ctx, stagingKey)
-				return fail(err)
-			}
+			return fail(fmt.Errorf("refusing replace sync with zero valid domains from %q (live feed preserved)", options.Source))
+		}
+		if err := redisCache.Rename(ctx, stagingKey, options.Key); err != nil {
+			_ = redisCache.Delete(ctx, stagingKey)
+			return fail(err)
 		}
 	}
 

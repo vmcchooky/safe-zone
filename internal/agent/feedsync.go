@@ -28,6 +28,10 @@ type FeedSyncConfig struct {
 	ParserDriftMinInvalid      int
 	CacheInvalidationMinWrites int64
 	AdmissionMode              feed.AdmissionMode
+	// AllowInsecureHTTP mirrors feed.SyncOptions: explicit opt-out of
+	// the plain-HTTP refusal. Sourced from
+	// SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP (default false).
+	AllowInsecureHTTP bool
 	// TTL is the expiry window scored into every synced member. It must come
 	// from the shared feed.TTLFromDays contract (SAFE_ZONE_FEED_TTL_DAYS) so
 	// the daemon, the CLI tools and the OSINT promotion expire members on
@@ -108,6 +112,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 			CacheInvalidationMinWrites: t.config.CacheInvalidationMinWrites,
 			TTL:                        t.config.TTL,
 			AdmissionMode:              t.config.AdmissionMode,
+			AllowInsecureHTTP:          t.config.AllowInsecureHTTP,
 		})
 		if err != nil {
 			logjson.Error("agent feed sync failed", correlation.Fields(ctx, map[string]any{

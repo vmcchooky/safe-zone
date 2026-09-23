@@ -29,6 +29,7 @@ func main() {
 	key := flag.String("key", config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey), "Redis Set key for threat feed")
 	dryRun := flag.Bool("dry-run", false, "parse feed and report counts without writing Redis")
 	replace := flag.Bool("replace", false, "delete the target set before writing parsed domains")
+	allowInsecure := flag.Bool("allow-insecure-http", config.Bool("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", false), "allow plain-HTTP feed fetch (MITM can inject mass blocks; prefer https)")
 	timeout := flag.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
 	ttlDays := flag.Int("ttl-days", config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14), "number of days before threat domains expire")
 	admissionMode := flag.String("admission-mode", config.String("SAFE_ZONE_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)), "feed admission mode: legacy, corroborated-url-host-shadow, or corroborated-url-host-filter")
@@ -62,6 +63,7 @@ func main() {
 		Key:                        *key,
 		DryRun:                     *dryRun,
 		Replace:                    *replace,
+		AllowInsecureHTTP:          *allowInsecure,
 		Timeout:                    *timeout,
 		Client:                     client,
 		ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
