@@ -188,7 +188,7 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		return SyncReport{}, syncErr
 	}
 
-	reader, closeReader, err := OpenSourceWithin(ctx, options.Source, options.Client, options.FileRoot, options.MaxBytes)
+	reader, closeReader, err := OpenSourceWithin(ctx, options.Source, options.Client, options.FileRoot, options.MaxBytes, options.AllowInsecureHTTP)
 	if err != nil {
 		return fail(err)
 	}
@@ -371,15 +371,15 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 	return report, nil
 }
 
-func OpenSourceWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64) (io.ReadCloser, func(), error) {
-	resp, err := OpenSourceResponseWithin(ctx, source, client, fileRoot, maxBytes, nil)
+func OpenSourceWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64, allowInsecureHTTP bool) (io.ReadCloser, func(), error) {
+	resp, err := OpenSourceResponseWithin(ctx, source, client, fileRoot, maxBytes, nil, allowInsecureHTTP)
 	if err != nil {
 		return nil, func() {}, err
 	}
 	return resp.Reader, resp.Close, nil
 }
 
-func OpenSourceResponseWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64, requestHeaders http.Header) (OpenSourceResponse, error) {
+func OpenSourceResponseWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64, requestHeaders http.Header, allowInsecureHTTP bool) (OpenSourceResponse, error) {
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -397,7 +397,20 @@ func OpenSourceResponseWithin(ctx context.Context, source string, client *http.C
 			return OpenSourceResponse{}, err
 		}
 		client = netguard.NewHTTPClient(client, 30*time.Second, false)
-		client.CheckRedirect = netguard.CheckRedirect
+		// Downgrade protection: a source fetched over https must never
+		// slide to plain http mid-redirect (the F2 gate only sees the
+		// initial string). Explicit opt-out via allowInsecureHTTP.
+		startHTTPS := strings.HasPrefix(strings.ToLower(strings.TrimSpace(source)), "https://")
+		basePolicy := netguard.CheckRedirect
+		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+			if err := basePolicy(req, via); err != nil {
+				return err
+			}
+			if startHTTPS && !allowInsecureHTTP && !strings.EqualFold(req.URL.Scheme, "https") {
+				return fmt.Errorf("blocked redirect: https source must not downgrade to %q", req.URL.Scheme)
+			}
+			return nil
+		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, source, nil)
 		if err != nil {
