@@ -1,6 +1,6 @@
 param (
-    [string]$TargetHost = "experiment-mode",
-    [string]$RemoteDir = "~/safe-zone",
+    [string]$TargetHost = "safe-zone",
+    [string]$RemoteDir = "/home/safe-zone-henry/safe-zone",
     [string]$BuildVersion = "",
     [string]$BuildCommit = ""
 )
