@@ -384,18 +384,35 @@ func TestReplaceSyncWithZeroValidPreservesLiveFeed(t *testing.T) {
 	if rev, rerr := redisCache.GetInt64(ctx, RevisionKey(DefaultThreatFeedKey)); rerr == nil && rev != 0 {
 		t.Fatalf("feed revision must not bump on refused replace, got %d", rev)
 	}
+	for _, key := range server.Keys() {
+		if strings.Contains(key, "staging:") {
+			t.Fatalf("refused replace leaked staging key %q", key)
+		}
+	}
 }
 
 // Security gate (F2): plain-HTTP sources are refused by default before
-// any network or parsing happens.
+// any network or parsing happens — proven by an unroutable host with a
+// live Redis behind it: refusal must be the fast gate error, not a
+// dial timeout and not a write.
 func TestSyncRejectsPlainHTTPByDefault(t *testing.T) {
-	_, err := Sync(context.Background(), SyncOptions{
-		Source:  "http://198.51.100.10/feed.txt",
-		DryRun:  true,
-		Timeout: time.Second,
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisServer.Close()
+
+	_, err = Sync(context.Background(), SyncOptions{
+		Source:    "http://198.51.100.10/feed.txt",
+		RedisAddr: redisServer.Addr(),
+		Key:       DefaultThreatFeedKey,
+		Timeout:   5 * time.Second,
 	})
 	if err == nil || !strings.Contains(err.Error(), "plain-HTTP") {
 		t.Fatalf("expected plain-HTTP refusal, got %v", err)
+	}
+	if n := len(redisServer.Keys()); n != 0 {
+		t.Fatalf("refused sync must write nothing, keys=%v", redisServer.Keys())
 	}
 }
 
