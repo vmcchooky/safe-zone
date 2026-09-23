@@ -53,7 +53,7 @@ func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	reader, closeReader, err := feed.OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), feed.DefaultMaxFeedBytes)
+	reader, closeReader, err := feed.OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), feed.DefaultMaxFeedBytes, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestWrapMaybeCompressedReadCloserWithGzipSuffix(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, closeReader, err := feed.OpenSourceWithin(context.Background(), path, nil, filepath.Dir(path), feed.DefaultMaxFeedBytes)
+	reader, closeReader, err := feed.OpenSourceWithin(context.Background(), path, nil, filepath.Dir(path), feed.DefaultMaxFeedBytes, false)
 	if err != nil {
 		t.Fatal(err)
 	}

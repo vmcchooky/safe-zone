@@ -2766,7 +2766,7 @@ func (s *Service) syncAdblockLists() {
 		sourceCategory, sourceScope, sourceOrigin := s.resolveAdblockSourcePolicy(source)
 		func() {
 			if !isRemoteAdblockSource(source) {
-				reader, closeReader, err := feed.OpenSourceWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024)
+				reader, closeReader, err := feed.OpenSourceWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, false)
 				if err != nil {
 					logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
 					return
@@ -2789,7 +2789,7 @@ func (s *Service) syncAdblockLists() {
 				requestHeaders.Set("If-Modified-Since", meta.LastModified)
 			}
 
-			response, err := feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, requestHeaders)
+			response, err := feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, requestHeaders, false)
 			if err == nil && response.StatusCode == http.StatusNotModified {
 				if s.loadAdblockSourceCache(source, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin) {
 					successCount++
@@ -2797,7 +2797,7 @@ func (s *Service) syncAdblockLists() {
 					nextMeta[source] = meta
 					return
 				}
-				response, err = feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, nil)
+				response, err = feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, nil, false)
 			}
 
 			if err == nil {

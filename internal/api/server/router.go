@@ -41,8 +41,11 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/v1/auth/session", h.RequireAuthFunc(h.AuthSessionHandler))
 
 	// Analysis & OSINT
-	mux.HandleFunc("/v1/analyze", h.AnalyzeHandler)
-	mux.HandleFunc("/v1/url-ml/feedback", h.URLMLFeedbackHandler)
+	// /v1/analyze stays public, but AttachAuthIdentity annotates authed
+	// callers so AnalyzeHandler can gate force_osint (outbound OSINT)
+	// on authentication instead of any anonymous client.
+	mux.HandleFunc("/v1/analyze", h.AttachAuthIdentityFunc(h.AnalyzeHandler))
+	mux.HandleFunc("/v1/url-ml/feedback", h.RequireAuthFunc(h.URLMLFeedbackHandler))
 	mux.HandleFunc("/v1/analyze/raw", h.RequireAuthFunc(h.RawDataHandler))
 	mux.HandleFunc("/v1/osint/evidence", h.RequireAuthFunc(h.OsintEvidenceHandler))
 	mux.HandleFunc("/v1/analysis/recent", h.RequireAuthFunc(h.RecentAnalysisHandler))

@@ -130,9 +130,13 @@ Caller gửi label mà server không cần giữ raw URL:
 
 ```sh
 curl -fsS -X POST http://127.0.0.1:8080/v1/url-ml/feedback \
+  -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" \
   -H 'Content-Type: application/json' \
   -d '{"event_id":"<opaque-id-tu-client>","label":"benign"}'
 ```
+
+> Endpoint yêu cầu auth (admin bearer hoặc session) để nhãn lạ không làm
+> bẩn mẫu số calibration.
 
 - Server chỉ lưu HMAC fingerprint (salt per-process hoặc keyed SQLite) + bucket xác suất + cờ would-promote.
 - Calibration/FPR chỉ tính trên event đã nhãn; không suy calibration từ traffic không nhãn.

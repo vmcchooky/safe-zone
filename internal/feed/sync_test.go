@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -63,7 +64,7 @@ func TestOpenSourceHandlesGzipHTTP(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes)
+	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestOpenSourceLimitsDecompressedHTTPFeed(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), 8)
+	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), 8, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +112,7 @@ func TestOpenSourceRejectsPrivateHTTPFeedSource(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, closeReader, err := OpenSourceWithin(context.Background(), server.URL, server.Client(), t.TempDir(), DefaultMaxFeedBytes)
+	_, closeReader, err := OpenSourceWithin(context.Background(), server.URL, server.Client(), t.TempDir(), DefaultMaxFeedBytes, false)
 	if closeReader != nil {
 		defer closeReader()
 	}
@@ -128,7 +129,7 @@ func TestOpenSourceRejectsRedirectToBlockedTarget(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	_, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes)
+	_, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes, false)
 	if closeReader != nil {
 		defer closeReader()
 	}
@@ -154,7 +155,7 @@ func TestOpenSourceFollowsRedirectToAllowedTarget(t *testing.T) {
 	defer server.Close()
 
 	sourceURL, client := policySourceURL(t, server)
-	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes)
+	reader, closeReader, err := OpenSourceWithin(context.Background(), sourceURL, client, t.TempDir(), DefaultMaxFeedBytes, false)
 	if err != nil {
 		t.Fatalf("expected valid redirect to be followed, got %v", err)
 	}
@@ -424,6 +425,87 @@ func TestSyncAllowsPlainHTTPWithExplicitOptIn(t *testing.T) {
 	}
 	if report.Written != 1 {
 		t.Fatalf("expected 1 written domain, got %d", report.Written)
+	}
+}
+
+// tlsPolicyClient dials the real loopback listener while presenting a
+// public TEST-NET address to the outbound policy, mirroring
+// policySourceURL for TLS servers (self-signed → skip verify, test only).
+func tlsPolicyClient(t *testing.T) *http.Client {
+	t.Helper()
+	return &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- test local với cert tự ký
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				_, dialPort, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, network, net.JoinHostPort("127.0.0.1", dialPort))
+			},
+		},
+	}
+}
+
+func tlsPolicySourceURL(t *testing.T, srv *httptest.Server) string {
+	t.Helper()
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "https://"))
+	if err != nil {
+		t.Fatalf("split httptest TLS host: %v", err)
+	}
+	return "https://" + net.JoinHostPort("198.51.100.10", port)
+}
+
+// Security (F2 redirect): an https source must never downgrade to a plain
+// http hop, even though the initial string passed the Sync gate.
+func TestOpenSourceBlocksHTTPSDowngrade(t *testing.T) {
+	payload := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("evil.test\n"))
+	}))
+	defer payload.Close()
+	_, payloadPort, err := net.SplitHostPort(strings.TrimPrefix(payload.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	redirector := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://"+net.JoinHostPort("198.51.100.10", payloadPort)+"/feed.txt", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	_, _, err = OpenSourceWithin(context.Background(), tlsPolicySourceURL(t, redirector), tlsPolicyClient(t), t.TempDir(), DefaultMaxFeedBytes, false)
+	if err == nil || !strings.Contains(err.Error(), "downgrade") {
+		t.Fatalf("expected blocked https->http downgrade, got %v", err)
+	}
+}
+
+func TestOpenSourceAllowsHTTPStoHTTPSRedirect(t *testing.T) {
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("good.test\n"))
+	}))
+	defer target.Close()
+	_, targetPort, err := net.SplitHostPort(strings.TrimPrefix(target.URL, "https://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	redirector := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://"+net.JoinHostPort("198.51.100.10", targetPort)+"/feed.txt", http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	reader, closeReader, err := OpenSourceWithin(context.Background(), tlsPolicySourceURL(t, redirector), tlsPolicyClient(t), t.TempDir(), DefaultMaxFeedBytes, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer closeReader()
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "good.test") {
+		t.Fatalf("expected upstream body, got %q", body)
 	}
 }
 
