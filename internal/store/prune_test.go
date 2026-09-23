@@ -46,6 +46,9 @@ func TestCleanupPrunesDecidedReportsOnly(t *testing.T) {
 		}
 		remaining[domain] = status
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
 	if len(remaining) != 2 || remaining["old-pending.test"] != "pending" || remaining["new-resolved.test"] != "resolved" {
 		t.Fatalf("expected only old-pending + new-resolved to survive, got %v", remaining)
 	}

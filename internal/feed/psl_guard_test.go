@@ -94,3 +94,44 @@ func TestSyncShadowAdmissionSkipsPublicSuffixMembers(t *testing.T) {
 		t.Fatalf("expected workers.dev filtered from shadow plan, got %#v", report.Stats)
 	}
 }
+
+// Multi-tenant shared serving hosts must never enter the threat feed:
+// blocking them at the host level would cause collateral damage for all tenants.
+func TestSyncSkipsSharedServingHosts(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "feed.txt")
+	fixture := "docs.google.com\nraw.githubusercontent.com\ncdn.jsdelivr.net\ns3.amazonaws.com\nevil-real-phish.com\n"
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Sync(context.Background(), SyncOptions{
+		Source:    path,
+		FileRoot:  dir,
+		RedisAddr: server.Addr(),
+		Key:       DefaultThreatFeedKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Written != 1 {
+		t.Fatalf("expected only evil-real-phish.com written, got %d (%#v)", report.Written, report.Stats)
+	}
+
+	redisCache := cache.NewRedis(server.Addr(), "", 0)
+	defer redisCache.Close()
+	for _, skipped := range []string{"docs.google.com", "raw.githubusercontent.com", "cdn.jsdelivr.net", "s3.amazonaws.com"} {
+		if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, skipped); err == nil {
+			t.Fatalf("shared serving host %s must not be admitted to the threat feed", skipped)
+		}
+	}
+	if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, "evil-real-phish.com"); err != nil {
+		t.Fatalf("expected evil-real-phish.com in feed: %v", err)
+	}
+}

@@ -611,8 +611,10 @@ func classifyBrandLabel(label, brandName string) brandLabelMatchKind {
 // same token as a subdomain label elsewhere still fires. Additions need
 // code review: each entry narrows phishing detection on that root.
 var brandKeywordExemptRoots = map[string]bool{
-	"amazonaws.com":        true,
-	"googleadservices.com": true,
+	"amazonaws.com":         true,
+	"googleadservices.com":  true,
+	"googleapis.com":        true,
+	"googleusercontent.com": true,
 }
 
 // isBrandKeywordExemptRoot reports whether rootDomain is a known
@@ -646,6 +648,7 @@ var suspiciousTLDs = map[string]bool{
 }
 
 var cdnRoots = map[string]bool{
+	"akadns.net":            true,
 	"akamaihd.net":          true,
 	"akamaized.net":         true,
 	"amazonaws.com":         true,
@@ -658,10 +661,15 @@ var cdnRoots = map[string]bool{
 	"b-cdn.net":             true,
 	"b-msedge.net":          true,
 	"baishan-cloud.net":     true,
+	"bootstrapcdn.com":      true,
 	"cachefly.net":          true,
+	"cdn77.net":             true,
 	"cdn77.org":             true,
+	"cdngslb.com":           true,
 	"cloudflare.net":        true,
+	"cloudflarestorage.com": true,
 	"cloudfront.net":        true,
+	"edgecastcdn.net":       true,
 	"edgekey.net":           true,
 	"edgesuite.net":         true,
 	"fastly.net":            true,
@@ -671,8 +679,12 @@ var cdnRoots = map[string]bool{
 	"github.io":             true,
 	"githubusercontent.com": true,
 	"glitch.me":             true,
+	"googleapis.com":        true,
+	"googleusercontent.com": true,
+	"gstatic.com":           true,
 	"herokuapp.com":         true,
 	"hwcdn.net":             true,
+	"incapdns.net":          true,
 	"jsdelivr.net":          true,
 	"msedge.net":            true,
 	"netlify.app":           true,
@@ -686,6 +698,7 @@ var cdnRoots = map[string]bool{
 	"stackpathdns.com":      true,
 	"surge.sh":              true,
 	"trafficmanager.net":    true,
+	"unpkg.com":             true,
 	"vercel.app":            true,
 	"workers.dev":           true,
 }
@@ -697,6 +710,45 @@ func IsCDNRoot(rootDomain string) bool {
 		return false
 	}
 	return cdnRoots[rootDomain]
+}
+
+var sharedServingHosts = map[string]bool{
+	"github.com":                     true,
+	"raw.githubusercontent.com":      true,
+	"cdn.jsdelivr.net":               true,
+	"cdn.ampproject.org":             true,
+	"unpkg.com":                      true,
+	"cdnjs.cloudflare.com":           true,
+	"docs.google.com":                true,
+	"drive.google.com":               true,
+	"forms.gle":                      true,
+	"storage.googleapis.com":         true,
+	"sites.google.com":               true,
+	"script.google.com":              true,
+	"firebaseapp.com":                true,
+	"firebasestorage.googleapis.com": true,
+	"onedrive.live.com":              true,
+	"sharepoint.com":                 true,
+	"1drv.ms":                        true,
+	"blob.core.windows.net":          true,
+	"s3.amazonaws.com":               true,
+	"workers.dev":                    true,
+	"pages.dev":                      true,
+	"vercel.app":                     true,
+	"netlify.app":                    true,
+	"googleusercontent.com":          true,
+	"lh3.googleusercontent.com":      true,
+	"drive.usercontent.google.com":   true,
+}
+
+// IsSharedServingHost reports whether host is a known multi-tenant shared serving host
+// where tenants share the exact hostname and are separated only by URL path.
+func IsSharedServingHost(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+	if h == "" {
+		return false
+	}
+	return sharedServingHosts[h]
 }
 
 // ToSkeleton normalizes homoglyphs in a string into Latin equivalents.

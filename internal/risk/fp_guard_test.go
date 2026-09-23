@@ -42,6 +42,17 @@ func TestTLSAdvisoryNeedsCorroboration(t *testing.T) {
 		t.Errorf("suspicious-base verdict = %s; want MALICIOUS (promotion preserved)", high.Verdict)
 	}
 
+	// On CDN roots and trusted infrastructure, weak TLS remains capped at
+	// advisory weight even if pre-enrichment score is elevated (M5/CDN guard).
+	cdnWeak := analysis.Result{Domain: "customer-proxy.fastly.net", Verdict: analysis.VerdictSuspicious, Score: 55, Confidence: 0.9}
+	applyEnrichmentSignals(&cdnWeak, weak)
+	if cdnWeak.Score != 65 {
+		t.Errorf("cdn-weak score = %d; want 65 (55 + capped advisory 10)", cdnWeak.Score)
+	}
+	if cdnWeak.Verdict != analysis.VerdictSuspicious {
+		t.Errorf("cdn-weak verdict = %s; want SUSPICIOUS (not promoted to MALICIOUS)", cdnWeak.Verdict)
+	}
+
 	// Fixtures produced without AdvisoryScore keep legacy full weight
 	// (backward compatible: unscored signals are treated as strong).
 	legacy := analysis.Result{Domain: "legacy-example.net", Verdict: analysis.VerdictSafe, Score: 25}
@@ -61,13 +72,13 @@ func TestSharedApexExactIsContextual(t *testing.T) {
 	defer closeService()
 
 	live := float64(time.Now().Add(time.Hour).Unix())
-	for _, m := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org", "github.com", "raw.githubusercontent.com"} {
+	for _, m := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org", "github.com", "raw.githubusercontent.com", "docs.google.com", "drive.google.com", "s3.amazonaws.com"} {
 		if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{Score: live, Member: m}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	for _, domain := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org", "raw.githubusercontent.com"} {
+	for _, domain := range []string{"cdn.jsdelivr.net", "cdn.ampproject.org", "raw.githubusercontent.com", "docs.google.com", "drive.google.com", "s3.amazonaws.com"} {
 		result := service.Analyze(context.Background(), domain, ClientInfo{})
 		if result.Verdict == analysis.VerdictMalicious {
 			t.Errorf("Analyze(%q) = MALICIOUS; want contextual SUSPICIOUS", domain)
@@ -92,6 +103,15 @@ func TestSharedApexExactIsContextual(t *testing.T) {
 	}
 	if hasReasonContaining(result.Reasons, threatFeedReason) {
 		t.Errorf("Analyze(api.github.com) reasons = %v; want no feed reason", result.Reasons)
+	}
+
+	// docs.google.com as a noisy parent member must not block subdomains
+	resultDocs := service.Analyze(context.Background(), "sub.docs.google.com", ClientInfo{})
+	if resultDocs.Verdict == analysis.VerdictMalicious {
+		t.Errorf("Analyze(sub.docs.google.com) = MALICIOUS %v; want no block", resultDocs.Reasons)
+	}
+	if hasReasonContaining(resultDocs.Reasons, threatFeedReason) {
+		t.Errorf("Analyze(sub.docs.google.com) reasons = %v; want no feed reason", resultDocs.Reasons)
 	}
 }
 
@@ -144,6 +164,10 @@ func TestIsSharedFeedApex(t *testing.T) {
 		"cdn.ampproject.org":        true,
 		"fastly.net":                true,
 		"jsdelivr.net":              true,
+		"docs.google.com":           true,
+		"drive.google.com":          true,
+		"s3.amazonaws.com":          true,
+		"blob.core.windows.net":     true,
 	}
 	for host := range apex {
 		if !isSharedFeedApex(host) {

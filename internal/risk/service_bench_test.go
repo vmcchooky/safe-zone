@@ -67,8 +67,7 @@ func newExceptionBenchSnapshot(b *testing.B, n int) (*adblockExceptionSnapshot, 
 func BenchmarkAdblockExceptionMiss(b *testing.B) {
 	snap, rule := newExceptionBenchSnapshot(b, 1000)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, ok := snap.match("unrelated-miss.example.org", &rule); ok {
 			b.Fatal("unexpected match")
 		}
@@ -78,8 +77,7 @@ func BenchmarkAdblockExceptionMiss(b *testing.B) {
 func BenchmarkAdblockExceptionExactHit(b *testing.B) {
 	snap, rule := newExceptionBenchSnapshot(b, 1000)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, ok := snap.match("host42.bench-shared.example", &rule); !ok {
 			b.Fatal("expected match")
 		}
@@ -89,8 +87,7 @@ func BenchmarkAdblockExceptionExactHit(b *testing.B) {
 func BenchmarkAdblockExceptionSuffixHit(b *testing.B) {
 	snap, rule := newExceptionBenchSnapshot(b, 1000)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, ok := snap.match("deep.host7.zone7.bench-other.example", &rule); !ok {
 			b.Fatal("expected match")
 		}
@@ -103,8 +100,7 @@ func BenchmarkAdblockExceptionSuffixHit(b *testing.B) {
 func BenchmarkAdblockExceptionWorstBucketSpecificHit(b *testing.B) {
 	snap, hit, _, _ := newWorstBucketSnapshot()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, ok := snap.match("victim.example.com", &hit); !ok {
 			b.Fatal("expected match")
 		}
@@ -114,8 +110,7 @@ func BenchmarkAdblockExceptionWorstBucketSpecificHit(b *testing.B) {
 func BenchmarkAdblockExceptionWorstBucketWildcardFallback(b *testing.B) {
 	snap, _, _, wild := newWorstBucketSnapshot()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, ok := snap.match("victim.example.com", &wild); !ok {
 			b.Fatal("expected match")
 		}
@@ -125,8 +120,7 @@ func BenchmarkAdblockExceptionWorstBucketWildcardFallback(b *testing.B) {
 func BenchmarkAdblockExceptionWorstBucketProvenanceMiss(b *testing.B) {
 	snap, _, miss, _ := newWorstBucketSnapshot()
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if _, ok := snap.match("victim.example.com", &miss); ok {
 			b.Fatal("unexpected match")
 		}
@@ -148,8 +142,7 @@ func newMatchDetailBenchTrie(b *testing.B) *domaintrie.Trie {
 func BenchmarkMatchRuleDetailExact(b *testing.B) {
 	trie := newMatchDetailBenchTrie(b)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		detail := trie.MatchRuleDetail("exact-bench.example.com")
 		if !detail.Matched || detail.Query != detail.Rule.Domain {
 			b.Fatal("expected exact apex match")
@@ -160,8 +153,7 @@ func BenchmarkMatchRuleDetailExact(b *testing.B) {
 func BenchmarkMatchRuleDetailSuffixApex(b *testing.B) {
 	trie := newMatchDetailBenchTrie(b)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		detail := trie.MatchRuleDetail("suffix-bench.example.com")
 		if !detail.Matched || detail.Query != detail.Rule.Domain {
 			b.Fatal("expected suffix apex match")
@@ -172,8 +164,7 @@ func BenchmarkMatchRuleDetailSuffixApex(b *testing.B) {
 func BenchmarkMatchRuleDetailSuffixDescendant(b *testing.B) {
 	trie := newMatchDetailBenchTrie(b)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		detail := trie.MatchRuleDetail("deep.sub.suffix-bench.example.com")
 		if !detail.Matched || detail.Query == detail.Rule.Domain {
 			b.Fatal("expected suffix descendant match")
@@ -184,8 +175,7 @@ func BenchmarkMatchRuleDetailSuffixDescendant(b *testing.B) {
 func BenchmarkMatchRuleDetailWildcard(b *testing.B) {
 	trie := newMatchDetailBenchTrie(b)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		detail := trie.MatchRuleDetail("anything.wild-bench.example.com")
 		if !detail.Matched || detail.Rule.Origin != domaintrie.OriginWildcard {
 			b.Fatal("expected wildcard match")
@@ -196,8 +186,7 @@ func BenchmarkMatchRuleDetailWildcard(b *testing.B) {
 func BenchmarkMatchRuleDetailMiss(b *testing.B) {
 	trie := newMatchDetailBenchTrie(b)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if detail := trie.MatchRuleDetail("unrelated-miss.example.org"); detail.Matched {
 			b.Fatal("unexpected match")
 		}
@@ -247,8 +236,7 @@ func BenchmarkShadowObserveDisabled(b *testing.B) {
 		b.Fatal("bench fixture must match")
 	}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		service.observeShadowExact(detail, false)
 	}
 	if got := service.AdblockShadowExactStatus().Observations; got != 0 {
@@ -263,8 +251,7 @@ func BenchmarkShadowObserveActive(b *testing.B) {
 		b.Fatal("bench fixture must match")
 	}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		service.observeShadowExact(detail, false)
 	}
 }

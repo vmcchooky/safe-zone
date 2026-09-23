@@ -2195,33 +2195,18 @@ func sharedApexFeedHit(domain string) analysis.Result {
 	}
 }
 
-// sharedFeedApexHosts lists shared serving hostnames that are not DNS
-// roots themselves (tenants share the exact hostname, split by URL path)
-// yet must never inherit a host block from a feed member (FP-guard
-// 2026-09, M7). Tenant subdomains beneath shared roots are NOT listed:
-// their exact IOCs keep full weight. raw.githubusercontent.com is the
-// path-split twin of cdn.jsdelivr.net: every GitHub repo shares the exact
-// hostname, so an exact feed IOC there is URL-scoped (a file in one repo),
-// never grounds to block the host (prod 2026-09-20: exact member blocked
-// the apex at MALICIOUS/100).
-var sharedFeedApexHosts = map[string]bool{
-	"github.com":                true,
-	"raw.githubusercontent.com": true,
-	"cdn.jsdelivr.net":          true,
-	"cdn.ampproject.org":        true,
-}
-
 // isSharedFeedApex reports whether host is shared infrastructure whose own
 // feed membership (or inheritance by its children) must stay contextual:
-// an explicitly listed serving hostname, or a known CDN/cloud root
-// queried at the root itself. Tenant subdomains (evil.github.io,
-// x.amazonaws.com) are never apexes: exact IOCs on them still block.
+// an explicitly listed multi-tenant serving hostname (delegated to
+// analysis.IsSharedServingHost), or a known CDN/cloud root queried at the root
+// itself. Tenant subdomains (evil.github.io, x.amazonaws.com) are never apexes:
+// exact IOCs on them still block.
 func isSharedFeedApex(host string) bool {
 	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	if h == "" {
 		return false
 	}
-	if sharedFeedApexHosts[h] {
+	if analysis.IsSharedServingHost(h) {
 		return true
 	}
 	return h == whois.RegisteredDomain(h) && analysis.IsCDNRoot(h)
@@ -3309,7 +3294,9 @@ func applyEnrichmentSignals(result *analysis.Result, signals enrichmentSignals) 
 		result.Reasons = append(result.Reasons, signals.DNS.String())
 	}
 	tlsScore := signals.TLS.Score
-	if signals.TLS.AdvisoryScore > 0 && result.Score < minScoreForFullTLSWeight {
+	registeredDomain := whois.RegisteredDomain(result.Domain)
+	isCDNOrTrustedInfra := analysis.IsCDNRoot(registeredDomain) || analysis.IsTrustedInfraSuffix(result.Domain)
+	if signals.TLS.AdvisoryScore > 0 && (result.Score < minScoreForFullTLSWeight || isCDNOrTrustedInfra) {
 		strong := tlsScore - signals.TLS.AdvisoryScore
 		if strong < 0 {
 			strong = 0

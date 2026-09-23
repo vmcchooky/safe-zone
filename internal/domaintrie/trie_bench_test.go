@@ -13,8 +13,7 @@ func BenchmarkTrieMatch(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = trie.Match("sub.tracker42.ads.network7.com")
 	}
 }
@@ -26,16 +25,14 @@ func BenchmarkTrieMatchMiss(b *testing.B) {
 	}
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = trie.Match("safe.legit-website.org")
 	}
 }
 
 func BenchmarkTrieAdd(b *testing.B) {
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		trie := NewTrie()
 		for j := 0; j < 1000; j++ {
 			trie.Add(fmt.Sprintf("tracker%d.ads.network%d.com", j%100, j/100))
