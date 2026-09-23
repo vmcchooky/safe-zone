@@ -336,6 +336,97 @@ func TestSyncWritesToRedis(t *testing.T) {
 	}
 }
 
+// Security guard (F1): a replace sync that parses zero valid domains
+// (HTTP 200 with garbage/captive-portal/empty body) must fail WITHOUT
+// deleting the live feed generation.
+func TestReplaceSyncWithZeroValidPreservesLiveFeed(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+
+	ctx := context.Background()
+	redisCache := cache.NewRedis(server.Addr(), "", 0)
+	defer func() {
+		if err := redisCache.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	liveScore := float64(time.Now().Add(time.Hour).Unix())
+	if _, err := redisCache.ZAdd(ctx, DefaultThreatFeedKey, redis.Z{Score: liveScore, Member: "keep.test"}); err != nil {
+		t.Fatal(err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "feed.txt")
+	if err := os.WriteFile(path, []byte("!!! not a domain !!!\n\n   \n<captive>portal</captive>\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Sync(ctx, SyncOptions{
+		Source:    path,
+		FileRoot:  dir,
+		RedisAddr: server.Addr(),
+		Key:       DefaultThreatFeedKey,
+		Replace:   true,
+		Timeout:   time.Second,
+	})
+	if err == nil {
+		t.Fatal("expected replace sync with zero valid domains to fail")
+	}
+
+	if score, serr := redisCache.ZScore(ctx, DefaultThreatFeedKey, "keep.test"); serr != nil || score != liveScore {
+		t.Fatalf("live feed member lost or rescored: score=%v err=%v", score, serr)
+	}
+	if rev, rerr := redisCache.GetInt64(ctx, RevisionKey(DefaultThreatFeedKey)); rerr == nil && rev != 0 {
+		t.Fatalf("feed revision must not bump on refused replace, got %d", rev)
+	}
+}
+
+// Security gate (F2): plain-HTTP sources are refused by default before
+// any network or parsing happens.
+func TestSyncRejectsPlainHTTPByDefault(t *testing.T) {
+	_, err := Sync(context.Background(), SyncOptions{
+		Source:  "http://198.51.100.10/feed.txt",
+		DryRun:  true,
+		Timeout: time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "plain-HTTP") {
+		t.Fatalf("expected plain-HTTP refusal, got %v", err)
+	}
+}
+
+func TestSyncAllowsPlainHTTPWithExplicitOptIn(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("bad.test\n"))
+	}))
+	defer server.Close()
+	sourceURL, client := policySourceURL(t, server)
+
+	redisServer, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer redisServer.Close()
+
+	report, err := Sync(context.Background(), SyncOptions{
+		Source:            sourceURL,
+		Client:            client,
+		RedisAddr:         redisServer.Addr(),
+		Key:               DefaultThreatFeedKey,
+		AllowInsecureHTTP: true,
+		Timeout:           5 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Written != 1 {
+		t.Fatalf("expected 1 written domain, got %d", report.Written)
+	}
+}
+
 func TestParseOpenPhishCommunityFeed(t *testing.T) {
 	domains, stats := collectParsed(t, bytes.NewBufferString("https://a.example/login https://b.example/pay http://a.example/retry"))
 
