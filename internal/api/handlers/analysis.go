@@ -109,7 +109,7 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 	clientInfo := httputil.ExtractClientInfo(r)
 	response := h.Risk.AnalyzeWithOptions(r.Context(), domain, clientInfo, risk.AnalyzeOptions{
 		IncludeEvidence:      r.URL.Query().Get("include_evidence") == "1",
-		ForceOSINT:           r.URL.Query().Get("force_osint") == "1",
+		ForceOSINT:           forceOSINTForRequest(r),
 		URLContext:           urlContext,
 		MissingContextReason: missingContextReason,
 	})
@@ -163,4 +163,16 @@ func (h *Handler) RawDataHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	result := h.Risk.InspectRawData(r.Context(), domain)
 	httputil.WriteJSON(w, http.StatusOK, result)
+}
+
+// forceOSINTForRequest honors force_osint=1 only for authenticated
+// callers (identity attached by AttachAuthIdentityFunc). Forced OSINT
+// triggers outbound fetches that bypass the ShouldLookup gate, so
+// anonymous clients must not be able to demand it.
+func forceOSINTForRequest(r *http.Request) bool {
+	if r.URL.Query().Get("force_osint") != "1" {
+		return false
+	}
+	_, ok := authIdentityFromRequest(r)
+	return ok
 }

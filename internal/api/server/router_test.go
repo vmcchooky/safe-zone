@@ -83,6 +83,20 @@ func TestRouterRequiresAuthForAnalyzeRaw(t *testing.T) {
 	}
 }
 
+func TestRouterRequiresAuthForURLMLFeedback(t *testing.T) {
+	// Low finding: label-feedback writes counters; anonymous submissions
+	// pollute the calibration denominator. Same RequireAuth precedent as F3.
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/url-ml/feedback", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected anonymous /v1/url-ml/feedback to return 401, got %d", rec.Code)
+	}
+}
+
 func TestNewRouterRedirectsPublicRootToReactApp(t *testing.T) {
 	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},

@@ -154,3 +154,64 @@ func canonicalRequestHost(value string) string {
 	}
 	return value
 }
+
+// AttachAuthIdentityFunc annotates the request with the caller identity
+// when valid credentials are present, but never rejects. It exists for
+// endpoints that stay public while gating specific capabilities on
+// authenticated callers (e.g. force_osint on /v1/analyze, which triggers
+// outbound OSINT fetches). Side-effect free: unlike RequireAuthFunc it
+// never clears cookies and never writes error responses.
+func (h *Handler) AttachAuthIdentityFunc(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if identity, ok := h.tryAuthIdentity(r); ok {
+			next(w, r.WithContext(withAuthIdentity(r.Context(), identity)))
+			return
+		}
+		next(w, r)
+	}
+}
+
+// tryAuthIdentity mirrors the credential validation of RequireAuthFunc
+// (constant-time bearer compare, revocable admin sessions, guest config
+// check) without any of its side effects. An empty bearer token or an
+// empty configured key never matches.
+func (h *Handler) tryAuthIdentity(r *http.Request) (authIdentity, bool) {
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		if token == "" || h.Config.AdminAPIKey == "" {
+			return authIdentity{}, false
+		}
+		tokenHash := sha256.Sum256([]byte(token))
+		expectedHash := sha256.Sum256([]byte(h.Config.AdminAPIKey))
+		if subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1 {
+			return authIdentity{Username: h.adminUsername(), Role: auth.RoleAdmin, AuthMethod: "bearer"}, true
+		}
+		return authIdentity{}, false
+	}
+	cookie, err := r.Cookie("admin_session")
+	if err != nil || cookie.Value == "" {
+		return authIdentity{}, false
+	}
+	claims, err := auth.VerifySessionClaims(cookie.Value, h.Config.SessionSecret)
+	if err != nil {
+		return authIdentity{}, false
+	}
+	if claims.Role == auth.RoleAdmin {
+		if claims.SessionID == "" {
+			return authIdentity{}, false
+		}
+		store := h.Risk.StoreDB()
+		if store == nil || !store.Enabled() {
+			return authIdentity{}, false
+		}
+		active, dbErr := store.AdminSessionActive(r.Context(), auth.SessionFingerprint(claims.SessionID))
+		if dbErr != nil || !active {
+			return authIdentity{}, false
+		}
+	}
+	if err := h.ensureGuestSessionActive(r.Context(), claims); err != nil {
+		return authIdentity{}, false
+	}
+	return authIdentity{Username: claims.Username, Role: claims.Role, AuthMethod: "cookie"}, true
+}
