@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"safe-zone/internal/analysis"
 	"safe-zone/internal/cache"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
@@ -54,15 +55,16 @@ func isPublicSuffixMember(domain string) bool {
 }
 
 // admitFeedDomain reports whether domain may enter the threat feed,
-// counting refused public-suffix members in stats. Subdomains of shared
-// roots (evil.github.io) stay admissible: only the shared root itself is
+// counting refused public-suffix members and shared serving hosts in stats.
+// Subdomains of shared roots (evil.github.io) stay admissible: only the
+// shared root itself or shared serving hosts (docs.google.com, etc.) are
 // refused.
 func admitFeedDomain(domain string, stats *ParseStats) bool {
-	if isPublicSuffixMember(domain) {
+	if isPublicSuffixMember(domain) || analysis.IsSharedServingHost(domain) {
 		if stats != nil {
 			stats.SkippedPublicSuffix++
 		}
-		logjson.Warn("threat feed member is a public suffix; refusing to admit", map[string]any{
+		logjson.Warn("threat feed member is a public suffix or shared host; refusing to admit", map[string]any{
 			"service": "feed",
 			"domain":  domain,
 		})
