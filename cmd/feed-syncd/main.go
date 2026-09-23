@@ -34,6 +34,7 @@ type syncSettings struct {
 	RedisDB       int
 	Key           string
 	Replace       bool
+	AllowInsecure bool
 	Once          bool
 	Interval      time.Duration
 	Timeout       time.Duration
@@ -136,6 +137,7 @@ func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error)
 	// loop). Single-source freshness then rests on per-member TTL expiry.
 	// Enable -replace only when this daemon owns its key exclusively.
 	replace := flags.Bool("replace", false, "delete the target set before writing parsed domains (requires exclusive key ownership)")
+	allowInsecure := flags.Bool("allow-insecure-http", config.Bool("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", false), "allow plain-HTTP feed fetch (MITM can inject mass blocks; prefer https)")
 	once := flags.Bool("once", false, "run one sync cycle and exit")
 	interval := flags.Duration("interval", config.DurationSeconds("SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS", 24*time.Hour), "time between sync cycles")
 	timeout := flags.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
@@ -167,6 +169,7 @@ func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error)
 		RedisDB:       *redisDB,
 		Key:           *key,
 		Replace:       *replace,
+		AllowInsecure: *allowInsecure,
 		Once:          *once,
 		Interval:      *interval,
 		Timeout:       *timeout,
@@ -187,6 +190,7 @@ func buildSyncOptions(settings syncSettings, client *http.Client) feed.SyncOptio
 		RedisDB:                    settings.RedisDB,
 		Key:                        settings.Key,
 		Replace:                    settings.Replace,
+		AllowInsecureHTTP:          settings.AllowInsecure,
 		Timeout:                    settings.Timeout,
 		Client:                     client,
 		ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
