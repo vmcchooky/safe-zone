@@ -68,6 +68,21 @@ func TestNewRouterMountsReactAppAtAppPrefix(t *testing.T) {
 	}
 }
 
+func TestRouterRequiresAuthForAnalyzeRaw(t *testing.T) {
+	// F3: /v1/analyze/raw triggers outbound DNS/TLS/WHOIS for an
+	// attacker-chosen domain; it must not be anonymously reachable
+	// (it is publicly proxied by Caddy like every other API route).
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, nil)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/analyze/raw?domain=example.com", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected anonymous /v1/analyze/raw to return 401, got %d", rec.Code)
+	}
+}
+
 func TestNewRouterRedirectsPublicRootToReactApp(t *testing.T) {
 	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("<html>spa</html>")},
