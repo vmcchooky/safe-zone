@@ -514,19 +514,30 @@ func New(path string, retentionDays int) (*DB, error) {
 		{"trace", "ALTER TABLE analysis_log ADD COLUMN trace TEXT DEFAULT '{}'"},
 	}
 	logColumns := make(map[string]bool)
-	if logRows, logErr := sqlDB.Query("PRAGMA table_info(analysis_log)"); logErr == nil {
-		for logRows.Next() {
-			var cid int
-			var name, columnType string
-			var notNull int
-			var defaultValue any
-			var primaryKey int
-			if err := logRows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err == nil {
-				logColumns[name] = true
-			}
-		}
-		_ = logRows.Close()
+	logRows, logErr := sqlDB.Query("PRAGMA table_info(analysis_log)")
+	if logErr != nil {
+		_ = sqlDB.Close() // #nosec G104 -- error path; primary error already captured
+		return nil, fmt.Errorf("inspect analysis_log schema: %w", logErr)
 	}
+	for logRows.Next() {
+		var cid int
+		var name, columnType string
+		var notNull int
+		var defaultValue any
+		var primaryKey int
+		if err := logRows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			_ = logRows.Close() // #nosec G104 -- error path; primary error already captured
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("scan analysis_log schema: %w", err)
+		}
+		logColumns[name] = true
+	}
+	if err := logRows.Err(); err != nil {
+		_ = logRows.Close() // #nosec G104 -- error path; primary error already captured
+		_ = sqlDB.Close()
+		return nil, fmt.Errorf("read analysis_log schema: %w", err)
+	}
+	_ = logRows.Close() // #nosec G104 -- rows read successfully; close error is non-critical
 	for _, migration := range policyColumns {
 		if logColumns[migration.name] {
 			continue
