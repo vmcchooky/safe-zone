@@ -77,6 +77,8 @@ Audit cũng phát hiện một khoảng trống chưa được xử lý: self-se
 - Rollback input đã ghi nhận và kiểm chứng trước deploy: backup `backups/20260926-040203` (65 MB, `sha256sum -c SHA256SUMS` toàn bộ OK) và tag bảo toàn `safe-zone-core-api:6f69f5e` / `safe-zone-dns-resolver:6f69f5e` trỏ đúng image ID của build `6f69f5e`.
 - **Ngoại lệ release gate:** không có host staging trong cấu hình SSH (chỉ có `safe-zone` production), nên canary chạy thẳng trên production với rollback input đã kiểm chứng và verification window ngắn thay vì triển khai staging tách biệt. Ngoại lệ này cần được đóng bằng một host staging trước release có thay đổi policy/security tiếp theo.
 - Chưa thu được phân bổ verdict từ SQL `analysis_log` vì SQLite nằm trong docker volume và container không có `sqlite3`/`python3`; bằng chứng canary dựa trên response `analyze` và `policy` là nguồn chính thức.
+- Inventory purge read-only bằng `cmd/feed-shared-host-audit` (predicate `feed.IsAdmissibleDomain`, ZSCAN): production có `527.613` member ở revision `432` và đúng **8** member là shared serving host, đều hết hạn `2026-10-10`. Đối chiếu âm tính `microsoft.github.io`, `evil.github.io`, `raw.githubusercontent.com.evil.com` và `vietcombank.com.vn` đều admissible, nên tenant IOC không nằm trong tập purge candidate.
+- **Chưa purge gì trên production.** Member cũ hiện vẫn được runtime shared-apex guard hạ thành `SUSPICIOUS/40` với policy `allow`, nên việc chưa purge không tạo rủi ro chặn nhầm. Purge là slice vận hành riêng, cần backup, kiểm tra multi-source và phê duyệt operator.
 
 **Revisit when:**
 

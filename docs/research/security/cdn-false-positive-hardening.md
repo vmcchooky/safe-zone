@@ -123,6 +123,12 @@ Trong `internal/risk/service.go` (`applyEnrichmentSignals`):
    - Giữ 26 path-shared serving host trong `sharedServingHosts`.
    - Tách self-service root khỏi delegated `IsCDNRoot`; self-service root dùng `IsSharedHostingRoot` cho entropy và parent-walk protection nhưng không dùng delegated-CDN FP/TLS cap.
    - Tách **36 delegated CDN/cloud edge root** khỏi **17 self-service root**; giữ exact host và API tương thích rõ ràng.
+3. **Inventory purge (read-only, 2026-09-26):**
+   - Thêm `cmd/feed-shared-host-audit`: CLI chỉ đọc, phân loại member bằng `feed.IsAdmissibleDomain` — cùng predicate mà mọi feed writer và OSINT promotion đang dùng — nên inventory không thể lệch với hành vi runtime.
+   - Quét production bằng ZSCAN: `527.613` member, feed revision `432`, **8 member bị từ chối** và tất cả đều là shared serving host hết hạn `2026-10-10`: `docs.google.com`, `drive.google.com`, `sites.google.com`, `firebasestorage.googleapis.com`, `cdn.jsdelivr.net`, `cdn.ampproject.org`, `github.com`, `raw.githubusercontent.com`.
+   - Đối chiếu âm tính: `microsoft.github.io` (IOC thật), `evil.github.io`, `raw.githubusercontent.com.evil.com`, `vietcombank.com.vn` đều **admissible** — tức không thể bị purge nhầm.
+   - **Phương pháp & Lý do chọn lực:** không hardcode danh sách host trong script vì sẽ lệch ngay khi registry phân tích thay đổi; gọi predicate của production để inventory và purge decision dùng chung một nguồn sự thật. Dùng ZSCAN thay vì KEYS vì KEYS chặn event loop trên tập nửa triệu member.
+   - **Trạng thái:** mới chỉ inventory, **chưa purge**. Member cũ vẫn được runtime shared-apex guard hạ xuống `SUSPICIOUS/40` + policy `allow`, nên chưa purge không tạo rủi ro chặn nhầm. Purge phải là slice riêng có backup, kiểm tra multi-source và phê duyệt operator.
 3. **Canary Production A/B (2026-09-26, build `bdcd495`):**
    - Baseline được đo trên build đang chạy `6f69f5e` trước khi deploy, sau đó lặp lại **cùng một tập 14 domain** trên `bdcd495`; 12/14 probe không đổi, 2 probe thay đổi đúng mục tiêu thiết kế.
    - `microsoft.github.io` là exact feed IOC thật nằm trên self-service root: giữ `MALICIOUS/100` và policy `block`. Đây là bằng chứng trực tiếp rằng việc tách self-service khỏi cơ chế FP-guard **không làm mất khả năng chặn IOC**.
