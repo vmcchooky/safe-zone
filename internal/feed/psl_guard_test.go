@@ -34,6 +34,52 @@ func TestSyncDryRunSkipsPublicSuffixMembers(t *testing.T) {
 	if report.Stats.SkippedPublicSuffix != 3 {
 		t.Fatalf("expected 3 public-suffix skips (github.io, workers.dev, co.uk), got %#v", report.Stats)
 	}
+	if report.Stats.SkippedSharedHost != 2 {
+		t.Fatalf("expected 2 shared-root skips (github.io, workers.dev), got %#v", report.Stats)
+	}
+}
+
+func TestSyncRefusesSelfServiceRootsButAdmitsTenants(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	redisCache := cache.NewRedis(server.Addr(), "", 0)
+	defer redisCache.Close()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "feed.txt")
+	fixture := "pages.dev\nworkers.dev\nvercel.app\npaypal.pages.dev\nattacker.vercel.app\n"
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Sync(context.Background(), SyncOptions{
+		Source:    path,
+		FileRoot:  dir,
+		RedisAddr: server.Addr(),
+		Key:       DefaultThreatFeedKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Written != 2 {
+		t.Fatalf("expected two self-service tenants admitted, got %d (%#v)", report.Written, report.Stats)
+	}
+	if report.Stats.SkippedSharedHost != 3 {
+		t.Fatalf("expected three self-service roots refused, got %d (%#v)", report.Stats.SkippedSharedHost, report.Stats)
+	}
+	for _, allowed := range []string{"paypal.pages.dev", "attacker.vercel.app"} {
+		if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, allowed); err != nil {
+			t.Fatalf("expected tenant %s in feed: %v", allowed, err)
+		}
+	}
+	for _, refused := range []string{"pages.dev", "workers.dev", "vercel.app"} {
+		if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, refused); err == nil {
+			t.Fatalf("self-service root %s must not be admitted", refused)
+		}
+	}
 }
 
 func TestSyncWriteSkipsPublicSuffixMembers(t *testing.T) {
@@ -122,6 +168,9 @@ func TestSyncSkipsSharedServingHosts(t *testing.T) {
 	}
 	if report.Written != 1 {
 		t.Fatalf("expected only evil-real-phish.com written, got %d (%#v)", report.Written, report.Stats)
+	}
+	if report.Stats.SkippedSharedHost != 4 {
+		t.Fatalf("expected 4 shared-host skips, got %d (%#v)", report.Stats.SkippedSharedHost, report.Stats)
 	}
 
 	redisCache := cache.NewRedis(server.Addr(), "", 0)

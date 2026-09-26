@@ -20,6 +20,7 @@ type ParseStats struct {
 	Duplicates          int `json:"duplicates"`
 	Skipped             int `json:"skipped"`
 	SkippedPublicSuffix int `json:"skipped_public_suffix"`
+	SkippedSharedHost   int `json:"skipped_shared_host"`
 }
 
 type IndicatorKind string

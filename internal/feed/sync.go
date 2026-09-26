@@ -54,15 +54,34 @@ func isPublicSuffixMember(domain string) bool {
 	return suffix != "" && strings.EqualFold(suffix, value)
 }
 
+// isSharedServingRefused reports whether a host is refused by the feed
+// admission policy because it is a shared serving hostname or a shared root.
+// It deliberately keeps exact path-shared hosts such as cdn.jsdelivr.net
+// separate from root namespaces such as pages.dev.
+func isSharedServingRefused(domain string) bool {
+	return analysis.IsSharedServingHost(domain) || analysis.IsSharedHostingRoot(domain)
+}
+
+func IsAdmissibleDomain(domain string) bool {
+	return !isPublicSuffixMember(domain) && !isSharedServingRefused(domain)
+}
+
 // admitFeedDomain reports whether domain may enter the threat feed,
 // counting refused public-suffix members and shared serving hosts in stats.
 // Subdomains of shared roots (evil.github.io) stay admissible: only the
 // shared root itself or shared serving hosts (docs.google.com, etc.) are
 // refused.
 func admitFeedDomain(domain string, stats *ParseStats) bool {
-	if isPublicSuffixMember(domain) || analysis.IsSharedServingHost(domain) {
+	pslRefused := isPublicSuffixMember(domain)
+	sharedHostRefused := isSharedServingRefused(domain)
+	if pslRefused || sharedHostRefused {
 		if stats != nil {
-			stats.SkippedPublicSuffix++
+			if pslRefused {
+				stats.SkippedPublicSuffix++
+			}
+			if sharedHostRefused {
+				stats.SkippedSharedHost++
+			}
 		}
 		logjson.Warn("threat feed member is a public suffix or shared host; refusing to admit", map[string]any{
 			"service": "feed",
@@ -86,15 +105,15 @@ func filterPublicSuffixMembers(domains []string, stats *ParseStats) []string {
 }
 
 type SyncOptions struct {
-	Source                     string
-	FileRoot                   string
-	MaxBytes                   int64
-	RedisAddr                  string
-	RedisPassword              string
-	RedisDB                    int
-	Key                        string
-	DryRun                     bool
-	Replace                    bool
+	Source        string
+	FileRoot      string
+	MaxBytes      int64
+	RedisAddr     string
+	RedisPassword string
+	RedisDB       int
+	Key           string
+	DryRun        bool
+	Replace       bool
 	// AllowInsecureHTTP opts a single operator-controlled source out of
 	// the plain-HTTP refusal below. Default false: HTTP feed fetches
 	// are MITM-able and a poisoned feed maps directly to mass

@@ -6,6 +6,8 @@ import (
 	"net"
 	"sort"
 	"strings"
+
+	"safe-zone/internal/analysis"
 )
 
 type AdmissionMode string
@@ -41,9 +43,12 @@ type ShadowDiff struct {
 	// ContextualLoaded counts contextual members the Shadow sync loads
 	// that Filter would refuse.
 	ContextualLoaded int `json:"contextual_loaded"`
-	// ContextualPSLRefused counts contextual candidates already refused
-	// as shared roots before the Filter comparison.
+	// ContextualPSLRefused counts contextual candidates refused as public
+	// suffixes before the Filter comparison.
 	ContextualPSLRefused int `json:"contextual_psl_refused"`
+	// ContextualSharedHostRefused counts contextual candidates refused as
+	// shared serving hosts before the Filter comparison.
+	ContextualSharedHostRefused int `json:"contextual_shared_host_refused"`
 	// Sample holds the first entries of the sorted contextual list,
 	// bounded so sync reports stay small.
 	Sample []string `json:"sample,omitempty"`
@@ -59,8 +64,15 @@ const shadowSampleCap = 50
 func SummarizeShadowGap(contextual []string) *ShadowDiff {
 	diff := &ShadowDiff{}
 	for _, domain := range contextual {
-		if isPublicSuffixMember(domain) {
+		pslRefused := isPublicSuffixMember(domain)
+		sharedHostRefused := analysis.IsSharedServingHost(domain) || analysis.IsSharedHostingRoot(domain)
+		if pslRefused {
 			diff.ContextualPSLRefused++
+		}
+		if sharedHostRefused {
+			diff.ContextualSharedHostRefused++
+		}
+		if pslRefused || sharedHostRefused {
 			continue
 		}
 		diff.ContextualLoaded++
