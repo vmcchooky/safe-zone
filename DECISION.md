@@ -302,6 +302,81 @@ production:
 
 ---
 
+## 2026-09-26 - Grace degradation is redundant; corroboration already exists in the score model
+
+**Status:** accepted
+
+**Context:**
+
+Sau khi recall threat-feed đo được 100%, bước còn lại của chương trình FP là
+giảm **blast radius**: biến một quyết định chặn sai thành gián đoạn nhẹ thay
+vì mất dịch vụ. Đề xuất ban đầu là *grace degradation* — nghi bạ chặn trước,
+chỉ chặn thật sau khi xác nhận lặp lại.
+
+Trước khi xây, tận dụng bài học của lát cắt trước: **đo trước, đừng xây theo
+giả định.**
+
+**Measurement 1 — MALICIOUS đến từ đâu.** Trong 1.306 verdict `MALICIOUS` của
+`analysis_log`:
+
+| Nguồn | Số | Ghi chú |
+|---|---:|---|
+| `adblock` thuần | 844 | kỷ nguyên `PolicySemanticsLegacy`, đã tách lớp |
+| feed hit | 32 | dẫn chứng mạnh, đáng tin |
+| còn lại | 1.274 | **luôn là ≥ 2 nhóm tín hiệu độc lập** |
+
+Không có mẫu nào là `MALICIOUS` từ một nhóm tín hiệu duy nhất.
+
+**Measurement 2 — ngưỡng toán học.** Với `DefaultAnalysisConfig`:
+
+| Tín hiệu | Điểm |
+|---|---:|
+| `brand_spoofing` | 50 |
+| punycode | 35 |
+| entropy | 35 |
+| mixed script | 25 |
+| keyword base + match + multiple | 35 |
+| long domain | 15 |
+| hyphen / digit ratio | 10 |
+
+Ngưỡng `MALICIOUS` là **70**. Tín hiệu mạnh nhất đơn lẻ là **50 < 70**, nên
+`MALICIOUS` **không thể** đạt bằng một tín hiệu. Cần tối thiểu hai nhóm độc lập
+(ví dụ `50 + 35 = 85`), hoặc một feed hit có thẩm quyền (`100`).
+
+**Decision:**
+
+1. **Không** triển khai grace degradation. Nó chồng lặp lên cơ chế corroboration
+   đã có sẵn, thêm độ trễ và độ phức tạp mà không giảm FP nào đã quan sát
+   được.
+2. Blast radius của lớp security đã được giới hạn bằng thiết kế. Đường lùi
+   còn lại là công tắc adblock đã triển khai, và `cmd/block-audit` để phát hiện.
+3. **Hoãn** verified infrastructure registry có evidence/TTL. Chưa có bằng chứng
+   cho thấy registry tĩnh hiện tại thiếu mục: 129 domain bị chặn trong 12 ngày
+   và **không** có shared-host nào bị chặn. Xây registry khi có bằng chứng một
+   self-service root mới gây FP, không xây trước.
+4. Nguồn nhiễm thật sự còn lại là **chất lượng feed** (xem entry 2026-09-26 về
+   recall), là hướng công việc riêng.
+
+**Consequences:**
+
+- Chương trình 4 bước kết thúc mà không thêm logic chặn mới, đúng vì bằng
+  chứng không ủng hộ.
+- Các số liệu trong `analysis_log` pha lẫn lịch sử của các bản vá đã merge, nên
+  không dùng làm baseline cho thay đổi scoring trong tương lai.
+
+**Validation evidence:**
+
+- Truy vấn `analysis_log` trên bản sao read-only của DB production.
+- Trọng số lấy từ `config.DefaultAnalysisConfig()`; ngưỡng lấy từ pipeline verdict.
+
+**Revisit when:**
+
+- Có bằng chứng thực địa về một lần chặn sai do **chỉ một** nhóm tín hiệu.
+- Có tín hiệu mới với trọng số đơn ≥ 70.
+- Có self-service root mới gây FP → mở lại đề xuất verified registry.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
