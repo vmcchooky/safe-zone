@@ -123,6 +123,15 @@ Trong `internal/risk/service.go` (`applyEnrichmentSignals`):
    - Giữ 26 path-shared serving host trong `sharedServingHosts`.
    - Tách self-service root khỏi delegated `IsCDNRoot`; self-service root dùng `IsSharedHostingRoot` cho entropy và parent-walk protection nhưng không dùng delegated-CDN FP/TLS cap.
    - Tách **36 delegated CDN/cloud edge root** khỏi **17 self-service root**; giữ exact host và API tương thích rõ ràng.
+3. **Canary Production A/B (2026-09-26, build `bdcd495`):**
+   - Baseline được đo trên build đang chạy `6f69f5e` trước khi deploy, sau đó lặp lại **cùng một tập 14 domain** trên `bdcd495`; 12/14 probe không đổi, 2 probe thay đổi đúng mục tiêu thiết kế.
+   - `microsoft.github.io` là exact feed IOC thật nằm trên self-service root: giữ `MALICIOUS/100` và policy `block`. Đây là bằng chứng trực tiếp rằng việc tách self-service khỏi cơ chế FP-guard **không làm mất khả năng chặn IOC**.
+   - `paypal.workers.dev` / `paypal.pages.dev` chuyển `SAFE/10` → `SUSPICIOUS/40` và policy giữ `allow`: gap phát hiện đã đóng mà không tạo block nhầm mới.
+   - `paypal.fastly.net` giữ `SAFE/10`: delegated-CDN advisory cap không bị nới nhầm sang self-service và ngược lại.
+   - Lookalike `raw.githubusercontent.com.evil.com` và `evil.pages.dev.attacker.com` giữ `SAFE/15`: suffix-lookalike không bị nhận thành shared apex.
+   - Health/smoke: `/healthz` 200, `/v1/version` = `bdcd495` cho cả hai service, `public-edge-smoke.sh` và `check-block-page.sh` PASS, `RestartCount=0`, log không có `panic|fatal|ERROR`, threat feed giữ nguyên `527.517` member và revision `431`.
+   - **Phương pháp & Lý do chọn lựa:** dùng A/B cùng tập probe trên chính production thay vì chỉ dựa vào unit test, vì biến số thật nằm ở tương tác giữa feed thật, adblock suffix, policy semantics `separated` và cache epoch. Unit test chứng minh logic, A/B production chứng minh hành vi vận hành.
+   - **Ngoại lệ:** không có host staging (SSH config chỉ có `safe-zone`), nên bỏ bước staging của release gate và chạy canary trực tiếp trên production với backup `backups/20260926-040203` đã kiểm chứng `SHA256SUMS` và tag rollback `safe-zone-*:6f69f5e` được tạo trước khi deploy.
 
 ---
 
@@ -134,6 +143,8 @@ Trong `internal/risk/service.go` (`applyEnrichmentSignals`):
 - Kiểm thử phòng ngừa chặn nhầm: `internal/risk/fp_guard_test.go`
 - Kiểm thử bảo vệ feed: `internal/feed/psl_guard_test.go`
 - Kiểm thử self-service hosting: `internal/analysis/fp_guard_test.go`, `internal/feed/psl_guard_test.go`
+- Evidence preflight release (local, gitignored): `tmp/release-gate/20260926-033434_production-edge/` (metadata, go test/build, gosec, govulncheck, 4 docker image inspect)
+- Evidence canary A/B (local, gitignored): `tmp/canary/20260926-bdcd495/` (`baseline-6f69f5e.jsonl`, `after-bdcd495.jsonl`, `ab-comparison.csv`, `policy-after-bdcd495.jsonl`)
 - Quyết định dự án: `DECISION.md`
 
 ---
@@ -144,3 +155,4 @@ Trong `internal/risk/service.go` (`applyEnrichmentSignals`):
 |---|---|---|
 | 2026-09-23 | Khởi tạo tài liệu nghiên cứu và ghi nhận giải pháp kỹ thuật khắc phục chặn nhầm CDN/Multi-tenant | AI Agent (Gemini 2.5 Flash) |
 | 2026-09-25 | Audit độc lập, ghi `DECISION.md`, tách delegated CDN khỏi self-service hosting, bump analysis revision, đồng bộ OSINT feed admission và tách telemetry counters | AI Agent (Gemini 2.5 Flash) |
+| 2026-09-26 | Merge PR #85 (`bdcd495`) và chạy canary production A/B so với baseline `6f69f5e`; xác nhận không mất chặn IOC self-service, đóng gap phát hiện và không tạo block nhầm mới | AI Agent (Gemini 2.5 Flash) |

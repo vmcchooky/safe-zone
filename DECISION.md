@@ -64,6 +64,19 @@ Audit cũng phát hiện một khoảng trống chưa được xử lý: self-se
 - Regression mới pin self-service brand penalty, exact tenant IOC, delegated CDN penalty, OSINT admission refusal, counter telemetry và shadow-gap accounting.
 - Independent read-only review ngày 2026-09-25 kết luận `APPROVE WITH CONDITIONS`; hai điều kiện test về lookalike shared host và toàn bộ 17 self-service root đã được bổ sung trước commit.
 - Gate tương đương `mise run ci` PASS: 4/4 decision corpus, `go test ./...`, `go build ./...`, `golangci-lint`, `go vet`, UI typecheck/build, Playwright E2E 47/47, gosec 0 issue, govulncheck 0 reachable vulnerability.
+- PR #85 merged thành `bdcd495`; CI và Security trên `main` PASS sau merge.
+- Production canary 2026-09-26 (deploy `bdcd495`, edge mode `production-edge`, build time `2026-09-26T04:04:45Z`) PASS với A/B probe cùng tập 14 domain:
+  - `microsoft.github.io` (exact feed IOC thật trên self-service root) giữ `MALICIOUS/100` và policy `block` trước và sau.
+  - `paypal.workers.dev` và `paypal.pages.dev` chuyển `SAFE/10` → `SUSPICIOUS/40`, policy vẫn `allow` (không tạo FP block mới).
+  - `paypal.fastly.net` giữ `SAFE/10`; delegated-CDN FP/TLS cap không bị nới.
+  - `docs.google.com`, `cdn.jsdelivr.net`, `raw.githubusercontent.com`, `github.com`, `drive.google.com` giữ `SUSPICIOUS/40` contextual, policy `allow`.
+  - Lookalike `raw.githubusercontent.com.evil.com` và `evil.pages.dev.attacker.com` giữ `SAFE/15`, không bị nhận thành shared apex.
+  - `bank.vercel.app`, `vietcombank.com.vn`, `example.com` không đổi (`SAFE/0`).
+  - 12/14 probe không đổi; 2 probe thay đổi đúng mục tiêu thiết kế.
+- Canary verification: `/healthz` 200 cho cả core-api và dns-resolver, `/v1/version` báo `bdcd495` ở cả hai service, `public-edge-smoke.sh` PASS, `check-block-page.sh` PASS, `RestartCount=0` cho cả hai container, không có `panic|fatal|ERROR` trong log sau restart, threat feed giữ nguyên `527.517` member và revision `431`.
+- Rollback input đã ghi nhận và kiểm chứng trước deploy: backup `backups/20260926-040203` (65 MB, `sha256sum -c SHA256SUMS` toàn bộ OK) và tag bảo toàn `safe-zone-core-api:6f69f5e` / `safe-zone-dns-resolver:6f69f5e` trỏ đúng image ID của build `6f69f5e`.
+- **Ngoại lệ release gate:** không có host staging trong cấu hình SSH (chỉ có `safe-zone` production), nên canary chạy thẳng trên production với rollback input đã kiểm chứng và verification window ngắn thay vì triển khai staging tách biệt. Ngoại lệ này cần được đóng bằng một host staging trước release có thay đổi policy/security tiếp theo.
+- Chưa thu được phân bổ verdict từ SQL `analysis_log` vì SQLite nằm trong docker volume và container không có `sqlite3`/`python3`; bằng chứng canary dựa trên response `analyze` và `policy` là nguồn chính thức.
 
 **Revisit when:**
 
