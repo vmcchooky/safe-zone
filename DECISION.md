@@ -167,6 +167,82 @@ kỳ danh sách hardcode nào.
 
 ---
 
+## 2026-09-26 - Adblock false positives are fixed with scoped exceptions, not exact mode
+
+**Status:** accepted
+
+**Context:**
+
+Sau khi triển khai công tắc điều khiển, kế hoạch ban đầu là chuyển production
+sang `SAFE_ZONE_ADBLOCK_MATCH_MODE=exact` kèm một số exception. Trước khi đổi,
+tác động được đo **offline** từ cache adblock thật (75.945 rule) đối chiếu với
+129 domain từng bị chặn.
+
+Kết quả **đảo ngược khuyến nghị**:
+
+| Nhóm | Số domain | Dưới chế độ `exact` |
+|---|---:|---|
+| Có tên nguyên vẹn trong danh sách | 102 | **vẫn bị chặn** |
+| Chỉ khớp qua parent suffix | 26 | được thả |
+| Không có trong danh sách | 1 | không liên quan |
+
+26 domain được thả gần như toàn bộ là quảng cáo/tracking (AppsFlyer, Inmobi,
+Pangle, Vungle, Admaster). Trong khi đó các host **gây hại** — Zalo, Firebase
+Logging, Crashlytics — đều có tên nguyên vẹn trong danh sách nên `exact` **không
+giúp gì**. Chuyển sang `exact` sẽ thả quảng cáo mà vẫn giữ hạ tầng hại hại.
+
+**Decision:**
+
+1. Giữ `match_mode=suffix`. `exact` không phải công cụ đúng cho lớp false
+   positive này.
+2. Dùng **scoped content exception** (`adblock_exceptions.json`) cho từng host
+   hại hại, với `matched_rule` và `source_id` chính xác lấy từ cache thật.
+3. Exception thêm: `f-emc.ngsp.gov.vn` (hạ tầng email cơ quan nhà nước),
+   `crashlytics.com` (suffix, phủ mọi subdomain), `firebaselogging.googleapis.com`,
+   `firebaselogging-pa.googleapis.com`, `crashlyticsreports-pa.googleapis.com`.
+   Giữ nguyên hai exception Zalo sẵn có.
+4. **Cố ý không** except `ads-platform.zalo.me`: đó là nền tảng quảng cáo của
+   Zalo, chặn là đúng mục đích. Tương tự, Xiaomi/Microsoft/Google analytics và
+   SDK quảng cáo vẫn bị chặn.
+5. Bộ phân loại của `cmd/block-audit` là **công cụ sắp xếp**, không phải phán
+   quyết. `app_critical` khớp `sdk`/`config`/`telemetry` nên gom nhầm SDK quảng
+   cáo. Phán quyết cuối cùng dựa trên hiểu biết về dịch vụ.
+
+**Consequences:**
+
+- 7 exception đang hiệu lực; 8 domain hại hại chuyển sang `allow`.
+- Quảng cáo vẫn bị chặn đầy đủ; `microsoft.github.io` vẫn `MALICIOUS/100` +
+  `block`.
+- Invariant lớp security từ PR #85 không đổi.
+- Cần thêm exception mới khi gặp hạ tầng dùng chung mới; công tắc bật/tắt
+  vẫn là đường lùi khẩn cấp.
+
+**Validation evidence:**
+
+- `/v1/status.adblock.exceptions`: count `2 → 7`, revision đổi, `last_reload_ok=true`,
+  `reload_failures=0`.
+- Probe `allow`: `log.api.zaloapp.com`, `centralized.zaloapp.com`,
+  `f-emc.ngsp.gov.vn`, `firebase-settings.crashlytics.com`,
+  `firebaselogging.googleapis.com`, `firebaselogging-pa.googleapis.com`,
+  `crashlyticsreports-pa.googleapis.com`, `settings.crashlytics.com` → 8/8 `allow`.
+- Probe `block`: `googleads.g.doubleclick.net`, `ms.applovin.com`,
+  `api16-access-wf-sg.pangle.io`, `ads-platform.zalo.me` → 4/4 `block`.
+- `microsoft.github.io` → `block` `MALICIOUS/100`.
+- Không regression: `docs.google.com`, `cdn.jsdelivr.net`, `github.com` vẫn
+  `SUSPICIOUS/40`; `paypal.workers.dev` `SUSPICIOUS/40`; `paypal.fastly.net`
+  `SAFE/10`; lookalike `SAFE/15`; `vietcombank.com.vn` `SAFE/0`.
+- Rollback: `/tmp/adblock_exceptions.backup.json` (2 entry) trên VPS.
+
+**Revisit when:**
+
+- Danh sách nguồn adblock đổi, khiến `matched_rule` / `source_id` cũ không còn
+  khớp và exception im lặng mất hiệu lực.
+- Có bằng chứng rằng `exact` hữu ích cho một lớp hạ tầng khác, thì mở lại đề
+  xuất dùng `exact` cho **nguồn đó** qua per-source policy thay vì toàn cục.
+- Số exception vượt ngưỡng cần quản lý (hiện loader cho phép 1024).
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
