@@ -335,6 +335,11 @@ type Service struct {
 	adblockSrcCount   atomic.Int32
 	adblockOKCount    atomic.Int32
 
+	// adblockResync lets an operator request a rule rebuild without blocking
+	// the caller. A one-slot buffer coalesces repeated requests, so flipping
+	// match mode several times still costs at most one rebuild.
+	adblockResync chan struct{}
+
 	// Shadow exact/suffix observation (PR3B-lite). The enable flag is
 	// startup-only; the counters below are observation-only aggregates and
 	// never feed back into enforcement.
@@ -984,6 +989,7 @@ func NewService(options Options) *Service {
 	svc.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
 	svc.adblockSourcePolicies = parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
 	svc.adblockTrie.Store(domaintrie.NewTrie())
+	svc.adblockResync = make(chan struct{}, 1)
 	svc.adblockShadowExactEnabled = options.AdblockShadowExactEnabled || config.Bool(envAdblockShadowExactEnabled, false)
 	svc.adblockExceptionsFile = strings.TrimSpace(options.AdblockExceptionsFile)
 	if svc.adblockExceptionsFile == "" {
@@ -994,6 +1000,9 @@ func NewService(options Options) *Service {
 	svc.adblockExceptions.Store(newEmptyAdblockExceptionSnapshot())
 	svc.reloadAdblockExceptions()
 	svc.refreshAdblockEnabled()
+	// Reconcile the persisted match mode at startup so an operator change
+	// survives a restart instead of reverting to the environment default.
+	svc.refreshAdblockMatchMode()
 	if svc.redis != nil {
 		svc.subscribeReload = svc.redis.Subscribe
 	}
@@ -2219,7 +2228,7 @@ func (s *Service) isAdblockEnabled() bool {
 // refreshAdblockEnabled reads the adblock_enabled flag from store/env
 // and caches it atomically. Safe to call from any goroutine.
 func (s *Service) refreshAdblockEnabled() {
-	enabled := config.Bool("SAFE_ZONE_ADBLOCK_ENABLED", true)
+	enabled := config.Bool(envAdblockEnabled, true)
 	if s.store != nil && s.store.Enabled() {
 		val, err := s.store.GetSystemConfig(context.Background(), "adblock_enabled")
 		if err == nil && val != "" {
@@ -2227,6 +2236,23 @@ func (s *Service) refreshAdblockEnabled() {
 		}
 	}
 	s.adblockEnabled.Store(enabled)
+}
+
+// refreshAdblockMatchMode reconciles the persisted match mode with the
+// process default and caches the result.
+//
+// The store wins over the environment for the same reason the enable flag
+// does: an operator switching the mode at runtime must not have it silently
+// reverted by the next refresh.
+func (s *Service) refreshAdblockMatchMode() {
+	mode := parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))
+	if s.store != nil && s.store.Enabled() {
+		val, err := s.store.GetSystemConfig(context.Background(), systemConfigAdblockMatchMode)
+		if err == nil && val != "" {
+			mode = parseAdblockMatchMode(val)
+		}
+	}
+	s.adblockMatchMode.Store(string(mode))
 }
 
 // runAdblockConfigSync periodically refreshes the adblock_enabled flag and
@@ -2241,6 +2267,7 @@ func (s *Service) runAdblockConfigSync() {
 			return
 		case <-ticker.C:
 			s.refreshAdblockEnabled()
+			s.refreshAdblockMatchMode()
 			s.reloadAdblockExceptions()
 		}
 	}
@@ -2701,18 +2728,33 @@ func (s *Service) runAdblockSync() {
 		select {
 		case <-s.lifecycleCtx.Done():
 			return
+		case <-s.adblockResync:
+			// An operator changed a switch that only takes effect on a rebuilt
+			// rule set. Rebuild now instead of making them wait out the
+			// interval, which is hours in the default configuration.
+			s.rebuildAdblockRules()
 		case <-ticker.C:
-			if s.isAdblockEnabled() {
-				// Re-read mode/source policies so config changes are
-				// picked up without a restart, before rules are rebuilt.
-				s.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
-				s.adblockSourcePolicies = parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
-				s.syncAdblockLists()
-			} else {
-				s.adblockTrie.Store(domaintrie.NewTrie())
-			}
+			s.rebuildAdblockRules()
 		}
 	}
+}
+
+// rebuildAdblockRules rebuilds the trie with the switches currently in force.
+//
+// The match mode is deliberately NOT re-read from the environment here. The
+// environment is process-scoped, so re-reading it returns the value the
+// process started with and would silently revert an operator change that came
+// from the store. refreshAdblockMatchMode already reconciles the two, and the
+// resync path runs after that setter.
+//
+// When adblock is disabled the trie is emptied so a stale rule set cannot
+// keep matching.
+func (s *Service) rebuildAdblockRules() {
+	if !s.isAdblockEnabled() {
+		s.adblockTrie.Store(domaintrie.NewTrie())
+		return
+	}
+	s.syncAdblockLists()
 }
 
 func (s *Service) syncAdblockLists() {

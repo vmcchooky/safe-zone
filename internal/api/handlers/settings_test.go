@@ -124,6 +124,115 @@ func TestTestAIEndpointUsesSubmittedKeyWithoutSaving(t *testing.T) {
 	}
 }
 
+// postSettings sends an admin-authenticated settings mutation and returns the
+// HTTP status plus the decoded body.
+func postSettings(t *testing.T, ts *handlerTestServer, body string) (int, map[string]any) {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	ts.addAdminBearer(req)
+
+	resp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var payload map[string]any
+	_ = json.NewDecoder(resp.Body).Decode(&payload)
+	return resp.StatusCode, payload
+}
+
+func TestSettingsAdblockToggleRoundTrip(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	// The GET payload must always carry the adblock switches so the UI can
+	// render the real state instead of assuming the default. /v1/settings is
+	// admin-only, so the request must be authenticated.
+	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/v1/settings", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.addAdminBearer(req)
+	resp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		t.Fatalf("GET /v1/settings: got %d %s", resp.StatusCode, body)
+	}
+	var loaded settingsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&loaded); err != nil {
+		t.Fatalf("decode settings: %v", err)
+	}
+	resp.Body.Close()
+	if loaded.Adblock == nil {
+		t.Fatal("GET /v1/settings must expose the adblock switches")
+	}
+	// newHandlerTestServer pins SAFE_ZONE_ADBLOCK_ENABLED=false for hermetic
+	// tests, so the asserted default is the one that fixture produces. The
+	// shipped default is asserted in internal/risk.
+	if loaded.Adblock.Enabled {
+		t.Fatal("expected the hermetic test fixture to report adblock disabled")
+	}
+
+	// Disabling is the emergency action, so it must succeed and persist.
+	if code, body := postSettings(t, ts, `{"adblock_enabled":false}`); code != http.StatusOK {
+		t.Fatalf("disable adblock: got %d %v", code, body)
+	}
+	if control := ts.Handler.Risk.AdblockControl(); control.Enabled {
+		t.Fatal("adblock must be disabled after the API call")
+	}
+
+	if code, body := postSettings(t, ts, `{"adblock_enabled":true}`); code != http.StatusOK {
+		t.Fatalf("re-enable adblock: got %d %v", code, body)
+	}
+	if control := ts.Handler.Risk.AdblockControl(); !control.Enabled {
+		t.Fatal("adblock must be enabled again after the API call")
+	}
+}
+
+func TestSettingsAdblockMatchModeRejectsUnknownValue(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	code, _ := postSettings(t, ts, `{"adblock_match_mode":"regex"}`)
+	if code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for an unsupported match mode, got %d", code)
+	}
+	// A rejected request must not have changed anything.
+	if got := ts.Handler.Risk.AdblockControl().MatchMode; got == "regex" {
+		t.Fatal("invalid match mode must not be applied")
+	}
+
+	if code, body := postSettings(t, ts, `{"adblock_match_mode":"exact"}`); code != http.StatusOK {
+		t.Fatalf("set exact: got %d %v", code, body)
+	}
+	if got := ts.Handler.Risk.AdblockControl().MatchMode; got != "exact" {
+		t.Fatalf("match mode = %q; want exact", got)
+	}
+}
+
+func TestSettingsOmittedAdblockFieldsAreNotMutated(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	if code, body := postSettings(t, ts, `{"adblock_enabled":false}`); code != http.StatusOK {
+		t.Fatalf("disable: got %d %v", code, body)
+	}
+
+	// Saving an unrelated setting must not silently re-enable adblock, which
+	// is the failure mode a non-pointer field would introduce.
+	if code, body := postSettings(t, ts, `{"telemetry_retention_days":45}`); code != http.StatusOK {
+		t.Fatalf("save retention: got %d %v", code, body)
+	}
+	if ts.Handler.Risk.AdblockControl().Enabled {
+		t.Fatal("an unrelated settings save must not change the adblock switch")
+	}
+}
+
 func TestTestAlertEndpointDoesNotFallBackWhenSubmittedURLIsInvalid(t *testing.T) {
 	ts := newHandlerTestServer(t)
 	if err := ts.Store.SetSystemConfig(context.Background(), "agent_webhook_url", "https://hooks.example.test/saved"); err != nil {

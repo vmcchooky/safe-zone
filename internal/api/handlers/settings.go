@@ -11,12 +11,14 @@ import (
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/config"
 	"safe-zone/internal/netguard"
+	"safe-zone/internal/risk"
 )
 
 type settingsResponse struct {
-	GeminiAPIKey           string `json:"gemini_api_key"`
-	AgentWebhookURL        string `json:"agent_webhook_url"`
-	TelemetryRetentionDays int    `json:"telemetry_retention_days"`
+	GeminiAPIKey           string               `json:"gemini_api_key"`
+	AgentWebhookURL        string               `json:"agent_webhook_url"`
+	TelemetryRetentionDays int                  `json:"telemetry_retention_days"`
+	Adblock                *risk.AdblockControl `json:"adblock"`
 }
 
 type settingsRequest struct {
@@ -25,6 +27,12 @@ type settingsRequest struct {
 	GeminiAPIKey           *string `json:"gemini_api_key"`
 	AgentWebhookURL        *string `json:"agent_webhook_url"`
 	TelemetryRetentionDays *int    `json:"telemetry_retention_days"`
+	// AdblockEnabled toggles adblock. A pointer keeps "field omitted" distinct
+	// from "explicitly false", so saving another setting never silently turns
+	// the adblock layer off.
+	AdblockEnabled *bool `json:"adblock_enabled"`
+	// AdblockMatchMode selects rule scope: "suffix" or "exact".
+	AdblockMatchMode *string `json:"adblock_match_mode"`
 }
 
 type settingsBundleResponse struct {
@@ -58,10 +66,12 @@ func (h *Handler) loadSettingsResponse(ctx context.Context) (settingsResponse, e
 		return settingsResponse{}, fmt.Errorf("failed to get agent_webhook_url: %w", err)
 	}
 
+	adblock := h.Risk.AdblockControl()
 	return settingsResponse{
 		GeminiAPIKey:           maskConfigValue(apiKey),
 		AgentWebhookURL:        maskConfigValue(webhookURL),
 		TelemetryRetentionDays: db.GetRetentionDays(ctx),
+		Adblock:                &adblock,
 	}, nil
 }
 
@@ -132,6 +142,23 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 			db.UpdateRetentionDays(r.Context(), *req.TelemetryRetentionDays)
 			if err := db.SetSystemConfig(r.Context(), "telemetry_retention_days", strconv.Itoa(*req.TelemetryRetentionDays)); err != nil {
 				httputil.WriteError(w, http.StatusInternalServerError, "failed to save telemetry_retention_days: "+err.Error())
+				return
+			}
+		}
+
+		// Adblock switches. Order matters: the mode is validated before it is
+		// applied so an unsupported value cannot leave the layer half-changed,
+		// and enabling is applied last so a request that fails validation
+		// changes nothing at all.
+		if req.AdblockMatchMode != nil {
+			if err := h.Risk.SetAdblockMatchMode(r.Context(), *req.AdblockMatchMode); err != nil {
+				httputil.WriteError(w, http.StatusBadRequest, "invalid adblock_match_mode: "+err.Error())
+				return
+			}
+		}
+		if req.AdblockEnabled != nil {
+			if err := h.Risk.SetAdblockEnabled(r.Context(), *req.AdblockEnabled); err != nil {
+				httputil.WriteError(w, http.StatusInternalServerError, "failed to save adblock_enabled: "+err.Error())
 				return
 			}
 		}

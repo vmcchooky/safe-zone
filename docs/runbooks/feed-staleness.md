@@ -16,6 +16,66 @@ Authenticated `GET /v1/status` carries feed freshness under `feed_sync`
 (`curl` needs `Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY`); the public
 `/metrics` endpoint exposes request counters only.
 
+## Adblock emergency control
+
+Adblock is a content-policy layer, separate from security verdicts. It is the
+largest single source of blocked requests, and on a shared-infrastructure
+footprint a `suffix` rule can also take down Firebase, Crashlytics, messaging
+or payment endpoints. It therefore ships **enabled by default** but with a
+first-class switch.
+
+### Turn it off in the dashboard
+
+`Settings → Ad blocking → toggle`. The change applies within 30 seconds, with
+no restart and no resync, because the enable flag is evaluated at decision
+time. Turning adblock off does **not** weaken malware, phishing, threat-feed or
+brand detection; those layers are independent.
+
+### Match mode
+
+| Mode | Behaviour | Consequence |
+| --- | --- | --- |
+| `suffix` (default) | A listed domain also blocks all its subdomains | Broader. Can block shared service infrastructure. |
+| `exact` | Only the hostname literally listed is blocked | Narrower. Fewer collateral blocks, but some ad subdomains get through. |
+
+Changing the mode is applied asynchronously: the rules are rebuilt from the
+configured sources, so the new scope takes effect once that rebuild finishes
+rather than instantly.
+
+### Verify the current state
+
+```sh
+curl -s http://127.0.0.1:8080/v1/status | jq '.adblock | {enabled, match_mode, domain_count}'
+```
+
+### API
+
+```sh
+# Disable (emergency stop)
+curl -X POST http://127.0.0.1:8080/v1/settings \
+  -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"adblock_enabled": false}'
+
+# Narrow the rule scope
+curl -X POST http://127.0.0.1:8080/v1/settings \
+  -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"adblock_match_mode": "exact"}'
+```
+
+Both fields are pointers on the request: omitting `adblock_enabled` never
+changes the switch, so saving an unrelated setting cannot silently re-enable
+the layer. An unsupported `adblock_match_mode` is rejected with 400 and
+changes nothing.
+
+### Environment defaults
+
+`SAFE_ZONE_ADBLOCK_ENABLED` (default `true`) and `SAFE_ZONE_ADBLOCK_MATCH_MODE`
+(default `suffix`) seed the process. A value persisted under the
+`adblock_enabled` / `adblock_match_mode` system-config keys overrides them and
+survives a restart, so the dashboard switch is authoritative once used.
+
 ## Inventory stale shared-host members
 
 Before any targeted purge, inventory the members that the current admission
