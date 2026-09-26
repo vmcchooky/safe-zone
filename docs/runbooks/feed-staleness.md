@@ -16,6 +16,39 @@ Authenticated `GET /v1/status` carries feed freshness under `feed_sync`
 (`curl` needs `Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY`); the public
 `/metrics` endpoint exposes request counters only.
 
+## Inventory stale shared-host members
+
+Before any targeted purge, inventory the members that the current admission
+policy would refuse today:
+
+```sh
+go run ./cmd/feed-shared-host-audit -redis-addr <host:port>
+```
+
+The command is strictly read-only: it never writes, deletes or mutates Redis.
+Classification uses `feed.IsAdmissibleDomain`, the same predicate that every
+feed writer and the OSINT promotion path use, so the inventory cannot drift
+from runtime behavior when the analysis registries change.
+
+Use it on a production container when a local build cannot reach Redis:
+
+```sh
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o /tmp/audit ./cmd/feed-shared-host-audit
+docker cp /tmp/audit <redis-container>:/tmp/audit
+docker exec <redis-container> chmod +x /tmp/audit
+docker exec <redis-container> /tmp/audit -redis-addr 127.0.0.1:6379
+```
+
+To classify specific hostnames without touching Redis at all:
+
+```sh
+go run ./cmd/feed-shared-host-audit -member docs.google.com -member github.com
+```
+
+Refused members are exactly the ones a purge may target. Members reported as
+admissible include tenant subdomains (`microsoft.github.io`) and suffix
+lookalikes (`raw.githubusercontent.com.evil.com`); those must never be purged.
+
 ## Manual sync
 
 ```sh
