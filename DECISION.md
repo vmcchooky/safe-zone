@@ -377,6 +377,99 @@ Ngưỡng `MALICIOUS` là **70**. Tín hiệu mạnh nhất đơn lẻ là **50 
 
 ---
 
+## 2026-09-26 - Shorten feed expiry for recycled-label members
+
+**Status:** accepted
+
+**Context:**
+
+Bước 4 kết luận không cần grace degradation, nhưng còn một hướng cải tiến thật
+còn lại. Đo lại thành phần feed thay vì suy đoán: lấy mẫu ngẫu nhiên 4.000
+member của feed production đang chạy và đếm fan-out theo gốc.
+
+**Measurement — một phần ba feed là tenant trên nền tảng tự phục vụ:**
+
+| Gốc | Member / 4.000 | Lớp |
+|---|---:|---|
+| `pages.dev` | 244 | self-service có đăng ký tài khoản |
+| `duckdns.org` | 134 | **dynamic DNS** |
+| `webflow.io` | 107 | site builder |
+| `vercel.app` | 100 | self-service có đăng ký tài khoản |
+| `appspot.com` (+`r.appspot`, `ey.r.appspot`) | 246 | self-service |
+| `github.io` | 86 | self-service có đăng ký tài khoản |
+| `weeblysite.com` + `weebly.com` | 145 | **hosting miễn phí hàng loạt** |
+| `000webhostapp.com` | 51 | **hosting miễn phí hàng loạt** |
+| `dweb.link` | 67 | **gateway IPFS** |
+| `blogspot.com` | 26 | **hosting miễn phí hàng loạt** |
+
+Ngẫu nhiên chọn 30 apex shared-hosting phổ biến và tra `ZSCORE` trực tiếp:
+**không apex nào được nhập vào feed**. Cổng admission đang hoạt động đúng.
+
+**Vấn đề thật không phải shared host, mà là nhãn bị thu hồi.** Với
+`campaign-42.duckdns.org`, entry trong feed ghi lại điều *"nhãn này độc hại
+vào ngày X"*, không phải *"nhãn này vĩnh viễn độc hại"*. Khi kẻ tấn công bỏ
+chiến dịch, tên được trả về pool và người dùng hợp pháp đã có thể nắm tên đó
+trong khi entry vẫn còn 14 ngày. Đây là nghịch lý thời gian của nhãn tái sử
+dụng, và nó không xuất hiện trong telemetry hiện tại vì chưa từng xảy ra.
+
+Đối chiếu ngành: `hagezi/dns-blocklists` phân loại đúng các lớp này là
+*"hosting providers that repeatedly host badware through user-uploaded
+content"*, đồng thời tự cảnh báo không nên chặn cả gốc vì sẽ phá dịch vụ
+hợp pháp. Ta chọn hướng ngược lại họ: **không** chặn gốc, chỉ rút ngắn hạn.
+
+**Decision:**
+
+1. Phân loại mới `analysis.ChurnProneRoot` cho các gốc có nhãn đăng ký miễn
+   phí, không xác minh danh tính, rồi trả về pool: dynamic DNS, hosting miễn
+   phí hàng loạt, tunnel tạm, gateway IPFS.
+2. Member thuộc lớp này nhận TTL ngắn hơn qua `feed.MemberTTL`. **Không
+   thay đổi admission** — exact IOC trên tenant vẫn block ngay.
+3. **Không** đưa `pages.dev`, `vercel.app`, `github.io` vào danh sách: chúng
+   là self-service nhưng có đăng ký tài khoản, rủi ro thu hồi thấp hơn nhiều,
+   và chúng đã thuộc `selfServiceHostingRoots` cho mục đích scoring.
+4. Counter `churn_prone_tenants` trong `ParseStats` để thành phần feed nhìn
+   thấy được thay vì phải suy đoán.
+5. Khoá an toàn: TTL ngắn **phải lớn hơn chu kỳ sync**, nếu không sẽ tự tạo
+   lỗ hổng coverage. `CheckChurnTTLAgainstInterval` từ chối khởi động thay vì
+   âm thầm under-block. Sàn cứng 2 ngày, từ chối giá trị nhỏ hơn thay vì clamp.
+
+**Vì sao rút ngắn hạn KHÔNG làm giảm bảo vệ đang hoạt động:** sync chấm lại
+điểm mọi member mỗi chu kỳ, nên member **còn** nằm trong nguồn luôn được đẩy
+hạn xa. TTL ngắn chỉ quyết định tốc độ biến mất *sau khi* rời khỏi nguồn —
+đúng trường hợp nhãn bị thu hồi. Cấu hình production: sync 24h, churn 3 ngày
+(dự phòng 2×).
+
+**Consequences:**
+
+- Mặc định `0` (tắt) trong `.env.example`; bật bằng
+  `SAFE_ZONE_FEED_CHURN_TTL_DAYS=3`.
+- Tên feed cũ giữ hạn 14 ngày cho tới lần sync kế tiếp sau khi bật, nên hiệu
+  lực có độ trễ tối đa 24h. Đây là hành vi tăng dần có chủ đích.
+- Bảng gốc là giới hạn thời gian, không phải whitelist: thuộc tính
+  `window` giữ nguyên. TTL ảnh hưởng *bao lâu* còn chặn, không phải *có chặn
+  hay không*.
+
+**Validation evidence:**
+
+- `internal/analysis/churn_test.go`: khớp tenant, khớp lồng nhau, chuẩn hóa
+  hoa/thường, chặn apex, chặn public suffix, không nhầm `notweebly.com` với
+  `weebly.com`, và `pages.dev`/`github.io` **không** vào lớp churn.
+- `internal/feed/ttl_test.go`: hợp đồng bật/tắt, từ chối giá trị dưới sàn,
+  guard khoảng cách sync, và chỉ lớp churn mới bị rút ngắn.
+- `internal/agent/feedsync_ttl_test.go`: chạy task thật, đọc ZSET thật — mọi
+  domain (kể cả `f-emc.ngsp.gov.vn`) **vẫn được ghi**; chỉ điểm hạn thay đổi.
+- Ba lỗi `internal/risk` còn lại là lỗi có sẵn (thiếu bundle
+  `domain_threat_lgbm.txt`), xác minh lại trên cây sạch qua `git stash`.
+
+**Revisit when:**
+
+- Feed thay đổi nguồn hoặc `SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS` thay đổi →
+  kiểm tra lại khoảng cách an toàn.
+- Xuất hiện bằng chứng thực địa về nhãn bị thu hồi gây chặn nhầm → đây sẽ là
+  bằng chứng đầu tiên ủng hộ việc mở rộng `churnProneRoots`.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`

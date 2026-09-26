@@ -21,6 +21,11 @@ type ParseStats struct {
 	Skipped             int `json:"skipped"`
 	SkippedPublicSuffix int `json:"skipped_public_suffix"`
 	SkippedSharedHost   int `json:"skipped_shared_host"`
+	// ChurnProneTenants counts admitted members whose label sits under a
+	// recycled-label root and therefore received the shortened expiry
+	// window. They are still admitted and still block: the counter exists
+	// so feed composition is visible instead of inferred.
+	ChurnProneTenants int `json:"churn_prone_tenants"`
 }
 
 type IndicatorKind string

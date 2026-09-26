@@ -40,6 +40,10 @@ type syncSettings struct {
 	Timeout       time.Duration
 	AdmissionMode feed.AdmissionMode
 	TTL           time.Duration
+	// ChurnTTL is the shortened window for recycled-label members. It is
+	// validated in parseSyncSettings to exceed Interval, so a still-listed
+	// member can never expire in the gap between two cycles.
+	ChurnTTL time.Duration
 }
 
 func main() {
@@ -143,6 +147,7 @@ func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error)
 	timeout := flags.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
 	admissionMode := flags.String("admission-mode", config.String("SAFE_ZONE_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)), "feed admission mode: legacy, corroborated-url-host-shadow, or corroborated-url-host-filter")
 	ttlDays := flags.Int("ttl-days", config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14), "number of days before threat domains expire")
+	churnTTLDays := flags.Int("churn-ttl-days", config.Int("SAFE_ZONE_FEED_CHURN_TTL_DAYS", 0), "shorter expiry in days for members on recycled-label roots (0 disables; must be at least 2 and exceed the sync interval)")
 	if err := flags.Parse(args); err != nil {
 		return syncSettings{}, err
 	}
@@ -151,7 +156,14 @@ func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error)
 	if ttlErr != nil {
 		return syncSettings{}, ttlErr
 	}
+	churnTTL, churnErr := feed.ChurnTTLFromDays(*churnTTLDays)
+	if churnErr != nil {
+		return syncSettings{}, churnErr
+	}
 	normalizedAdmissionMode, admissionErr := feed.NormalizeAdmissionMode(*admissionMode)
+	if err := feed.CheckChurnTTLAgainstInterval(churnTTL, *interval); err != nil {
+		return syncSettings{}, err
+	}
 	if admissionErr != nil {
 		return syncSettings{}, admissionErr
 	}
@@ -175,6 +187,7 @@ func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error)
 		Timeout:       *timeout,
 		AdmissionMode: normalizedAdmissionMode,
 		TTL:           feedTTL,
+		ChurnTTL:      churnTTL,
 	}, nil
 }
 
@@ -197,6 +210,7 @@ func buildSyncOptions(settings syncSettings, client *http.Client) feed.SyncOptio
 		ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
 		CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
 		TTL:                        settings.TTL,
+		ChurnTTL:                   settings.ChurnTTL,
 		AdmissionMode:              settings.AdmissionMode,
 	}
 }
