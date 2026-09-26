@@ -55,6 +55,14 @@ func TestCDNInfraAdvisoryPenalty(t *testing.T) {
 				domain, penalty, cdnInfraAdvisoryPenalty, reason)
 		}
 	}
+	// Self-service hosting roots are not delegated CDN edges. A brand-shaped
+	// tenant must retain the ordinary subdomain-abuse weight there.
+	for _, domain := range []string{"paypal.workers.dev", "paypal.pages.dev", "paypal.vercel.app", "paypal.netlify.app", "paypal.github.io"} {
+		spoof, reason, penalty := CheckBrandSpoofing(domain, 50)
+		if !spoof || penalty != 40 {
+			t.Errorf("CheckBrandSpoofing(%q) = %v/%d (%q); want true/40", domain, spoof, penalty, reason)
+		}
+	}
 	// Hyphen-composed labels keep full weight even on CDN roots
 	// (attacker-style composition, not delegated naming).
 	for _, tc := range []struct {
@@ -81,6 +89,15 @@ func TestCDNInfraAdvisoryPenalty(t *testing.T) {
 	spoof, _, penalty = CheckBrandSpoofing(homoglyph, 50)
 	if !spoof || penalty != 50 {
 		t.Errorf("homoglyph on CDN root = %v/%d; want true/50", spoof, penalty)
+	}
+}
+
+func TestSelfServiceBrandTenantKeepsFullPenalty(t *testing.T) {
+	for _, domain := range []string{"paypal.workers.dev", "paypal.pages.dev", "paypal.vercel.app", "paypal.netlify.app", "paypal.github.io"} {
+		spoof, reason, penalty := CheckBrandSpoofing(domain, 50)
+		if !spoof || penalty != 40 {
+			t.Errorf("CheckBrandSpoofing(%q) = %v/%d (%q); want true/40", domain, spoof, penalty, reason)
+		}
 	}
 }
 
