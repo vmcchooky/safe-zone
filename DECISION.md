@@ -243,6 +243,65 @@ giúp gì**. Chuyển sang `exact` sẽ thả quảng cáo mà vẫn giữ hạ 
 
 ---
 
+## 2026-09-26 - Detection recall verified at 100%; the "zero detections" reading was wrong
+
+**Status:** accepted
+
+**Context:**
+
+Audit telemetry 13/09–26/09 chỉ ghi nhận 7 sự kiện chặn `MALICIOUS`, tất cả là
+override thủ công của operator cho `zaloweb.vn`. Điều này từng được đọc là bằng
+chứng rằng engine không tự phát hiện được gì, và đó là **kết luận sai**.
+
+**Measurement:**
+
+Lấy mẫu ngẫu nhiên 200 member từ `safe-zone:threat:feed` bằng
+`ZRANDMEMBER`, dựng corpus và chạy qua `internal/eval.Runner` (hermetic,
+miniredis, không network), rồi xác minh lại trên service thật với Redis
+production:
+
+| Tầng đo | Kết quả |
+|---|---|
+| Hermetic runner, 200 mẫu | `MALICIOUS/100` + `policy=block` **200/200 (100%)** |
+| Lý do duy nhất | `matched local threat feed` 200/200 |
+| Service thật, 5 mẫu đầu | `MALICIOUS/100` + `block` **5/5** |
+
+**Decision:**
+
+1. Recall của đường threat-feed là **100%** trên mẫu thực tế. Không có khiếm
+   khuyết phát hiện cần khắc phục ở lớp này.
+2. Con số "0 phát hiện tự động" **không** phải lỗi engine. Nó phản ánh đúng
+   sự thật là trong 12 ngày đó **không có known-bad domain nào được truy vấn**.
+   Người dùng chỉ truy cập nội dung lành mạnh. Đây là hệ quả của lưu lượng
+   một người, không phải khiếm khuyết phát hiện.
+3. **Không** nâng ngưỡng, **không** thay đổi trọng số, **không** bật `enforce`
+   cho domain ML dựa trên phát hiện sai này.
+4. Bài học về phương pháp: không được suy ra kết luận về năng lực hệ thống từ
+   một telemetry rỗng. Phải chủ động dựng mẫu known-bad để đo recall.
+
+**Consequences:**
+
+- Ưu tiên 3 trong kế hoạch FP được đánh lại: không cần sửa thuật toán phát
+  hiện, vì nó đang hoạt động đúng.
+- Nguồn nhiễm còn lại là **chất lượng feed**: mẫu ngẫu nhiên chứa nhiều mục
+  rác như `acollectionofviralvideosfromsg.msge7.my.id`, subdomain
+  `blogspot`/`weebly`, và CIDR IPFS. Đây là hướng cải thiện chất lượng riêng,
+  không phải việc của lát cắt này.
+
+**Validation evidence:**
+
+- `tmp/recall-corpus.json`, `tmp/recall-expected.json`, `tmp/recall_sample.txt`
+  (local, gitignored).
+- Mẫu được lấy bằng `ZRANDMEMBER` để tránh thiên lệch thứ tự lex của `ZREVRANGE`.
+
+**Revisit when:**
+
+- Có bằng chứng thực địa rằng một IOC trong feed không bị chặn.
+- Chính sách feed đổi, hoặc thêm một writer mới ngoài `feed.IsAdmissibleDomain`.
+- Muốn đo recall của lớp khác (brand, TLS, lexical) thay vì lớp threat-feed.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
