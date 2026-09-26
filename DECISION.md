@@ -470,6 +470,168 @@ hạn xa. TTL ngắn chỉ quyết định tốc độ biến mất *sau khi* r�
 
 ---
 
+## 2026-09-26 - Feed quality is a real volume problem, not yet a false-positive problem
+
+**Status:** accepted (measurement only; no code change)
+
+**Context:**
+
+Sau khi deploy churn-TTL, câu hỏi tiếp theo là xử lý feed quality thế nào.
+Áp dụng lại cùng quy tắc: đo trước, xây sau.
+
+**Measurement 1 — feed là của ai.**
+
+527.725 member từ 4 nguồn. Số hợp lệ mỗi nguồn mỗi chu kỳ sync:
+
+| Nguồn | Member | Tỉ trọng |
+|---|---:|---:|
+| `Phishing.Database` | 385.909 | **73%** |
+| `phishdestroy` | 131.813 | 25% |
+| `urlhaus` (csv_recent) | 5.894 | 1,1% |
+| `openphish` | 252 | 0,05% |
+
+Hai nguồn chiếm 98% feed. Đây là điểm đáng chú ý: quyết định chất lượng feed
+gần như nằm trong tay hai danh sách cộng lại, không phải bốn.
+
+**Measurement 2 — hình dạng nhãn trong mẫu 3.000.**
+
+| Dạng | Tỉ lệ |
+|---|---:|
+| normal | 62,7% |
+| very-long-label (≥20 ký tự) | **20,5%** |
+| digits-heavy | 8,1% |
+| deep-subdomain | 7,7% |
+| hyphen-compound | 0,7% |
+| hex / uuid | 0,4% |
+
+Ví dụ thực tế:
+`officeshare633b87c633b87c4cc156968b3064cc156968b3064b6c349754181.officesharesfilez.workers.dev`
+
+Đây là dấu hiệu SEO/bulk rõ ràng. Nhưng **chưa kết luận được**, vì nhãn dài
+cũng đúng với DGA và với phishing page dùng tên dài để né đọc.
+
+**Measurement 3 — câu hỏi quyết định: feed đã gây chặn nhầm chưa?**
+
+Đếm theo **set** trên cột `reasons` (JSON array, một domain có thể mang nhiều
+reason nên đếm trực tiếp sẽ chồng — đây chính là chỗ các con số trước đây sai):
+
+| Lý do | Số domain |
+|---|---:|
+| domain is long | 1.570 |
+| many hyphens | 367 |
+| high_entropy_dga_suspected | 116 |
+| TLS: cert name mismatch | 112 |
+| high digit ratio | 87 |
+| adblock | 58 |
+| **matched local threat feed** | **14** |
+| shared infra in feed (contextual) | 6 |
+
+Trong **129 domain từng bị chặn**, chỉ **1** (`zaloweb.vn`) hiện còn là member
+của feed, và **0** domain nào bị chặn với lý do feed. 14 domain có reason
+`matched local threat feed` đều **không** bị chặn — phần lớn là shared serving
+host (`github.com`, `docs.google.com`, `cdn.jsdelivr.net`) đã bị contextual hạ
+đúng như thiết kế.
+
+**Measurement 4 — FP đã biết không đến từ feed.**
+
+`f-emc.ngsp.gov.vn` có `verdict=SAFE, score=0, reasons=[]` nhưng
+`policy_action=block` ngày 20/09. Nó **không** bị feed chặn; nó bị một lớp quyết
+định khác ghi đè action, và sau khi thêm exception ngày 26/09 đã trở lại
+`allow`. Đây là bằng chứng rằng nguyên nhân FP đã sửa nằm ở policy/adblock,
+không nằm ở feed.
+
+**Decision:**
+
+1. **Không** xây chính sách per-source lúc này. Bằng chứng hiện tại cho thấy
+   feed **chưa từng** gây chặn nhầm. Xây cơ chế lọc theo nguồn khi chưa có
+   FP từ nguồn đó là tối ưu theo giả định — đúng sai lầm đã phạm ở bước 1 và 2.
+2. Ghi nhận feed quality là **bài toán về khối lượng và độ trễ**, không phải về
+   chặn nhầm: 73% đến từ một nguồn duy nhất, 20,5% nhãn rất dài.
+3. Đề xuất hướng khi có bằng chứng: ưu tiên **giảm TTL riêng cho nguồn có tỉ lệ
+   rác cao** trước khi cân nhắc loại bỏ nguồn. Cắt nguồn là đòn mạnh, tốn recall
+   và không hoàn tác được ngay; rút TTL thì đảo chiều được.
+4. Cần một **corpus ground truth riêng cho các domain này** để đo recall theo
+   nguồn. Hiện chưa có, và tự dán nhãn bằng heuristic sẽ chỉ đo lại điều đã
+   giả định.
+
+**Consequences:**
+
+- Không có thay đổi code, config hay production nào từ entry này.
+- `Phishing.Database` và `phishdestroy` là hai nguồn cần quan sát trước.
+
+**Validation evidence:**
+
+- Truy vấn read-only trên bản sao SQLite production (kèm WAL), đếm bằng set.
+- Kiểm chéo 129 domain chặn bằng `ZSCORE` trực tiếp trên Redis.
+- Bốn nguồn lấy từ các `safe-zone:threat:feed:status:*` key.
+
+**Revisit when:**
+
+- Bất kỳ domain nào bị chặn với lý reason có chứa feed → mở lại ngay.
+- `Phishing.Database` đổi nguồn hoặc tăng tỉ trọng nhãn dài → định kỳ đo lại.
+
+---
+
+## 2026-09-26 - Deploy script is sound; the manual deploy was the defect
+
+**Status:** accepted
+
+**Context:**
+
+Trong lúc deploy churn-TTL, chạy `git pull` trên VPS thất bại vì cây làm việc
+bị bẩn. Điều tra phát hiện HEAD (`5bbaac9`) lệch **133 commit** so với
+`origin/main`, trong khi image đang chạy là `b8f1582`. Có nguy cơ build lại sẽ
+deploy code cũ hơn 133 commit, ghi đè toàn bộ fix chặn nhầm.
+
+**Measurement — worktree khớp commit nào:**
+
+So nội dung 90 file khác biệt với từng commit ứng viên, bỏ qua CRLF:
+
+| Ứng viên | Khớp | Khác |
+|---|---:|---:|
+| `b8f1582` | **90** | **0** |
+| `3dc7174` | 84 | 6 |
+
+Kết luận: worktree **chính xác** là `b8f1582`. Deploy cũ đã copy file vào mà
+không move branch pointer, nên HEAD mới là sai, không phải nội dung.
+
+**Điều tra — script deploy có lỗi không? Không.**
+
+- `deploy.ps1` đóng gói bằng `tar` và **loại `.git`** khỏi archive, rồi truyền
+  `SAFE_ZONE_BUILD_VERSION` và `SAFE_ZONE_BUILD_GIT_COMMIT` tường minh vào
+  lệnh remote.
+- `scripts/ops/safe-zone.sh` có `set_build_metadata_env()` tự suy ra version,
+  commit, thời gian build, tag và source repo.
+- `deploy.ps1` còn verify sau deploy: đọc `/v1/version` và **fail** nếu SHA
+  không khớp.
+
+Đường chuẩn đã có đủ ba lớp: loại `.git`, truyền metadata tường minh, verify
+sau deploy.
+
+**Decision:**
+
+1. **Không** sửa `scripts/ops/safe-zone.sh` hay `deploy.ps1`. Cả hai đúng.
+2. Nguyên nhân hỏng thuộc về **đường thủ công**: tôi gọi `docker compose build`
+   trực tiếp, bỏ qua `deploy.ps1` và bỏ qua `set_build_metadata_env()`, nên build
+   rơi về `dev`/`unknown`/`unreleased`. Đó là lỗi thao tác của tôi, không phải
+   lỗi hệ thống.
+3. Bài học vận hành: **chỉ deploy qua `deploy.ps1`**. Cùng cơ chế đó đã verify
+   SHA sau khi deploy; nếu dùng nó, phiên này sẽ bắt được ngay lỗi `version=dev`
+   thay vì phải tự phát hiện qua probe.
+4. Cân nhắc ghi quy ước này vào runbook deploy, vì trạng thái HEAD lệch worktree
+   là kiểu hỏng âm thầm, chỉ lộ ra khi ai đó đọc `git status`.
+
+**Consequences:**
+
+- Không có thay đổi code.
+- Cây deploy trên VPS hiện đã realign về `3dc7174`, sạch.
+
+**Revisit when:**
+
+- Có deploy mới qua `deploy.ps1` → xác nhận `git status` trên VPS sạch sau đó.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
