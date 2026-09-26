@@ -56,6 +56,11 @@ interface GuestAccess {
   enabled: boolean;
 }
 
+interface AdblockControl {
+  enabled: boolean;
+  match_mode: string;
+}
+
 interface Toast {
   id: string;
   message: string;
@@ -168,6 +173,14 @@ export function SettingsPage() {
     exists: false,
     enabled: false
   });
+
+  // Adblock switches. They are saved through /v1/settings independently of
+  // the core form so flipping the layer never has to touch API keys or
+  // retention, and a failed save leaves the previous state visible.
+  const [adblock, setAdblock] = useState<AdblockControl>({ enabled: true, match_mode: 'suffix' });
+  const [savingAdblock, setSavingAdblock] = useState(false);
+  const [adblockBusy, setAdblockBusy] = useState<'enabled' | 'mode' | null>(null);
+
   const [guestPassword, setGuestPassword] = useState('');
   const [showGuestPassword, setShowGuestPassword] = useState(false);
 
@@ -204,6 +217,19 @@ export function SettingsPage() {
       const settings = data && typeof data.settings === 'object' && data.settings !== null ? data.settings : {};
       const rawRetention = settings.telemetry_retention_days;
       const retention = typeof rawRetention === 'number' && Number.isFinite(rawRetention) ? rawRetention : 30;
+
+      // A partial or legacy payload must not leave the toggle showing a
+      // state the server does not hold. Default to the shipped default
+      // (enabled/suffix) when the field is absent.
+      const rawAdblock = settings.adblock;
+      if (rawAdblock && typeof rawAdblock === 'object') {
+        setAdblock({
+          enabled: Boolean(rawAdblock.enabled),
+          match_mode: rawAdblock.match_mode === 'exact' ? 'exact' : 'suffix',
+        });
+      } else {
+        setAdblock({ enabled: true, match_mode: 'suffix' });
+      }
       resetCore({
         geminiKey: typeof settings.gemini_api_key === 'string' ? settings.gemini_api_key : '',
         webhookUrl: typeof settings.agent_webhook_url === 'string' ? settings.agent_webhook_url : '',
@@ -261,6 +287,46 @@ export function SettingsPage() {
       showToast(err.message, 'err');
     } finally {
       setSavingCore(false);
+    }
+  };
+
+  /**
+   * saveAdblock pushes one switch and reloads the authoritative state.
+   *
+   * The optimistic update is deliberately not applied before the request
+   * succeeds: an operator flipping this switch during an outage needs the
+   * screen to tell the truth about whether the layer is actually off.
+   */
+  const saveAdblock = async (field: 'enabled' | 'mode', value: boolean | string) => {
+    if (mutationLocked) return;
+    setAdblockBusy(field);
+    setSavingAdblock(true);
+    try {
+      const payload: Record<string, boolean | string> =
+        field === 'enabled' ? { adblock_enabled: Boolean(value) } : { adblock_match_mode: String(value) };
+      const res = await fetch('/v1/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(error.error || 'Failed to update adblock');
+      }
+      showToast(
+        field === 'enabled'
+          ? (value ? 'Ad blocking enabled' : 'Ad blocking disabled — service interruptions stopped')
+          : `Adblock match mode set to ${value}`,
+        'ok'
+      );
+      loadSettings();
+    } catch (err: any) {
+      showToast(err.message, 'err');
+      // Re-sync so the control snaps back to the state the server still holds.
+      loadSettings();
+    } finally {
+      setAdblockBusy(null);
+      setSavingAdblock(false);
     }
   };
 
@@ -418,6 +484,73 @@ export function SettingsPage() {
       className="space-y-8 max-w-7xl mx-auto p-4 lg:p-8 pb-32"
     >
       
+      {/* Adblock control.
+
+          This is the emergency stop for the layer that causes most false
+          positives. It is deliberately first-class and reachable in one
+          click: an operator whose payment or messaging app just stopped
+          resolving should not have to open an SSH session to restore service. */}
+      <motion.section
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        data-testid="adblock-control"
+        className="bg-white/70 backdrop-blur-xl border border-slate-200/80 rounded-3xl p-6 shadow-sm"
+      >
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+              <Shield size={18} className="text-slate-500" />
+              Ad blocking
+              <InfoTooltip content="Adblock is a content-policy layer, separate from security verdicts. Turn it off to stop service interruptions instantly; threat-feed, phishing and brand detection keep working either way." />
+            </h2>
+            <p className="text-sm text-slate-500 mt-1">
+              Switches apply within 30 seconds without a restart. Turning it off never weakens malware or phishing detection.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={adblock.enabled}
+            aria-label="Toggle ad blocking"
+            data-testid="adblock-toggle"
+            disabled={mutationLocked || savingAdblock}
+            onClick={() => saveAdblock('enabled', !adblock.enabled)}
+            className={`relative inline-flex h-7 w-13 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+              adblock.enabled ? 'bg-emerald-500' : 'bg-slate-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                adblock.enabled ? 'translate-x-7' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="mt-5 pt-4 border-t border-slate-200/70 flex flex-wrap items-center gap-3">
+          <label htmlFor="adblock-match-mode" className="text-sm font-medium text-slate-700">
+            Match mode
+          </label>
+          <select
+            id="adblock-match-mode"
+            data-testid="adblock-match-mode"
+            value={adblock.match_mode}
+            disabled={mutationLocked || savingAdblock}
+            onChange={(e) => saveAdblock('mode', e.target.value)}
+            className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+          >
+            <option value="suffix">suffix — blocks a domain and all its subdomains</option>
+            <option value="exact">exact — blocks only the listed hostname</option>
+          </select>
+          {adblockBusy && <Loader2 size={16} className="animate-spin text-slate-400" />}
+        </div>
+        <p className="text-xs text-slate-500 mt-2">
+          {adblock.match_mode === 'suffix'
+            ? 'Suffix mode is broader and can block shared service infrastructure such as Firebase, Crashlytics or messaging endpoints.'
+            : 'Exact mode is narrower: only the hostnames literally listed in the source are blocked.'}
+        </p>
+      </motion.section>
+
       {/* Toasts */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
         <AnimatePresence>

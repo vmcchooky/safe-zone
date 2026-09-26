@@ -103,6 +103,70 @@ Audit cũng phát hiện một khoảng trống chưa được xử lý: self-se
 
 ---
 
+## 2026-09-26 - Adblock becomes an operator-controlled, reversible layer
+
+**Status:** accepted
+
+**Context:**
+
+Audit telemetry từ 13/09–26/09 trên production (một người dùng) cho thấy
+`analysis_log` ghi nhận 12.531 sự kiện chặn trên 129 domain. Trong đó:
+
+- 7.434 sự kiện đến từ quảng cáo/tracking — hoạt động đúng mục đích.
+- 4.682 sự kiện thuộc hạ tầng ứng dụng (Firebase, Crashlytics, Xiaomi SDK).
+- 717 sự kiện thuộc dịch vụ quan trọng: `log.api.zaloapp.com`,
+  `centralized.zaloapp.com`, `ads-platform.zalo.me`, `f-emcc.ngsp.gov.vn`.
+- Chỉ 7 sự kiện `MALICIOUS` và tất cả đều là override thủ công của operator
+  (`zaloweb.vn`), không phải phát hiện tự động.
+
+Audit bằng `cmd/block-audit` cũng phát hiện `f-emcc.ngsp.gov.vn` — hạ tầng
+email cơ quan nhà nước — bị chặn, mối đã nguy hiểm nhưng không nằm trong bất
+kỳ danh sách hardcode nào.
+
+**Decision:**
+
+1. Adblock là **chức năng bật/tắt được**, mặc định **bật**, và phải bật/tắt
+   được từ dashboard trong một thao tác. Lý do: đây là lớp gây gián đoạn
+   dịch vụ lớn nhất, nên đường lùi phải rẻ và tức thì.
+2. `enabled` được đánh giá tại thời điểm quyết định nên đổi có hiệu lực ở
+   request kế tiếp, không cần resync hay restart.
+3. `match_mode` quyết định scope lúc parse nên đổi cần rebuild; setter gửi yêu
+   cầu qua kênh coalescing để không block API request.
+4. Store là lớp ưu tiên hơn environment cho cả hai công tắc, để lựa chọn của
+   operator không bị ghi đè khi refresh hoặc khởi động lại.
+5. Tắt adblock **không** làm suy yếu phát hiện malware/phishing: threat feed,
+   brand, lexical và OSINT là các lớp độc lập.
+6. **Không có AI/ML tự động bật lại.** Chỉ operator quyết định.
+7. Việc chuyển production sang `exact` và thêm exception cho nhóm
+   `critical_service` là slice tiếp theo, không gộp vào thay đổi expose này.
+
+**Consequences:**
+
+- Có đường lùi vận hành rẻ khi dịch vụ quan trọng bị chặn nhầm.
+- `cmd/block-audit` trở thành nguồn inventory định kỳ thay cho việc đo tỷ lệ
+  FP thống kê, vì ở quy mô một người dùng tập domain bị chặn là hữu hạn và
+  đếm đủ.
+- Trade-off của `exact` là một số subdomain quảng cáo có thể lọt; đây là đánh
+  đổi có chủ đích lấy việc không gián đoạn dịch vụ.
+
+**Validation evidence:**
+
+- `internal/risk`: test chứng minh toggle có hiệu lực tức thì (tắt thì policy
+  không còn block, bật lại thì block trở lại), match mode invalid bị từ chối mà
+  không đổi state, refresh không revert lựa chọn của operator, kênh resync
+  không block caller.
+- `internal/api/handlers`: round-trip toggle qua `/v1/settings`, 400 khi match
+  mode sai, và trường bị bỏ qua không làm thay đổi công tắc.
+- `go test ./...`, `go build ./...`, `golangci-lint` (0 issue), UI typecheck: PASS.
+
+**Revisit when:**
+
+- Có yêu cầu tách adblock thành nhóm bật/tắt riêng (ads-only, tracker-only).
+- Có nhu cầu công tắc theo nhóm client thay vì toàn hệ thống.
+- Số lượng nguồn adblock tăng đến mức rebuild thủ công tốn kém.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
