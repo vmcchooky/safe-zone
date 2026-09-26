@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -191,6 +192,17 @@ func (t *OSINTTask) promote(ctx context.Context, domain string, evidence int) bo
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {
 		t.logPromotionFailure(ctx, domain, "normalize", err)
+		return false
+	}
+	if !feed.IsAdmissibleDomain(normalized) {
+		err := errors.New("domain refused by shared-host/public-suffix admission policy")
+		logjson.Warn("agent osint promotion refused by feed admission policy", correlation.Fields(ctx, map[string]any{
+			"service": "core-api",
+			"task":    "osint-audit",
+			"domain":  normalized,
+			"reason":  "feed_admission_policy",
+		}))
+		_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_promote_refused", normalized, err.Error())
 		return false
 	}
 	expiryScore := float64(time.Now().Add(t.config.TTL).Unix())

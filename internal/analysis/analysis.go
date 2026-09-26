@@ -238,7 +238,9 @@ func (a *Analyzer) analyzeWithBrands(input string, brands []Brand) Result {
 	if len(mainLabel) >= 10 &&
 		!strings.Contains(mainLabel, "-") &&
 		!hasSuspiciousKeyword &&
-		!IsCDNRoot(rootDomain) &&
+		// Self-service and delegated hosting roots both need entropy
+		// suppression; only the delegated subset receives CDN FP/TLS caps.
+		!IsSharedHostingRoot(rootDomain) &&
 		!IsTrustedBrandSuffix(domain, brands) {
 		entropy := ShannonEntropy(mainLabel)
 		if entropy > a.config.EntropyThreshold {

@@ -245,6 +245,25 @@ func TestOSINTTaskWrongTypeKeyNotDeleted(t *testing.T) {
 
 // A Redis failure during promotion must surface as a failure event instead
 // of being swallowed, and no success event may be recorded.
+// A shared serving host must not be promoted by OSINT even when the report
+// requests a block. The promotion writer uses the same admission predicate as
+// feed sync; exact tenant subdomains remain admissible.
+func TestOSINTTaskRefusesSharedHostPromotion(t *testing.T) {
+	_, redisCache := newTestRedis(t)
+	db := newTestStore(t)
+	task := newOSINTTestTask(db, redisCache, &fakeEvidence{enabled: true, report: newBlockedReport()}, 48*time.Hour)
+
+	if task.promote(context.Background(), "docs.google.com", 2) {
+		t.Fatal("shared serving host must not be promoted")
+	}
+	if _, err := redisCache.ZScore(context.Background(), testThreatKey, "docs.google.com"); err == nil {
+		t.Fatal("refused shared host must not be present in the threat feed")
+	}
+	if len(countAgentEvents(t, db, "threat_feed_promote_refused")) != 1 {
+		t.Fatal("expected one shared-host promotion refusal event")
+	}
+}
+
 func TestOSINTTaskPromotionFailureNotSwallowed(t *testing.T) {
 	server, redisCache := newTestRedis(t)
 	db := newTestStore(t)

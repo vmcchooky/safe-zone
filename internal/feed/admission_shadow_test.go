@@ -89,6 +89,10 @@ func TestSummarizeShadowGap(t *testing.T) {
 	if diff.ContextualPSLRefused != 1 {
 		t.Fatalf("expected 1 PSL refusal, got %+v", diff)
 	}
+	shared := SummarizeShadowGap([]string{"docs.google.com", "a.test"})
+	if shared.ContextualSharedHostRefused != 1 || shared.ContextualLoaded != 1 {
+		t.Fatalf("expected shared-host refusal to be separated, got %+v", shared)
+	}
 	if !sort.StringsAreSorted(diff.Sample) || len(diff.Sample) != 2 {
 		t.Fatalf("expected sorted 2-sample, got %v", diff.Sample)
 	}

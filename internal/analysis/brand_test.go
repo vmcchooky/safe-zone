@@ -92,10 +92,25 @@ func TestIsCDNRoot(t *testing.T) {
 		expected   bool
 	}{
 		{"cloudfront.net", true},
-		{"pages.dev", true},
-		{"vercel.app", true},
-		{"netlify.app", true},
+		{"fastly.net", true},
 		{"amazonaws.com", true},
+		{"azurecontainerapps.io", false},
+		{"azurewebsites.net", false},
+		{"firebaseapp.com", false},
+		{"fly.dev", false},
+		{"github.io", false},
+		{"glitch.me", false},
+		{"herokuapp.com", false},
+		{"netlify.app", false},
+		{"onrender.com", false},
+		{"pages.dev", false},
+		{"railway.app", false},
+		{"repl.co", false},
+		{"replit.app", false},
+		{"r2.dev", false},
+		{"surge.sh", false},
+		{"vercel.app", false},
+		{"workers.dev", false},
 		{"vietcombank.com.vn", false},
 		{"google.com", false},
 	}
@@ -104,6 +119,21 @@ func TestIsCDNRoot(t *testing.T) {
 		got := IsCDNRoot(tc.rootDomain)
 		if got != tc.expected {
 			t.Errorf("IsCDNRoot(%q) = %v; expected %v", tc.rootDomain, got, tc.expected)
+		}
+	}
+	for _, root := range []string{
+		"azurecontainerapps.io", "azurewebsites.net", "firebaseapp.com", "fly.dev",
+		"github.io", "glitch.me", "herokuapp.com", "netlify.app", "onrender.com",
+		"pages.dev", "railway.app", "repl.co", "replit.app", "r2.dev", "surge.sh",
+		"vercel.app", "workers.dev",
+	} {
+		if !IsSharedHostingRoot(root) {
+			t.Errorf("IsSharedHostingRoot(%q) = false; want true", root)
+		}
+	}
+	for _, root := range []string{"github.com", "taobao.com", "sharepoint.com", "google.com", "example.invalid"} {
+		if IsSharedHostingRoot(root) {
+			t.Errorf("IsSharedHostingRoot(%q) = true; want false", root)
 		}
 	}
 }

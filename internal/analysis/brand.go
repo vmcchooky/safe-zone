@@ -647,17 +647,15 @@ var suspiciousTLDs = map[string]bool{
 	"bid":  true,
 }
 
-var cdnRoots = map[string]bool{
+var delegatedCDNRoots = map[string]bool{
 	"akadns.net":            true,
 	"akamaihd.net":          true,
 	"akamaized.net":         true,
 	"amazonaws.com":         true,
 	"ampproject.org":        true,
-	"azurecontainerapps.io": true,
 	"azureedge.net":         true,
 	"azurefd.net":           true,
 	"azurestaticapps.net":   true,
-	"azurewebsites.net":     true,
 	"b-cdn.net":             true,
 	"b-msedge.net":          true,
 	"baishan-cloud.net":     true,
@@ -674,19 +672,33 @@ var cdnRoots = map[string]bool{
 	"edgesuite.net":         true,
 	"fastly.net":            true,
 	"fastlylb.net":          true,
-	"firebaseapp.com":       true,
-	"fly.dev":               true,
-	"github.io":             true,
 	"githubusercontent.com": true,
-	"glitch.me":             true,
 	"googleapis.com":        true,
 	"googleusercontent.com": true,
 	"gstatic.com":           true,
-	"herokuapp.com":         true,
 	"hwcdn.net":             true,
 	"incapdns.net":          true,
 	"jsdelivr.net":          true,
 	"msedge.net":            true,
+	"susercontent.com":      true,
+	"stackpathdns.com":      true,
+	"trafficmanager.net":    true,
+	"unpkg.com":             true,
+}
+
+// selfServiceHostingRoots are namespaces where an unrelated party can choose
+// a tenant label. Brand-shaped labels there are not equivalent to customer
+// delegation on a CDN edge, so they must not receive the delegated-CDN FP
+// penalty or a TLS advisory cap. The names still remain shared hosting roots
+// for entropy suppression and shared-apex parent-walk protection.
+var selfServiceHostingRoots = map[string]bool{
+	"azurecontainerapps.io": true,
+	"azurewebsites.net":     true,
+	"firebaseapp.com":       true,
+	"fly.dev":               true,
+	"github.io":             true,
+	"glitch.me":             true,
+	"herokuapp.com":         true,
 	"netlify.app":           true,
 	"onrender.com":          true,
 	"pages.dev":             true,
@@ -694,22 +706,31 @@ var cdnRoots = map[string]bool{
 	"repl.co":               true,
 	"replit.app":            true,
 	"r2.dev":                true,
-	"susercontent.com":      true,
-	"stackpathdns.com":      true,
 	"surge.sh":              true,
-	"trafficmanager.net":    true,
-	"unpkg.com":             true,
 	"vercel.app":            true,
 	"workers.dev":           true,
 }
 
-// IsCDNRoot reports whether rootDomain is a shared CDN/cloud hosting root.
+// IsCDNRoot reports whether rootDomain is a delegated CDN/cloud edge root.
+// Self-service hosting roots are intentionally excluded; use
+// IsSharedHostingRoot when the question is broader shared infrastructure.
 func IsCDNRoot(rootDomain string) bool {
 	rootDomain = strings.ToLower(strings.TrimSpace(rootDomain))
 	if rootDomain == "" {
 		return false
 	}
-	return cdnRoots[rootDomain]
+	return delegatedCDNRoots[rootDomain]
+}
+
+// IsSharedHostingRoot reports whether rootDomain is any recognized shared
+// infrastructure root, including both delegated CDN roots and self-service
+// tenant namespaces.
+func IsSharedHostingRoot(rootDomain string) bool {
+	rootDomain = strings.ToLower(strings.TrimSpace(rootDomain))
+	if rootDomain == "" {
+		return false
+	}
+	return delegatedCDNRoots[rootDomain] || selfServiceHostingRoots[rootDomain]
 }
 
 var sharedServingHosts = map[string]bool{

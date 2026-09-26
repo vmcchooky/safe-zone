@@ -65,13 +65,19 @@ Mỗi tài liệu nghiên cứu/phát triển **PHẢI** có đầy đủ các m
    - Ghi nhận đầy đủ các số liệu đo lường: ROC-AUC, PR-AUC, ECE, FPR, thời gian xử lý, dung lượng, số lượng bản ghi, test cases passed, v.v.
    - Số liệu phải cụ thể, có đơn vị, và có thể tái kiểm chứng.
 
-### 5.3. Tiêu chuẩn Chất lượng
+### 5.3. Decision Memory bắt buộc
+
+- File `DECISION.md` ở thư mục gốc là **durable project memory** cho các quyết định đã chấp nhận, bằng chứng, hệ quả và điều kiện revisit.
+- Trước khi sửa security behavior, policy, threat feed, cache, scoring hoặc false-positive handling, **phải** tìm entry liên quan trong `DECISION.md`; không mặc định đọc toàn bộ file.
+- Khi phát hiện quyết định cũ không còn đúng, **phải** thêm entry mới có `Status`, `Context`, `Decision`, `Consequences` và `Validation evidence`; entry cũ giữ dạng `superseded` thay vì bị xóa.
+- `DECISION.md` không chứa secret, token, password, private key, dữ liệu khách hàng hoặc raw runtime data.
+- Khi quyết định ảnh hưởng phạm vi implementation hoặc validation, báo cáo cuối phải nêu entry `DECISION.md` đã áp dụng.
+
+### 5.4. Tiêu chuẩn Chất lượng
 
 - **Rõ ràng, minh bạch, không dài dòng.** Mọi thông tin thêm vào đều phải có giá trị thực tiễn.
 - **Có thể tái lập (Reproducible):** Ghi nhận đủ thông tin để một người khác (hoặc AI agent khác) có thể tái lập kết quả.
 - **Cập nhật liên tục (Living Document):** Tài liệu phải được cập nhật đồng bộ mỗi khi có thay đổi, không để lạc hậu so với mã nguồn.
-
----
 
 ## 6. Kỹ năng AI Agent (Agent Skills)
 
