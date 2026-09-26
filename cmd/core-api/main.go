@@ -53,6 +53,27 @@ func main() {
 		})
 		os.Exit(1)
 	}
+	feedChurnTTL, feedChurnTTLErr := feed.ChurnTTLFromDays(config.Int("SAFE_ZONE_FEED_CHURN_TTL_DAYS", 0))
+	if feedChurnTTLErr != nil {
+		logjson.Error("core-api invalid feed churn TTL configuration", map[string]any{
+			"service": "core-api",
+			"error":   feedChurnTTLErr.Error(),
+		})
+		os.Exit(1)
+	}
+	// The agent runs its own sync loop, so the same interval guard the daemon
+	// applies has to be enforced here too or a short churn window would quietly
+	// punch holes in feed coverage between cycles.
+	if err := feed.CheckChurnTTLAgainstInterval(
+		feedChurnTTL,
+		config.DurationSeconds("SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS", 24*time.Hour),
+	); err != nil {
+		logjson.Error("core-api invalid feed churn TTL configuration", map[string]any{
+			"service": "core-api",
+			"error":   err.Error(),
+		})
+		os.Exit(1)
+	}
 	feedStaleAfter := config.DurationSeconds("SAFE_ZONE_AGENT_FEED_STALE_AFTER_SECONDS", 36*time.Hour)
 	feedAdmissionMode, err := feed.NormalizeAdmissionMode(config.String("SAFE_ZONE_AGENT_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)))
 	if err != nil || feedAdmissionMode == feed.AdmissionFilter {
@@ -152,6 +173,7 @@ func main() {
 				ParserDriftMinInvalid:      config.Int("SAFE_ZONE_AGENT_FEED_DRIFT_MIN_INVALID", 25),
 				CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_AGENT_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
 				TTL:                        feedTTL,
+				ChurnTTL:                   feedChurnTTL,
 				AdmissionMode:              feedAdmissionMode,
 				AllowInsecureHTTP:          config.Bool("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", false),
 			},

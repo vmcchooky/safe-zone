@@ -126,7 +126,13 @@ type SyncOptions struct {
 	ParserDriftMinInvalid      int
 	CacheInvalidationMinWrites int64
 	TTL                        time.Duration
-	AdmissionMode              AdmissionMode
+	// ChurnTTL is the shortened expiry window applied to members whose
+	// label is recycled after the campaign ends (see feed.MemberTTL). A
+	// non-positive value disables the split and every member expires on
+	// TTL. It must stay above the sync interval; both entrypoints resolve
+	// it through feed.ChurnTTLFromDays, which refuses too-small values.
+	ChurnTTL      time.Duration
+	AdmissionMode AdmissionMode
 }
 
 type SyncReport struct {
@@ -144,6 +150,10 @@ type SyncReport struct {
 	FeedRevision      int64           `json:"feed_revision,omitempty"`
 	Admission         *AdmissionStats `json:"admission,omitempty"`
 	Shadow            *ShadowDiff     `json:"shadow,omitempty"`
+	// ChurnTTLDays echoes the effective shortened window so a sync report
+	// states which expiry policy actually ran, instead of leaving the
+	// operator to infer it from the environment.
+	ChurnTTLDays int `json:"churn_ttl_days,omitempty"`
 }
 
 type OpenSourceResponse struct {
@@ -286,9 +296,16 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		batch   []redis.Z
 	)
 
-	expireScore := float64(time.Now().Add(options.TTL).Unix())
-	if options.TTL <= 0 {
-		expireScore = float64(time.Now().Add(DefaultSyncTTL).Unix())
+	baseTTL := options.TTL
+	if baseTTL <= 0 {
+		baseTTL = DefaultSyncTTL
+	}
+	// One clock read for the whole batch: members synced together must not
+	// land on visibly different expiry schedules because a slow parse
+	// straddled a second boundary.
+	syncNow := time.Now()
+	if options.ChurnTTL > 0 {
+		report.ChurnTTLDays = int(options.ChurnTTL / (24 * time.Hour))
 	}
 
 	flush := func() error {
@@ -308,7 +325,11 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 		if !admitFeedDomain(domain, &stats) {
 			return nil
 		}
-		batch = append(batch, redis.Z{Score: expireScore, Member: domain})
+		memberTTL := MemberTTL(domain, baseTTL, options.ChurnTTL)
+		if memberTTL < baseTTL {
+			stats.ChurnProneTenants++
+		}
+		batch = append(batch, redis.Z{Score: float64(syncNow.Add(memberTTL).Unix()), Member: domain})
 		if len(batch) >= defaultRedisBatchSize {
 			return flush()
 		}

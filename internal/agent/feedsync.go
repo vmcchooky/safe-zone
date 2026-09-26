@@ -37,6 +37,13 @@ type FeedSyncConfig struct {
 	// the daemon, the CLI tools and the OSINT promotion expire members on
 	// the same schedule; feed.Sync defaults a non-positive TTL to 14 days.
 	TTL time.Duration
+	// ChurnTTL is the shortened window scored into members whose label is
+	// recycled after the campaign ends. It must come from the shared
+	// feed.ChurnTTLFromDays contract (SAFE_ZONE_FEED_CHURN_TTL_DAYS) so all
+	// three entrypoints agree, and it must stay above the sync interval so a
+	// still-listed member cannot expire between two cycles. Non-positive
+	// disables the split; feed.Sync then expires everything on TTL.
+	ChurnTTL time.Duration
 }
 
 // FeedSyncTask downloads threat feed data from multiple sources and adds
@@ -111,6 +118,7 @@ func (t *FeedSyncTask) Run(ctx context.Context) error {
 			ParserDriftMinInvalid:      t.config.ParserDriftMinInvalid,
 			CacheInvalidationMinWrites: t.config.CacheInvalidationMinWrites,
 			TTL:                        t.config.TTL,
+			ChurnTTL:                   t.config.ChurnTTL,
 			AdmissionMode:              t.config.AdmissionMode,
 			AllowInsecureHTTP:          t.config.AllowInsecureHTTP,
 		})
