@@ -632,6 +632,141 @@ sau deploy.
 
 ---
 
+## 2026-09-26 - 4,008 blocks are unclassifiable; category is derived from the rule, not the domain
+
+**Status:** accepted
+
+**Context:**
+
+Câu hỏi "còn cải tiến nào không" dẫn tới một sợi chỉ chưa ai theo dõi: trong
+`analysis_log` có những dòng `verdict=SAFE, score=0, reasons=[]` nhưng
+`policy_action=block`. Một quyết định chặn mà không ghi lý do là điểm mù đúng
+loại telemetry mà toàn bộ chương trình này dựa vào.
+
+**Measurement 1 — quy mô.**
+
+| Số liệu | Giá trị |
+|---|---:|
+| Tổng dòng `analysis_log` | 78.117 |
+| Dòng `policy_action=block/deny` | 12.711 |
+| Trong đó `reasons=[]` | **4.133 (33%)** |
+| Trong đó `verdict=SAFE, score=0` | **4.133 (100%)** |
+
+**Measurement 2 — không phải lỗi, là thiết kế có chủ đích.**
+
+Truy `trace` cho thấy **4.133/4.133** đều đi qua `lexical_local`, và
+`service.go:1712-1737` giải thích: khi adblock match, `Result` đến từ
+`analyzeLexicalLocal` (chỉ brand seed, không qua engine thật) nên một domain
+sạch vẫn ra `SAFE/0`, trong khi `Policy` vẫn là `block`. Đường này cố tình
+bỏ qua engine để giữ độ trễ thấp. **Số đường lạ: 0.**
+
+Vậy đây là hành vi đúng. Nhưng nó vẫn để lại một vấn đề thật, ở trường kế
+tiếp.
+
+**Measurement 3 — vấn đề thật: `policy_category`.**
+
+| `policy_category` | Số dòng |
+|---|---:|
+| **`unknown`** | **4.008 (97%)** |
+| `tracking` | 114 |
+| `ads` | 11 |
+
+71 domain khác nhau, đứng đầu:
+
+| Domain | Số lần chặn |
+|---|---:|
+| `app-measurement.com` | 1.416 |
+| `api.ad.intl.xiaomi.com` | 624 |
+| `log.api.zaloapp.com` | 352 |
+| `centralized.zaloapp.com` | 317 |
+| `tracking.intl.miui.com` | 111 |
+| `ms.applovin.com` | 110 |
+| `pubads.g.doubleclick.net` | 63 |
+| `api.mixpanel.com` | 44 |
+
+Đây đều là quảng cáo/tracking đúng đáng chặn. Nhưng 97% chúng được gắn nhãn
+`unknown`, và khoảng **vẫn đang xảy ra**: 64 dòng kể từ 26/09, mới nhất
+16:07 cùng ngày.
+
+**Vì sao đây là vấn đề thật, không phải chi tiết hình thức:**
+
+1. `block-audit` xếp hạng ưu tiên theo blast radius. Một lớp chặn mà
+   `category=unknown` khiến thang phân loại không phân biệt được "quảng cáo vô
+   hại" với "hạ tầng trọng yếu". Đó chính là lý do `f-emc.ngsp.gov.vn` và 844
+   "adblock thuần" bị đếm chồng suốt bao lâu nay.
+2. Operator **không thể triage cái mình không phân loại được**. Chỉ có 71
+   domain, nhưng cần 71 lần tra cứu tay để biết cái nào an toàn.
+3. Hai domain đã được cứu (`log.api.zaloapp.com`, `centralized.zaloapp.com`) có
+   tổng 669 lần chặn. Nếu chúng chưa từng bị phát hiện, blast radius lớn hơn
+   nhiều so với đã ghi nhận.
+
+**Measurement 4 — phân tích thêm: vấn đề nằm ở nguồn dữ liệu, không ở code.**
+
+Category lấy từ rule, nhưng chính rule mang `unknown`:
+
+| Category trong cache | Số rule / 75.945 |
+|---|---:|
+| `unknown` | **67.080 (88%)** |
+| `tracking` | 7.204 |
+| `ads` | 1.661 |
+
+Kiểm tra từng domain cụ thể (cache phân tách bằng **tab**):
+
+| Domain | Rule trong cache |
+|---|---|
+| `app-measurement.com` | `suffix \| unknown \| block` |
+| `rt.applovin.com` | `suffix \| unknown \| block` |
+| `csi.gstatic.com` | `suffix \| unknown \| block` |
+| `www.googletagmanager.com` | `suffix \| unknown \| block` |
+
+Vậy `adblockDecision` và `recordTelemetryWithSource` **đều đúng**. Code không
+bỏ rơi gì. 88% rule trong feed StevenBlack vốn không có trường category, nên
+`unknown` là *giá trị thật*, chỉ là không ai gắn nhãn được.
+
+Điều này giải thích vì sao `unknown` giảm từ 100% (trước 25/09) xuống 71–78%:
+đó không phải do một bản sửa nào, mà do **nguồn bắt đầu phân loại một phần các
+rule mới**. Xu hướng đi đúng hướng nhưng chậm, và 20 domain vẫn chưa được gắn.
+
+**Decision (chốt lại):**
+
+1. ~~Sửa chỗ gán `policy_category` để lấy category từ rule.~~ **Không cần** —
+   code đã làm đúng. Đây là giả thuyết sai đã bị dữ liệu bác bỏ.
+2. Vấn đề thật là **nguồn adblock không gắn category cho 88% rule**. Không phải
+   lỗi Safe Zone.
+3. Hướng khả thi, nếu muốn cải thiện: **thêm một bước phân loại cục bộ** cho
+   rule `unknown`, dựa trên tín hiệu sẵn có (tên chứa `ad`/`track`/`analytics`/
+   `metric`, hoặc nguồn của list). Đây là suy luận, **không phải bằng chứng**,
+   nên phải shadow trước khi áp dụng — và cần chấp nhận sai sót ở cả hai chiều.
+4. Trước khi làm bước 3, cần một câu trả lời rẻ hơn nhiều: **nguồn StevenBlack
+   có hỗ trợ category không** (thường là list `hosts` phẳng, không có). Nếu
+   không, thì bước 3 là bắt buộc nếu muốn phân loại được; nếu có, chỉ cần đổi
+   nguồn — một thay đổi cấu hình, rẻ hơn nhiều lần.
+
+**Consequences:**
+
+- Không đổi hành vi chặn, không đổi recall, không đổi production.
+- Lần audit kế tiếp vẫn cần ghi rõ tỉ lệ `unknown` theo ngày, vì nó phản ánh
+  chất lượng phân loại của **nguồn**, không phải của Safe Zone.
+
+**Validation evidence:**
+
+- Truy vấn read-only trên bản sao SQLite production kèm WAL.
+- `cat -A` xác nhận cache dùng tab; phân tích bằng `cut -f3` / `awk -F'\t'`.
+- Đọc `adblockDecision` (`service.go`) và `recordTelemetryWithSource`
+  (`service.go:3757-3770`) để xác nhận cả hai đều truyền đúng category.
+- **Hai giả thuyết sai đã bị loại bằng dữ liệu, không phải bằng suy đoán:**
+  (1) "cache hỏng mất field separator" — sai, cache dùng tab hợp lệ, chỉ 1 dòng
+  "malformed" là comment; (2) "NOTFOUND nghĩa là không có rule" — sai, do
+  `grep '^domain '` không khớp tab trong khi `cut -f1` có khớp.
+
+**Revisit when:**
+
+- Có nguồn adblock mới có category → so sánh tỉ lệ `unknown` trước khi cân nhắc
+  bước phân loại cục bộ.
+- `block-audit` cần phân tầng blast radius chính xác.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
