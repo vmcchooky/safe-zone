@@ -9,6 +9,33 @@ Make Safe Zone releases repeatable, reviewable, and reversible across both suppo
 
 This is a manual release process. No production release should skip the gate.
 
+## Only deploy through `deploy.ps1`
+
+Build the production images with `./deploy.ps1` (or `scripts/ops/safe-zone.sh
+deploy` on the host). **Do not run `docker compose build` on the VPS directly.**
+
+Two real failures have come from that shortcut:
+
+1. **Untraceable image.** `docker-compose.yml` reads `SAFE_ZONE_BUILD_VERSION`,
+   `SAFE_ZONE_BUILD_GIT_COMMIT`, `SAFE_ZONE_BUILD_TIME` and
+   `SAFE_ZONE_BUILD_RELEASE_TAG`. A bare `docker compose build` does not set
+   them, so every one falls back to `dev` / `unknown` / `unreleased`. The
+   resulting image cannot be traced back to a commit, and `rollback` by
+   last-known-good SHA becomes guesswork. `deploy.ps1` sets them explicitly and
+   `set_build_metadata_env()` in `scripts/ops/safe-zone.sh` derives them from
+   git when they are absent.
+
+2. **Silent rollback.** The deploy tree on the VPS can hold a worktree that is
+   newer than `HEAD`, because a manual copy leaves the branch pointer behind.
+   Observed on 2026-09-26: `HEAD` was 133 commits behind `origin/main` while the
+   worktree matched the running image exactly. A `docker compose build` in that
+   state rebuilds the stale `HEAD` and rolls production back by 133 commits,
+   discarding every merged fix.
+
+Always confirm the post-deploy step: `deploy.ps1` reads `/v1/version` and exits
+non-zero when the reported SHA does not match what it shipped. If that check was
+skipped, the release is unverified no matter how healthy the stack looks.
+
 ## Release flow
 
 Follow this exact order:
