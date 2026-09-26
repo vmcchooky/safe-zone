@@ -33,6 +33,34 @@ func TestBlockPageHandlerRendersBlockedContext(t *testing.T) {
 	}
 }
 
+// Narrow viewports used to break "lừa đảo" between the two words, stranding a
+// lone "đảo" on the next line. The pair now carries a nowrap wrapper so it wraps
+// as a unit. This pins both halves: the wrapper is present, and the phrase
+// still renders as contiguous text for screen readers and copy/paste.
+func TestBlockPageKeepsFraudPhraseTogether(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/block", nil)
+	request.Header.Set("X-Blocked-Domain", "login.example.com")
+
+	ts.Handler.BlockPageHandler(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", recorder.Code)
+	}
+
+	body := recorder.Body.String()
+	if !strings.Contains(body, `<span class="keep-together">lừa đảo</span>`) {
+		t.Fatalf("expected the fraud phrase wrapped in keep-together, got: %s", body)
+	}
+	// The words must stay adjacent inside the wrapper: a tag or comment
+	// between them would make the pair break again in some layouts.
+	if strings.Contains(body, "lừa</span> đảo") {
+		t.Fatal("the two words must not be split across the wrapper boundary")
+	}
+}
+
 func TestBlockReportHandlerStoresFalsePositiveReport(t *testing.T) {
 	ts := newHandlerTestServer(t)
 

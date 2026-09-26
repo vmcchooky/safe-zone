@@ -49,6 +49,10 @@ h1 {
   overflow-wrap: anywhere;
 }
 .lede { color: var(--muted); margin-top: 1rem; }
+/* Narrow viewports were breaking "lừa đảo" between the two words, leaving a
+   lone "đảo" on the next line. The pair now wraps as a unit: either both words
+   move down together, or neither does. */
+.keep-together { white-space: nowrap; }
 .card {
   background: var(--card);
   border: 1px solid var(--line);

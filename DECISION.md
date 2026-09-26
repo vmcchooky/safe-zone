@@ -742,6 +742,50 @@ rule mới**. Xu hướng đi đúng hướng nhưng chậm, và 20 domain vẫn
    không, thì bước 3 là bắt buộc nếu muốn phân loại được; nếu có, chỉ cần đổi
    nguồn — một thay đổi cấu hình, rẻ hơn nhiều lần.
 
+**Measurement 5 — câu trả lời đó đã có, và nó không cần classifier.**
+
+`SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON` **đã tồn tại** trong code
+(`internal/risk/adblock_source_policy.go`, đọc tại `service.go:990`). Nó khai
+báo category theo nguồn:
+
+```json
+{"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts": {"category": "ads"}}
+```
+
+Và production **chưa đặt** biến này. Đó là nguyên nhân trực tiếp của 88%
+`unknown`, không phải thiếu năng lực. Cơ chế này đã có test, đã document
+trong `.env.example`, và chỉ cần restart để nạp lại.
+
+**Rủi ro đo được trước khi áp dụng:** category của rule adblock có thể làm thay
+đổi enforcement không. Kiểm tra `client_groups.block_categories` trên production:
+nhóm `default` có giá trị `[]`, **không nhóm nào chặn theo category**. Thêm nữa,
+nhánh fast path (`service.go:1712-1737`) `return` trước khi tới group policy.
+Vậy đổi category **chỉ ảnh hưởng telemetry**, không đổi quyết định chặn.
+
+**Measurement 6 — nguồn có sẵn category không: không nguồn nào.**
+
+| Nguồn | Định dạng | Category per-entry? |
+|---|---|---|
+| `StevenBlack/hosts` (hiện tại) | hosts phẳng | Không |
+| AdGuard `filter_1.txt` | `\|\|domain^` | Không — gộp 6 filter vào 1 file |
+| AdGuard HostlistsRegistry | tách **theo list** | Chỉ ở mức *list*, không phải entry |
+
+Hệ quả: đổi sang AdGuard **không** mang lại category per-entry, và parser hiện
+tại (`parseAdblockSourceInto`, `service.go:2521`) chỉ hiểu định dạng hosts —
+một dòng `||nicelymodulo.com^` sẽ được nhập thành domain hỏng. Dùng AdGuard còn
+kéo theo một lựa chọn chính sách mới: `filter_1` chứa lượng lớn nội dung
+người lớn, cần cân nhắc riêng cho bộ lọc dùng trong nhà.
+
+**Decision (chốt lại):**
+
+1. Đặt `SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON` gắn nguồn StevenBlack là `ads`.
+   Đây là bước đúng, rẻ, và khắc phục đúng 88% `unknown` mà không cần viết
+   classifier nào.
+2. Không viết classifier cục bộ cho rule `unknown`. Nó thừa khi cơ chế per-source
+   đã có sẵn và chưa được dùng.
+3. Hỗ trợ cú pháp AdGuard trong parser là việc riêng, chỉ làm nếu muốn dùng
+   nguồn AdGuard, và phải kèm quyết định về chính sách nội dung người lớn.
+
 **Consequences:**
 
 - Không đổi hành vi chặn, không đổi recall, không đổi production.
@@ -764,6 +808,101 @@ rule mới**. Xu hướng đi đúng hướng nhưng chậm, và 20 domain vẫn
 - Có nguồn adblock mới có category → so sánh tỉ lệ `unknown` trước khi cân nhắc
   bước phân loại cục bộ.
 - `block-audit` cần phân tầng blast radius chính xác.
+
+---
+
+## 2026-09-26 - The AdGuard upstream already filters; it must not decide blocks
+
+**Status:** accepted (measurement only; production unchanged)
+
+**Context:**
+
+Câu hỏi: upstream có phải Google DNS không, và nếu chuyển sang AdGuard DNS thì
+có còn cần adblock không. Cả hai đều trả lời bằng dữ liệu, không bằng suy đoán.
+
+**Measurement 1 — upstream hiện tại.**
+
+`SAFE_ZONE_UPSTREAM_DOH_URLS` trên production đã có **4** server, không phải 1:
+
+```
+https://cloudflare-dns.com/dns-query      (primary)
+https://dns.google/dns-query
+https://dns.quad9.net/dns-query
+https://dns.adguard-dns.com/dns-query
+```
+
+Cloudflare là primary theo độ trễ; ba còn lại chỉ dùng khi failover. Google có
+mặt nhưng **không** phải primary.
+
+**Measurement 2 — AdGuard đang lọc, và lọc âm thầm.**
+
+`dns.adguard-dns.com` là server *Default* của AdGuard: chặn ads, trackers,
+malware và phishing. Kiểm chứng qua JSON DNS API, in ra bản ghi thật:
+
+| Resolver | `doubleclick.net` | `malware.wicar.org` |
+|---|---|---|
+| `dns.google` | 6 IP thật | 2 IP thật |
+| `dns.adguard-dns.com` | **`0.0.0.0`** | **`94.140.14.33`** |
+| `unfiltered.adguard-dns.com` | 6 IP thật | 2 IP thật |
+
+`94.140.14.33` là trang chặn của AdGuard. Vậy AdGuard **không** trả `NXDOMAIN` mà
+trả một địa chỉ bị chặn, nên nó rất dễ bị nhầm là "vẫn phân giải bình thường".
+
+**Vì sao điều này là vấn đề, không phải tính năng:**
+
+Safe Zone được xây để *tự quyết định chặn*, mọi quyết định đều có decision id,
+trace, trang chặn và quy trình báo cáo chặn nhầm. Khi failover sang AdGuard:
+
+1. **Công tắc adblock mất tác dụng.** Bật lại quảng cáo không giúp gì vì
+   AdGuard vẫn chặn. Công tắc trở thành "bật/tắt theo tình huống" thay vì do
+   operator kiểm soát — đúng thứ ta vừa sửa ở bước 2a lại hỏng.
+2. **Mất dấu vết quyết định.** Không có decision id, không có trace, không có
+   trang chặn, không có đường báo cáo FP. Đúng loại điểm mù đã phát hiện ở
+   entry trước.
+3. **Không nhất quán.** Cùng một domain có thể `allow` khi Cloudflare trả lời và
+   bị chặn khi AdGuard trả lời. Người dùng không có cách nào biết trước.
+
+**Decision:**
+
+1. **Không** chuyển primary sang AdGuard có lọc. Trả lời trực tiếp câu hỏi: dùng
+   AdGuard DNS **không** làm adblock trở nên thừa — nó làm adblock *mất quyền
+   kiểm soát*, vì operator không còn có thể bật lại quảng cáo.
+2. **Không** bỏ adblock. AdGuard không thay thế được threat feed: recall đo được
+   là 100% trên mẫu known-bad, còn AdGuard không công bố recall tương đương, và
+   lớp brand/lexical/TLS của Safe Zone hoàn toàn không được AdGuard đảm nhiệm.
+   Đổi lấy một chặn quảng cáo không có thẩm quyền để đánh đổi một lớp phát
+   hiện lừa đảo đã kiểm chứng.
+3. **Khuyến nghị** đổi entry AdGuard trong danh sách upstream thành
+   `unfiltered.adguard-dns.com`. Upstream khi đó chỉ còn vai trò dự phòng *sẵn
+   có*, còn quyết định chặn luôn do Safe Zone đưa ra. Đây là thay đổi cấu hình
+   một dòng, đảo chiều được. **Chưa áp dụng** vì nó là thay đổi hành vi trên
+   production và cần operator xác nhận.
+4. Nếu muốn thêm chất lượng phân giải, Quad9 (`dns.quad9.net`) chặn malware ở
+   phía resolver và **không** chặn quảng cáo, nên nó là ứng viên đúng hơn AdGuard
+   có lọc cho vị trí dự phòng.
+
+**Consequences:**
+
+- Không có thay đổi nào trong entry này.
+- Sửa dòng `dns.adguard-dns.com` trong `.env` là việc vận hành, không cần deploy.
+
+**Validation evidence:**
+
+- JSON DNS API (`/resolve?name=...&type=A`) cho cả ba resolver, in bản ghi thật
+  chứ không chỉ mã trạng thái, vì AdGuard trả `NOERROR` kèm IP chặn.
+- `getent hosts` xác nhận `dns.adguard-dns.com` và `unfiltered.adguard-dns.com`
+  phân giải khác IP.
+- Tài liệu AdGuard Knowledge Base mô tả ba loại server: Default (lọc), Family
+  (thêm nội dung người lớn), Non-filtering.
+- **Một lần thử sai đã bị loại:** truy vấn DoH dạng nhị phân `/dns-query?dns=`
+  trả về "NO RESPONSE" cho mọi resolver, dễ dẫn tới kết luận sai rằng Cloudflare
+  và Quad9 hỏng. Chuyển sang JSON API mới đo được.
+
+**Revisit when:**
+
+- Operator xác nhận việc đổi sang `unfiltered.adguard-dns.com`.
+- Có bằng chứng rằng AdGuard có recall phishing tương đương threat feed — hiện
+  chưa có, và đó mới là điều kiện để xem lại quyết định ở điểm 2.
 
 ---
 
