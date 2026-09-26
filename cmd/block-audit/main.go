@@ -454,6 +454,10 @@ func printHumanReport(report Report) {
 }
 
 func writeCSV(path string, records []DomainRecord) error {
+	// #nosec G304 -- the output path is supplied by the operator running this
+	// CLI, not by a remote caller, and the tool has no server surface. The
+	// read-only guarantee applies to the database, not to where the operator
+	// chooses to write the report.
 	file, err := os.Create(path)
 	if err != nil {
 		return err
