@@ -53,6 +53,15 @@ func TestTLSAdvisoryNeedsCorroboration(t *testing.T) {
 		t.Errorf("cdn-weak verdict = %s; want SUSPICIOUS (not promoted to MALICIOUS)", cdnWeak.Verdict)
 	}
 
+	// Self-service hosting roots are not delegated CDN edges. Their weak TLS
+	// metadata keeps full weight unless another independent signal supports
+	// the promotion.
+	selfService := analysis.Result{Domain: "paypal.workers.dev", Verdict: analysis.VerdictSuspicious, Score: 40, Confidence: 0.9}
+	applyEnrichmentSignals(&selfService, weak)
+	if selfService.Score != 85 || selfService.Verdict != analysis.VerdictMalicious {
+		t.Errorf("self-service TLS = %s/%d; want MALICIOUS/85", selfService.Verdict, selfService.Score)
+	}
+
 	// Fixtures produced without AdvisoryScore keep legacy full weight
 	// (backward compatible: unscored signals are treated as strong).
 	legacy := analysis.Result{Domain: "legacy-example.net", Verdict: analysis.VerdictSafe, Score: 25}
@@ -136,6 +145,24 @@ func TestTenantExactStillBlocks(t *testing.T) {
 }
 
 // A noisy apex/root member must not block tenants via the parent walk.
+func TestSelfServiceTenantExactFeedStillBlocks(t *testing.T) {
+	service, closeService := newTestServiceWithRedis(t)
+	defer closeService()
+
+	for _, exact := range []string{"evil-tenant.workers.dev", "evil-tenant.pages.dev"} {
+		if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{
+			Score:  float64(time.Now().Add(time.Hour).Unix()),
+			Member: exact,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		result := service.Analyze(context.Background(), exact, ClientInfo{})
+		if result.Verdict != analysis.VerdictMalicious {
+			t.Errorf("Analyze(%q) = %s with reasons %v; want MALICIOUS", exact, result.Verdict, result.Reasons)
+		}
+	}
+}
+
 func TestNoisySharedParentSkipped(t *testing.T) {
 	service, closeService := newTestServiceWithRedis(t)
 	defer closeService()
@@ -164,6 +191,10 @@ func TestIsSharedFeedApex(t *testing.T) {
 		"cdn.ampproject.org":        true,
 		"fastly.net":                true,
 		"jsdelivr.net":              true,
+		"pages.dev":                 true,
+		"vercel.app":                true,
+		"netlify.app":               true,
+		"github.io":                 true,
 		"docs.google.com":           true,
 		"drive.google.com":          true,
 		"s3.amazonaws.com":          true,
@@ -180,10 +211,14 @@ func TestIsSharedFeedApex(t *testing.T) {
 		"api.github.com",
 		"evil-raw.githubusercontent.com",
 		"raw.githubusercontent.com.evil.com",
+		"evil.pages.dev.attacker.com",
+		"cdn.jsdelivr.net.evil.example",
 		"evil.sharepoint.com",
 		"deep.feed-parent.test",
 		"bad.test",
 		"dualstack.video.twitter.map.fastly.net",
+		"paypal.workers.dev",
+		"paypal.pages.dev",
 	}
 	for _, host := range notApex {
 		if isSharedFeedApex(host) {
