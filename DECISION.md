@@ -110,18 +110,31 @@ Audit cũng phát hiện một khoảng trống chưa được xử lý: self-se
 **Context:**
 
 Audit telemetry từ 13/09–26/09 trên production (một người dùng) cho thấy
-`analysis_log` ghi nhận 12.531 sự kiện chặn trên 129 domain. Trong đó:
+`analysis_log` ghi nhận 12.531 sự kiện chặn trên 129 domain.
 
-- 7.434 sự kiện đến từ quảng cáo/tracking — hoạt động đúng mục đích.
-- 4.682 sự kiện thuộc hạ tầng ứng dụng (Firebase, Crashlytics, Xiaomi SDK).
-- 717 sự kiện thuộc dịch vụ quan trọng: `log.api.zaloapp.com`,
-  `centralized.zaloapp.com`, `ads-platform.zalo.me`, `f-emcc.ngsp.gov.vn`.
-- Chỉ 7 sự kiện `MALICIOUS` và tất cả đều là override thủ công của operator
-  (`zaloweb.vn`), không phải phát hiện tự động.
+Phân loại **cuối cùng** bằng `cmd/block-audit` (tổng khớp 12.531):
 
-Audit bằng `cmd/block-audit` cũng phát hiện `f-emcc.ngsp.gov.vn` — hạ tầng
-email cơ quan nhà nước — bị chặn, mối đã nguy hiểm nhưng không nằm trong bất
-kỳ danh sách hardcode nào.
+| Nhóm | Số sự kiện |
+|---|---:|
+| `unclassified` | 5.544 |
+| `app_critical` (Firebase, Crashlytics, Xiaomi SDK) | 4.682 |
+| `ads_tracking` | **1.581** |
+| `critical_service` | 717 |
+| operator override | 7 |
+
+Bản ghi này thay cho một con số sớm hơn từng được dùng ở đây (7.434 cho
+"quảng cáo/tracking"). Con số đó đến từ **heuristic sơ bộ** trước khi có
+classifier, và nó không tách được lớp ads thật khỏi lớp chưa phân loại được.
+Con số authoritative là `ads_tracking = 1.581`; phần còn lại nằm ở
+`unclassified` + `app_critical` và cần operator phân loại thủ công.
+
+`critical_service` gồm `log.api.zaloapp.com`, `centralized.zaloapp.com`,
+`ads-platform.zalo.me` và `f-emc.ngsp.gov.vn`. Toàn bộ 7 sự kiện `MALICIOUS`
+trong nhóm override là thao tác thủ công của operator (`zaloweb.vn`), không
+phải phát hiện tự động.
+
+Audit phát hiện `f-emc.ngsp.gov.vn` — hạ tầng email cơ quan nhà nước — bị chặn,
+mối đã nguy hiểm nhưng không nằm trong bất kỳ danh sách hardcode nào.
 
 **Decision:**
 
