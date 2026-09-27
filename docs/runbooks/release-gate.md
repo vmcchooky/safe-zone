@@ -40,22 +40,39 @@ Note that `deploy.ps1` packages with `tar` and excludes `.git`, so the deploy
 tree on the host keeps whatever branch pointer it had. `git status` there is not
 a description of what is running: `/v1/version` is the only source of truth.
 
-## Restart both services for any adblock config change
+## Adblock configuration propagates to both services
 
-`core-api` and `dns-resolver` each build their **own in-memory** adblock trie from
-the shared cache file, and each reads adblock configuration once at startup.
+`core-api` and `dns-resolver` each build their own in-memory adblock trie and
+each keep their own copy of the adblock configuration.
 
-Changing `SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON` or `SAFE_ZONE_ADBLOCK_MATCH_MODE`
-and restarting only `core-api` leaves `dns-resolver` serving the old trie. Observed
-on 2026-09-27: after the change, `/v1/policy` reported `category=ads` for
-`centralized.zaloapp.com` but still `category=unknown` for `app-measurement.com`.
-Restarting `dns-resolver` made the results consistent.
+As of 2026-09-27, `adblock_enabled`, `adblock_match_mode`, the operator
+exception snapshot and the per-source policies are all reconciled every 30
+seconds from the store, in every process. A change reaches `dns-resolver` on its
+own; restarting it by hand is neither required nor sufficient on its own.
 
-A partially-applied configuration is worse than a clean one, because it looks
-correct for whichever entry you happened to test first. Restart both services
-together and verify through `/v1/policy`, not `/v1/analyze`: the analyze endpoint
-reports only the security verdict and never a content-policy decision, so an
-ad-blocked domain correctly shows `SAFE` there.
+The store is the source of truth and beats the environment, so a value written
+through the API survives a restart and cannot be reverted by the next refresh.
+
+**Check that the nodes actually agree** rather than assuming it. Both services
+publish the adblock status, including a `source_policies_fingerprint`. The
+digests must match:
+
+```sh
+curl -s http://127.0.0.1:8080/v1/status | grep -o '"source_policies_fingerprint":"[^"]*"'
+curl -s http://127.0.0.1:8081/          | grep -o '"source_policies_fingerprint":"[^"]*"'
+```
+
+The resolver serves its status on `/`, not `/status`. Mismatched digests mean one
+process has not yet reconciled, or is running different configuration. Allow one
+30s cycle before treating a mismatch as a fault.
+
+Previously this was invisible: on 2026-09-27 a policy change applied to only one
+service produced `category=ads` for one domain and `category=unknown` for
+another, and the result looked correct for whichever domain was checked first.
+
+Verify through `/v1/policy`, not `/v1/analyze`: the analyze endpoint reports only
+the security verdict and never a content-policy decision, so an ad-blocked domain
+correctly shows `SAFE` there.
 
 ## AdGuard during upstream failover is expected, not a regression
 

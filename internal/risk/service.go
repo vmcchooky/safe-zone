@@ -323,10 +323,16 @@ type Service struct {
 
 	// Adblock typed-rule state. adblockMatchMode mirrors
 	// SAFE_ZONE_ADBLOCK_MATCH_MODE (default suffix); adblockSourcePolicies
-	// holds the parsed per-source policies. Both are written during
-	// construction/sync and read by the sync goroutine only.
+	// holds the parsed per-source policies.
+	//
+	// adblockSourcePolicies is behind an atomic pointer because it is now
+	// swappable at runtime: the store-backed refresh replaces the whole set
+	// when an operator changes it, while the adblock sync goroutine may be
+	// concurrently reading it to scope an incoming rule. The set itself is
+	// treated as immutable once published; a change publishes a new set
+	// rather than mutating the existing map.
 	adblockMatchMode      atomic.Value // string (adblockMatchMode)
-	adblockSourcePolicies adblockSourcePolicySet
+	adblockSourcePolicies atomic.Pointer[adblockSourcePolicySet]
 
 	adblockTrie       atomic.Pointer[domaintrie.Trie]
 	adblockEnabled    atomic.Bool
@@ -987,7 +993,7 @@ func NewService(options Options) *Service {
 		policySemantics:            NormalizePolicySemantics(string(options.PolicySemantics)),
 	}
 	svc.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
-	svc.adblockSourcePolicies = parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
+	svc.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
 	svc.adblockTrie.Store(domaintrie.NewTrie())
 	svc.adblockResync = make(chan struct{}, 1)
 	svc.adblockShadowExactEnabled = options.AdblockShadowExactEnabled || config.Bool(envAdblockShadowExactEnabled, false)
@@ -1003,6 +1009,10 @@ func NewService(options Options) *Service {
 	// Reconcile the persisted match mode at startup so an operator change
 	// survives a restart instead of reverting to the environment default.
 	svc.refreshAdblockMatchMode()
+	// Same reconciliation for per-source policies: a persisted change must
+	// survive a restart, and the periodic refresh keeps both processes in step
+	// afterwards so the policy no longer needs a two-service restart to apply.
+	svc.refreshAdblockSourcePolicies()
 	if svc.redis != nil {
 		svc.subscribeReload = svc.redis.Subscribe
 	}
@@ -2268,6 +2278,7 @@ func (s *Service) runAdblockConfigSync() {
 		case <-ticker.C:
 			s.refreshAdblockEnabled()
 			s.refreshAdblockMatchMode()
+			s.refreshAdblockSourcePolicies()
 			s.reloadAdblockExceptions()
 		}
 	}
@@ -2275,17 +2286,24 @@ func (s *Service) runAdblockConfigSync() {
 
 // AdblockStatus holds runtime telemetry for the adblock subsystem.
 type AdblockStatus struct {
-	Enabled         bool                     `json:"enabled"`
-	MatchMode       string                   `json:"match_mode"`
-	DomainCount     int                      `json:"domain_count"`
-	ExactRuleCount  int                      `json:"exact_rule_count"`
-	SuffixRuleCount int                      `json:"suffix_rule_count"`
-	LastSyncAt      string                   `json:"last_sync_at,omitempty"`
-	LastSyncOK      bool                     `json:"last_sync_ok"`
-	SourceCount     int                      `json:"source_count"`
-	SuccessCount    int                      `json:"success_count"`
-	Exceptions      AdblockExceptionStatus   `json:"exceptions"`
-	ShadowExact     AdblockShadowExactStatus `json:"shadow_exact"`
+	Enabled         bool   `json:"enabled"`
+	MatchMode       string `json:"match_mode"`
+	DomainCount     int    `json:"domain_count"`
+	ExactRuleCount  int    `json:"exact_rule_count"`
+	SuffixRuleCount int    `json:"suffix_rule_count"`
+	LastSyncAt      string `json:"last_sync_at,omitempty"`
+	LastSyncOK      bool   `json:"last_sync_ok"`
+	SourceCount     int    `json:"source_count"`
+	SuccessCount    int    `json:"success_count"`
+	// SourcePoliciesFingerprint digests the effective per-source policy set.
+	// core-api and dns-resolver each hold their own copy, so comparing this
+	// value across the two is how an operator confirms the nodes agree rather
+	// than assuming it. An empty set digests to a stable value, not an empty
+	// string, so "no policies" is still comparable.
+	SourcePoliciesFingerprint string                   `json:"source_policies_fingerprint"`
+	SourcePolicyCount         int                      `json:"source_policy_count"`
+	Exceptions                AdblockExceptionStatus   `json:"exceptions"`
+	ShadowExact               AdblockShadowExactStatus `json:"shadow_exact"`
 }
 
 // AdblockStatus returns a snapshot of the adblock subsystem state.
@@ -2304,6 +2322,10 @@ func (s *Service) AdblockStatus() AdblockStatus {
 		SuccessCount: int(s.adblockOKCount.Load()),
 		Exceptions:   s.AdblockExceptionStatus(),
 		ShadowExact:  s.AdblockShadowExactStatus(),
+	}
+	if policies := s.currentAdblockSourcePolicies(); policies != nil {
+		status.SourcePoliciesFingerprint = adblockSourcePoliciesFingerprint(policies)
+		status.SourcePolicyCount = len(policies)
 	}
 	if t := s.adblockTrie.Load(); t != nil {
 		status.DomainCount = t.Count()

@@ -53,12 +53,12 @@ func TestShadowResolveOriginVariants(t *testing.T) {
 	t.Cleanup(func() { _ = storeDB.Close() })
 	svc := &Service{adblockDataRoot: tempDir, store: storeDB}
 	svc.adblockMatchMode.Store(string(adblockMatchModeSuffix))
-	svc.adblockSourcePolicies = parseAdblockSourcePolicies(`{
+	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
 		"https://exact.test/hosts": {"category":"ads","scope":"exact"},
 		"https://suffix.test/hosts": {"category":"ads","scope":"suffix"},
 		"https://catonly.test/hosts": {"category":"tracking"},
 		"https://bad.test/hosts": {"scope":"glob"}
-	}`)
+	}`))
 
 	if _, _, origin := svc.resolveAdblockSourcePolicy("https://missing.test/hosts"); origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("unconfigured source must be GlobalDefault, got %v", origin)

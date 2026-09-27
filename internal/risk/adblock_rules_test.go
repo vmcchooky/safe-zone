@@ -140,12 +140,12 @@ func TestResolveAdblockSourcePolicyFallbacks(t *testing.T) {
 		store:           storeDB,
 	}
 	svc.adblockMatchMode.Store(string(adblockMatchModeExact))
-	svc.adblockSourcePolicies = parseAdblockSourcePolicies(`{
+	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
 		"https://good.test/hosts": {"category":"telemetry","scope":"suffix"},
 		"https://badcat.test/hosts": {"category":"spyware"},
 		"https://badscope.test/hosts": {"scope":"glob"},
 		"https://partial.test/hosts": {"category":"tracking"}
-	}`)
+	}`))
 
 	if cat, scope, origin := svc.resolveAdblockSourcePolicy("https://good.test/hosts"); cat != "telemetry" || scope != domaintrie.RuleScopeSuffix || origin != domaintrie.OriginSourcePolicySuffix {
 		t.Fatalf("valid policy must win, got %s/%s/%v", cat, scope, origin)
@@ -327,12 +327,13 @@ func TestSyncTickReloadsMatchMode(t *testing.T) {
 	t.Setenv(envAdblockMatchMode, "exact")
 	t.Setenv(envAdblockSourcePoliciesJSON, `{"https://x.test/hosts":{"category":"tracking"}}`)
 	service.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
-	service.adblockSourcePolicies = parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
+	policySet := parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
+	service.adblockSourcePolicies.Store(&policySet)
 
 	if v := service.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
 		t.Fatalf("expected exact mode after reload, got %v", v)
 	}
-	if _, ok := service.adblockSourcePolicies["https://x.test/hosts"]; !ok {
+	if _, ok := service.currentAdblockSourcePolicies()["https://x.test/hosts"]; !ok {
 		t.Fatal("expected source policy to be parsed")
 	}
 

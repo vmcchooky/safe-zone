@@ -2,10 +2,15 @@ package risk
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
+	"sort"
 	"strings"
 
+	"safe-zone/internal/config"
 	"safe-zone/internal/logjson"
 )
 
@@ -34,8 +39,9 @@ const (
 	// true; a store value of adblock_enabled overrides it at runtime.
 	envAdblockEnabled = "SAFE_ZONE_ADBLOCK_ENABLED"
 
-	systemConfigAdblockEnabled   = "adblock_enabled"
-	systemConfigAdblockMatchMode = "adblock_match_mode"
+	systemConfigAdblockEnabled        = "adblock_enabled"
+	systemConfigAdblockMatchMode      = "adblock_match_mode"
+	systemConfigAdblockSourcePolicies = "adblock_source_policies"
 )
 
 // ErrAdblockMatchModeInvalid is returned for an unsupported match mode. The
@@ -131,4 +137,86 @@ func (s *Service) RequestAdblockResync() {
 	case s.adblockResync <- struct{}{}:
 	default:
 	}
+}
+
+// adblockSourcePoliciesFingerprint renders a stable digest of an effective
+// per-source policy set.
+//
+// The point is divergence detection, not secrecy. core-api and dns-resolver each
+// hold their own copy, and on 2026-09-27 a policy change applied to only one of
+// them left the deployment in a state that looked correct for whichever domain
+// happened to be checked first. Exposing this digest lets an operator confirm
+// the nodes agree instead of assuming it.
+//
+// Go map iteration order is randomised, so entries are sorted before hashing;
+// without that the digest would differ between processes holding an identical
+// configuration.
+func adblockSourcePoliciesFingerprint(set adblockSourcePolicySet) string {
+	sources := make([]string, 0, len(set))
+	for source := range set {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+	digest := sha256.New()
+	for _, source := range sources {
+		policy := set[source]
+		_, _ = io.WriteString(digest, canonicalSourceKey(source))
+		_, _ = io.WriteString(digest, "\x00")
+		_, _ = io.WriteString(digest, strings.ToLower(strings.TrimSpace(policy.Category)))
+		_, _ = io.WriteString(digest, "\x00")
+		_, _ = io.WriteString(digest, strings.ToLower(strings.TrimSpace(policy.Scope)))
+		_, _ = io.WriteString(digest, "\n")
+	}
+	return hex.EncodeToString(digest.Sum(nil)[:8])
+}
+
+// currentAdblockSourcePolicies returns the published policy set, or nil when
+// none has been set. The returned set must not be mutated.
+func (s *Service) currentAdblockSourcePolicies() adblockSourcePolicySet {
+	if set := s.adblockSourcePolicies.Load(); set != nil {
+		return *set
+	}
+	return nil
+}
+
+// SetAdblockSourcePolicies replaces the per-source policy set at runtime and
+// asks the sync loop to rebuild the trie.
+//
+// The rebuild is required, not optional: category and scope are stamped onto
+// each rule while its source is parsed, so a policy change cannot take effect
+// until the rules are read again. This mirrors SetAdblockMatchMode, which has
+// the same constraint, and it is the difference between a policy that is stored
+// and one that is actually in force.
+func (s *Service) SetAdblockSourcePolicies(policies adblockSourcePolicySet) {
+	fingerprint := adblockSourcePoliciesFingerprint(policies)
+	if adblockSourcePoliciesFingerprint(s.currentAdblockSourcePolicies()) == fingerprint {
+		return
+	}
+	published := policies
+	s.adblockSourcePolicies.Store(&published)
+	s.RequestAdblockResync()
+	logjson.Info("adblock source policies changed; rule rebuild requested", map[string]any{
+		"service":      "risk",
+		"source_count": len(policies),
+		"fingerprint":  fingerprint,
+	})
+}
+
+// refreshAdblockSourcePolicies reconciles the persisted per-source policies with
+// the process default, exactly like the enable flag and the match mode do.
+//
+// The store wins over the environment for the same reason: an operator who
+// changes a policy at runtime must not have it silently reverted by the next
+// refresh. Running this in every process is what makes a change reach
+// dns-resolver without a restart. Before it existed, applying a policy meant
+// restarting both services by hand, and restarting only one produced a split
+// configuration that was easy to miss.
+func (s *Service) refreshAdblockSourcePolicies() {
+	policies := parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
+	if s.store != nil && s.store.Enabled() {
+		if raw, err := s.store.GetSystemConfig(context.Background(), systemConfigAdblockSourcePolicies); err == nil && strings.TrimSpace(raw) != "" {
+			policies = parseAdblockSourcePolicies(raw)
+		}
+	}
+	s.SetAdblockSourcePolicies(policies)
 }
