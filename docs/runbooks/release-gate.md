@@ -57,6 +57,26 @@ together and verify through `/v1/policy`, not `/v1/analyze`: the analyze endpoin
 reports only the security verdict and never a content-policy decision, so an
 ad-blocked domain correctly shows `SAFE` there.
 
+## AdGuard during upstream failover is expected, not a regression
+
+Production `SAFE_ZONE_UPSTREAM_DOH_URLS` includes `dns.adguard-dns.com`, which is
+AdGuard's *Default* filtering server, not the unfiltered one. On failover, AdGuard
+returns its own block address rather than `NXDOMAIN`, so the query looks like it
+resolved normally.
+
+Consequences, accepted by the operator on 2026-09-27:
+
+- The adblock switch only governs the normal Cloudflare path. During failover
+  AdGuard decides, so re-enabling ads has no effect. This is known behavior.
+- Queries blocked by AdGuard carry no decision id, no trace, no block page and no
+  false-positive path. Telemetry is silent for them. When investigating a gap in
+  the logs, consider that AdGuard may have blocked it.
+- The same domain can be allowed on the normal path and blocked during failover.
+
+This is a deliberate fail-closed trade: when the primary layer is unavailable,
+over-blocking is preferred. `dns.quad9.net` is the contrasting case, blocking
+malware while leaving ads alone. See DECISION.md 2026-09-27 for the measurements.
+
 ## Release flow
 
 Follow this exact order:

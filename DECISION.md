@@ -872,11 +872,32 @@ trace, trang chặn và quy trình báo cáo chặn nhầm. Khi failover sang Ad
    lớp brand/lexical/TLS của Safe Zone hoàn toàn không được AdGuard đảm nhiệm.
    Đổi lấy một chặn quảng cáo không có thẩm quyền để đánh đổi một lớp phát
    hiện lừa đảo đã kiểm chứng.
-3. **Khuyến nghị** đổi entry AdGuard trong danh sách upstream thành
-   `unfiltered.adguard-dns.com`. Upstream khi đó chỉ còn vai trò dự phòng *sẵn
-   có*, còn quyết định chặn luôn do Safe Zone đưa ra. Đây là thay đổi cấu hình
-   một dòng, đảo chiều được. **Chưa áp dụng** vì nó là thay đổi hành vi trên
-   production và cần operator xác nhận.
+3. **Khuyến nghị (đã trình operator, 27/09):** đổi entry AdGuard thành
+   `unfiltered.adguard-dns.com` để nó chỉ còn vai trò dự phòng *sẵn có*.
+
+**Quyết định của operator (27/09): giữ `dns.adguard-dns.com` nguyên trạng.**
+
+Lý do được chấp nhận: lớp lọc của AdGuard là lớp bảo vệ **thật** trong đúng
+khoảnh thời gian mà mọi thứ khác đang hỏng — tức là khi failover. Trong kịch bản
+đó, việc AdGuard chặn quảng cáo và phishing là điều có lợi, không phải mất mát.
+
+**Hệ quả được chấp nhận cụ thể, ghi lại để không ai báo nhầm là lỗi:**
+
+1. **Công tắc adblock chỉ có tác dụng trên đường chính.** Khi truy vấn do
+   Cloudflare trả lời (đường bình thường), công tắc quyết định có chặn quảng cáo
+   hay không. Khi failover sang AdGuard, AdGuard quyết định, và bật lại quảng
+   cáo **không** có tác dụng. Đây là hành vi đã biết, không phải hồi quy.
+2. **Truy vấn do AdGuard chặn không có decision id, không có trace, không có
+   trang chặn, không có đường báo cáo chặn nhầm.** Telemetry sẽ im lặng cho
+   những lần chặn đó. Khi phân tích sự cố, phải coi "không có log" là có thể do
+   AdGuard chặn chứ không phải do Safe Zone bỏ sót.
+3. **Trải nghiệm không nhất quán khi failover:** cùng một domain có thể `allow`
+   lúc bình thường và bị chặn lúc failover. Người dùng không có cách nào biết
+   trước.
+4. Đây là đánh đổi có chủ đích theo hướng **fail-closed**: khi lớp chính hỏng,
+   ưu tiên chặn quá cho an toàn. Nó đánh đổi tính nhất quán và khả năng kiểm soát
+   lấy độ phủ bảo vệ.
+
 4. Nếu muốn thêm chất lượng phân giải, Quad9 (`dns.quad9.net`) chặn malware ở
    phía resolver và **không** chặn quảng cáo, nên nó là ứng viên đúng hơn AdGuard
    có lọc cho vị trí dự phòng.
