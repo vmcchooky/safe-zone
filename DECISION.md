@@ -906,6 +906,69 @@ trace, trang chặn và quy trình báo cáo chặn nhầm. Khi failover sang Ad
 
 ---
 
+## 2026-09-27 - Adblock source policy applied; unknown categories 67,080 to 0
+
+**Status:** applied (config only)
+
+**Context:**
+
+Áp dụng quyết định ở entry trước. Đây là thay đổi cấu hình, không phải code.
+
+**Applied:**
+
+```env
+SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON={"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts":{"category":"ads","scope":"suffix"}}
+```
+
+**Kết quả đo trên production sau khi áp dụng:**
+
+| Chỉ số | Trước | Sau |
+|---|---:|---:|
+| Rule `unknown` trong cache | 67.080 | **0** |
+| Rule `ads` | 1.661 | 67.557 |
+
+Kiểm chứng qua `/v1/policy`, không phải `/v1/analyze`:
+
+| Domain | Policy | Category |
+|---|---|---|
+| `app-measurement.com` | block | `ads` |
+| `csi.gstatic.com` | block | `ads` |
+| `www.googletagmanager.com` | block | `ads` |
+| `doubleclick.net` | block | `tracking` |
+| `microsoft.com` | allow | — |
+| `microsoft.github.io` | block | threat feed |
+| 5 operator exception | allow | giữ nguyên |
+
+Canary PASS: health 200/200, restart 0, feed 527.686, `microsoft.github.io` vẫn
+block, cả 5 exception vẫn allow.
+
+**Hai bài học vận hành, ghi vào runbook:**
+
+1. **`core-api` và `dns-resolver` giữ trie riêng trong RAM.** Đổi cấu hình
+   adblock rồi chỉ restart `core-api` sẽ để `dns-resolver` phục vụ trie cũ.
+   Quan sát được rõ: `centralized.zaloapp.com` ra `ads` còn
+   `app-measurement.com` vẫn `unknown`. Restart cả hai mới nhất quán. Trạng thái
+   áp dụng một phần nguy hiểm hơn trạng thái sạch, vì nó trông đúng với đúng
+   mẫu ta tình cờ kiểm tra trước.
+2. **`/v1/analyze` không phải nơi kiểm tra quyết định chặn.** Nó chỉ trả verdict
+   security, nên một domain bị chặn quảng cáo **đúng** là hiển thị `SAFE` ở đó.
+   Kiểm tra quyết định phải qua `/v1/policy` trên `dns-resolver`. Tôi đã báo nhầm
+   là hồi quy trước khi kiểm tra lại bằng đường đúng.
+
+**Consequences:**
+
+- `block-audit` từ giờ phân tầng được lớp ads thật, thay vì gộp vào `unknown`.
+- Không đổi quyết định chặn nào. Toàn bộ 67.080 rule trước đây vẫn chặn y như
+  cũ; chỉ nhãn telemetry thay đổi.
+- Backup cấu hình: `/home/safe-zone-henry/backups/config/env.pre-source-policy-20260927-031054`.
+
+**Revisit when:**
+
+- `dns-resolver` được thêm cơ chế chia sẻ trie với `core-api` → bỏ được bước
+  restart đôi.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
