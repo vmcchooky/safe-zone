@@ -170,10 +170,11 @@ func (s *Service) resolveAdblockSourcePolicy(source string) (string, domaintrie.
 		scope = domaintrie.RuleScopeExact
 	}
 	origin := domaintrie.OriginGlobalDefault
-	if s.adblockSourcePolicies == nil {
+	policies := s.currentAdblockSourcePolicies()
+	if policies == nil {
 		return category, scope, origin
 	}
-	policy, ok := s.adblockSourcePolicies[source]
+	policy, ok := policies[source]
 	if !ok {
 		return category, scope, origin
 	}

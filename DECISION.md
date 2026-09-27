@@ -1086,6 +1086,90 @@ Cả ba lần đều gần như khiến tôi báo một thành phần khỏe là
 
 ---
 
+## 2026-09-27 - Per-source adblock policies become hot-reloadable and detectable
+
+**Status:** accepted (code change)
+
+**Context:**
+
+Sau khi áp `SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON`, phải restart **cả hai**
+`core-api` và `dns-resolver`, và chỉ restart một cái tạo ra trạng thái nửa vời.
+Điều tra cho thấy khoảng hở hẹp hơn nhiều so với dự đoán ban đầu về "phải chia
+sẻ trie qua Redis".
+
+**Measurement — vòng đồng bộ đã tồn tại sẵn.**
+
+`runAdblockConfigSync` chạy mỗi **30 giây** trong **mọi** process, và từ trước
+đã đồng bộ ba thứ:
+
+| Cấu hình | Nguồn sự thật | Đồng bộ runtime? |
+|---|---|---|
+| `adblock_enabled` | store, thua env | Có |
+| `adblock_match_mode` | store, thua env | Có |
+| exception snapshot | file | Có |
+| **per-source policies** | **chỉ env, lúc khởi động** | **Không** |
+
+Vậy chỉ có **một** giá trị thiếu, không phải kiến trúc trie. Trie trùng lặp là
+thiết kế hợp lý: mỗi process cần trie cục bộ nhanh, và việc dùng chung qua
+Redis sẽ đặt độ trễ vào đường quyết định.
+
+**Rào cản kỹ thuật thật:** `adblockSourcePolicies` là plain field, ghi chú ghi
+rõ *"read by the sync goroutine only"*. Nó **không thể** hot-swap an toàn vì ghi
+từ goroutine đồng bộ sẽ race với goroutine sync đang đọc.
+
+**Decision:**
+
+1. Đưa `adblockSourcePolicies` xuống `atomic.Pointer[adblockSourcePolicySet]`.
+   Set được coi là bất biến sau khi publish; đổi thì publish set mới, không sửa
+   map cũ.
+2. `refreshAdblockSourcePolicies()` vào vòng lặp 30 giây, **store thua env** đúng
+   như hai công tắc kia. Đây là thứ làm thay đổi tới được `dns-resolver` mà
+   không cần restart.
+3. `SetAdblockSourcePolicies` gọi `RequestAdblockResync()`. Bắt buộc, không tuỳ
+   chọn: category và scope được đóng dấu lên rule **lúc parse**, nên policy đổi mà
+   không rebuild thì policy chỉ được lưu chứ không có hiệu lực. Đây là khác biệt
+   giữa "đã lưu" và "đang áp dụng".
+4. Fingerprint ổn định trong `AdblockStatus`, cho phép **so sánh** hai process thay
+   vì giả định chúng giống nhau. Sắp xếp key trước khi hash vì thứ tự map của Go
+   ngẫu nhiên — nếu không, mỗi process sẽ báo một giá trị khác nhau và phép so
+   sánh trở thành nhiễu.
+5. Fingerprint của set rỗng vẫn là một giá trị so sánh được, không phải chuỗi
+   rỗng, để "không có policy" vẫn kiểm tra được.
+
+**Hệ quả:**
+
+- Đổi per-source policy **không còn cần restart** và không còn tạo được trạng thái
+  nửa vời giữa hai process.
+- Trạng thái env hiện tại trên production **không đổi**: vẫn là
+  `{"category":"ads","scope":"suffix"}` cho nguồn StevenBlack. Đường lấy từ env
+  giữ nguyên làm mặc định, store chỉ ghi đè khi có.
+- Chưa thêm API để sửa policy từ dashboard. Phần còn thiếu là *cách nhập*, không
+  phải *cách áp dụng*; thêm API trước khi có nhu cầu vận hành sẽ là mở rộng
+  theo giả định.
+
+**Validation evidence:**
+
+- `TestSourcePolicyFingerprintIsStableAndSensitive`: cùng nội dung khác thứ tự
+  chèn → cùng fingerprint, lặp 20 lần; năm biến thể khác → fingerprint khác; nil
+  và set rỗng → bằng nhau.
+- `TestSetAdblockSourcePoliciesRequestsRebuildOnChange`: đổi → có rebuild; **không
+  đổi → không rebuild** (nếu thiếu, vòng lặp 30 giây sẽ rebuild trie liên tục);
+  đổi thật → có rebuild.
+- `TestRefreshAdblockSourcePoliciesPrefersStoreOverEnv`: env áp dụng khi store
+  rỗng; store thắng khi có; và `resolveAdblockSourcePolicy` trả về giá trị của
+  store, không chỉ cache nội bộ.
+- `TestAdblockStatusExposesSourcePolicyFingerprint`: set rỗng vẫn có fingerprint
+  so sánh được; fingerprint đổi khi policy đổi.
+- `go test -race ./internal/risk -run 'Adblock|SourcePolic'`: không có data race.
+- Toàn repo pass, `go vet` sạch.
+
+**Revisit when:**
+
+- Có nhu cầu sửa per-source policy từ dashboard → lúc đó thêm API, đường áp dụng đã
+  sẵn sàng.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
