@@ -58,13 +58,24 @@ publish the adblock status, including a `source_policies_fingerprint`. The
 digests must match:
 
 ```sh
-curl -s http://127.0.0.1:8080/v1/status | grep -o '"source_policies_fingerprint":"[^"]*"'
-curl -s http://127.0.0.1:8081/          | grep -o '"source_policies_fingerprint":"[^"]*"'
+# core-api's /v1/status is authenticated; its key may be inline or in a file.
+ENV=$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' safe-zone-core-api-1)
+KEY=$(printf '%s\n' "$ENV" | grep '^SAFE_ZONE_ADMIN_API_KEY=' | cut -d= -f2-)
+if [ -z "$KEY" ]; then
+  KEY=$(docker exec safe-zone-core-api-1 cat \
+        "$(printf '%s\n' "$ENV" | grep '^SAFE_ZONE_ADMIN_API_KEY_FILE=' | cut -d= -f2-)")
+fi
+
+curl -s -H "Authorization: Bearer $KEY" http://127.0.0.1:8080/v1/status \
+  | grep -o '"source_policies_fingerprint":"[^"]*"'
+curl -s http://127.0.0.1:8081/ \
+  | grep -o '"source_policies_fingerprint":"[^"]*"'
 ```
 
-The resolver serves its status on `/`, not `/status`. Mismatched digests mean one
-process has not yet reconciled, or is running different configuration. Allow one
-30s cycle before treating a mismatch as a fault.
+The resolver serves its status on `/`, not `/status`, and that endpoint is not
+authenticated; `core-api`'s is. Mismatched digests mean one process has not yet
+reconciled, or is running different configuration. Allow one 30s cycle before
+treating a mismatch as a fault.
 
 Previously this was invisible: on 2026-09-27 a policy change applied to only one
 service produced `category=ads` for one domain and `category=unknown` for
