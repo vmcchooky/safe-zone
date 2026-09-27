@@ -36,6 +36,27 @@ Always confirm the post-deploy step: `deploy.ps1` reads `/v1/version` and exits
 non-zero when the reported SHA does not match what it shipped. If that check was
 skipped, the release is unverified no matter how healthy the stack looks.
 
+Note that `deploy.ps1` packages with `tar` and excludes `.git`, so the deploy
+tree on the host keeps whatever branch pointer it had. `git status` there is not
+a description of what is running: `/v1/version` is the only source of truth.
+
+## Restart both services for any adblock config change
+
+`core-api` and `dns-resolver` each build their **own in-memory** adblock trie from
+the shared cache file, and each reads adblock configuration once at startup.
+
+Changing `SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON` or `SAFE_ZONE_ADBLOCK_MATCH_MODE`
+and restarting only `core-api` leaves `dns-resolver` serving the old trie. Observed
+on 2026-09-27: after the change, `/v1/policy` reported `category=ads` for
+`centralized.zaloapp.com` but still `category=unknown` for `app-measurement.com`.
+Restarting `dns-resolver` made the results consistent.
+
+A partially-applied configuration is worse than a clean one, because it looks
+correct for whichever entry you happened to test first. Restart both services
+together and verify through `/v1/policy`, not `/v1/analyze`: the analyze endpoint
+reports only the security verdict and never a content-policy decision, so an
+ad-blocked domain correctly shows `SAFE` there.
+
 ## Release flow
 
 Follow this exact order:
