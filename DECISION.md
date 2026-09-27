@@ -872,11 +872,32 @@ trace, trang chặn và quy trình báo cáo chặn nhầm. Khi failover sang Ad
    lớp brand/lexical/TLS của Safe Zone hoàn toàn không được AdGuard đảm nhiệm.
    Đổi lấy một chặn quảng cáo không có thẩm quyền để đánh đổi một lớp phát
    hiện lừa đảo đã kiểm chứng.
-3. **Khuyến nghị** đổi entry AdGuard trong danh sách upstream thành
-   `unfiltered.adguard-dns.com`. Upstream khi đó chỉ còn vai trò dự phòng *sẵn
-   có*, còn quyết định chặn luôn do Safe Zone đưa ra. Đây là thay đổi cấu hình
-   một dòng, đảo chiều được. **Chưa áp dụng** vì nó là thay đổi hành vi trên
-   production và cần operator xác nhận.
+3. **Khuyến nghị (đã trình operator, 27/09):** đổi entry AdGuard thành
+   `unfiltered.adguard-dns.com` để nó chỉ còn vai trò dự phòng *sẵn có*.
+
+**Quyết định của operator (27/09): giữ `dns.adguard-dns.com` nguyên trạng.**
+
+Lý do được chấp nhận: lớp lọc của AdGuard là lớp bảo vệ **thật** trong đúng
+khoảnh thời gian mà mọi thứ khác đang hỏng — tức là khi failover. Trong kịch bản
+đó, việc AdGuard chặn quảng cáo và phishing là điều có lợi, không phải mất mát.
+
+**Hệ quả được chấp nhận cụ thể, ghi lại để không ai báo nhầm là lỗi:**
+
+1. **Công tắc adblock chỉ có tác dụng trên đường chính.** Khi truy vấn do
+   Cloudflare trả lời (đường bình thường), công tắc quyết định có chặn quảng cáo
+   hay không. Khi failover sang AdGuard, AdGuard quyết định, và bật lại quảng
+   cáo **không** có tác dụng. Đây là hành vi đã biết, không phải hồi quy.
+2. **Truy vấn do AdGuard chặn không có decision id, không có trace, không có
+   trang chặn, không có đường báo cáo chặn nhầm.** Telemetry sẽ im lặng cho
+   những lần chặn đó. Khi phân tích sự cố, phải coi "không có log" là có thể do
+   AdGuard chặn chứ không phải do Safe Zone bỏ sót.
+3. **Trải nghiệm không nhất quán khi failover:** cùng một domain có thể `allow`
+   lúc bình thường và bị chặn lúc failover. Người dùng không có cách nào biết
+   trước.
+4. Đây là đánh đổi có chủ đích theo hướng **fail-closed**: khi lớp chính hỏng,
+   ưu tiên chặn quá cho an toàn. Nó đánh đổi tính nhất quán và khả năng kiểm soát
+   lấy độ phủ bảo vệ.
+
 4. Nếu muốn thêm chất lượng phân giải, Quad9 (`dns.quad9.net`) chặn malware ở
    phía resolver và **không** chặn quảng cáo, nên nó là ứng viên đúng hơn AdGuard
    có lọc cho vị trí dự phòng.
@@ -966,6 +987,89 @@ block, cả 5 exception vẫn allow.
 
 - `dns-resolver` được thêm cơ chế chia sẻ trie với `core-api` → bỏ được bước
   restart đôi.
+
+---
+
+## 2026-09-27 - Quad9 is the correct fallback: it blocks malware, not ads
+
+**Status:** accepted (measurement only; production unchanged)
+
+**Context:**
+
+Sau khi loại AdGuard khỏi danh sách upstream, câu hỏi tiếp theo là Quad9 thì
+sao. Quad9 **đã có sẵn** trong `SAFE_ZONE_UPSTREAM_DOH_URLS` từ trước, nên câu
+hỏi thật là: nó đang làm gì, và có nên giữ không.
+
+**Measurement 1 — Quad9 chặn gì.** Truy vấn DoH dạng wire (xem ghi chú bên dưới),
+đọc **rcode**:
+
+| Resolver | `microsoft.com` | `doubleclick.net` | `malware.wicar.org` |
+|---|---|---|---|
+| `cloudflare-dns.com` | 0 | 0 | 0 |
+| **`dns.quad9.net`** | 0 | 0 | **3 (NXDOMAIN)** |
+| `dns11.quad9.net` | 0 | 0 | **3 (NXDOMAIN)** |
+| `dns10.quad9.net` | 0 | 0 | 0 |
+| `unfiltered.adguard-dns.com` | 0 | 0 | 0 |
+
+Đọc: Cloudflare **không lọc gì cả** — toàn bộ lớp bảo vệ đến từ threat feed của
+chính Safe Zone. `dns.quad9.net` chặn malware và **không** chặn quảng cáo.
+`dns10` là bản không lọc. `dns11` là bản threat-intelligence, cũng chặn malware.
+
+**Measurement 2 — tốc độ từ VPS này** (10 mẫu, JSON API vì nó hoạt động với 3
+resolver này):
+
+| Resolver | median |
+|---|---:|
+| `cloudflare-dns.com` | **0,029s** |
+| `unfiltered.adguard-dns.com` | 0,036s |
+| `dns.quad9.net` | 0,049s |
+| `dns.google` | 0,088s |
+
+Cloudflare nhanh nhất nên vẫn là primary, Quad9 giữ vai trò dự phòng. Không cần
+đổi thứ tự.
+
+**Decision:**
+
+1. **Giữ Quad9.** Đây đúng là hình mẫu cần đối chiếu: lớp dự phòng **bổ sung
+   bảo vệ** mà **không đụng vào quyết định của operator**. Nó chặn malware ở
+   phía resolver, còn quảng cáo vẫn do adblock của Safe Zone quyết định, nên
+   công tắc bật/tắt vẫn có tác dụng.
+2. **Giữ `dns.quad9.net`, không dùng `dns11`.** `dns11` chặn mạnh hơn theo threat
+   intelligence và tiền sử gây hỏng trang hợp lệ; không đáng đổi khi lớp malware
+   đã có sẵn feed ở Safe Zone.
+3. **Đây là tiêu chuẩn để xét lại AdGuard.** Nếu giữ AdGuard trong danh sách thì
+   phải ở dạng `unfiltered.adguard-dns.com`, để nó chỉ còn vai trò sẵn có. Nhưng
+   xem mục "Còn cần quyết" bên dưới.
+
+**Ba lần probe sai trước khi đo được — đáng ghi vì cùng một dạng lỗi:**
+
+1. DoH nhị phân qua `/dns-query?dns=` → "NO RESPONSE" cho mọi resolver, dễ kết
+   luận sai rằng Cloudflare và Quad9 hỏng.
+2. JSON API `/resolve` → Quad9 trả `404 there is no endpoint configured for this
+   path`. Không hỏng, chỉ không có endpoint đó.
+3. Wire DoH bằng socket HTTP/1.1 → Quad9 trả `505 This server implements RFC 8484
+   and requires HTTP/2`. Tôi parse trang HTML đó như tin nhắn DNS và tưởng rằng
+   Quad9 chặn cả `microsoft.com`.
+
+Cả ba lần đều gần như khiến tôi báo một thành phần khỏe là hỏng. Bài học chung:
+**đọc rcode và bản ghi thật, đừng tin vào mã trạng thái hay thiếu phản hồi.**
+
+**Consequences:**
+
+- Không có thay đổi nào trong entry này.
+- Cung cấp tiêu chuẩn để đánh giá mọi upstream thêm vào: chỉ chấp nhận upstream
+  **không lọc quảng cáo**.
+
+**Validation evidence:**
+
+- DoH wire-format POST qua `curl --http2`, đọc rcode từ header DNS.
+- Vòng lặp 10 mẫu cho mỗi resolver, lấy median.
+- Đối chiếu với định nghĩa chính thức: Quad9 `9.9.9.9` bật chặn malware,
+  `9.9.9.10` tắt, `9.9.9.11` bật + threat intelligence.
+
+**Revisit when:**
+
+- Operator quyết định vị trí AdGuard trong danh sách upstream.
 
 ---
 
