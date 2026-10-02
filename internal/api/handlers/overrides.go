@@ -29,10 +29,17 @@ type falsePositiveReviewRequest struct {
 func (h *Handler) OverridesHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		action := r.URL.Query().Get("action")
-		overrides, err := h.Risk.ListOverrides(action)
+		action := strings.TrimSpace(r.URL.Query().Get("action"))
+		// An unrecognised filter is rejected rather than ignored. Silently
+		// dropping it returned the whole table, so a typo read as "no filter
+		// matched" instead of "you asked for something that does not exist".
+		if action != "" && action != "allow" && action != "block" {
+			httputil.WriteError(w, http.StatusBadRequest, `action must be "allow" or "block"`)
+			return
+		}
+		overrides, err := h.Risk.ListOverrides(r.Context(), action)
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to list overrides")
 			return
 		}
 		if overrides == nil {
@@ -48,24 +55,25 @@ func (h *Handler) OverridesHandler(w http.ResponseWriter, r *http.Request) {
 			httputil.WriteError(w, http.StatusBadRequest, "invalid JSON body")
 			return
 		}
+		req.Domain = strings.TrimSpace(req.Domain)
 		if req.Domain == "" || req.Action == "" {
 			httputil.WriteError(w, http.StatusBadRequest, "domain and action are required")
 			return
 		}
-		if err := h.Risk.UpsertOverride(req.Domain, req.Action, req.Reason); err != nil {
-			httputil.WriteError(w, http.StatusBadRequest, err.Error())
+		if err := h.Risk.UpsertOverride(r.Context(), req.Domain, req.Action, req.Reason); err != nil {
+			httputil.WriteStoreError(w, r, err, "failed to save override")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "domain": req.Domain, "action": req.Action})
 
 	case http.MethodDelete:
-		domain := r.URL.Query().Get("domain")
+		domain := strings.TrimSpace(r.URL.Query().Get("domain"))
 		if domain == "" {
 			httputil.WriteError(w, http.StatusBadRequest, "domain query parameter is required")
 			return
 		}
-		if err := h.Risk.DeleteOverride(domain); err != nil {
-			httputil.WriteError(w, http.StatusNotFound, err.Error())
+		if err := h.Risk.DeleteOverride(r.Context(), domain); err != nil {
+			httputil.WriteStoreError(w, r, err, "failed to delete override")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok", "domain": domain})

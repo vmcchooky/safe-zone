@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"safe-zone/internal/analysis"
+	"safe-zone/internal/logjson"
 )
 
 type URLAnalysisContext struct {
@@ -246,24 +247,14 @@ func (t *urlMLTelemetry) observeLatency(duration time.Duration) {
 	micros := duration.Microseconds()
 	t.latencyCount.Add(1)
 	t.latencyTotalMicros.Add(micros)
-	for index, upper := range mlLatencyBuckets {
-		if micros <= upper {
-			t.latencyBuckets[index].Add(1)
-			return
-		}
-	}
-	t.latencyBuckets[len(mlLatencyBuckets)].Add(1)
+	observeLatencyMicros(t.latencyBuckets[:], micros)
 }
 
 func (t *urlMLTelemetry) observeProbability(probability float64) {
-	if t == nil || math.IsNaN(probability) || math.IsInf(probability, 0) || probability < 0 || probability > 1 {
+	if t == nil {
 		return
 	}
-	index := int(probability * 10)
-	if index >= len(mlProbabilityBuckets) {
-		index = len(mlProbabilityBuckets) - 1
-	}
-	t.probabilityBuckets[index].Add(1)
+	observeProbabilityMicros(t.probabilityBuckets[:], probability)
 }
 
 func urlMLVerdictIndex(verdict analysis.Verdict) int {
@@ -326,11 +317,57 @@ func (s *Service) urlMLDriftStatus() URLMLDriftStatus {
 		return status
 	}
 	denominator := float64(total) + 0.5*float64(len(live))
+	// The reference is a *normalized* distribution (url_baseline divides the
+	// histogram by its total), while the live side is raw bucket counts. Those
+	// are different scales, so they cannot be smoothed with the same absolute
+	// constant: adding 0.5 to each of ten buckets is a rounding error against
+	// ~1000 live samples but five times the reference's entire mass, which
+	// distorted every share. Scaling the reference by ReferenceRows — the
+	// sample count it was measured over — puts both sides on the same footing
+	// so the two formulas become the same expression.
+	//
+	// The reference was previously used raw, and a zero-count reference bucket
+	// is legal (url_baseline rejects only negative counts). That made
+	// referenceShare 0, and since liveShare is always > 0 the term
+	// log(liveShare/0) is +Inf: psi became +Inf for every live sample set
+	// rather than only under drift, and +Inf is not representable in JSON, so
+	// the whole /v1/status payload failed to encode after its 200 was written.
+	//
+	// With both sides on one scale, identical distributions score exactly 0 —
+	// which is the property the 0.1/0.25 thresholds assume. Measured after the
+	// fix: identical 0.00000, sampling noise 0.0065, a real shift 1.88742.
+	//
+	// A reference with no recorded row count cannot be placed on that scale, so
+	// it yields no PSI rather than a fabricated one.
+	referenceScale := float64(reference.ReferenceRows)
+	if referenceScale <= 0 {
+		return status
+	}
+	referenceDenominator := referenceScale + 0.5*float64(len(reference.ProbabilityDistribution))
 	psi := 0.0
 	for index, count := range live {
 		liveShare := (count + 0.5) / denominator
-		referenceShare := reference.ProbabilityDistribution[index]
+		referenceCount := reference.ProbabilityDistribution[index] * referenceScale
+		referenceShare := (referenceCount + 0.5) / referenceDenominator
 		psi += (liveShare - referenceShare) * math.Log(liveShare/referenceShare)
+	}
+	// Defensive: a non-finite value here would break the status payload for
+	// every consumer. Fail toward the more protective state and publish a
+	// finite number rather than an unencodable one.
+	if math.IsNaN(psi) || math.IsInf(psi, 0) {
+		logjson.Warn("drift PSI was not finite; reporting alert", map[string]any{
+			"service":         "risk",
+			"reference_kind":  reference.ReferenceKind,
+			"reference_rows":  reference.ReferenceRows,
+			"live_samples":    status.LiveSamples,
+			"watch_threshold": reference.PSIWatchThreshold,
+			"alert_threshold": reference.PSIAlertThreshold,
+		})
+		psi = reference.PSIAlertThreshold
+		status.State = "alert"
+		status.Interpretation = "population stability index was not finite; treated as drift until the reference is re-frozen"
+		status.PopulationStabilityIndex = psi
+		return status
 	}
 	status.PopulationStabilityIndex = psi
 	if !reference.Operational {
@@ -353,24 +390,21 @@ func (t *urlMLTelemetry) latencyP95() int64 {
 	if t == nil {
 		return 0
 	}
-	total := t.latencyCount.Load()
-	if total == 0 {
-		return 0
-	}
-	target := (total*95 + 99) / 100
-	var cumulative int64
-	for index, upper := range mlLatencyBuckets {
-		cumulative += t.latencyBuckets[index].Load()
-		if cumulative >= target {
-			return upper
-		}
-	}
-	return -1
+	return latencyP95Micros(t.latencyBuckets[:], t.latencyCount.Load())
 }
 
-func (s *Service) URLMLStatus() URLMLStatus {
+// URLMLStatus reports the URL-ML subsystem state.
+//
+// ctx bounds the durable feedback read inside the snapshot. This is an
+// observability call rather than a request-scoped one, so callers on the service
+// side pass the service lifecycle context: the read should stop when the service
+// shuts down rather than outliving it.
+func (s *Service) URLMLStatus(ctx context.Context) URLMLStatus {
 	if s == nil {
 		return URLMLStatus{Mode: analysis.MLModeDisabled, State: "disabled"}
+	}
+	if ctx == nil {
+		ctx = s.lifecycleCtx
 	}
 	enabled := s.urlMLClassifier != nil && s.urlMLClassifier.Enabled()
 	status := URLMLStatus{
@@ -420,7 +454,7 @@ func (s *Service) URLMLStatus() URLMLStatus {
 		Drift: s.urlMLDriftStatus(),
 	}
 	status.Coverage = s.urlMLCoverageStatus()
-	status.Feedback = s.urlMLFeedback.status()
+	status.Feedback = s.urlMLFeedback.status(ctx)
 	status.Baseline = s.urlMLOpsBaselineStatus()
 	if status.LatencyCount > 0 {
 		status.LatencyAverageMicros = s.urlMLTelemetry.latencyTotalMicros.Load() / status.LatencyCount
@@ -506,7 +540,7 @@ func (s *Service) observeURLML(ctx context.Context, domain string, primaryVerdic
 		// observed sampled=true can label it without a spurious unknown_event.
 		// The caller opted into feedback via event_id; without this the label
 		// would be rejected even though the event was legitimately observed.
-		s.urlMLFeedback.record(context.EventID, -1, false)
+		s.urlMLFeedback.record(ctx, context.EventID, -1, false)
 		return observation
 	}
 	observation.Evaluated = true
@@ -521,7 +555,7 @@ func (s *Service) observeURLML(ctx context.Context, domain string, primaryVerdic
 			observation.HoldReason = reason
 			s.urlMLTelemetry.heldPromote.Add(1)
 			s.urlMLTelemetry.wouldPass.Add(1)
-			s.urlMLFeedback.record(context.EventID, decision.Probability, false)
+			s.urlMLFeedback.record(ctx, context.EventID, decision.Probability, false)
 			return observation
 		}
 		observation.WouldPromote = true
@@ -530,17 +564,38 @@ func (s *Service) observeURLML(ctx context.Context, domain string, primaryVerdic
 	} else {
 		s.urlMLTelemetry.wouldPass.Add(1)
 	}
-	s.urlMLFeedback.record(context.EventID, decision.Probability, observation.WouldPromote)
+	s.urlMLFeedback.record(ctx, context.EventID, decision.Probability, observation.WouldPromote)
 	return observation
 }
 
-// urlPromoteHoldReason reports why a model promote is held for host-side
-// evidence, or "" to let it stand. A path-only promote on a trusted-brand
-// host is held unless a live exact feed IOC names the host (scoped
-// evidence wins, the PR-59 principle at URL layer): lure words in a path
-// say nothing about who operates the host. Lookup errors fail open (no
-// hold): a blind guard must never suppress. Shadow-only effect — the URL
-// layer never enforces today.
+// urlPromoteHoldReason reports why a model promote is held, or "" to let it
+// stand.
+//
+// The rule: on a host belonging to a trusted brand, do not promote on the
+// model's say-so alone. A live exact feed IOC naming the host overrides it —
+// scoped evidence wins, the PR-59 principle at the URL layer — because then
+// there is a reason to believe the host itself is bad, not just its URL.
+//
+// The rationale is not "lure words in a path prove nothing", which is what this
+// comment claimed until 2026-09-29 while the code never inspected a path. It
+// is an asymmetry in cost: a false block on a real host breaks a service for
+// every user behind the resolver, while the model missing a phish hosted on
+// apple.com costs one visit. When the model is unsure about a host we know is
+// legitimate, not promoting is the safe answer.
+//
+// So the guard is deliberately blanket. An attempt was made on 2026-09-29 to
+// condition the hold on a lure marker appearing in the URL path, on the theory
+// that this was the rule the comment described. It released two benign
+// trusted-brand URLs and was measured as raising the guard's pinned
+// false-positive ceiling from 12 to 14. Both were model false positives, so
+// holding them was the guard working as intended; loosening it traded a real
+// protection for a number that only production-traffic data could justify. The
+// path logic was removed and the ceiling left at 12.
+//
+// URL-ML is shadow-only — this never enforces today — so what is at stake is
+// the quality of the shadow data, not a live block.
+//
+// Lookup errors fail open (no hold): a blind guard must never suppress.
 func (s *Service) urlPromoteHoldReason(ctx context.Context, domain string) string {
 	if !analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) {
 		return ""
@@ -557,11 +612,17 @@ func (s *Service) urlPromoteHoldReason(ctx context.Context, domain string) strin
 
 // RecordURLFeedback correlates a caller label with an earlier shadow event.
 // It only ever touches HMAC fingerprints; raw URLs are never involved.
-func (s *Service) RecordURLFeedback(eventID, label string) (bool, string) {
+//
+// ctx bounds the durable lookup, so a caller that has gone away does not leave
+// a query queued on the single SQLite connection.
+func (s *Service) RecordURLFeedback(ctx context.Context, eventID, label string) (bool, string) {
 	if s == nil || s.urlMLFeedback == nil {
 		return false, "unsupported"
 	}
-	return s.urlMLFeedback.apply(eventID, label)
+	if ctx == nil {
+		ctx = s.lifecycleCtx
+	}
+	return s.urlMLFeedback.apply(ctx, eventID, label)
 }
 
 func urlMLCallerIndex(raw string) int {

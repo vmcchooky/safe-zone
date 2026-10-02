@@ -93,13 +93,13 @@ func TestWhitelistUpdateTaskSuccess(t *testing.T) {
 	}
 
 	// Verify RAM Bloom Filter was reloaded and matches
-	if !wl.IsAllowed("facebook.com") {
+	if !wl.IsAllowed(t.Context(), "facebook.com") {
 		t.Fatal("expected facebook.com to be allowed in RAM Bloom Filter")
 	}
-	if !wl.IsAllowed("sub.github.com") {
+	if !wl.IsAllowed(t.Context(), "sub.github.com") {
 		t.Fatal("expected sub.github.com to be allowed via subdomain inheritance")
 	}
-	if wl.IsAllowed("evil.com") {
+	if wl.IsAllowed(t.Context(), "evil.com") {
 		t.Fatal("expected evil.com to NOT be allowed")
 	}
 
@@ -194,10 +194,10 @@ func TestWhitelistUpdateTaskRawCsvFallback(t *testing.T) {
 	}
 
 	// Verify it parsed and loaded raw CSV fallback correctly
-	if !wl.IsAllowed("apple.com") {
+	if !wl.IsAllowed(t.Context(), "apple.com") {
 		t.Fatal("expected apple.com to be allowed")
 	}
-	if !wl.IsAllowed("microsoft.com") {
+	if !wl.IsAllowed(t.Context(), "microsoft.com") {
 		t.Fatal("expected microsoft.com to be allowed")
 	}
 }

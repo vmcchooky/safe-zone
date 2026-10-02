@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -67,7 +68,10 @@ func (s *urlFeedbackStore) fingerprint(eventID string) urlFeedbackKey {
 
 // record stores a fingerprint for a freshly evaluated shadow observation.
 // Unknown/empty event IDs are ignored silently.
-func (s *urlFeedbackStore) record(eventID string, probability float64, wouldPromote bool) {
+//
+// ctx is part of the shared backend contract but unused here: the memory buffer
+// does no I/O, so there is nothing for it to bound.
+func (s *urlFeedbackStore) record(_ context.Context, eventID string, probability float64, wouldPromote bool) {
 	if s == nil || eventID == "" {
 		return
 	}
@@ -108,7 +112,8 @@ func (s *urlFeedbackStore) record(eventID string, probability float64, wouldProm
 }
 
 // apply correlates a caller-provided label with a previously recorded event.
-func (s *urlFeedbackStore) apply(eventID, label string) (bool, string) {
+// ctx is unused; see record.
+func (s *urlFeedbackStore) apply(_ context.Context, eventID, label string) (bool, string) {
 	if s == nil || eventID == "" {
 		return false, "unknown_event"
 	}
@@ -149,7 +154,8 @@ func (s *urlFeedbackStore) apply(eventID, label string) (bool, string) {
 // status returns aggregate counters only. The labelled false-positive rate is
 // defined over labelled would-promote events; it is omitted when no such
 // labels exist so unlabelled traffic can never imply calibration.
-func (s *urlFeedbackStore) status() URLMLFeedbackStatus {
+// ctx is unused; see record.
+func (s *urlFeedbackStore) status(_ context.Context) URLMLFeedbackStatus {
 	if s == nil {
 		return URLMLFeedbackStatus{Supported: false}
 	}
@@ -171,3 +177,7 @@ func (s *urlFeedbackStore) status() URLMLFeedbackStatus {
 	}
 	return status
 }
+
+// waitForPrune satisfies the backend contract; the memory buffer keeps nothing
+// in the background.
+func (s *urlFeedbackStore) waitForPrune() {}

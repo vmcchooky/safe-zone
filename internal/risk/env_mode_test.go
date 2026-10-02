@@ -35,7 +35,7 @@ func TestDNSResolverIgnoresCoreOnlyURLMLConfiguration(t *testing.T) {
 	}
 	defer func() { _ = service.Close() }()
 
-	status := service.URLMLStatus()
+	status := service.URLMLStatus(t.Context())
 	if status.Mode != "disabled" || status.Enabled || status.State != "disabled" {
 		t.Fatalf("expected URL ML to stay disabled in DNS resolver, got %+v", status)
 	}

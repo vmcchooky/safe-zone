@@ -41,7 +41,7 @@ func (h *Handler) URLMLFeedbackHandler(w http.ResponseWriter, r *http.Request) {
 		httputil.WriteError(w, http.StatusBadRequest, "label must be benign or malicious")
 		return
 	}
-	recorded, reason := h.Risk.RecordURLFeedback(eventID, label)
+	recorded, reason := h.Risk.RecordURLFeedback(r.Context(), eventID, label)
 	status := http.StatusOK
 	switch reason {
 	case "unsupported":

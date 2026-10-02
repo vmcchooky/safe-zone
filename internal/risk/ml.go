@@ -70,32 +70,70 @@ func (t *mlTelemetry) observeLatency(duration time.Duration) {
 	micros := duration.Microseconds()
 	t.latencyCount.Add(1)
 	t.latencyTotalMicros.Add(micros)
+	observeLatencyMicros(t.latencyBuckets[:], micros)
+}
+
+// observeLatencyMicros files a latency sample into buckets. The slice must
+// have len(mlLatencyBuckets)+1 entries: the trailing slot counts samples above
+// the highest boundary, and a reader that ignores it cannot reach its target.
+func observeLatencyMicros(buckets []atomic.Int64, micros int64) {
 	for i, upper := range mlLatencyBuckets {
 		if micros <= upper {
-			t.latencyBuckets[i].Add(1)
+			buckets[i].Add(1)
 			return
 		}
 	}
-	t.latencyBuckets[len(mlLatencyBuckets)].Add(1)
+	buckets[len(mlLatencyBuckets)].Add(1)
+}
+
+// probabilityBucketIndex maps a probability to its histogram bucket, or -1
+// when the value is not a usable probability.
+func probabilityBucketIndex(probability float64) int {
+	if math.IsNaN(probability) || math.IsInf(probability, 0) || probability < 0 || probability > 1 {
+		return -1
+	}
+	index := int(probability * 10)
+	if index >= len(mlProbabilityBuckets) {
+		index = len(mlProbabilityBuckets) - 1
+	}
+	return index
+}
+
+func observeProbabilityMicros(buckets []atomic.Int64, probability float64) {
+	if index := probabilityBucketIndex(probability); index >= 0 {
+		buckets[index].Add(1)
+	}
+}
+
+// latencyP95Micros reports the upper bound of the bucket holding the 95th
+// percentile. buckets must have len(mlLatencyBuckets)+1 entries.
+//
+// When the cumulative count still falls short after the last defined boundary,
+// the remainder sits in the overflow slot, so the reported value is that
+// boundary and is a lower bound. It used to return -1 instead, which was then
+// published verbatim as latency_p95_us: a consumer charting p95 could not
+// distinguish the sentinel from a measurement, and the case is reached exactly
+// when more than 5% of samples are slow.
+func latencyP95Micros(buckets []atomic.Int64, total int64) int64 {
+	if total <= 0 {
+		return 0
+	}
+	target := (total*95 + 99) / 100
+	var cumulative int64
+	for i, upper := range mlLatencyBuckets {
+		cumulative += buckets[i].Load()
+		if cumulative >= target {
+			return upper
+		}
+	}
+	return mlLatencyBuckets[len(mlLatencyBuckets)-1]
 }
 
 func (t *mlTelemetry) latencyP95() int64 {
 	if t == nil {
 		return 0
 	}
-	total := t.latencyCount.Load()
-	if total == 0 {
-		return 0
-	}
-	target := (total*95 + 99) / 100
-	var cumulative int64
-	for i, upper := range mlLatencyBuckets {
-		cumulative += t.latencyBuckets[i].Load()
-		if cumulative >= target {
-			return upper
-		}
-	}
-	return -1
+	return latencyP95Micros(t.latencyBuckets[:], t.latencyCount.Load())
 }
 
 func (s *Service) MLStatus() MLStatus {
@@ -128,7 +166,7 @@ func (s *Service) MLStatus() MLStatus {
 			SelectedWouldPass:   s.mlTelemetry.canaryWouldPass.Load(),
 			EnforceSuppressed:   s.mlTelemetry.canarySuppressed.Load(),
 		},
-		URL: s.URLMLStatus(),
+		URL: s.URLMLStatus(s.lifecycleCtx),
 	}
 	if status.Canary.Configured {
 		status.Canary.Algorithm = mlCanarySelectorAlgorithm
@@ -247,14 +285,10 @@ func (s *Service) classifyML(ctx context.Context, current analysis.Result) (anal
 }
 
 func (t *mlTelemetry) observeProbability(probability float64) {
-	if t == nil || math.IsNaN(probability) || math.IsInf(probability, 0) || probability < 0 || probability > 1 {
+	if t == nil {
 		return
 	}
-	index := int(probability * 10)
-	if index >= len(mlProbabilityBuckets) {
-		index = len(mlProbabilityBuckets) - 1
-	}
-	t.probabilityBuckets[index].Add(1)
+	observeProbabilityMicros(t.probabilityBuckets[:], probability)
 }
 
 func classifyWithRecovery(classifier analysis.DomainClassifier, domain string) (decision analysis.MLDecision, err error) {

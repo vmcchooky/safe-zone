@@ -130,6 +130,50 @@ func TestStatusEndpointHTTP(t *testing.T) {
 	}
 }
 
+// /metrics is admin-only: the per-endpoint request summary lets any
+// authenticated caller — including the read-only guest role — fingerprint the
+// API surface and read 401/403/429 rates, which is a brute-force progress
+// signal. An authenticated non-admin caller still gets the minimal public
+// shape; runtime and subsystem internals stay behind /v1/status.
+func TestMetricsEndpointRequiresAuth(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	warmResp, err := ts.Client.Get(ts.Server.URL + "/v1/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	warmResp.Body.Close()
+
+	anonReq, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/metrics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anonResp, err := ts.Client.Do(anonReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer anonResp.Body.Close()
+	if anonResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous /metrics = %d, want 401", anonResp.StatusCode)
+	}
+
+	// The read-only guest role must not reach it either. Its session passes
+	// RequireAuthFunc, which is exactly why the route needs RequireAdminFunc.
+	guestReq, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/metrics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guestReq.AddCookie(enableGuestAccount(t, ts))
+	guestResp, err := ts.Client.Do(guestReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer guestResp.Body.Close()
+	if guestResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("guest /metrics = %d, want 403: request_summary is a brute-force progress signal", guestResp.StatusCode)
+	}
+}
+
 func TestMetricsEndpointHTTP(t *testing.T) {
 	ts := newHandlerTestServer(t)
 
@@ -139,7 +183,12 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	}
 	warmResp.Body.Close()
 
-	resp, err := ts.Client.Get(ts.Server.URL + "/metrics")
+	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/metrics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.addAdminBearer(req)
+	resp, err := ts.Client.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,12 +205,12 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	if payload["service"] != "core-api" {
 		t.Fatalf("expected core-api service, got %#v", payload["service"])
 	}
-	// Public metrics expose only the request counters Grafana charts need.
-	// Internals (redis, feed_sync, adblock, analysis_config_reload, ml,
-	// runtime) moved behind authenticated /v1/status.
+	// Even for an authenticated administrator /metrics exposes only the
+	// request counters. Internals (redis, feed_sync, adblock,
+	// analysis_config_reload, ml, runtime) live on /v1/status.
 	for _, forbidden := range []string{"redis", "feed_sync", "adblock", "analysis_config_reload", "ml", "runtime", "time"} {
 		if _, ok := payload[forbidden]; ok {
-			t.Fatalf("public /metrics must not expose %q", forbidden)
+			t.Fatalf("/metrics must not expose %q", forbidden)
 		}
 	}
 	metrics, ok := payload["metrics"].(map[string]any)
@@ -173,6 +222,26 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	}
 }
 
+// An admin session cookie is an equally valid credential for a scraper that
+// cannot set headers (a browser-side dashboard panel, for example).
+func TestMetricsEndpointAcceptsAdminSessionCookie(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/metrics", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(ts.adminSessionCookie(t))
+	resp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("session-authenticated /metrics = %d, want 200", resp.StatusCode)
+	}
+}
 func TestVersionEndpointReportsBuildMetadata(t *testing.T) {
 	restore := overrideBuildInfo("1.3.0", "abc123def", "2026-05-26T12:00:00Z", "safe-zone-core-api:1.3.0-abc123def", "https://github.com/quorix/safe-zone")
 	defer restore()

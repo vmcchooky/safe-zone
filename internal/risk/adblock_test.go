@@ -260,7 +260,7 @@ func TestAdblockOverridePriority(t *testing.T) {
 	})
 
 	// Add admin override to allow the domain
-	if err := service.UpsertOverride("ads.example.com", "allow", "false positive"); err != nil {
+	if err := service.UpsertOverride(t.Context(), "ads.example.com", "allow", "false positive"); err != nil {
 		t.Fatalf("upsert override failed: %v", err)
 	}
 

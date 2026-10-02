@@ -461,13 +461,13 @@ func TestShadowOverrideWhitelistNoObservation(t *testing.T) {
 		shadowRule("gated.example.com", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault),
 	}, "")
 
-	if err := svc.UpsertOverride("gated.example.com", "block", "admin"); err != nil {
+	if err := svc.UpsertOverride(t.Context(), "gated.example.com", "block", "admin"); err != nil {
 		t.Fatal(err)
 	}
 	if pol := svc.Policy(context.Background(), "gated.example.com", ClientInfo{}); pol.Policy != "block" {
 		t.Fatalf("expected admin block, got %s", pol.Policy)
 	}
-	if err := svc.DeleteOverride("gated.example.com"); err != nil {
+	if err := svc.DeleteOverride(t.Context(), "gated.example.com"); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.store.UpdateWhitelist(context.Background(), []string{"gated.example.com"}); err != nil {

@@ -71,7 +71,7 @@ func (h *Handler) AgentProposalsHandler(w http.ResponseWriter, r *http.Request) 
 			if reviewer != "" {
 				reason += " (reviewer: " + reviewer + ")"
 			}
-			if err := h.Risk.UpsertOverride(proposal.Domain, proposal.Action, reason); err != nil {
+			if err := h.Risk.UpsertOverride(r.Context(), proposal.Domain, proposal.Action, reason); err != nil {
 				httputil.WriteError(w, http.StatusInternalServerError, err.Error())
 				return
 			}

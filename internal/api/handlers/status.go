@@ -36,7 +36,12 @@ type statusResponse struct {
 	OSINT          *OSINTStatus                     `json:"osint,omitempty"`
 	Endpoints      []string                         `json:"endpoints,omitempty"`
 	RateLimiting   *RateLimitingStatus              `json:"rate_limiting,omitempty"`
-	Time           string                           `json:"time"`
+	// DecisionPipeline reports fail-open degradations on the DNS hot path.
+	// override_lookup_failures counts admin-override reads that failed after a
+	// retry: the request was evaluated normally, so an operator-set block did
+	// not apply. The counter is the only signal for that condition.
+	DecisionPipeline *risk.DecisionPipelineStatus `json:"decision_pipeline,omitempty"`
+	Time             string                       `json:"time"`
 }
 
 func HealthHandler(service string) http.HandlerFunc {
@@ -79,6 +84,9 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		Adblock:        &adblockStatus,
 		ML:             &mlStatus,
 		OSINT:          osintStatus,
+		DecisionPipeline: &risk.DecisionPipelineStatus{
+			OverrideLookupFailures: h.Risk.OverrideLookupFailures(),
+		},
 		Endpoints: []string{
 			"/",
 			"/app/",

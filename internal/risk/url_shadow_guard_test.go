@@ -3,6 +3,7 @@ package risk
 import (
 	"context"
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -106,12 +107,66 @@ func TestURLShadowGuardHoldsTrustedHostPromotes(t *testing.T) {
 	if fn != 0 {
 		t.Fatalf("guard must not cost recall: %d must_promote missed", fn)
 	}
-	// Measured residual with the url-v1 bundle: 12 non-trusted-host
-	// negatives (news/CDN/tenant/reserved shapes) still promote. Pinned:
-	// any regression — or silent model change — turns this red.
+	// Measured residual with the url-v1 bundle: 12 negatives still promote
+	// (news/CDN/tenant/reserved shapes on hosts the guard does not treat as
+	// trusted brands). Pinned: any regression — or silent model change — turns
+	// this red.
+	//
+	// The ceiling was briefly raised to 14 on 2026-09-29, when the guard was
+	// changed to condition the hold on a lure marker in the URL path on the
+	// theory that this was the documented rule. It was reverted: the two
+	// released cases (neg-009 gstatic.com/maps/preview, neg-022
+	// apple.com/support/case-…) are model false positives, so holding them is
+	// the guard working, and releasing them traded a real protection for a
+	// number that only production-traffic data could justify. The guard is
+	// blanket by design; see urlPromoteHoldReason.
 	if fp > 12 {
 		t.Fatalf("guard regression: %d false positives, ceiling is 12", fp)
 	}
+}
+
+// The guard is blanket: on a trusted-brand host the model does not get to
+// promote on its own say-so. This pins that rule directly, because the guard's
+// comment spent a year claiming a path-conditioned rule the code never
+// implemented.
+//
+// The two URLs below are the ones a path-conditioned variant released, and both
+// are model false positives on hosts the operator does not control the lure
+// for. They must stay held.
+func TestTrustedHostPromotesAreHeldRegardlessOfThePath(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	service := newGuardedURLService(t, cache.NewRedis(server.Addr(), "", 0))
+
+	for _, raw := range []string{
+		"https://gstatic.com/maps/preview/l6432?z=15&token=Qw7712",
+		"https://apple.com/support/case-99182753109/page-12?cid=55",
+	} {
+		observed := service.AnalyzeWithOptions(context.Background(), hostOf(t, raw), ClientInfo{}, AnalyzeOptions{
+			URLContext: &URLAnalysisContext{RequestedURL: raw},
+		})
+		if observed.URLML == nil || !observed.URLML.Evaluated {
+			t.Fatalf("%s: missing URL shadow evaluation: %+v", raw, observed.URLML)
+		}
+		if !observed.URLML.Held {
+			t.Fatalf("%s: a promote on a trusted-brand host must be held even when the path looks benign: %+v", raw, observed.URLML)
+		}
+	}
+}
+
+func hostOf(t *testing.T, raw string) string {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if parsed.Host == "" {
+		t.Fatalf("no host in %q", raw)
+	}
+	return parsed.Host
 }
 
 // Scoped evidence wins at URL layer too (PR-59 principle): a live exact
