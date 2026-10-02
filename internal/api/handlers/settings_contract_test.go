@@ -50,7 +50,7 @@ func TestSettingsInvalidWebhookDoesNotPersistTheKey(t *testing.T) {
 
 	resp := postSettingsRaw(t, ts,
 		`{"gemini_api_key":"secret-key","agent_webhook_url":"http://127.0.0.1/hook"}`)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 for a loopback webhook", resp.StatusCode)
@@ -74,7 +74,7 @@ func TestSettingsRejectsMaskedValuesInsteadOfSilentlySkippingThem(t *testing.T) 
 	} {
 		resp := postSettingsRaw(t, ts, body)
 		status := resp.StatusCode
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if status != http.StatusBadRequest {
 			t.Fatalf("status = %d for %s, want 400: a masked value is not a change", status, body)
 		}
@@ -91,7 +91,7 @@ func TestSettingsRejectsRetentionOutsideTheBounds(t *testing.T) {
 	for _, days := range []string{"0", "-1", "5473788"} {
 		resp := postSettingsRaw(t, ts, `{"telemetry_retention_days":`+days+`}`)
 		status := resp.StatusCode
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if status != http.StatusBadRequest {
 			t.Fatalf("status = %d for retention %s, want 400", status, days)
 		}
@@ -102,7 +102,7 @@ func TestSettingsRejectsRetentionOutsideTheBounds(t *testing.T) {
 
 	// A value inside the range still applies.
 	resp := postSettingsRaw(t, ts, `{"telemetry_retention_days":14}`)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d for a valid retention, want 200", resp.StatusCode)
 	}
@@ -116,7 +116,7 @@ func TestSettingsRejectsUnknownMatchMode(t *testing.T) {
 	ts := newHandlerTestServer(t)
 
 	resp := postSettingsRaw(t, ts, `{"adblock_match_mode":"sideways"}`)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
@@ -128,7 +128,7 @@ func TestSettingsRejectsAnEmptyDocument(t *testing.T) {
 	ts := newHandlerTestServer(t)
 
 	resp := postSettingsRaw(t, ts, `{}`)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d for an empty document, want 400: nothing was saved", resp.StatusCode)
 	}
@@ -148,7 +148,7 @@ func TestOverridesRejectsAnUnknownActionFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d for a mistyped action filter, want 400", resp.StatusCode)
 	}
@@ -172,7 +172,7 @@ func TestOverridesAcceptsTheValidActionFilters(t *testing.T) {
 			t.Fatal(err)
 		}
 		status := resp.StatusCode
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if status != http.StatusOK {
 			t.Fatalf("status = %d for action=%q, want 200", status, action)
 		}
@@ -196,7 +196,7 @@ func TestWriteStoreErrorMapsDisabledStoreTo503(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503 for an unusable store", resp.StatusCode)
@@ -303,7 +303,7 @@ func TestSettingsReports503WhenTheStoreDiesMidApply(t *testing.T) {
 		`{"adblock_source_policies_json":"{\"https://a.test/hosts\":{\"category\":\"tracking\",\"scope\":\"suffix\"}}"}`,
 	} {
 		resp := postSettingsRaw(t, ts, body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode != http.StatusServiceUnavailable {
 			t.Fatalf("status for %s = %d, want 503", body, resp.StatusCode)
 		}
@@ -328,7 +328,7 @@ func TestSettingsBundleReports503WhenTheStoreIsClosed(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		body, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode != want {
 			t.Fatalf("status = %d, want %d (body %q)", resp.StatusCode, want, body)

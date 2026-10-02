@@ -39,7 +39,7 @@ func enableGuestAccount(t *testing.T, ts *handlerTestServer) *http.Cookie {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("guest access create = %d, want 200", resp.StatusCode)
 	}
@@ -49,7 +49,7 @@ func enableGuestAccount(t *testing.T, ts *handlerTestServer) *http.Cookie {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer loginResp.Body.Close()
+	defer func() { _ = loginResp.Body.Close() }()
 	if loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("guest login = %d, want 200", loginResp.StatusCode)
 	}
@@ -76,7 +76,7 @@ func fetchTelemetryRecent(t *testing.T, ts *handlerTestServer, addAuth func(*htt
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("telemetry recent = %d, want 200", resp.StatusCode)
 	}
@@ -156,7 +156,7 @@ func TestTelemetryRecentOmitsIdentityKeysForGuest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var raw struct {
 		Items []map[string]any `json:"items"`
@@ -190,7 +190,7 @@ func TestTelemetryStatsRemainAvailableToGuest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("guest telemetry stats = %d, want 200", resp.StatusCode)
 	}

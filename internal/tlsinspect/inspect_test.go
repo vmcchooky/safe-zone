@@ -27,7 +27,6 @@ type certOptions struct {
 	dnsNames   []string
 	notBefore  time.Time
 	notAfter   time.Time
-	selfSigned bool
 }
 
 func newTestCert(t *testing.T, opts certOptions) (certPEM, keyPEM []byte) {

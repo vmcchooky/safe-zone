@@ -37,8 +37,7 @@ func TestFetchSourceRevalidatesRedirects(t *testing.T) {
 // Same-host public redirects keep working: the policy blocks targets,
 // not the act of redirecting.
 func TestFetchSourceFollowsSameHostRedirect(t *testing.T) {
-	var server *httptest.Server
-	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/old" {
 			http.Redirect(w, r, "/warning", http.StatusFound)
 			return

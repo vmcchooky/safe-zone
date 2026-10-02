@@ -259,7 +259,7 @@ func TestSyncAdmissionShadowWritesLegacyMembership(t *testing.T) {
 		t.Fatalf("expected both legacy hosts written in shadow mode, got %d", report.Written)
 	}
 	redisCache := cache.NewRedis(server.Addr(), "", 0)
-	defer redisCache.Close()
+	defer func() { _ = redisCache.Close() }()
 	for _, domain := range []string{"single.test", "repeated.test"} {
 		if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, domain); err != nil {
 			t.Fatalf("expected %s in shadow membership: %v", domain, err)

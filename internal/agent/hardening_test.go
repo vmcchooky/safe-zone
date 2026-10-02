@@ -167,7 +167,7 @@ func (c *webhookCapture) domains() []string {
 func newWebhookServer(t *testing.T, capture *webhookCapture, status *int32) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		failed := status != nil && atomic.LoadInt32(status) != http.StatusOK
 		var payload AlertPayload
 		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil && !failed {

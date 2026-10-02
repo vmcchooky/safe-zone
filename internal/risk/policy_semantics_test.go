@@ -174,8 +174,8 @@ func TestLegacySemanticsReproduceMaliciousHundred(t *testing.T) {
 	if result.Verdict != analysis.VerdictMalicious || result.Score != 100 || result.Confidence != 1.0 {
 		t.Fatalf("legacy analyze must reproduce MALICIOUS/100/1.0, got %s/%d/%v", result.Verdict, result.Score, result.Confidence)
 	}
-	if result.Result.Category != "adware" || len(result.Reasons) == 0 || result.Reasons[0] != "adblock" {
-		t.Fatalf("legacy analyze must report adblock/adware, got category %s reasons %v", result.Result.Category, result.Reasons)
+	if result.Category != "adware" || len(result.Reasons) == 0 || result.Reasons[0] != "adblock" {
+		t.Fatalf("legacy analyze must report adblock/adware, got category %s reasons %v", result.Category, result.Reasons)
 	}
 
 	pol := service.Policy(context.Background(), "clean-ads.example.com", ClientInfo{})

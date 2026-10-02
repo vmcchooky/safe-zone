@@ -435,7 +435,7 @@ func TestExceptionConfigValidationFailClosed(t *testing.T) {
 				}()
 				svc = newStartupService(t, body)
 			}()
-			defer svc.Close()
+			defer func() { _ = svc.Close() }()
 			status := svc.AdblockExceptionStatus()
 			if !status.Configured {
 				t.Fatal("file path set means configured, even when invalid")
@@ -472,7 +472,7 @@ func TestExceptionConfigValidationFailClosed(t *testing.T) {
 			PolicySemantics:    PolicySemanticsSeparated,
 			DisableAdblockSync: true,
 		})
-		defer svc.Close()
+		defer func() { _ = svc.Close() }()
 
 		before := svc.AdblockExceptionStatus()
 		if before.Count != 1 || !before.LastReloadOK || before.Revision == "" {

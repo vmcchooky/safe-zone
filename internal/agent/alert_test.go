@@ -42,7 +42,7 @@ func TestAlertTaskNoEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	task := NewAlertTask(db, AlertConfig{
 		WebhookURL: "https://example.com/webhook",
@@ -61,7 +61,7 @@ func TestAlertTaskSendsWebhook(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "evil.test", `{"score":90}`)
 	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "bad.test", `{"score":85}`)
@@ -70,7 +70,7 @@ func TestAlertTaskSendsWebhook(t *testing.T) {
 
 	var received AlertPayload
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
 			t.Errorf("decode webhook payload: %v", err)
 		}
@@ -104,7 +104,7 @@ func TestAlertTaskWebhookError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "evil.test", `{}`)
 	time.Sleep(50 * time.Millisecond)
@@ -132,7 +132,7 @@ func TestAlertTaskRejectsPrivateWebhookURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "evil.test", `{}`)
 	time.Sleep(50 * time.Millisecond)
@@ -230,7 +230,7 @@ func TestAlertTaskAdvancedChannels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Seed a critical Vietnam bank spoofing event
 	_ = db.RecordAgentEvent(context.Background(), "audit", "auto_block", "vietcombbank.com.vn", `{"score":95}`)
@@ -241,7 +241,7 @@ func TestAlertTaskAdvancedChannels(t *testing.T) {
 	var slackReceived map[string]any
 
 	tgServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var temp map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&temp)
 		mu.Lock()
@@ -252,7 +252,7 @@ func TestAlertTaskAdvancedChannels(t *testing.T) {
 	defer tgServer.Close()
 
 	slackServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		var temp map[string]any
 		_ = json.NewDecoder(r.Body).Decode(&temp)
 		mu.Lock()
@@ -330,7 +330,7 @@ func TestSendTelegramEscapesHTMLFields(t *testing.T) {
 
 	var received map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		_ = json.NewDecoder(r.Body).Decode(&received)
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -369,7 +369,7 @@ func TestSendSMTPRejectsPlaintextSubmission(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listener.Close()
+	defer func() { _ = listener.Close() }()
 
 	done := make(chan struct{})
 	go func() {
@@ -378,7 +378,7 @@ func TestSendSMTPRejectsPlaintextSubmission(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, _ = conn.Write([]byte("220 test smtp\r\n250 AUTH PLAIN\r\n"))
 	}()
 
@@ -394,7 +394,7 @@ func TestSendSMTPRejectsPlaintextSubmission(t *testing.T) {
 func TestSendTelegramEscapesHTMLSensitiveFields(t *testing.T) {
 	var received map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
+		defer func() { _ = r.Body.Close() }()
 		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
 			t.Fatalf("decode telegram payload: %v", err)
 		}

@@ -19,7 +19,7 @@ func BenchmarkAnalyzeNoRedis(b *testing.B) {
 		TTLBlocked:     time.Hour,
 		AnalysisConfig: config.DefaultAnalysisConfig(),
 	})
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	ctx := context.Background()
 	client := ClientInfo{}

@@ -97,7 +97,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp1.Body.Close()
+	defer func() { _ = resp1.Body.Close() }()
 	if resp1.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 without auth, got %d", resp1.StatusCode)
 	}
@@ -111,7 +111,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	if resp2.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 with wrong bearer key, got %d", resp2.StatusCode)
 	}
@@ -125,7 +125,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp3.Body.Close()
+	defer func() { _ = resp3.Body.Close() }()
 	if resp3.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 with admin bearer key, got %d", resp3.StatusCode)
 	}
@@ -139,7 +139,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp4.Body.Close()
+	defer func() { _ = resp4.Body.Close() }()
 	if resp4.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 with admin session cookie, got %d", resp4.StatusCode)
 	}
@@ -148,7 +148,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer loginWrongResp.Body.Close()
+	defer func() { _ = loginWrongResp.Body.Close() }()
 	if loginWrongResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 on wrong login, got %d", loginWrongResp.StatusCode)
 	}
@@ -157,7 +157,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer loginResp.Body.Close()
+	defer func() { _ = loginResp.Body.Close() }()
 	if loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on correct login, got %d", loginResp.StatusCode)
 	}
@@ -182,7 +182,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp5.Body.Close()
+	defer func() { _ = resp5.Body.Close() }()
 	if resp5.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 with login cookie, got %d", resp5.StatusCode)
 	}
@@ -196,7 +196,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer respCookiePost.Body.Close()
+	defer func() { _ = respCookiePost.Body.Close() }()
 	if respCookiePost.StatusCode != http.StatusForbidden {
 		t.Fatalf("expected 403 for cookie POST without Origin, got %d", respCookiePost.StatusCode)
 	}
@@ -211,7 +211,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer respOriginPost.Body.Close()
+	defer func() { _ = respOriginPost.Body.Close() }()
 	if respOriginPost.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 once auth/csrf passes and agent is disabled, got %d", respOriginPost.StatusCode)
 	}
@@ -225,7 +225,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer respBearerPost.Body.Close()
+	defer func() { _ = respBearerPost.Body.Close() }()
 	if respBearerPost.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 for bearer POST with disabled agent engine, got %d", respBearerPost.StatusCode)
 	}
@@ -242,7 +242,7 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer logoutResp.Body.Close()
+	defer func() { _ = logoutResp.Body.Close() }()
 	if logoutResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on logout, got %d", logoutResp.StatusCode)
 	}

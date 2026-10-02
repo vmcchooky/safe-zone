@@ -1,52 +1,14 @@
 package whois_test
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"testing"
 	"time"
 
 	"safe-zone/internal/whois"
 )
-
-// ── Mock WHOIS TCP server ─────────────────────────────────────────────────────
-
-// startMockWHOIS starts a TCP server that responds with body for any query.
-// Returns the server address and a cleanup function.
-func startMockWHOIS(t *testing.T, responses map[string]string) (addr string, cleanup func()) {
-	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	go func() {
-		for {
-			conn, err := ln.Accept()
-			if err != nil {
-				return
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				scanner := bufio.NewScanner(c)
-				if !scanner.Scan() {
-					return
-				}
-				domain := strings.TrimSpace(scanner.Text())
-				body, ok := responses[domain]
-				if !ok {
-					body = responses["*"] // fallback
-				}
-				fmt.Fprint(c, body)
-			}(conn)
-		}
-	}()
-
-	return ln.Addr().String(), func() { ln.Close() }
-}
 
 // ── ParseAndScore tests (via ParseAndScoreForTest) ────────────────────────────
 

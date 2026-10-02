@@ -36,7 +36,7 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer updateResp.Body.Close()
+	defer func() { _ = updateResp.Body.Close() }()
 	if updateResp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(updateResp.Body)
 		t.Fatalf("expected update 200, got %d: %s", updateResp.StatusCode, data)
@@ -56,7 +56,7 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer patchResp.Body.Close()
+	defer func() { _ = patchResp.Body.Close() }()
 	if patchResp.StatusCode != http.StatusOK {
 		data, _ := io.ReadAll(patchResp.Body)
 		t.Fatalf("expected empty keywords update 200, got %d: %s", patchResp.StatusCode, data)
@@ -77,7 +77,7 @@ func TestAnalysisConfigEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resetResp.Body.Close()
+	defer func() { _ = resetResp.Body.Close() }()
 	if resetResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected reset 200, got %d", resetResp.StatusCode)
 	}
@@ -109,7 +109,7 @@ func TestTestAIEndpointUsesSubmittedKeyWithoutSaving(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected test to succeed, got %d: %s", resp.StatusCode, body)
@@ -141,7 +141,7 @@ func postSettings(t *testing.T, ts *handlerTestServer, body string) (int, map[st
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var payload map[string]any
 	_ = json.NewDecoder(resp.Body).Decode(&payload)
 	return resp.StatusCode, payload
@@ -164,14 +164,14 @@ func TestSettingsAdblockToggleRoundTrip(t *testing.T) {
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		t.Fatalf("GET /v1/settings: got %d %s", resp.StatusCode, body)
 	}
 	var loaded settingsResponse
 	if err := json.NewDecoder(resp.Body).Decode(&loaded); err != nil {
 		t.Fatalf("decode settings: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 	if loaded.Adblock == nil {
 		t.Fatal("GET /v1/settings must expose the adblock switches")
 	}
@@ -252,7 +252,7 @@ func TestTestAlertEndpointDoesNotFallBackWhenSubmittedURLIsInvalid(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("expected submitted URL validation error, got %d: %s", resp.StatusCode, body)
@@ -273,7 +273,7 @@ func TestSettingsHandlerPersistsMaskedSecretsAndRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer saveResp.Body.Close()
+	defer func() { _ = saveResp.Body.Close() }()
 	if saveResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(saveResp.Body)
 		t.Fatalf("expected save 200, got %d: %s", saveResp.StatusCode, body)
@@ -303,7 +303,7 @@ func TestSettingsHandlerPersistsMaskedSecretsAndRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 	if getResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(getResp.Body)
 		t.Fatalf("expected settings read 200, got %d: %s", getResp.StatusCode, body)
@@ -338,7 +338,7 @@ func TestSettingsHandlerRejectsPrivateWebhookURL(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer saveResp.Body.Close()
+	defer func() { _ = saveResp.Body.Close() }()
 	if saveResp.StatusCode != http.StatusBadRequest {
 		body, _ := io.ReadAll(saveResp.Body)
 		t.Fatalf("expected save 400, got %d: %s", saveResp.StatusCode, body)
@@ -358,7 +358,7 @@ func TestTestAlertEndpointRequiresWebhook(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		body, _ := io.ReadAll(resp.Body)
@@ -393,7 +393,7 @@ func TestSettingsSavesAdblockSourcePolicies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("save policies = %d, want 200: %s", resp.StatusCode, body)
@@ -418,7 +418,7 @@ func TestSettingsSavesAdblockSourcePolicies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer getResp.Body.Close()
+	defer func() { _ = getResp.Body.Close() }()
 	if getResp.StatusCode != http.StatusOK {
 		t.Fatalf("read settings = %d, want 200", getResp.StatusCode)
 	}
@@ -458,7 +458,7 @@ func TestSettingsRejectsInvalidAdblockSourcePolicies(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			if resp.StatusCode != http.StatusBadRequest {
 				t.Fatalf("status = %d, want 400 for %q", resp.StatusCode, tc.document)
 			}
@@ -494,13 +494,13 @@ func TestSettingsOmitDoesNotClearAdblockSourcePolicies(t *testing.T) {
 	}
 
 	first := save(`{"adblock_source_policies_json":` + strconv.Quote(document) + `}`)
-	defer first.Body.Close()
+	defer func() { _ = first.Body.Close() }()
 	if first.StatusCode != http.StatusOK {
 		t.Fatalf("initial save = %d, want 200", first.StatusCode)
 	}
 
 	second := save(`{"telemetry_retention_days":14}`)
-	defer second.Body.Close()
+	defer func() { _ = second.Body.Close() }()
 	if second.StatusCode != http.StatusOK {
 		t.Fatalf("unrelated save = %d, want 200", second.StatusCode)
 	}
@@ -534,13 +534,13 @@ func TestSettingsEmptyStringClearsAdblockSourcePolicies(t *testing.T) {
 	}
 
 	first := save(`{"adblock_source_policies_json":"{\"https://a.test/hosts\":{\"category\":\"ads\"}}"}`)
-	defer first.Body.Close()
+	defer func() { _ = first.Body.Close() }()
 	if first.StatusCode != http.StatusOK {
 		t.Fatalf("initial save = %d, want 200", first.StatusCode)
 	}
 
 	second := save(`{"adblock_source_policies_json":""}`)
-	defer second.Body.Close()
+	defer func() { _ = second.Body.Close() }()
 	if second.StatusCode != http.StatusOK {
 		t.Fatalf("clear = %d, want 200", second.StatusCode)
 	}

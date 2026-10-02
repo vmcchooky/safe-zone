@@ -82,7 +82,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer createResp.Body.Close()
+	defer func() { _ = createResp.Body.Close() }()
 	if createResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(createResp.Body)
 		t.Fatalf("expected guest create 200, got %d: %s", createResp.StatusCode, body)
@@ -100,7 +100,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer loginResp.Body.Close()
+	defer func() { _ = loginResp.Body.Close() }()
 	if loginResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(loginResp.Body)
 		t.Fatalf("expected guest login 200, got %d: %s", loginResp.StatusCode, body)
@@ -136,7 +136,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sessionResp.Body.Close()
+	defer func() { _ = sessionResp.Body.Close() }()
 	if sessionResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected session endpoint 200 for guest, got %d", sessionResp.StatusCode)
 	}
@@ -161,7 +161,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer listResp.Body.Close()
+	defer func() { _ = listResp.Body.Close() }()
 	if listResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(listResp.Body)
 		t.Fatalf("expected guest read-only overrides access 200, got %d: %s", listResp.StatusCode, body)
@@ -178,7 +178,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer mutateResp.Body.Close()
+	defer func() { _ = mutateResp.Body.Close() }()
 	if mutateResp.StatusCode != http.StatusForbidden {
 		body, _ := io.ReadAll(mutateResp.Body)
 		t.Fatalf("expected guest mutation to be blocked with 403, got %d: %s", mutateResp.StatusCode, body)
@@ -197,7 +197,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer settingsResp.Body.Close()
+	defer func() { _ = settingsResp.Body.Close() }()
 	if settingsResp.StatusCode != http.StatusForbidden {
 		body, _ := io.ReadAll(settingsResp.Body)
 		t.Fatalf("expected guest settings access 403, got %d: %s", settingsResp.StatusCode, body)
@@ -213,7 +213,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer disableResp.Body.Close()
+	defer func() { _ = disableResp.Body.Close() }()
 	if disableResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(disableResp.Body)
 		t.Fatalf("expected guest disable 200, got %d: %s", disableResp.StatusCode, body)
@@ -228,7 +228,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sessionAfterDisableResp.Body.Close()
+	defer func() { _ = sessionAfterDisableResp.Body.Close() }()
 	if sessionAfterDisableResp.StatusCode != http.StatusUnauthorized {
 		body, _ := io.ReadAll(sessionAfterDisableResp.Body)
 		t.Fatalf("expected disabled guest session to be rejected with 401, got %d: %s", sessionAfterDisableResp.StatusCode, body)
@@ -238,7 +238,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer loginDisabledResp.Body.Close()
+	defer func() { _ = loginDisabledResp.Body.Close() }()
 	if loginDisabledResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected disabled guest login to fail with 401, got %d", loginDisabledResp.StatusCode)
 	}
@@ -252,7 +252,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer deleteResp.Body.Close()
+	defer func() { _ = deleteResp.Body.Close() }()
 	if deleteResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(deleteResp.Body)
 		t.Fatalf("expected guest delete 200, got %d: %s", deleteResp.StatusCode, body)
@@ -267,7 +267,7 @@ func TestGuestAccessLifecycleAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer statusResp.Body.Close()
+	defer func() { _ = statusResp.Body.Close() }()
 	if statusResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected guest status 200, got %d", statusResp.StatusCode)
 	}
@@ -302,7 +302,7 @@ func TestSettingsBundleHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer createResp.Body.Close()
+	defer func() { _ = createResp.Body.Close() }()
 	if createResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(createResp.Body)
 		t.Fatalf("expected guest create 200, got %d: %s", createResp.StatusCode, body)
@@ -317,7 +317,7 @@ func TestSettingsBundleHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer bundleResp.Body.Close()
+	defer func() { _ = bundleResp.Body.Close() }()
 	if bundleResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(bundleResp.Body)
 		t.Fatalf("expected settings bundle 200, got %d: %s", bundleResp.StatusCode, body)

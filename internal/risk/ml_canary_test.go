@@ -77,7 +77,7 @@ func TestMLShadowObservesCanaryWithoutChangingVerdict(t *testing.T) {
 		TTLBlocked:          time.Hour,
 		ConfigReloadEnabled: false,
 	})
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
@@ -110,7 +110,7 @@ func TestMLEnforceSuppressesPredictionOutsideCanary(t *testing.T) {
 		TTLBlocked:          time.Hour,
 		ConfigReloadEnabled: false,
 	})
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	result := service.Analyze(context.Background(), domain, ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
@@ -148,8 +148,8 @@ func TestMLPolicyRevisionSeparatesShadowAndEnforceCache(t *testing.T) {
 
 	shadow := NewService(shadowOptions)
 	enforce := NewService(enforceOptions)
-	defer shadow.Close()
-	defer enforce.Close()
+	defer func() { _ = shadow.Close() }()
+	defer func() { _ = enforce.Close() }()
 
 	domain := "login-security-example.com"
 	first := shadow.Analyze(context.Background(), domain, ClientInfo{})

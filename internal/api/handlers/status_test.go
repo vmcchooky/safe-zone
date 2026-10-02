@@ -29,7 +29,7 @@ func TestStatusEndpointHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -142,7 +142,7 @@ func TestMetricsEndpointRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	warmResp.Body.Close()
+	_ = warmResp.Body.Close()
 
 	anonReq, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/metrics", nil)
 	if err != nil {
@@ -152,7 +152,7 @@ func TestMetricsEndpointRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer anonResp.Body.Close()
+	defer func() { _ = anonResp.Body.Close() }()
 	if anonResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("anonymous /metrics = %d, want 401", anonResp.StatusCode)
 	}
@@ -168,7 +168,7 @@ func TestMetricsEndpointRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer guestResp.Body.Close()
+	defer func() { _ = guestResp.Body.Close() }()
 	if guestResp.StatusCode != http.StatusForbidden {
 		t.Fatalf("guest /metrics = %d, want 403: request_summary is a brute-force progress signal", guestResp.StatusCode)
 	}
@@ -181,7 +181,7 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	warmResp.Body.Close()
+	_ = warmResp.Body.Close()
 
 	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/metrics", nil)
 	if err != nil {
@@ -192,7 +192,7 @@ func TestMetricsEndpointHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -236,7 +236,7 @@ func TestMetricsEndpointAcceptsAdminSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("session-authenticated /metrics = %d, want 200", resp.StatusCode)

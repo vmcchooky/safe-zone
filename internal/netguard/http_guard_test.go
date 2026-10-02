@@ -219,7 +219,7 @@ func TestBlockedDestinationIsRefusedEvenWithProxyConfigured(t *testing.T) {
 	} {
 		resp, err := client.Get(target)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			t.Fatalf("a request to %s must be refused, not proxied", target)
 		}
 	}

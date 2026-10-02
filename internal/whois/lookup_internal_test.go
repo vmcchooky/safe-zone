@@ -30,7 +30,7 @@ func TestQueryReadsLongWhoisLines(t *testing.T) {
 			}
 
 			go func(c net.Conn) {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 
 				scanner := bufio.NewScanner(c)
 				if !scanner.Scan() {
@@ -69,7 +69,7 @@ func TestQueryAppliesDefaultTimeoutWithoutContextDeadline(t *testing.T) {
 	})
 
 	go func() {
-		defer serverConn.Close()
+		defer func() { _ = serverConn.Close() }()
 		scanner := bufio.NewScanner(serverConn)
 		if !scanner.Scan() {
 			return
@@ -118,7 +118,7 @@ func TestQueryRejectsOversizedResponse(t *testing.T) {
 				return
 			}
 			go func(c net.Conn) {
-				defer c.Close()
+				defer func() { _ = c.Close() }()
 				scanner := bufio.NewScanner(c)
 				if !scanner.Scan() {
 					return
@@ -161,7 +161,7 @@ func TestLookupWithCacheAvoidsSecondNetworkQuery(t *testing.T) {
 	t.Cleanup(func() { whoisDialContext = originalDial })
 
 	go func() {
-		defer serverConn.Close()
+		defer func() { _ = serverConn.Close() }()
 		scanner := bufio.NewScanner(serverConn)
 		if scanner.Scan() {
 			_, _ = fmt.Fprint(serverConn, "Creation Date: 2024-01-01T00:00:00Z\nRegistrar: Cache Test\n")

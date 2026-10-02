@@ -42,7 +42,7 @@ func doProposalAdmin(t *testing.T, ts *handlerTestServer, method, target, body s
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	data, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, data
 }

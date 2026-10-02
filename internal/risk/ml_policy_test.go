@@ -55,7 +55,7 @@ func TestMLEnforcePromotesSuspiciousAndSkipsAI(t *testing.T) {
 		ModelVersion: "test-model",
 	}}
 	service := newMLPolicyTestService(fake, analysis.MLModeEnforce)
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictMalicious {
@@ -81,7 +81,7 @@ func TestMLShadowDoesNotChangeVerdict(t *testing.T) {
 		Action:      analysis.MLActionPromoteMalicious,
 	}}
 	service := newMLPolicyTestService(fake, analysis.MLModeShadow)
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
@@ -98,7 +98,7 @@ func TestMLShadowRecordsWouldPassAndProbabilityBucket(t *testing.T) {
 		Action:      analysis.MLActionAbstain,
 	}}
 	service := newMLPolicyTestService(fake, analysis.MLModeShadow)
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
@@ -119,7 +119,7 @@ func TestMLDisabledPreservesFlowAndDoesNotCallClassifier(t *testing.T) {
 		Action:      analysis.MLActionPromoteMalicious,
 	}}
 	service := newMLPolicyTestService(fake, analysis.MLModeDisabled)
-	defer service.Close()
+	defer func() { _ = service.Close() }()
 
 	result := service.Analyze(context.Background(), "login-security-example.com", ClientInfo{}).Result
 	if result.Verdict != analysis.VerdictSuspicious {
@@ -232,8 +232,8 @@ func TestAnalysisCacheInvalidatesWhenModelRevisionChanges(t *testing.T) {
 		TTLBlocked:          time.Hour,
 		ConfigReloadEnabled: false,
 	})
-	defer serviceV1.Close()
-	defer serviceV2.Close()
+	defer func() { _ = serviceV1.Close() }()
+	defer func() { _ = serviceV2.Close() }()
 
 	domain := "login-security-example.com"
 	first := serviceV1.Analyze(context.Background(), domain, ClientInfo{}).Result
