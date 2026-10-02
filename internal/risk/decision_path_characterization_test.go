@@ -148,6 +148,63 @@ func decisionScenarios(t *testing.T, ctx context.Context) []decisionScenario {
 			name: "not a domain",
 			dom:  "not a domain!!",
 		},
+		{
+			// The client resolves to a real group rather than the default one.
+			// The shared prefix resolves the group and hands it to the
+			// enforcement that follows, so a group that is resolved rather than
+			// defaulted is the case worth pinning.
+			name: "client group resolved from an ip mapping",
+			dom:  "grouped.example",
+			build: func(t *testing.T, ctx context.Context, svc *Service, db *store.DB) {
+				id, err := db.CreateGroup(ctx, "strict", "strict group",
+					[]string{"phishing"}, true, true)
+				if err != nil {
+					t.Fatalf("create group: %v", err)
+				}
+				if _, err := db.AddMappingInt(ctx, "ip", "203.0.113.7", id); err != nil {
+					t.Fatalf("map client: %v", err)
+				}
+			},
+			wantAction: "allow",
+		},
+		{
+			// Same group, but the client is the one the mapping points at, so
+			// Policy's dynamic enforcement has a non-default group to enforce
+			// with. The domain itself is clean, so enforcement has nothing to
+			// act on and the point is that both paths resolve the same group.
+			name: "grouped client on a clean domain",
+			dom:  "still-clean.example",
+			build: func(t *testing.T, ctx context.Context, svc *Service, db *store.DB) {
+				id, err := db.CreateGroup(ctx, "strict", "strict group",
+					[]string{"advertising"}, true, true)
+				if err != nil {
+					t.Fatalf("create group: %v", err)
+				}
+				if _, err := db.AddMappingInt(ctx, "ip", "203.0.113.9", id); err != nil {
+					t.Fatalf("map client: %v", err)
+				}
+			},
+			wantAction: "allow",
+		},
+		{
+			// An override on a grouped client: the override must still win,
+			// because the prefix resolves it before any enforcement runs.
+			name: "override wins on a grouped client",
+			dom:  "grouped-blocked.example",
+			build: func(t *testing.T, ctx context.Context, svc *Service, db *store.DB) {
+				id, err := db.CreateGroup(ctx, "strict", "strict group", nil, true, true)
+				if err != nil {
+					t.Fatalf("create group: %v", err)
+				}
+				if _, err := db.AddMappingInt(ctx, "ip", "203.0.113.11", id); err != nil {
+					t.Fatalf("map client: %v", err)
+				}
+				if err := db.UpsertOverride(ctx, "grouped-blocked.example", "block", "operator"); err != nil {
+					t.Fatalf("seed override: %v", err)
+				}
+			},
+			wantAction: "block",
+		},
 	}
 }
 
@@ -286,4 +343,179 @@ func TestPolicyDecisionIsPopulatedAsymmetrically(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestDecisionPathsDeclareTheirOwnAssessmentShape pins the Assessment each path
+// reports, and pins that the two shapes are NOT the same.
+//
+// Assessment is serialized into the API response and into telemetry. It is the
+// operator's answer to "which layers were consulted, and which were not", so a
+// refactor that quietly drops an entry changes what a support conversation looks
+// like without changing a single verdict.
+//
+// The two paths differ structurally, and the differences are by design:
+//
+//   - Analyze runs OSINT on demand, so it evaluates "osint" where Policy skips
+//     "osint:cache_only" and evaluates "group_policy" instead.
+//   - Policy applies the client group's dynamic enforcement, so it evaluates
+//     "group_policy" and Analyze never does.
+//   - Analyze reports "url_ml:no_url_context" when no URL context was supplied.
+//     Policy has no URL ML stage at all.
+//   - On an adblock match under separated semantics, Policy short-circuits to a
+//     local lexical assessment ("lexical_local", "content_policy") while
+//     Analyze continues into the full threat pipeline.
+//
+// The assertions are containment rather than equality, so an unrelated reordering
+// or added layer does not fail the build, but a lost layer does.
+func TestDecisionPathsDeclareTheirOwnAssessmentShape(t *testing.T) {
+	ctx := context.Background()
+
+	type wants struct {
+		apiEvaluated []string
+		apiSkipped   []string
+		polEvaluated []string
+		polSkipped   []string
+	}
+
+	cases := map[string]wants{
+		"nothing configured": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerThreatFeed},
+			apiSkipped:   []string{"website_content:not_observed"},
+			polEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+			polSkipped:   []string{"website_content:not_observed"},
+		},
+		"admin override block": {
+			// The override short-circuits: nothing downstream is consulted.
+			apiEvaluated: []string{LayerIdentity, LayerOverride},
+			apiSkipped:   []string{LayerWhitelist, LayerAdblock},
+			polEvaluated: []string{LayerIdentity, LayerOverride},
+			polSkipped:   []string{LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+		},
+		"admin override allow": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride},
+			apiSkipped:   []string{LayerWhitelist, LayerAdblock},
+			polEvaluated: []string{LayerIdentity, LayerOverride},
+			polSkipped:   []string{LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+		},
+		"whitelist entry": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist},
+			apiSkipped:   []string{LayerAdblock},
+			polEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist},
+			polSkipped:   []string{LayerAdblock, LayerGroupPolicy},
+		},
+		"adblock suffix rule": {
+			// The clearest structural divergence: Policy stops at a local
+			// lexical assessment, Analyze carries on into the threat pipeline.
+			apiEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerThreatFeed},
+			polEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerLexicalLocal, LayerContentPolicy},
+			polSkipped:   []string{LayerGroupPolicy},
+		},
+		"override beats adblock": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride},
+			apiSkipped:   []string{LayerWhitelist, LayerAdblock},
+			polEvaluated: []string{LayerIdentity, LayerOverride},
+			polSkipped:   []string{LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+		},
+		"whitelist beats adblock": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist},
+			apiSkipped:   []string{LayerAdblock},
+			polEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist},
+			polSkipped:   []string{LayerAdblock, LayerGroupPolicy},
+		},
+		"not a domain": {
+			// Normalisation failed, so neither path consults anything but identity.
+			apiEvaluated: []string{LayerIdentity},
+			apiSkipped:   []string{LayerOverride, LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+			polEvaluated: []string{LayerIdentity},
+			polSkipped:   []string{LayerOverride, LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+		},
+		// A resolved group changes who enforces, not which layers are consulted,
+		// so these three mirror the clean and override shapes above.
+		"client group resolved from an ip mapping": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerThreatFeed},
+			polEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+			polSkipped:   []string{"website_content:not_observed"},
+		},
+		"grouped client on a clean domain": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerThreatFeed},
+			polEvaluated: []string{LayerIdentity, LayerOverride, LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+			polSkipped:   []string{"website_content:not_observed"},
+		},
+		"override wins on a grouped client": {
+			apiEvaluated: []string{LayerIdentity, LayerOverride},
+			apiSkipped:   []string{LayerWhitelist, LayerAdblock},
+			polEvaluated: []string{LayerIdentity, LayerOverride},
+			polSkipped:   []string{LayerWhitelist, LayerAdblock, LayerGroupPolicy},
+		},
+	}
+
+	for _, sc := range decisionScenarios(t, ctx) {
+		t.Run(sc.name, func(t *testing.T) {
+			want, ok := cases[sc.name]
+			if !ok {
+				t.Skipf("no Assessment expectations recorded for %q; record them before relying on this guard", sc.name)
+			}
+
+			svc, db := newDecisionPathService(t)
+			if sc.build != nil {
+				sc.build(t, ctx, svc, db)
+			}
+
+			api := svc.Analyze(ctx, sc.dom, ClientInfo{})
+			pol := svc.Policy(ctx, sc.dom, ClientInfo{})
+
+			assertLayers(t, "Analyze", want.apiEvaluated, want.apiSkipped,
+				api.Assessment.Evaluated, api.Assessment.Skipped)
+			assertLayers(t, "Policy", want.polEvaluated, want.polSkipped,
+				pol.Assessment.Evaluated, pol.Assessment.Skipped)
+
+			if len(api.Assessment.Evaluated) == 0 || len(pol.Assessment.Evaluated) == 0 {
+				t.Fatal("both paths must report at least one evaluated layer")
+			}
+			if api.Assessment.Evaluated[0] != LayerIdentity || pol.Assessment.Evaluated[0] != LayerIdentity {
+				t.Fatalf("identity must be the first evaluated layer on both paths: api=%v pol=%v",
+					api.Assessment.Evaluated, pol.Assessment.Evaluated)
+			}
+
+			// The path-specific markers a careless unification would drop.
+			if sc.name != "not a domain" {
+				if !hasLayerWithPrefix(api.Assessment.Skipped, LayerURLML+":") {
+					t.Fatalf("Analyze no longer reports why the URL ML layer was skipped; skipped=%v",
+						api.Assessment.Skipped)
+				}
+				if hasLayerWithPrefix(pol.Assessment.Skipped, LayerURLML+":") {
+					t.Fatalf("Policy now reports a URL ML skip, but Policy has no URL ML stage; skipped=%v",
+						pol.Assessment.Skipped)
+				}
+			}
+		})
+	}
+}
+
+// assertLayers checks containment rather than equality, so a harmless
+// reordering does not fail the build while a lost layer does.
+func assertLayers(t *testing.T, who string, wantEvaluated, wantSkipped, gotEvaluated, gotSkipped []string) {
+	t.Helper()
+	for _, layer := range wantEvaluated {
+		if !containsLayer(gotEvaluated, layer) {
+			t.Fatalf("%s must report %q as evaluated; evaluated=%v skipped=%v",
+				who, layer, gotEvaluated, gotSkipped)
+		}
+	}
+	for _, layer := range wantSkipped {
+		if !containsLayer(gotSkipped, layer) {
+			t.Fatalf("%s must report %q as skipped; evaluated=%v skipped=%v",
+				who, layer, gotEvaluated, gotSkipped)
+		}
+	}
+}
+
+// hasLayerWithPrefix matches the "layer:reason" form.
+func hasLayerWithPrefix(layers []string, prefix string) bool {
+	for _, l := range layers {
+		if len(l) >= len(prefix) && l[:len(prefix)] == prefix {
+			return true
+		}
+	}
+	return false
 }
