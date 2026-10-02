@@ -179,7 +179,13 @@ export function SettingsPage() {
   // retention, and a failed save leaves the previous state visible.
   const [adblock, setAdblock] = useState<AdblockControl>({ enabled: true, match_mode: 'suffix' });
   const [savingAdblock, setSavingAdblock] = useState(false);
-  const [adblockBusy, setAdblockBusy] = useState<'enabled' | 'mode' | null>(null);
+  const [adblockBusy, setAdblockBusy] = useState<'enabled' | 'mode' | 'policies' | null>(null);
+  // Per-source adblock policy document. The server validates it strictly
+  // (unknown category or scope is a 400, not a silent fallback), so the
+  // textarea is a raw JSON editor rather than a structured form: the valid
+  // category and scope vocabularies are enforced server-side.
+  const [adblockPoliciesJson, setAdblockPoliciesJson] = useState('');
+  const [adblockPoliciesSaved, setAdblockPoliciesSaved] = useState('');
 
   const [guestPassword, setGuestPassword] = useState('');
   const [showGuestPassword, setShowGuestPassword] = useState(false);
@@ -230,6 +236,10 @@ export function SettingsPage() {
       } else {
         setAdblock({ enabled: true, match_mode: 'suffix' });
       }
+      const policiesJson =
+        typeof settings.adblock_source_policies_json === 'string' ? settings.adblock_source_policies_json : '';
+      setAdblockPoliciesJson(policiesJson);
+      setAdblockPoliciesSaved(policiesJson);
       resetCore({
         geminiKey: typeof settings.gemini_api_key === 'string' ? settings.gemini_api_key : '',
         webhookUrl: typeof settings.agent_webhook_url === 'string' ? settings.agent_webhook_url : '',
@@ -324,6 +334,43 @@ export function SettingsPage() {
       showToast(err.message, 'err');
       // Re-sync so the control snaps back to the state the server still holds.
       loadSettings();
+    } finally {
+      setAdblockBusy(null);
+      setSavingAdblock(false);
+    }
+  };
+
+  /**
+   * saveAdblockPolicies writes the per-source policy document.
+   *
+   * An empty document is sent as an explicit empty string, which is the
+   * documented way to drop the override and fall back to
+   * SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON. Omitting the field would leave
+   * the stored value untouched instead.
+   *
+   * The saved baseline is only moved on success, so a rejected document keeps
+   * the editor dirty and the operator can fix it rather than wondering why the
+   * value reverted.
+   */
+  const saveAdblockPolicies = async () => {
+    if (mutationLocked) return;
+    setSavingAdblock(true);
+    setAdblockBusy('policies');
+    try {
+      const res = await fetch('/v1/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ adblock_source_policies_json: adblockPoliciesJson.trim() })
+      });
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+        throw new Error(error.error || 'Failed to save source policies');
+      }
+      setAdblockPoliciesSaved(adblockPoliciesJson.trim());
+      showToast('Source policies saved — applied on every node within 30 seconds', 'ok');
+      loadSettings();
+    } catch (err: any) {
+      showToast(err.message, 'err');
     } finally {
       setAdblockBusy(null);
       setSavingAdblock(false);
@@ -549,6 +596,53 @@ export function SettingsPage() {
             ? 'Suffix mode is broader and can block shared service infrastructure such as Firebase, Crashlytics or messaging endpoints.'
             : 'Exact mode is narrower: only the hostnames literally listed in the source are blocked.'}
         </p>
+
+        <div className="mt-5 pt-4 border-t border-slate-200/70">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <label htmlFor="adblock-source-policies" className="text-sm font-medium text-slate-700">
+              Per-source policies
+              <InfoTooltip content="Maps each adblock source to the content category its rules carry and the scope plain host entries get. An unknown category or scope is rejected rather than silently ignored, so what you save is what runs. Leave empty to fall back to SAFE_ZONE_ADBLOCK_SOURCE_POLICIES_JSON." />
+            </label>
+            {adblockBusy === 'policies' && <Loader2 size={16} className="animate-spin text-slate-400" />}
+          </div>
+          <textarea
+            id="adblock-source-policies"
+            data-testid="adblock-source-policies"
+            value={adblockPoliciesJson}
+            spellCheck={false}
+            rows={6}
+            disabled={mutationLocked || savingAdblock}
+            onChange={(e) => setAdblockPoliciesJson(e.target.value)}
+            placeholder={'{\n  "https://raw.githubusercontent.com/example/hosts": { "category": "tracking", "scope": "suffix" }\n}'}
+            className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 font-mono text-xs disabled:opacity-50"
+          />
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              type="button"
+              data-testid="adblock-source-policies-save"
+              disabled={
+                mutationLocked ||
+                savingAdblock ||
+                adblockPoliciesJson.trim() === adblockPoliciesSaved
+              }
+              onClick={saveAdblockPolicies}
+              className="rounded-xl bg-slate-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+            >
+              Save policies
+            </button>
+            {adblockPoliciesJson.trim() === adblockPoliciesSaved ? (
+              <span className="text-xs text-slate-500">In sync with the server.</span>
+            ) : (
+              <span className="text-xs text-amber-600">Unsaved changes.</span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 mt-2">
+            Saved to the store and picked up by every node — including{' '}
+            <code className="font-mono">dns-resolver</code> — within 30 seconds,
+            without a restart. Both processes rebuild the rule trie when the
+            policy fingerprint changes.
+          </p>
+        </div>
       </motion.section>
 
       {/* Toasts */}

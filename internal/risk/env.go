@@ -73,16 +73,31 @@ func NewServiceFromEnvForRoleE(nodeRole string) (*Service, error) {
 	sqlitePath := config.String("SAFE_ZONE_SQLITE_PATH", "./data/safe-zone.db")
 	retentionDays := config.Int("SAFE_ZONE_TELEMETRY_RETENTION_DAYS", 30)
 	storeDB, err := store.New(sqlitePath, retentionDays)
-	if err != nil {
+	// A nil database is not the same as no error: store.New returns (nil, nil) for
+	// an empty path. Checking only err would let a caller that passes one start
+	// with no store at all, bypassing the guard below and leaving the control plane
+	// (overrides, groups, mappings, audit) silently absent.
+	//
+	// This is defence for the exported constructor rather than a live bug: the only
+	// production caller below passes sqlitePath, and config.String substitutes the
+	// default when the variable is empty, so that path cannot be empty today. The
+	// branch exists so the next caller to pass "" fails loudly instead of silently.
+	if err != nil || storeDB == nil {
 		// RB-3: overrides, groups, mappings and telemetry all live in
 		// SQLite. Starting production without persistence would silently
 		// drop the security control plane and auditability, so fail
 		// startup instead. Non-production keeps the old warn-and-continue
 		// behavior for local development without a database.
 		if config.IsProduction() {
-			return nil, fmt.Errorf("sqlite store initialization failed in production; refusing to serve without persistence: %w", err)
+			if err != nil {
+				return nil, fmt.Errorf("sqlite store initialization failed in production; refusing to serve without persistence: %w", err)
+			}
+			return nil, fmt.Errorf("sqlite store initialization produced no database in production (SAFE_ZONE_SQLITE_PATH=%q); refusing to serve without persistence", sqlitePath)
 		}
-		logjson.Warn("sqlite store initialization failed; continuing without persistence", map[string]any{
+		if err == nil {
+			err = fmt.Errorf("no database at %q", sqlitePath)
+		}
+		logjson.Warn("sqlite store unavailable; continuing without persistence", map[string]any{
 			"service": "risk",
 			"path":    sqlitePath,
 			"error":   err.Error(),

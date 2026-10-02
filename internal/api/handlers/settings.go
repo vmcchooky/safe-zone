@@ -3,14 +3,14 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/config"
-	"safe-zone/internal/netguard"
+	"safe-zone/internal/logjson"
 	"safe-zone/internal/risk"
 )
 
@@ -19,6 +19,11 @@ type settingsResponse struct {
 	AgentWebhookURL        string               `json:"agent_webhook_url"`
 	TelemetryRetentionDays int                  `json:"telemetry_retention_days"`
 	Adblock                *risk.AdblockControl `json:"adblock"`
+	// AdblockSourcePoliciesJSON is the effective per-source policy document
+	// as the operator would write it, so the dashboard can round-trip the
+	// setting instead of reconstructing it. Empty when the environment is in
+	// force and nothing has been persisted.
+	AdblockSourcePoliciesJSON string `json:"adblock_source_policies_json"`
 }
 
 type settingsRequest struct {
@@ -33,6 +38,10 @@ type settingsRequest struct {
 	AdblockEnabled *bool `json:"adblock_enabled"`
 	// AdblockMatchMode selects rule scope: "suffix" or "exact".
 	AdblockMatchMode *string `json:"adblock_match_mode"`
+	// AdblockSourcePoliciesJSON is the per-source policy document. A pointer
+	// keeps "omitted" distinct from "empty, fall back to the environment",
+	// so saving another setting never clears the policies.
+	AdblockSourcePoliciesJSON *string `json:"adblock_source_policies_json"`
 }
 
 type settingsBundleResponse struct {
@@ -67,11 +76,31 @@ func (h *Handler) loadSettingsResponse(ctx context.Context) (settingsResponse, e
 	}
 
 	adblock := h.Risk.AdblockControl()
+	// Read the persisted value, not the in-memory one: the operator is editing
+	// a document, and on a second process the persisted copy is what this one
+	// is reconciling against every 30 seconds.
+	//
+	// A read failure here is deliberately non-fatal. The refresher
+	// (risk.refreshAdblockSourcePolicies) treats the same key fail-soft and
+	// keeps the policy in force; if this read instead failed the whole request,
+	// one transient store error would take down the entire settings page —
+	// Gemini key, webhook, retention, the adblock switch, guest access — for
+	// a field the operator was not even asking about. Returning empty lets the
+	// editor show what is unreadable rather than blanking the page.
+	sourcePolicies, err := db.GetSystemConfig(ctx, risk.SystemConfigAdblockSourcePolicies)
+	if err != nil {
+		logjson.Warn("could not read the persisted adblock source policies; showing them as empty", map[string]any{
+			"service": "core-api",
+			"error":   err.Error(),
+		})
+		sourcePolicies = ""
+	}
 	return settingsResponse{
-		GeminiAPIKey:           maskConfigValue(apiKey),
-		AgentWebhookURL:        maskConfigValue(webhookURL),
-		TelemetryRetentionDays: db.GetRetentionDays(ctx),
-		Adblock:                &adblock,
+		GeminiAPIKey:              maskConfigValue(apiKey),
+		AgentWebhookURL:           maskConfigValue(webhookURL),
+		TelemetryRetentionDays:    db.GetRetentionDays(ctx),
+		Adblock:                   &adblock,
+		AdblockSourcePoliciesJSON: sourcePolicies,
 	}, nil
 }
 
@@ -86,7 +115,7 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		resp, err := h.loadSettingsResponse(r.Context())
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "database not available")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, resp)
@@ -100,67 +129,41 @@ func (h *Handler) SettingsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if req.GeminiAPIKey != nil {
-			apiKey := strings.TrimSpace(*req.GeminiAPIKey)
-			if apiKey != "" {
-				if !strings.Contains(apiKey, "*") {
-					if err := db.SetSystemConfig(r.Context(), "gemini_api_key", apiKey); err != nil {
-						httputil.WriteError(w, http.StatusInternalServerError, "failed to save gemini_api_key: "+err.Error())
-						return
-					}
-				}
-			} else {
-				if err := db.SetSystemConfig(r.Context(), "gemini_api_key", ""); err != nil {
-					httputil.WriteError(w, http.StatusInternalServerError, "failed to clear gemini_api_key: "+err.Error())
-					return
-				}
-			}
-		}
-
-		if req.AgentWebhookURL != nil {
-			webhookURL := strings.TrimSpace(*req.AgentWebhookURL)
-			if webhookURL != "" {
-				if !strings.Contains(webhookURL, "*") {
-					if _, err := netguard.ValidateURL(webhookURL, false); err != nil {
-						httputil.WriteError(w, http.StatusBadRequest, "invalid agent_webhook_url: "+err.Error())
-						return
-					}
-					if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", webhookURL); err != nil {
-						httputil.WriteError(w, http.StatusInternalServerError, "failed to save agent_webhook_url: "+err.Error())
-						return
-					}
-				}
-			} else {
-				if err := db.SetSystemConfig(r.Context(), "agent_webhook_url", ""); err != nil {
-					httputil.WriteError(w, http.StatusInternalServerError, "failed to clear agent_webhook_url: "+err.Error())
-					return
-				}
-			}
-		}
-
-		if req.TelemetryRetentionDays != nil && *req.TelemetryRetentionDays > 0 {
-			db.UpdateRetentionDays(r.Context(), *req.TelemetryRetentionDays)
-			if err := db.SetSystemConfig(r.Context(), "telemetry_retention_days", strconv.Itoa(*req.TelemetryRetentionDays)); err != nil {
-				httputil.WriteError(w, http.StatusInternalServerError, "failed to save telemetry_retention_days: "+err.Error())
+		// Validate the whole document before touching anything.
+		//
+		// The handler used to apply field by field, so a request carrying two
+		// changes could persist the first and then reject the second with a 400 —
+		// leaving the operator believing nothing was saved. The webhook URL was
+		// validated only after the Gemini key had already been written, which
+		// meant the same thing for the most security-relevant pair of fields in
+		// this handler.
+		//
+		// Two kinds of "skip" are also reported now instead of returning 200 for
+		// a change that was never applied: a masked value (the GET response
+		// returns "abcd****", which is what the `*` check detects) and a
+		// non-positive retention. Silently ignoring either leaves the operator
+		// with a settings screen that disagrees with the server.
+		steps, err := req.validate(r.Context(), db, h.Risk)
+		if err != nil {
+			var invalid *settingsValidationError
+			if errors.As(err, &invalid) {
+				httputil.WriteError(w, http.StatusBadRequest, invalid.Error())
 				return
 			}
-		}
-
-		// Adblock switches. Order matters: the mode is validated before it is
-		// applied so an unsupported value cannot leave the layer half-changed,
-		// and enabling is applied last so a request that fails validation
-		// changes nothing at all.
-		if req.AdblockMatchMode != nil {
-			if err := h.Risk.SetAdblockMatchMode(r.Context(), *req.AdblockMatchMode); err != nil {
-				httputil.WriteError(w, http.StatusBadRequest, "invalid adblock_match_mode: "+err.Error())
+			if errors.Is(err, risk.ErrAdblockSourcePoliciesInvalid) {
+				httputil.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
+			httputil.WriteStoreError(w, r, err, "failed to apply settings")
+			return
 		}
-		if req.AdblockEnabled != nil {
-			if err := h.Risk.SetAdblockEnabled(r.Context(), *req.AdblockEnabled); err != nil {
-				httputil.WriteError(w, http.StatusInternalServerError, "failed to save adblock_enabled: "+err.Error())
-				return
-			}
+		if len(steps) == 0 {
+			httputil.WriteError(w, http.StatusBadRequest, "no recognised setting in the request")
+			return
+		}
+		if err := applySettings(steps); err != nil {
+			httputil.WriteStoreError(w, r, err, "failed to apply settings")
+			return
 		}
 
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
@@ -176,14 +179,23 @@ func (h *Handler) SettingsBundleHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// This bundles settings with analysis config and guest access, and the UI
+	// fetches it on load, so a disabled store has to be a 503 like every other
+	// settings path rather than a 500. Without this guard the store reads below
+	// returned errors that reached the client as err.Error().
+	if db := h.Risk.StoreDB(); db == nil || !db.Enabled() {
+		httputil.WriteError(w, http.StatusServiceUnavailable, "database not configured")
+		return
+	}
+
 	settings, err := h.loadSettingsResponse(r.Context())
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		httputil.WriteStoreError(w, r, err, "database not available")
 		return
 	}
 	guestCfg, err := h.loadGuestAccessConfig(r.Context())
 	if err != nil {
-		httputil.WriteError(w, http.StatusServiceUnavailable, err.Error())
+		httputil.WriteStoreError(w, r, err, "database not available")
 		return
 	}
 
