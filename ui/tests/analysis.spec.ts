@@ -27,6 +27,45 @@ async function readLoaderLog(page: Page): Promise<{ v: boolean; t: number }[]> {
   return page.evaluate(() => (window as unknown as { __loaderLog: { v: boolean; t: number }[] }).__loaderLog);
 }
 
+/**
+ * Wait until the loader has been continuously hidden for `settleMs`, so the log is
+ * sampled from an app that has finished starting work rather than one caught
+ * mid-request.
+ *
+ * Why this exists. The test waits for `.app-loader-backdrop` to leave the DOM, then
+ * reads the loader log in a separate `page.evaluate`. Those are two round trips, tens
+ * of milliseconds apart, and in between the app can legitimately begin another load:
+ * a lazy route chunk, a refetch. The log is a live array being appended to by a
+ * requestAnimationFrame sampler, so reading it at an arbitrary moment samples a moving
+ * target. When that happened mid-request the final entry was `v: true` and the test
+ * failed, about one run in eight on an unmodified tree.
+ *
+ * What this does not weaken. The episode-count assertion that follows reads the same
+ * log, and a genuine second loader episode still leaves an extra `v: true` entry that
+ * it catches. A loader that never settles is not passed over silently either: the wait
+ * gives up and the caller's assertions report the real failure. Only the race between
+ * "the loader is gone" and "the log is read" is removed.
+ */
+async function waitForLoaderSettled(
+  page: Page,
+  settleMs = 400,
+  timeoutMs = 8000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  let hiddenSince = 0;
+  while (Date.now() < deadline) {
+    const log = await readLoaderLog(page);
+    const last = log[log.length - 1];
+    if (last && !last.v) {
+      if (hiddenSince === 0) hiddenSince = Date.now();
+      else if (Date.now() - hiddenSince >= settleMs) return;
+    } else {
+      hiddenSince = 0;
+    }
+    await page.waitForTimeout(50);
+  }
+}
+
 /** Number of separate hidden -> visible loader episodes in the log. */
 function countVisibleEpisodes(log: { v: boolean; t: number }[]): number {
   return log.filter((entry) => entry.v).length;
@@ -251,6 +290,10 @@ test('keeps one continuous loader from login through the Analysis deck', async (
   await expect(deck).toBeVisible({ timeout: 30000 });
   await expect(page.locator('.app-loader-backdrop')).toHaveCount(0);
 
+  // The loader being absent from the DOM does not mean the app is idle: it can mount
+  // again for the next chunk or refetch. Settle first, then sample the log once.
+  await waitForLoaderSettled(page);
+
   const log = await readLoaderLog(page);
   // Exactly ONE loader episode covers the whole login → Analysis sequence:
   // no hidden -> visible flip after the submit, no blank frame in between.
@@ -328,6 +371,8 @@ test('does not flash a second loader while the Analysis chunk is slow', async ({
     releaseChunk();
     await expect(page.getByText('Analysis Deck')).toBeVisible({ timeout: 30000 });
     await expect(page.locator('.app-loader-backdrop')).toHaveCount(0);
+
+    await waitForLoaderSettled(page);
 
     const log = await readLoaderLog(page);
     // One episode after login submit (plus any pre-submit session check);
@@ -408,6 +453,8 @@ test('serves an already-authenticated reload without a double loader', async ({ 
   // The server verified the session on reload.
   expect(sessionResponses).toContain(200);
   expect(sessionResponses).not.toContain(401);
+
+  await waitForLoaderSettled(page);
 
   const log = await readLoaderLog(page);
   // Reload flow: exactly one loader episode, from first paint until the
