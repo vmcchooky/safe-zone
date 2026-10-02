@@ -219,7 +219,7 @@ func TestAdminOverrideWinsOverException(t *testing.T) {
 	cfg := exceptionFile(exceptionEntry("fp-2026-004", domain, "exact", domain, srcA, "suffix", "", "INC-4"))
 	service := newAdblockExceptionService(t, Options{}, rules, cfg)
 
-	if err := service.UpsertOverride(domain, "block", "admin says so"); err != nil {
+	if err := service.UpsertOverride(t.Context(), domain, "block", "admin says so"); err != nil {
 		t.Fatalf("upsert override: %v", err)
 	}
 

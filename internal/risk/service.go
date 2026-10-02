@@ -341,6 +341,40 @@ type Service struct {
 	adblockSrcCount   atomic.Int32
 	adblockOKCount    atomic.Int32
 
+	// overrideLookupFailures counts admin-override reads that failed. The
+	// decision pipeline stays fail-open so a store error cannot block all
+	// traffic, but every failure used to be invisible; this makes "my block
+	// did not take effect" a number the operator can alert on.
+	//
+	// overrideConsecutiveFailures and the two timestamps are what make that
+	// number actionable: a monotonic total cannot distinguish "broken right
+	// now" from "broke three times since Tuesday", and the last-failure stamp
+	// is what an alert rule can compare against.
+	overrideLookupFailures      atomic.Int64
+	overrideConsecutiveFailures atomic.Int64
+	overrideLastFailureUnix     atomic.Int64
+	overrideLastSuccessUnix     atomic.Int64
+
+	// closeMu and closed make Close idempotent; a second call would otherwise
+	// panic on the already-closed enrichDone channel.
+	closeMu sync.Mutex
+	closed  bool
+
+	// overrideLookup is the seam through which override reads are made. It is
+	// nil in production, so readEffectiveOverride calls the store directly; a
+	// test installs a reader to drive the failure path, which is otherwise
+	// unreachable because GetEffectiveOverride reports (nil, nil) — not an
+	// error — once the store is disabled.
+	//
+	// It holds an interface rather than a bare func for a specific reason:
+	// atomic.Pointer[T] can only store *T, so a func-typed T means "pointer to
+	// nil func" is representable, and a caller that checks only the pointer
+	// would invoke a nil function on the DNS hot path. An interface value
+	// stored behind a pointer is nil only when the pointer is nil, which is
+	// the state Store(nil) produces. Mirrors the counters above, which are
+	// atomic for the same family of reasons.
+	overrideLookup atomic.Pointer[overrideReader]
+
 	// adblockResync lets an operator request a rule rebuild without blocking
 	// the caller. A one-slot buffer coalesces repeated requests, so flipping
 	// match mode several times still costs at most one rebuild.
@@ -892,6 +926,10 @@ func NewService(options Options) *Service {
 		urlMLShadow = URLMLShadowConfig{Percent: 100}
 	}
 	urlFeedback := options.URLMLFeedback
+	// Created before the feedback backend so the backend can be handed the
+	// service lifecycle: the durable store's background prune stops on
+	// shutdown rather than outliving the service.
+	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	var urlFeedbackBackendImpl urlFeedbackBackend
 	switch urlFeedback.Secret {
 	case "":
@@ -917,11 +955,11 @@ func NewService(options Options) *Service {
 				KeyVersion: 1,
 				Retention:  defaultURLFeedbackRetentionHours * time.Hour,
 				MaxRows:    defaultURLFeedbackMaxRows,
-			})
+			}, lifecycleCtx)
 		} else {
 			// Durable mode. A nil/disabled store keeps failing closed for
 			// labels while analysis stays unaffected.
-			urlFeedbackBackendImpl = newDurableURLFeedbackStore(options.Store, urlFeedback)
+			urlFeedbackBackendImpl = newDurableURLFeedbackStore(options.Store, urlFeedback, lifecycleCtx)
 		}
 	}
 
@@ -948,7 +986,6 @@ func NewService(options Options) *Service {
 		enrichWorkers = 1
 	}
 
-	lifecycleCtx, lifecycleCancel := context.WithCancel(context.Background())
 	svc := &Service{
 		lifecycleCtx:               lifecycleCtx,
 		lifecycleCancel:            lifecycleCancel,
@@ -1313,24 +1350,43 @@ func waitForContextOrTimeout(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
+// Close stops background work and releases resources. It is safe to call more
+// than once.
+//
+// It used to be a bare `close(s.enrichDone)`, so a second call panicked with
+// "close of closed channel". That is reachable in practice: the enrichment
+// goroutine closes the channel on its own error path, and several tests plus
+// the deferred cleanup in the constructors call Close as well.
 func (s *Service) Close() error {
 	if s == nil {
 		return nil
 	}
+	s.closeMu.Lock()
+	if s.closed {
+		s.closeMu.Unlock()
+		return nil
+	}
+	s.closed = true
+	s.closeMu.Unlock()
+
 	s.lifecycleCancel()
-	var redisErr, storeErr error
 	if s.enrichDone != nil {
 		close(s.enrichDone)
-		s.enrichWG.Wait()
 	}
+	s.enrichWG.Wait()
 	s.configReloadWG.Wait()
+	// The durable URL-feedback prune runs on its own goroutine and holds the
+	// SQLite connection; wait for it before closing the store, or it observes
+	// a closed database and records a spurious persistence error.
+	s.urlMLFeedback.waitForPrune()
+	var err error
 	if s.redis != nil {
-		redisErr = s.redis.Close()
+		err = s.redis.Close()
 	}
 	if s.store != nil {
-		storeErr = s.store.Close()
+		err = errors.Join(err, s.store.Close())
 	}
-	return errors.Join(redisErr, storeErr)
+	return err
 }
 
 func (s *Service) Analyze(ctx context.Context, domain string, client ClientInfo) Analysis {
@@ -1386,7 +1442,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 			var override *store.Override
 			preTimer.measure(LayerOverride, func() {
 				var overrideErr error
-				override, overrideErr = s.store.GetEffectiveOverride(ctx, group.ID, normalized)
+				override, overrideErr = s.lookupEffectiveOverride(ctx, group.ID, normalized)
 				if overrideErr != nil {
 					override = nil
 				}
@@ -1421,7 +1477,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		whitelisted := false
 		if result.Domain == "" {
 			preTimer.measure(LayerWhitelist, func() {
-				whitelisted = s.whitelist.IsAllowed(normalized)
+				whitelisted = s.whitelist.IsAllowed(ctx, normalized)
 			})
 		}
 		if result.Domain == "" && whitelisted {
@@ -1551,7 +1607,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		var override *store.Override
 		preTimer.measure(LayerOverride, func() {
 			var overrideErr error
-			override, overrideErr = s.store.GetEffectiveOverride(ctx, group.ID, normalized)
+			override, overrideErr = s.lookupEffectiveOverride(ctx, group.ID, normalized)
 			if overrideErr != nil {
 				override = nil
 			}
@@ -1605,7 +1661,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	// 3. Check Whitelist
 	whitelisted := false
 	preTimer.measure(LayerWhitelist, func() {
-		whitelisted = s.whitelist.IsAllowed(normalized)
+		whitelisted = s.whitelist.IsAllowed(ctx, normalized)
 	})
 	if whitelisted {
 		decision := allowlistPolicyDecision()
@@ -2238,14 +2294,27 @@ func (s *Service) isAdblockEnabled() bool {
 // refreshAdblockEnabled reads the adblock_enabled flag from store/env
 // and caches it atomically. Safe to call from any goroutine.
 func (s *Service) refreshAdblockEnabled() {
-	enabled := config.Bool(envAdblockEnabled, true)
-	if s.store != nil && s.store.Enabled() {
-		val, err := s.store.GetSystemConfig(context.Background(), "adblock_enabled")
-		if err == nil && val != "" {
-			enabled = val == "true" || val == "1"
-		}
+	if s.store == nil || !s.store.Enabled() {
+		s.adblockEnabled.Store(config.Bool(envAdblockEnabled, true))
+		return
 	}
-	s.adblockEnabled.Store(enabled)
+	val, err := s.store.GetSystemConfig(context.Background(), "adblock_enabled")
+	if err != nil {
+		// Keep the current value. Falling back to the environment here
+		// re-enabled adblock 30 seconds after an operator disabled it, and a
+		// read error must never move an operator's switch in either
+		// direction.
+		logjson.Warn("adblock enabled refresh failed; keeping the value in force", map[string]any{
+			"service": "risk",
+			"error":   err.Error(),
+		})
+		return
+	}
+	if val == "" {
+		s.adblockEnabled.Store(config.Bool(envAdblockEnabled, true))
+		return
+	}
+	s.adblockEnabled.Store(val == "true" || val == "1")
 }
 
 // refreshAdblockMatchMode reconciles the persisted match mode with the
@@ -2253,16 +2322,26 @@ func (s *Service) refreshAdblockEnabled() {
 //
 // The store wins over the environment for the same reason the enable flag
 // does: an operator switching the mode at runtime must not have it silently
-// reverted by the next refresh.
+// reverted by the next refresh. A read error keeps the current value rather
+// than reverting to the environment.
 func (s *Service) refreshAdblockMatchMode() {
-	mode := parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))
-	if s.store != nil && s.store.Enabled() {
-		val, err := s.store.GetSystemConfig(context.Background(), systemConfigAdblockMatchMode)
-		if err == nil && val != "" {
-			mode = parseAdblockMatchMode(val)
-		}
+	if s.store == nil || !s.store.Enabled() {
+		s.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+		return
 	}
-	s.adblockMatchMode.Store(string(mode))
+	val, err := s.store.GetSystemConfig(context.Background(), systemConfigAdblockMatchMode)
+	if err != nil {
+		logjson.Warn("adblock match mode refresh failed; keeping the mode in force", map[string]any{
+			"service": "risk",
+			"error":   err.Error(),
+		})
+		return
+	}
+	if val == "" {
+		s.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+		return
+	}
+	s.adblockMatchMode.Store(string(parseAdblockMatchMode(val)))
 }
 
 // runAdblockConfigSync periodically refreshes the adblock_enabled flag and
@@ -2285,6 +2364,126 @@ func (s *Service) runAdblockConfigSync() {
 }
 
 // AdblockStatus holds runtime telemetry for the adblock subsystem.
+// lookupEffectiveOverride reads the operator override for a domain.
+//
+// The previous code assigned the error to a variable that was never read: a
+// SQLite lock, a busy database, or any I/O failure silently turned "this
+// domain is administratively blocked" into "evaluate it normally", with no log,
+// no counter, and no signal anywhere. That is a fail-open on the one control an
+// operator set deliberately, on the DNS hot path.
+//
+// Failing closed instead is not an option: a transient store error would then
+// block every domain for every client, which is a self-inflicted outage. So the
+// policy is fail-open but loud — count it, log it, and publish it.
+//
+// An earlier version retried once after a short pause. That was removed: SQLite
+// is opened with a single connection and busy_timeout=5000, so genuine lock
+// contention already resolves inside the driver and the retry almost never
+// helped. Meanwhile a *sustained* store failure — a full disk, a stuck WAL — is
+// exactly the case where it hurt most, adding the delay to every request on
+// the hot path. Measured at 16 ms per failed request, which under load means
+// thousands of goroutines sleeping to fail anyway.
+//
+// consecutiveOverrideFailures is what lets an operator tell "broken right now"
+// from "broke three times since Tuesday", and it is reset by the first
+// success.
+func (s *Service) lookupEffectiveOverride(ctx context.Context, groupID int64, domain string) (*store.Override, error) {
+	override, err := s.readEffectiveOverride(ctx, groupID, domain)
+	if err == nil {
+		if s.overrideConsecutiveFailures.Load() > 0 {
+			s.overrideConsecutiveFailures.Store(0)
+			s.overrideLastSuccessUnix.Store(time.Now().Unix())
+		}
+		return override, nil
+	}
+
+	s.overrideLookupFailures.Add(1)
+	s.overrideConsecutiveFailures.Add(1)
+	s.overrideLastFailureUnix.Store(time.Now().Unix())
+	logjson.Warn("override lookup failed; evaluating without the operator override", map[string]any{
+		"service":     "risk",
+		"domain":      domain,
+		"group_id":    groupID,
+		"error":       err.Error(),
+		"fail_open":   true,
+		"consecutive": s.overrideConsecutiveFailures.Load(),
+	})
+	return nil, err
+}
+
+func (s *Service) OverrideLookupFailures() int64 {
+	if s == nil {
+		return 0
+	}
+	return s.overrideLookupFailures.Load()
+}
+
+// overrideReader is what the override seam must satisfy. *store.DB implements
+// it directly, so production reads through the store with no wrapper.
+type overrideReader interface {
+	GetEffectiveOverride(ctx context.Context, groupID int64, domain string) (*store.Override, error)
+}
+
+// readEffectiveOverride is the seam the override lookup goes through. It exists
+// so a test can drive the failure path directly: closing the store is not a
+// usable substitute, because GetEffectiveOverride returns (nil, nil) once
+// Enabled() is false rather than an error, and a cancelled context only
+// exercises the caller's own context. Without this seam the failure branch of
+// the hot path had no coverage at all.
+func (s *Service) readEffectiveOverride(ctx context.Context, groupID int64, domain string) (*store.Override, error) {
+	// Both halves are checked, and the interface type does not remove the need.
+	// atomic.Pointer can only hold *T, so a pointer to a nil interface value
+	// is representable, and calling through it panics on the DNS hot path.
+	// Store(nil) is the only way to clear the seam.
+	if injected := s.overrideLookup.Load(); injected != nil && *injected != nil {
+		return (*injected).GetEffectiveOverride(ctx, groupID, domain)
+	}
+	return s.store.GetEffectiveOverride(ctx, groupID, domain)
+}
+
+// DecisionPipelineStatus reports fail-open degradations on the hot path.
+type DecisionPipelineStatus struct {
+	// OverrideLookupFailures counts every admin-override read that failed
+	// since start-up. Each one means a domain the operator had blocked was
+	// evaluated normally, because failing closed would block all traffic
+	// instead of just this. Zero is the healthy state.
+	OverrideLookupFailures int64 `json:"override_lookup_failures"`
+	// OverrideConsecutiveFailures is the number that actually distinguishes
+	// "currently broken" from "failed a few times since last boot": it resets
+	// on the first success. Alert on this being non-zero for a sustained
+	// period, not on the total.
+	OverrideConsecutiveFailures int64 `json:"override_consecutive_failures"`
+	// LastFailureAt and LastSuccessAt are RFC3339 stamps, empty until the
+	// corresponding event has happened at least once.
+	LastFailureAt string `json:"last_failure_at,omitempty"`
+	LastSuccessAt string `json:"last_success_at,omitempty"`
+	// OutboundProxyEnabled reports whether the address guard has been
+	// deliberately switched off. With a proxy configured, netguard validates
+	// the proxy's address instead of the destination's, so every outbound
+	// fetch runs unchecked. That is a deliberate operator choice, but it is
+	// invisible in logs alone — a transport is built per fetch for the agent
+	// paths, so the one-shot warning is easy to miss. Publish it as state.
+	OutboundProxyEnabled bool `json:"outbound_proxy_enabled"`
+}
+
+func (s *Service) DecisionPipelineStatus() DecisionPipelineStatus {
+	if s == nil {
+		return DecisionPipelineStatus{}
+	}
+	status := DecisionPipelineStatus{
+		OverrideLookupFailures:      s.overrideLookupFailures.Load(),
+		OverrideConsecutiveFailures: s.overrideConsecutiveFailures.Load(),
+		OutboundProxyEnabled:        netguard.OutboundProxyEnabled(),
+	}
+	if unix := s.overrideLastFailureUnix.Load(); unix > 0 {
+		status.LastFailureAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)
+	}
+	if unix := s.overrideLastSuccessUnix.Load(); unix > 0 {
+		status.LastSuccessAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)
+	}
+	return status
+}
+
 type AdblockStatus struct {
 	Enabled         bool   `json:"enabled"`
 	MatchMode       string `json:"match_mode"`
@@ -2364,8 +2563,13 @@ func (s *Service) adblockSourceCacheRoot() string {
 	return filepath.Join(s.adblockDataRoot, "adblock_sources")
 }
 
+// adblockSourceCachePath derives the on-disk location of a source's download
+// cache. Keyed by the canonical source key so it matches canonicalSourceID,
+// which stamps the same identity into rule provenance: hashing the raw string
+// here while provenance used the canonical form gave one source two
+// identities, and two cache files for a case change that meant the same source.
 func (s *Service) adblockSourceCachePath(source string) string {
-	sum := sha256.Sum256([]byte(source))
+	sum := sha256.Sum256([]byte(canonicalSourceKey(strings.TrimSpace(source))))
 	return filepath.Join(s.adblockSourceCacheRoot(), fmt.Sprintf("%x.txt", sum[:]))
 }
 
@@ -3485,6 +3689,18 @@ func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates
 
 // ThreatFeedCandidates returns the exact domain followed by every parent
 // suffix considered by the runtime threat-feed matcher.
+//
+// Unlike the whitelist and admin-override lookups, this deliberately walks all
+// the way to the top-level domain. The threat feed is a list of *observed
+// malicious hosts*, so blocking the namespace behind a listed host is the
+// intended semantics: if "evil.example" is listed, "sub.evil.example" is
+// compromised too, and a feed that lists a bare public suffix ("com") is a
+// feed bug that would surface as a very broad block rather than a missed one.
+//
+// That is the opposite risk profile to the other two lookups, where a
+// public-suffix row is an *operator* action that would silently disable
+// protection (whitelist) or override the pipeline (override). Do not add a
+// registrable-label floor here without re-reading those three functions.
 func ThreatFeedCandidates(domain string) []string {
 	parts := strings.Split(domain, ".")
 	candidates := make([]string, 0, len(parts))
@@ -3822,15 +4038,20 @@ func inferSource(a Analysis) string {
 // --- Store API wrappers ---
 
 // ListOverrides returns all local overrides, optionally filtered by action.
-func (s *Service) ListOverrides(action string) ([]store.Override, error) {
+// ListOverrides returns the configured overrides, optionally filtered by
+// action. ctx bounds the query so an operator who navigated away does not leave
+// it running on the single store connection.
+func (s *Service) ListOverrides(ctx context.Context, action string) ([]store.Override, error) {
 	if s.store == nil {
 		return nil, nil
 	}
-	return s.store.ListOverrides(context.Background(), action)
+	return s.store.ListOverrides(ctx, action)
 }
 
 // UpsertOverride creates or updates a local override for a domain.
-func (s *Service) UpsertOverride(domain, action, reason string) error {
+// UpsertOverride creates or updates a local override for a domain. ctx bounds
+// the write; see ListOverrides.
+func (s *Service) UpsertOverride(ctx context.Context, domain, action, reason string) error {
 	if s.store == nil {
 		return fmt.Errorf("store not configured")
 	}
@@ -3838,11 +4059,13 @@ func (s *Service) UpsertOverride(domain, action, reason string) error {
 	if err != nil {
 		return fmt.Errorf("invalid domain: %w", err)
 	}
-	return s.store.UpsertOverride(context.Background(), normalized, action, reason)
+	return s.store.UpsertOverride(ctx, normalized, action, reason)
 }
 
 // DeleteOverride removes a local override for a domain.
-func (s *Service) DeleteOverride(domain string) error {
+// DeleteOverride removes a local override. ctx bounds the write; see
+// ListOverrides.
+func (s *Service) DeleteOverride(ctx context.Context, domain string) error {
 	if s.store == nil {
 		return fmt.Errorf("store not configured")
 	}
@@ -3850,7 +4073,7 @@ func (s *Service) DeleteOverride(domain string) error {
 	if err != nil {
 		return fmt.Errorf("invalid domain: %w", err)
 	}
-	return s.store.DeleteOverride(context.Background(), normalized)
+	return s.store.DeleteOverride(ctx, normalized)
 }
 
 func (s *Service) ListBrands(ctx context.Context) ([]analysis.Brand, error) {

@@ -57,12 +57,12 @@ func (h *Handler) ListReportsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	reports, err := db.ListBlockReportsFiltered(r.Context(), filter, limit, offset)
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, "failed to list reports: "+err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to list reports")
 		return
 	}
 	total, err := db.CountBlockReportsFiltered(r.Context(), filter)
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, "failed to count reports: "+err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to count reports")
 		return
 	}
 	if reports == nil {
@@ -70,7 +70,7 @@ func (h *Handler) ListReportsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	counts, err := db.CountBlockReportsByStatus(r.Context())
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, "failed to count report statuses: "+err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to count report statuses")
 		return
 	}
 
@@ -137,7 +137,7 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 				httputil.WriteError(w, http.StatusNotFound, "block report not found")
 				return
 			}
-			httputil.WriteError(w, http.StatusInternalServerError, "failed to load report: "+err.Error())
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to load report")
 			return
 		}
 		resolvedReports, err := db.ApproveFalsePositive(
@@ -149,7 +149,7 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 				httputil.WriteError(w, http.StatusNotFound, "block report not found")
 				return
 			}
-			httputil.WriteError(w, http.StatusInternalServerError, "failed to apply false-positive review: "+err.Error())
+			httputil.WriteError(w, http.StatusInternalServerError, "failed to apply false-positive review")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, map[string]any{
@@ -166,7 +166,7 @@ func (h *Handler) UpdateReportStatusHandler(w http.ResponseWriter, r *http.Reque
 			httputil.WriteError(w, http.StatusNotFound, "block report not found")
 			return
 		}
-		httputil.WriteError(w, http.StatusInternalServerError, "failed to update report status: "+err.Error())
+		httputil.WriteError(w, http.StatusInternalServerError, "failed to update report status")
 		return
 	}
 

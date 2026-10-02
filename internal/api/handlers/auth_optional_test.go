@@ -51,8 +51,9 @@ func TestAttachAuthIdentityNeverRejects(t *testing.T) {
 		t.Fatalf("valid admin cookie must attach identity, got %+v ok=%v", got, ok)
 	}
 
-	// Empty bearer token against an empty key must never match
-	// (stricter than the legacy RequireAuthFunc comparison).
+	// Empty bearer token against an empty key must never match. Both auth
+	// paths share bearerMatches, so this holds for the enforcing path too;
+	// see auth_middleware_test.go for the full credential matrix.
 	bare := &Handler{}
 	req = httptest.NewRequest(http.MethodGet, "/v1/analyze?domain=x.test", nil)
 	req.Header.Set("Authorization", "Bearer ")

@@ -33,6 +33,11 @@ type AdmissionPlan struct {
 	Contextual    []string       `json:"contextual"`
 	ParseStats    ParseStats     `json:"parse_stats"`
 	Stats         AdmissionStats `json:"admission_stats"`
+	// UnclassifiableDomains counts distinct domains that were not admitted
+	// because the per-domain state map reached its cap. They are neither
+	// authoritative nor contextual: they were seen and then dropped, which is
+	// the safe direction, and this is how a reader of the plan knows.
+	UnclassifiableDomains int `json:"unclassifiable_domains"`
 }
 
 // ShadowDiff measures what the evaluation-only Filter mode would drop from
@@ -113,15 +118,33 @@ func NormalizeAdmissionMode(value string) (AdmissionMode, error) {
 // resource corroborates the host. IP URL indicators remain authoritative because
 // their address is already the narrowest host-level identity available here.
 func PlanAdmission(r io.Reader, mode AdmissionMode) (AdmissionPlan, error) {
+	return planAdmissionWithLimit(r, mode, maxDistinctFeedDomains())
+}
+
+// planAdmissionWithLimit is PlanAdmission with an explicit cap on the
+// per-domain state map, so tests can exercise the bound without a
+// multi-million-domain feed.
+func planAdmissionWithLimit(r io.Reader, mode AdmissionMode, limit int) (AdmissionPlan, error) {
 	mode, err := NormalizeAdmissionMode(string(mode))
 	if err != nil {
 		return AdmissionPlan{}, err
 	}
+	// states is bounded for the same reason as the parser's deduplication set:
+	// one entry per distinct domain, each a heap-allocated struct, and a
+	// hostile feed can name millions. Past the cap the domain is not retained,
+	// so it cannot be classified — which means it is *not* admitted. That is
+	// the safe direction (an unclassified IOC is dropped rather than trusted)
+	// and the overflow is counted on the plan so the operator sees it.
 	states := make(map[string]*admissionState)
+	overCapacity := 0
 	var parseStats ParseStats
 	err = ParseEachIndicator(r, func(indicator Indicator, _ bool) error {
 		state := states[indicator.Domain]
 		if state == nil {
+			if len(states) >= limit {
+				overCapacity++
+				return nil
+			}
 			state = &admissionState{}
 			states[indicator.Domain] = state
 		}
@@ -149,6 +172,10 @@ func PlanAdmission(r io.Reader, mode AdmissionMode) (AdmissionPlan, error) {
 	}
 
 	plan := AdmissionPlan{ParseStats: parseStats, Stats: AdmissionStats{Mode: mode}}
+	// Unclassifiable because the state map was full. Surfaced on the plan so the
+	// sync report and the operator both see that coverage was reduced, rather
+	// than the plan quietly describing a smaller feed than was downloaded.
+	plan.UnclassifiableDomains = overCapacity
 	for domain, state := range states {
 		if state.urlSeen {
 			plan.Stats.URLHosts++

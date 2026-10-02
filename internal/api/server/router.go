@@ -27,7 +27,14 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/healthz", handlers.HealthHandler("core-api"))
 	mux.HandleFunc("/readyz", handlers.HealthHandler("core-api"))
 	mux.HandleFunc("/v1/version", h.VersionHandler)
-	mux.HandleFunc("/metrics", h.MetricsHandler)
+	// /metrics is admin-only. It exposes the per-endpoint request summary
+	// (method, path, status, counts, latency), which lets any authenticated
+	// caller fingerprint the API surface and read 401/403/429 rates — a
+	// brute-force progress signal. RequireAuthFunc is not enough here: the
+	// read-only guest role passes it. Scrapers must send the admin API key as
+	// a bearer token; see ops/alerts/safe-zone-alert-rules.yaml and
+	// ops/grafana/safe-zone-dashboard.json.
+	mux.HandleFunc("/metrics", h.RequireAdminFunc(h.MetricsHandler))
 	mux.HandleFunc("/v1/cache/flush", h.RequireAdminForMutationFunc(h.CacheFlushHandler))
 	mux.HandleFunc("/v1/logs/export", h.RequireAdminFunc(h.LogsExportHandler))
 
@@ -37,7 +44,9 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 
 	// Authentication
 	mux.HandleFunc("/v1/auth/login", h.AuthLoginHandler)
-	mux.HandleFunc("/v1/auth/logout", h.AuthLogoutHandler)
+	// Logout is wrapped so the CSRF gate runs: it revokes the persisted
+	// session, so a cross-site POST must not be able to force a revocation.
+	mux.HandleFunc("/v1/auth/logout", h.RequireAuthFunc(h.AuthLogoutHandler))
 	mux.HandleFunc("/v1/auth/session", h.RequireAuthFunc(h.AuthSessionHandler))
 
 	// Analysis & OSINT

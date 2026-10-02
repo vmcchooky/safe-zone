@@ -169,6 +169,9 @@ func TestLogoutRevokesSessionAndReplayFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Logout is a state-changing cookie route, so it must carry a
+	// same-origin Origin to pass the CSRF gate.
+	logoutReq.Header.Set("Origin", ts.Server.URL)
 	logoutReq.AddCookie(cookie)
 	logoutResp, err := ts.Client.Do(logoutReq)
 	if err != nil {
@@ -269,7 +272,9 @@ func TestSessionStoreUnavailableFailsClosed(t *testing.T) {
 		t.Fatalf("expected 503 session validation without store, got %d", authResp.StatusCode)
 	}
 
-	// The bearer API key path does not depend on the session store.
+	// The bearer API key path does not depend on the session store. What
+	// follows proves authentication succeeded: a store that cannot serve the
+	// override list is a 503, whereas a failed credential would be 401 or 403.
 	bearerReq, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/v1/overrides", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -280,8 +285,8 @@ func TestSessionStoreUnavailableFailsClosed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer bearerResp.Body.Close()
-	if bearerResp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 for bearer auth without session store, got %d", bearerResp.StatusCode)
+	if bearerResp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("bearer auth with no usable store = %d, want 503: a 401 or 403 would mean the credential was rejected", bearerResp.StatusCode)
 	}
 }
 

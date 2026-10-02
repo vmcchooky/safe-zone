@@ -98,9 +98,9 @@ func main() {
 	var tiered *ratelimit.TieredMiddleware
 	var dotLimiter *ratelimit.Limiter
 	if rlEnabled {
-		dohLimiter := ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_DOH_RPM", 100), config.Int("SAFE_ZONE_RATELIMIT_DOH_BURST", 20))
-		defaultLimiter := ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_DEFAULT_RPM", 60), config.Int("SAFE_ZONE_RATELIMIT_DEFAULT_BURST", 15))
-		dotLimiter = ratelimit.New(config.Float64("SAFE_ZONE_RATELIMIT_DOT_RPM", 100), config.Int("SAFE_ZONE_RATELIMIT_DOT_BURST", 20))
+		dohLimiter := ratelimit.NewConfigured(config.Float64("SAFE_ZONE_RATELIMIT_DOH_RPM", 100), config.Int("SAFE_ZONE_RATELIMIT_DOH_BURST", 20))
+		defaultLimiter := ratelimit.NewConfigured(config.Float64("SAFE_ZONE_RATELIMIT_DEFAULT_RPM", 60), config.Int("SAFE_ZONE_RATELIMIT_DEFAULT_BURST", 15))
+		dotLimiter = ratelimit.NewConfigured(config.Float64("SAFE_ZONE_RATELIMIT_DOT_RPM", 100), config.Int("SAFE_ZONE_RATELIMIT_DOT_BURST", 20))
 
 		defer dohLimiter.Close()
 		defer defaultLimiter.Close()

@@ -102,6 +102,15 @@ services:
       SAFE_ZONE_RATELIMIT_ENABLED: ${SAFE_ZONE_RATELIMIT_ENABLED:-true}
       SAFE_ZONE_RATELIMIT_ANALYZE_RPM: ${SAFE_ZONE_RATELIMIT_ANALYZE_RPM:-10}
       SAFE_ZONE_RATELIMIT_ANALYZE_BURST: ${SAFE_ZONE_RATELIMIT_ANALYZE_BURST:-5}
+      # Caddy is the only peer that sets forwarded headers here, and it
+      # reaches core-api over the Docker bridge network, so ONLY 172.16/12
+      # (which contains every default Docker address pool) is trusted. The
+      # previous default also listed 10/8 and 192.168/16: those are not used
+      # by default, and listing them let any host in those ranges forge its
+      # own X-Forwarded-For and so its own rate-limit key. If you configure
+      # custom default-address-pools, extend this list with the bridge
+      # subnet your Caddy container actually gets.
+      SAFE_ZONE_TRUSTED_PROXIES: ${SAFE_ZONE_TRUSTED_PROXIES:-127.0.0.0/8,::1/128,172.16.0.0/12}
       SAFE_ZONE_RATELIMIT_OVERRIDE_RPM: ${SAFE_ZONE_RATELIMIT_OVERRIDE_RPM:-20}
       SAFE_ZONE_RATELIMIT_OVERRIDE_BURST: ${SAFE_ZONE_RATELIMIT_OVERRIDE_BURST:-5}
       SAFE_ZONE_RATELIMIT_TELEMETRY_RPM: ${SAFE_ZONE_RATELIMIT_TELEMETRY_RPM:-30}
@@ -176,6 +185,8 @@ services:
       SAFE_ZONE_RATELIMIT_ENABLED: ${SAFE_ZONE_RATELIMIT_ENABLED:-true}
       SAFE_ZONE_RATELIMIT_DOH_RPM: ${SAFE_ZONE_RATELIMIT_DOH_RPM:-100}
       SAFE_ZONE_RATELIMIT_DOH_BURST: ${SAFE_ZONE_RATELIMIT_DOH_BURST:-20}
+      # See the core-api note above: only the Docker bridge is trusted here.
+      SAFE_ZONE_TRUSTED_PROXIES: ${SAFE_ZONE_TRUSTED_PROXIES:-127.0.0.0/8,::1/128,172.16.0.0/12}
       SAFE_ZONE_RATELIMIT_DEFAULT_RPM: ${SAFE_ZONE_RATELIMIT_DEFAULT_RPM:-60}
       SAFE_ZONE_RATELIMIT_DEFAULT_BURST: ${SAFE_ZONE_RATELIMIT_DEFAULT_BURST:-15}
       SAFE_ZONE_DNS_DOT_ENABLED: ${SAFE_ZONE_DNS_DOT_ENABLED:-true}

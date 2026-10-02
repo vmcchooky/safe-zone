@@ -85,14 +85,14 @@ func (s *BrandStore) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
 
 func (s *BrandStore) GetBrand(ctx context.Context, id int64) (analysis.Brand, error) {
 	if s == nil || s.db == nil || !s.db.Enabled() {
-		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
+		return analysis.Brand{}, ErrDisabled
 	}
 	return s.db.GetBrand(ctx, id)
 }
 
 func (s *BrandStore) CreateBrand(ctx context.Context, brand analysis.Brand) (analysis.Brand, error) {
 	if s == nil || s.db == nil || !s.db.Enabled() {
-		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
+		return analysis.Brand{}, ErrDisabled
 	}
 	created, err := s.db.CreateBrand(ctx, brand)
 	if err != nil {
@@ -104,7 +104,7 @@ func (s *BrandStore) CreateBrand(ctx context.Context, brand analysis.Brand) (ana
 
 func (s *BrandStore) UpdateBrand(ctx context.Context, id int64, brand analysis.Brand) (analysis.Brand, error) {
 	if s == nil || s.db == nil || !s.db.Enabled() {
-		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
+		return analysis.Brand{}, ErrDisabled
 	}
 	updated, err := s.db.UpdateBrand(ctx, id, brand)
 	if err != nil {
@@ -116,7 +116,7 @@ func (s *BrandStore) UpdateBrand(ctx context.Context, id int64, brand analysis.B
 
 func (s *BrandStore) DeleteBrand(ctx context.Context, id int64) error {
 	if s == nil || s.db == nil || !s.db.Enabled() {
-		return fmt.Errorf("sqlite store disabled")
+		return ErrDisabled
 	}
 	if err := s.db.DeleteBrand(ctx, id); err != nil {
 		return err
@@ -176,7 +176,7 @@ func (s *BrandStore) invalidate(parent context.Context) {
 
 func (d *DB) SeedDefaultBrands(ctx context.Context) error {
 	if !d.Enabled() {
-		return nil
+		return ErrDisabled
 	}
 	// PR-08a/M2: insert-only. The seed runs on every DB open, so DO UPDATE
 	// would clobber operator edits to default brands on each restart.
@@ -198,7 +198,12 @@ func (d *DB) SeedDefaultBrands(ctx context.Context) error {
 
 func (d *DB) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
 	if !d.Enabled() {
-		return nil, nil
+		// An empty list is indistinguishable from "no brands configured", so a
+		// caller would cache that and keep serving it. Both detection paths
+		// (analysis.trustedBrands and risk.trustedBrands) already treat a
+		// non-nil error as "fall back to package defaults", so returning the
+		// sentinel is behaviour-neutral there and informative everywhere else.
+		return nil, ErrDisabled
 	}
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT id, name, official_domain, COALESCE(alt_domains, '[]'), created_at, updated_at
@@ -221,21 +226,21 @@ func (d *DB) ListBrands(ctx context.Context) ([]analysis.Brand, error) {
 
 func (d *DB) GetBrand(ctx context.Context, id int64) (analysis.Brand, error) {
 	if !d.Enabled() {
-		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
+		return analysis.Brand{}, ErrDisabled
 	}
 	row := d.db.QueryRowContext(ctx, `
 		SELECT id, name, official_domain, COALESCE(alt_domains, '[]'), created_at, updated_at
 		FROM trusted_brands WHERE id = ?`, id)
 	brand, err := scanBrand(row)
 	if errors.Is(err, sql.ErrNoRows) {
-		return analysis.Brand{}, fmt.Errorf("brand not found: id %d", id)
+		return analysis.Brand{}, fmt.Errorf("%w: id %d", ErrBrandNotFound, id)
 	}
 	return brand, err
 }
 
 func (d *DB) CreateBrand(ctx context.Context, brand analysis.Brand) (analysis.Brand, error) {
 	if !d.Enabled() {
-		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
+		return analysis.Brand{}, ErrDisabled
 	}
 	if err := validateBrand(brand); err != nil {
 		return analysis.Brand{}, err
@@ -258,7 +263,7 @@ func (d *DB) CreateBrand(ctx context.Context, brand analysis.Brand) (analysis.Br
 
 func (d *DB) UpdateBrand(ctx context.Context, id int64, brand analysis.Brand) (analysis.Brand, error) {
 	if !d.Enabled() {
-		return analysis.Brand{}, fmt.Errorf("sqlite store disabled")
+		return analysis.Brand{}, ErrDisabled
 	}
 	if err := validateBrand(brand); err != nil {
 		return analysis.Brand{}, err
@@ -274,21 +279,21 @@ func (d *DB) UpdateBrand(ctx context.Context, id int64, brand analysis.Brand) (a
 		return analysis.Brand{}, fmt.Errorf("update brand id %d: %w", id, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return analysis.Brand{}, fmt.Errorf("brand not found: id %d", id)
+		return analysis.Brand{}, fmt.Errorf("%w: id %d", ErrBrandNotFound, id)
 	}
 	return d.GetBrand(ctx, id)
 }
 
 func (d *DB) DeleteBrand(ctx context.Context, id int64) error {
 	if !d.Enabled() {
-		return fmt.Errorf("sqlite store disabled")
+		return ErrDisabled
 	}
 	res, err := d.db.ExecContext(ctx, "DELETE FROM trusted_brands WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete brand id %d: %w", id, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("brand not found: id %d", id)
+		return fmt.Errorf("%w: id %d", ErrBrandNotFound, id)
 	}
 	return nil
 }
@@ -310,17 +315,17 @@ func scanBrand(scanner brandScanner) (analysis.Brand, error) {
 func validateBrand(brand analysis.Brand) error {
 	brand = normalizeBrandForStore(brand)
 	if brand.Name == "" {
-		return fmt.Errorf("brand name is required")
+		return fmt.Errorf("%w: brand name is required", ErrInvalidBrand)
 	}
 	if brand.OfficialDomain == "" {
-		return fmt.Errorf("official_domain is required")
+		return fmt.Errorf("%w: official_domain is required", ErrInvalidBrand)
 	}
 	if _, err := analysis.NormalizeDomain(brand.OfficialDomain); err != nil {
-		return fmt.Errorf("invalid official_domain: %w", err)
+		return fmt.Errorf("%w: invalid official_domain: %w", ErrInvalidBrand, err)
 	}
 	for _, alt := range brand.AltDomains {
 		if _, err := analysis.NormalizeDomain(alt); err != nil {
-			return fmt.Errorf("invalid alt_domain %q: %w", alt, err)
+			return fmt.Errorf("%w: invalid alt_domain %q: %w", ErrInvalidBrand, alt, err)
 		}
 	}
 	return nil

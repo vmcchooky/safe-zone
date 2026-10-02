@@ -603,34 +603,89 @@ func TestRecordAnalysisBufferFull(t *testing.T) {
 }
 
 // --- Disabled store tests ---
+//
+// These used to assert that a disabled store returns nil and no error, which is
+// what let the API answer "200, your list is empty" and "200, saved" for
+// changes that were discarded. A control-plane read against an unusable store is
+// now ErrDisabled, so the handler can map it to 503.
 
-func TestDisabledGetOverride(t *testing.T) {
+func TestDisabledReadsReportErrDisabled(t *testing.T) {
 	var db *DB
-	override, err := db.GetOverride(context.Background(), "test.com")
-	if err != nil {
-		t.Fatal(err)
+	ctx := context.Background()
+
+	override, err := db.GetOverride(ctx, "test.com")
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("GetOverride error = %v, want ErrDisabled", err)
 	}
 	if override != nil {
-		t.Fatal("expected nil from disabled store")
+		t.Fatalf("GetOverride = %+v, want nil", override)
+	}
+
+	overrides, err := db.ListOverrides(ctx, "")
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("ListOverrides error = %v, want ErrDisabled", err)
+	}
+	if overrides != nil {
+		t.Fatalf("ListOverrides = %v, want nil", overrides)
+	}
+
+	groups, err := db.ListGroups(ctx)
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("ListGroups error = %v, want ErrDisabled: an empty list reads as \"you have none\"", err)
+	}
+	if groups != nil {
+		t.Fatalf("ListGroups = %v, want nil", groups)
+	}
+
+	mappings, err := db.ListMappings(ctx)
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("ListMappings error = %v, want ErrDisabled", err)
+	}
+	if mappings != nil {
+		t.Fatalf("ListMappings = %v, want nil", mappings)
 	}
 }
 
-func TestDisabledListOverrides(t *testing.T) {
+// A write against a disabled store must not report success. This is the
+// control-plane case that matters most: "200 ok" for an override that was
+// never stored leaves an operator believing a domain is blocked while the
+// resolver keeps resolving it.
+func TestDisabledWritesFailLoudly(t *testing.T) {
 	var db *DB
-	overrides, err := db.ListOverrides(context.Background(), "")
-	if err != nil {
-		t.Fatal(err)
+	ctx := context.Background()
+
+	if err := db.UpsertOverride(ctx, "evil.example", "block", "reason"); !errors.Is(err, ErrDisabled) {
+		t.Fatalf("UpsertOverride error = %v, want ErrDisabled: reporting success would hide a discarded block", err)
 	}
-	if overrides != nil {
-		t.Fatal("expected nil from disabled store")
+	if err := db.DeleteOverride(ctx, "evil.example"); !errors.Is(err, ErrDisabled) {
+		t.Fatalf("DeleteOverride error = %v, want ErrDisabled", err)
+	}
+	if err := db.UpdateWhitelist(ctx, []string{"example.com"}); !errors.Is(err, ErrDisabled) {
+		t.Fatalf("UpdateWhitelist error = %v, want ErrDisabled", err)
+	}
+	if err := db.SetSystemConfig(ctx, "k", "v"); !errors.Is(err, ErrDisabled) {
+		t.Fatalf("SetSystemConfig error = %v, want ErrDisabled", err)
+	}
+}
+
+// The one store read that stays quiet when disabled, because its error reaches
+// the DNS hot path and would otherwise log once per request.
+func TestDisabledEffectiveOverrideStaysQuiet(t *testing.T) {
+	var db *DB
+	override, err := db.GetEffectiveOverride(context.Background(), 1, "evil.example")
+	if err != nil {
+		t.Fatalf("GetEffectiveOverride error = %v, want nil on the hot path", err)
+	}
+	if override != nil {
+		t.Fatalf("GetEffectiveOverride = %+v, want nil", override)
 	}
 }
 
 func TestDisabledQueryRecent(t *testing.T) {
 	var db *DB
 	entries, err := db.QueryRecent(context.Background(), 10, 0)
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("QueryRecent error = %v, want ErrDisabled", err)
 	}
 	if entries != nil {
 		t.Fatal("expected nil from disabled store")
@@ -640,8 +695,8 @@ func TestDisabledQueryRecent(t *testing.T) {
 func TestDisabledQueryStats(t *testing.T) {
 	var db *DB
 	stats, err := db.QueryStats(context.Background(), "24h")
-	if err != nil {
-		t.Fatal(err)
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("QueryStats error = %v, want ErrDisabled", err)
 	}
 	if stats.Total != 0 {
 		t.Fatal("expected zero stats from disabled store")
@@ -651,6 +706,14 @@ func TestDisabledQueryStats(t *testing.T) {
 // --- Whitelist Tests ---
 
 func TestWhitelistStore(t *testing.T) {
+	// This test exercises the replace semantics with three and then two
+	// entries, which the poison floor would rightly refuse as a 33% collapse.
+	// The floor is an operator-facing policy with its own coverage in
+	// whitelist_floor_test.go; here it is switched off so the storage contract
+	// can be tested on its own.
+	t.Setenv("SAFE_ZONE_WHITELIST_MIN_ENTRIES", "0")
+	t.Setenv("SAFE_ZONE_WHITELIST_MIN_PERCENT", "0")
+
 	db := newTestDB(t)
 
 	domains := []string{"google.com", "facebook.com", "github.com", "google.com"} // includes duplicate
@@ -710,24 +773,26 @@ func TestWhitelistStore(t *testing.T) {
 	}
 }
 
+// A disabled store used to return nil for every one of these, which the API
+// turned into "200, saved" and "200, your whitelist is empty" for changes that
+// were never applied. They now report ErrDisabled; only the hot-path effective
+// override lookup stays quiet (see TestDisabledEffectiveOverrideStaysQuiet).
 func TestDisabledWhitelist(t *testing.T) {
 	var db *DB
 
-	// Nil store should not error and return safe/empty defaults
-	if err := db.UpdateWhitelist(context.Background(), []string{"google.com"}); err != nil {
-		t.Fatalf("nil store UpdateWhitelist should not error: %v", err)
+	if err := db.UpdateWhitelist(context.Background(), []string{"google.com"}); !errors.Is(err, ErrDisabled) {
+		t.Fatalf("UpdateWhitelist error = %v, want ErrDisabled", err)
 	}
 
 	ok, err := db.IsDomainWhitelisted(context.Background(), "google.com")
-	if err != nil {
-		t.Fatalf("nil store IsDomainWhitelisted should not error: %v", err)
+	if !errors.Is(err, ErrDisabled) {
+		t.Fatalf("IsDomainWhitelisted error = %v, want ErrDisabled", err)
 	}
 	if ok {
 		t.Fatal("nil store should return false for IsDomainWhitelisted")
 	}
 
-	list := collectWhitelist(t, db)
-	if list != nil {
+	if list := collectWhitelist(t, db); list != nil {
 		t.Fatal("nil store should return nil slice for the whitelist stream")
 	}
 }
@@ -1030,10 +1095,35 @@ func TestGetEffectiveOverride(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// 3. Setup parent subdomain override
-	err = db.UpsertGroupOverride(context.Background(), grpID, "co.uk", "block", "block UK domains")
+	// 3. Setup a parent override under a multi-label public suffix. The entry
+	// must be a registrable domain, so it is "example.co.uk" rather than
+	// "co.uk": an override row is matched against parent suffixes, so a row
+	// for a public suffix would apply to every domain in that namespace. The
+	// decision pipeline reads overrides before the threat feed, lexical
+	// scoring, ML, AI and OSINT, so an "allow" row for "co.uk" would disable
+	// all of those for all of .co.uk.
+	err = db.UpsertGroupOverride(context.Background(), grpID, "example.co.uk", "block", "block a UK domain")
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	// A public suffix must be refused outright, on both the group and the
+	// global path.
+	for _, suffix := range []string{"co.uk", "com", "github.io"} {
+		if err := db.UpsertGroupOverride(context.Background(), grpID, suffix, "allow", "too broad"); err == nil {
+			t.Fatalf("group override on public suffix %q must be rejected", suffix)
+		}
+		if err := db.UpsertOverride(context.Background(), suffix, "allow", "too broad"); err == nil {
+			t.Fatalf("global override on public suffix %q must be rejected", suffix)
+		}
+	}
+
+	// Even if such a row already exists from an older build, the lookup must
+	// not apply it. Inserted directly to bypass the upsert guard.
+	if _, err := db.db.ExecContext(context.Background(), `
+		INSERT INTO local_overrides (domain, action, reason, updated_at)
+		VALUES ('vn', 'allow', 'legacy row', datetime('now'))`); err != nil {
+		t.Fatalf("seed legacy public-suffix row: %v", err)
 	}
 
 	tests := []struct {
@@ -1046,7 +1136,9 @@ func TestGetEffectiveOverride(t *testing.T) {
 		{"Group override preferred over global", grpID, "youtube.com", "block", "youtube.com"},
 		{"Global override fallback", grpID, "facebook.com", "block", "facebook.com"},
 		{"Subdomain inheritance on Group Override", grpID, "music.youtube.com", "block", "youtube.com"},
-		{"Subdomain inheritance on General TLD Group Override", grpID, "bbc.co.uk", "block", "co.uk"},
+		{"Subdomain inheritance under a multi-label suffix", grpID, "www.example.co.uk", "block", "example.co.uk"},
+		{"A public-suffix row is never applied", grpID, "somewhere.vn", "", ""},
+		{"A public-suffix row is not applied to a subdomain either", grpID, "sub.somewhere.vn", "", ""},
 		{"No override", grpID, "google.com", "", ""},
 		{"Global fallback on subdomain", grpID, "sub.facebook.com", "block", "facebook.com"},
 	}

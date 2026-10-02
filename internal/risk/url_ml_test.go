@@ -60,7 +60,7 @@ func TestURLMLShadowObservesWithoutChangingDomainVerdict(t *testing.T) {
 	if observed.URLML == nil || !observed.URLML.Sampled || !observed.URLML.Evaluated || !observed.URLML.WouldPromote {
 		t.Fatalf("missing URL shadow observation: %+v", observed.URLML)
 	}
-	status := service.URLMLStatus()
+	status := service.URLMLStatus(t.Context())
 	if status.PredictionAttempts != 1 || status.WouldPromote != 1 || status.Errors != 0 {
 		t.Fatalf("unexpected URL ML status: %+v", status)
 	}
@@ -137,7 +137,7 @@ func TestURLMLFailuresFailOpenAndRemainCorrelatable(t *testing.T) {
 
 			// The sampled event must be recorded before the response returns, even
 			// when classification fails, so immediate feedback remains reliable.
-			recorded, reason := service.RecordURLFeedback(test.eventID, "benign")
+			recorded, reason := service.RecordURLFeedback(t.Context(), test.eventID, "benign")
 			if !recorded || reason != "" {
 				t.Fatalf("expected sampled failing event to remain correlatable, got recorded=%v reason=%q", recorded, reason)
 			}
@@ -159,7 +159,7 @@ func TestURLMLRequestedShadowWithoutClassifierReportsDegraded(t *testing.T) {
 	})
 	defer func() { _ = service.Close() }()
 
-	status := service.URLMLStatus()
+	status := service.URLMLStatus(t.Context())
 	if status.Mode != analysis.MLModeShadow || status.Enabled || status.State != "degraded" {
 		t.Fatalf("unexpected unavailable URL shadow status: %+v", status)
 	}
@@ -200,7 +200,7 @@ func TestURLMLShadowSamplingIsStableAndDoesNotEvaluateExcludedDomains(t *testing
 			t.Fatalf("unstable URL sampling for %s: %+v", domain, result.URLML)
 		}
 	}
-	status := service.URLMLStatus()
+	status := service.URLMLStatus(t.Context())
 	if status.Sampling.Selected != 2 || status.Sampling.Excluded != 2 || status.PredictionAttempts != 2 {
 		t.Fatalf("unexpected sampling telemetry: %+v", status)
 	}
@@ -253,7 +253,7 @@ func TestURLMLDriftReportsPopulationShiftAfterMinimumSamples(t *testing.T) {
 			URLContext: &URLAnalysisContext{RequestedURL: "https://" + domain + "/login"},
 		})
 	}
-	status := service.URLMLStatus()
+	status := service.URLMLStatus(t.Context())
 	if status.Drift.State != "alert" || status.Drift.LiveSamples != 100 || status.Drift.PopulationStabilityIndex <= 0.25 {
 		t.Fatalf("unexpected URL drift status: %+v", status.Drift)
 	}
@@ -293,7 +293,7 @@ func TestURLMLBalancedProxyShiftIsDiagnosticNotAlert(t *testing.T) {
 			URLContext: &URLAnalysisContext{RequestedURL: "https://" + domain + "/login"},
 		})
 	}
-	status := service.URLMLStatus()
+	status := service.URLMLStatus(t.Context())
 	if status.Drift.State != "proxy_shift" || status.Drift.OperationalReference {
 		t.Fatalf("offline proxy unexpectedly became an operational alert: %+v", status.Drift)
 	}

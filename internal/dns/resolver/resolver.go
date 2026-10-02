@@ -2,12 +2,14 @@ package resolver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 	"sync/atomic"
 
 	"github.com/miekg/dns"
+
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/dns/doh"
 	"safe-zone/internal/logjson"
@@ -92,6 +94,17 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 	}
 	defer r.inflight.Add(-1)
 
+	if len(query.Question) == 0 {
+		// An empty question has no name to apply policy to, and the indexing
+		// below would panic. Both current callers guard this, but ResolveQuery
+		// is exported and implements a public interface, so the check belongs
+		// at its own boundary rather than in every caller.
+		if r.Metrics != nil {
+			r.Metrics.IncCounter("malformed_dns_queries_total")
+		}
+		return nil, errors.New("dns query has no question")
+	}
+
 	questionDomain := strings.TrimSuffix(query.Question[0].Name, ".")
 	riskClient := risk.ClientInfo{IP: client.IP, ClientID: client.ClientID}
 
@@ -123,29 +136,86 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 		return nil, err
 	}
 
-	// CNAME Uncloaking: chính sách cũng phải áp lên đích cuối cùng của CNAME.
+	// The upstream reply is untrusted input. A response whose ID or question
+	// does not match what was asked is either a misbehaving resolver or an
+	// attempt to slip an answer past the policy check that follows, and neither
+	// is something to forward to the client.
+	if err := validateUpstreamResponse(query, responseMsg); err != nil {
+		if r.Metrics != nil {
+			r.Metrics.IncCounter("upstream_doh_mismatched_total")
+		}
+		logjson.Warn("upstream DoH response did not match the query", correlation.Fields(ctx, map[string]any{
+			"service": "dns-resolver",
+			"domain":  questionDomain,
+			"error":   err.Error(),
+		}))
+		return nil, err
+	}
+
+	// CNAME uncloaking: the policy has to be applied to the final target of a
+	// CNAME, not just to the name the client asked for. Every section is
+	// scanned, not only Answer: a CNAME placed in Additional or Authority by a
+	// resolver that happens to do so is still a redirection the client will
+	// follow, and restricting the walk to Answer meant such a chain was never
+	// policy-checked at all.
 	checked := 0
-	for _, answer := range responseMsg.Answer {
-		cname, ok := answer.(*dns.CNAME)
-		if !ok || cname.Target == "" {
-			continue
-		}
-		checked++
-		if checked > maxCNAMEPolicyChecks {
-			logjson.Warn("cname policy check limit exceeded", correlation.Fields(ctx, map[string]any{
-				"service": "dns-resolver",
-				"domain":  questionDomain,
-				"checked": checked,
-			}))
-			return nil, fmt.Errorf("cname policy check limit exceeded (%d targets)", maxCNAMEPolicyChecks)
-		}
-		cnamePolicy := r.Risk.Policy(ctx, strings.TrimSuffix(cname.Target, "."), riskClient)
-		if cnamePolicy.Policy == "block" {
-			return r.BlockedDNSMessage(query)
+	for _, section := range [][]dns.RR{responseMsg.Answer, responseMsg.Ns, responseMsg.Extra} {
+		for _, answer := range section {
+			cname, ok := answer.(*dns.CNAME)
+			if !ok || cname.Target == "" {
+				continue
+			}
+			checked++
+			if checked > maxCNAMEPolicyChecks {
+				logjson.Warn("cname policy check limit exceeded", correlation.Fields(ctx, map[string]any{
+					"service": "dns-resolver",
+					"domain":  questionDomain,
+					"checked": checked,
+				}))
+				return nil, fmt.Errorf("cname policy check limit exceeded (%d targets)", maxCNAMEPolicyChecks)
+			}
+			cnamePolicy := r.Risk.Policy(ctx, strings.TrimSuffix(cname.Target, "."), riskClient)
+			if cnamePolicy.Policy == "block" {
+				return r.BlockedDNSMessage(query)
+			}
 		}
 	}
 
 	return responseMsg, nil
+}
+
+// validateUpstreamResponse checks that a reply belongs to the query that was
+// sent. Without it, a resolver that returns a mismatched message has its
+// contents forwarded to the client after the policy check above, so the
+// uncloaking guarantee applies to a message that was never asked for.
+func validateUpstreamResponse(query, response *dns.Msg) error {
+	if response == nil {
+		return errors.New("nil upstream response")
+	}
+	if !response.Response {
+		return errors.New("upstream message is not a response")
+	}
+	if response.Id != query.Id {
+		return fmt.Errorf("upstream id %d does not match query id %d", response.Id, query.Id)
+	}
+	if query.Opcode == dns.OpcodeQuery && response.Opcode != dns.OpcodeQuery {
+		return fmt.Errorf("upstream opcode %d does not match query opcode %d", response.Opcode, query.Opcode)
+	}
+	if len(response.Question) != 1 || len(query.Question) != 1 {
+		return fmt.Errorf("upstream question count %d does not match query count %d",
+			len(response.Question), len(query.Question))
+	}
+	// Case-insensitive per RFC 4343: 0x20 randomisation exists precisely so
+	// names differing only in case are still the same question.
+	if !strings.EqualFold(response.Question[0].Name, query.Question[0].Name) {
+		return fmt.Errorf("upstream question %q does not match query %q",
+			response.Question[0].Name, query.Question[0].Name)
+	}
+	if response.Question[0].Qtype != query.Question[0].Qtype ||
+		response.Question[0].Qclass != query.Question[0].Qclass {
+		return errors.New("upstream question type or class does not match")
+	}
+	return nil
 }
 
 func (r *Resolver) EffectiveBlockStrategy() string {

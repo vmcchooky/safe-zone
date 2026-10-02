@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -19,8 +20,11 @@ type groupRequest struct {
 
 func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 	db := h.Risk.StoreDB()
-	if db == nil {
-		httputil.WriteError(w, http.StatusServiceUnavailable, "store not configured")
+	// Enabled() as well as nil: StoreDB returns the handle without checking it,
+	// so a store that was closed passed this guard and then surfaced as a 500
+	// from every call below.
+	if db == nil || !db.Enabled() {
+		httputil.WriteError(w, http.StatusServiceUnavailable, "store is unavailable")
 		return
 	}
 
@@ -35,7 +39,11 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			g, err := db.GetGroup(r.Context(), gid)
 			if err != nil {
-				httputil.WriteError(w, http.StatusNotFound, err.Error())
+				if errors.Is(err, store.ErrGroupNotFound) {
+					httputil.WriteError(w, http.StatusNotFound, "group not found")
+				} else {
+					httputil.WriteStoreError(w, r, err, "failed to load group")
+				}
 				return
 			}
 			httputil.WriteJSON(w, http.StatusOK, g)
@@ -43,7 +51,7 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		groups, err := db.ListGroups(r.Context())
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to list groups")
 			return
 		}
 		if groups == nil {
@@ -89,7 +97,7 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := db.UpdateGroup(r.Context(), gid, req.Name, req.Description, req.BlockCategories, req.StrictPhishing, req.StrictMalware); err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to create group")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "updated"})
@@ -106,7 +114,7 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := db.DeleteGroup(r.Context(), gid); err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to delete group")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

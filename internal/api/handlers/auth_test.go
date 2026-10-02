@@ -2,9 +2,89 @@ package handlers
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// Logout revokes the persisted admin session row, so it must be protected by
+// the same CSRF gate as every other state-changing cookie route. It was
+// registered without an auth wrapper, so a cross-site form POST could force a
+// revocation (session denial) against a logged-in operator.
+func TestLogoutRequiresCSRFForCookieSessions(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	sessionCookie := ts.adminSessionCookie(t)
+
+	// A cross-site POST carries the cookie but an Origin from another site.
+	// The request Host stays the real server so the Origin is the only
+	// thing that does not match.
+	crossSite := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	crossSite.RemoteAddr = "203.0.113.9:1234"
+	crossSite.Host = ts.Server.Listener.Addr().String()
+	crossSite.Header.Set("Origin", "https://evil.example")
+	crossSite.AddCookie(sessionCookie)
+	crossSiteRec := httptest.NewRecorder()
+	ts.Handler.RequireAuthFunc(ts.Handler.AuthLogoutHandler)(crossSiteRec, crossSite)
+
+	if crossSiteRec.Code != http.StatusForbidden {
+		t.Fatalf("cross-site logout = %d, want 403: the session row must not be revoked", crossSiteRec.Code)
+	}
+
+	// The session must still be usable afterwards.
+	stillValid := httptest.NewRequest(http.MethodGet, "/v1/auth/session", nil)
+	stillValid.AddCookie(sessionCookie)
+	stillValidRec := httptest.NewRecorder()
+	ts.Handler.RequireAuthFunc(ts.Handler.AuthSessionHandler)(stillValidRec, stillValid)
+	if stillValidRec.Code != http.StatusOK {
+		t.Fatalf("session was revoked by a cross-site logout: %d", stillValidRec.Code)
+	}
+
+	// A same-origin POST is allowed through and does revoke the session.
+	sameOrigin := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	sameOrigin.Host = ts.Server.Listener.Addr().String()
+	sameOrigin.Header.Set("Origin", "http://"+sameOrigin.Host)
+	sameOrigin.AddCookie(sessionCookie)
+	sameOriginRec := httptest.NewRecorder()
+	ts.Handler.RequireAuthFunc(ts.Handler.AuthLogoutHandler)(sameOriginRec, sameOrigin)
+	if sameOriginRec.Code != http.StatusOK {
+		t.Fatalf("same-origin logout = %d, want 200", sameOriginRec.Code)
+	}
+
+	afterLogout := httptest.NewRequest(http.MethodGet, "/v1/auth/session", nil)
+	afterLogout.AddCookie(sessionCookie)
+	afterLogoutRec := httptest.NewRecorder()
+	ts.Handler.RequireAuthFunc(ts.Handler.AuthSessionHandler)(afterLogoutRec, afterLogout)
+	if afterLogoutRec.Code != http.StatusUnauthorized {
+		t.Fatalf("session survived a legitimate logout: %d", afterLogoutRec.Code)
+	}
+}
+
+// A bearer-token request is not cookie-authenticated, so the CSRF gate must
+// not apply to it and must not block a legitimate API client that sends no
+// Origin at all.
+func TestLogoutAllowsBearerWithoutOrigin(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	ts.addAdminBearer(req)
+	rec := httptest.NewRecorder()
+	ts.Handler.RequireAuthFunc(ts.Handler.AuthLogoutHandler)(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bearer logout = %d, want 200: CSRF must not apply to a bearer client", rec.Code)
+	}
+
+	// The clearing cookie is still issued, so a browser that happens to send
+	// a bearer header is logged out of its session too.
+	cleared := false
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == "admin_session" && cookie.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Fatal("logout must clear the session cookie")
+	}
+}
 
 func TestRestrictedAPIsAuth(t *testing.T) {
 	ts := newHandlerTestServer(t)
@@ -154,6 +234,10 @@ func TestRestrictedAPIsAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Logout requires authentication now, so an anonymous POST is 401. The
+	// bearer path is used here to reach the handler and assert the cookie is
+	// cleared.
+	ts.addAdminBearer(logoutReq)
 	logoutResp, err := ts.Client.Do(logoutReq)
 	if err != nil {
 		t.Fatal(err)

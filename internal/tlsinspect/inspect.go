@@ -7,6 +7,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"safe-zone/internal/netguard"
 )
 
 // Result contains the outcome of inspecting a domain's TLS certificate.
@@ -96,21 +98,16 @@ func Inspect(ctx context.Context, domain string) Result {
 	return scoreResult(domain, cert)
 }
 
+// isPublicIP reports whether a resolved address is a routable public
+// destination.
+//
+// This used to be a third copy of the rule, which had drifted from the netguard
+// version twice: it omitted multicast, and it re-implemented the CGNAT check
+// inline. An inspection of an address netguard considers blocked could
+// therefore be scored here as if it were public. It now defers to
+// netguard.IsBlockedIP so the two cannot disagree.
 func isPublicIP(ip net.IP) bool {
-	if ip == nil {
-		return false
-	}
-	// Check standard loopback, private, link-local, unspecified
-	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-		return false
-	}
-	// Explicitly check Carrier-Grade NAT (CGNAT) Shared Address Space (RFC 6598: 100.64.0.0/10)
-	if ip4 := ip.To4(); ip4 != nil {
-		if ip4[0] == 100 && ip4[1] >= 64 && ip4[1] <= 127 {
-			return false
-		}
-	}
-	return true
+	return !netguard.IsBlockedIP(ip)
 }
 
 // scoreResult builds a Result from a parsed x509 leaf certificate.

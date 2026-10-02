@@ -1331,11 +1331,22 @@ func newTestServiceWithRedis(t *testing.T) (*Service, func()) {
 	service := NewService(Options{
 		AnalysisConfig: config.DefaultAnalysisConfig(),
 		Redis:          cache.NewRedis(server.Addr(), "", 0),
-		RedisTimeout:   100 * time.Millisecond,
-		TTLAllowed:     time.Hour,
-		TTLSuspicious:  time.Hour,
-		TTLBlocked:     time.Hour,
-		RecentLimit:    10,
+		// No real outbound fetch from a unit test. Without this, every service
+		// built by this helper starts an adblock sync that reaches for the
+		// default source over the network, burning CPU and adding latency for
+		// the whole package. That load is what pushed a loopback Redis round
+		// trip past its budget under -race, which is how several threat-feed
+		// assertions came to fail intermittently and got misattributed to
+		// "no network" for several rounds.
+		DisableAdblockSync: true,
+		// Generous on purpose: this budget bounds every Redis interaction, and
+		// miniredis is an in-process listener, so a small value buys flakiness
+		// and nothing else.
+		RedisTimeout:  2 * time.Second,
+		TTLAllowed:    time.Hour,
+		TTLSuspicious: time.Hour,
+		TTLBlocked:    time.Hour,
+		RecentLimit:   10,
 	})
 
 	return service, func() {
@@ -1411,7 +1422,7 @@ func newTestServiceWithStore(t *testing.T) *Service {
 func TestOverrideBlocksDomain(t *testing.T) {
 	service := newTestServiceWithStore(t)
 
-	if err := service.UpsertOverride("evil.test", "block", "phishing"); err != nil {
+	if err := service.UpsertOverride(t.Context(), "evil.test", "block", "phishing"); err != nil {
 		t.Fatalf("upsert failed: %v", err)
 	}
 
@@ -1430,7 +1441,7 @@ func TestOverrideBlocksDomain(t *testing.T) {
 func TestOverrideAllowsDomain(t *testing.T) {
 	service := newTestServiceWithStore(t)
 
-	if err := service.UpsertOverride("trusted.test", "allow", "internal service"); err != nil {
+	if err := service.UpsertOverride(t.Context(), "trusted.test", "allow", "internal service"); err != nil {
 		t.Fatalf("upsert failed: %v", err)
 	}
 
@@ -1479,7 +1490,7 @@ func TestOverrideBeatsWhitelist(t *testing.T) {
 	}
 
 	// Add a block override — this should win over the whitelist.
-	if err := service.UpsertOverride("whitelisted.test", "block", "compromised"); err != nil {
+	if err := service.UpsertOverride(t.Context(), "whitelisted.test", "block", "compromised"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1510,7 +1521,7 @@ func TestStoreNilFailOpen(t *testing.T) {
 func TestDeleteOverrideThenAnalyze(t *testing.T) {
 	service := newTestServiceWithStore(t)
 
-	if err := service.UpsertOverride("temp.test", "block", "temp block"); err != nil {
+	if err := service.UpsertOverride(t.Context(), "temp.test", "block", "temp block"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1521,7 +1532,7 @@ func TestDeleteOverrideThenAnalyze(t *testing.T) {
 	}
 
 	// Remove override.
-	if err := service.DeleteOverride("temp.test"); err != nil {
+	if err := service.DeleteOverride(t.Context(), "temp.test"); err != nil {
 		t.Fatal(err)
 	}
 

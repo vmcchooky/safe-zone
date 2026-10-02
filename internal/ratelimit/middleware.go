@@ -7,7 +7,10 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"sync/atomic"
 
+	"safe-zone/internal/config"
 	"safe-zone/internal/correlation"
 	"safe-zone/internal/logjson"
 )
@@ -83,22 +86,143 @@ func sanitizeLog(s string) string {
 	}, s)
 }
 
-var defaultTrustedProxies []net.IPNet
+// TrustedProxiesEnv names the environment variable that decides which peers
+// may set X-Forwarded-For / X-Real-IP.
+const TrustedProxiesEnv = "SAFE_ZONE_TRUSTED_PROXIES"
 
-func init() {
-	cidrs := []string{
-		"127.0.0.0/8",
-		"::1/128",
-		"172.16.0.0/12",
-		"10.0.0.0/8",
-		"192.168.0.0/16",
+// DefaultTrustedProxies is deliberately loopback-only. Trusting the whole
+// RFC1918 space meant any host on the LAN could pick its own rate-limit key by
+// setting X-Forwarded-For, which restored full brute-force throughput against
+// the single bcrypt-guarded admin credential. Container deployments that put
+// a reverse proxy in front of the service must list their proxy network
+// explicitly (docker-compose.yml does this for the Compose bridge network).
+const DefaultTrustedProxies = "127.0.0.0/8,::1/128"
+
+var (
+	trustedProxiesMu sync.RWMutex
+	trustedProxies   []net.IPNet
+)
+
+// ParseTrustedProxies parses a comma-separated CIDR list. Blank entries are
+// ignored; a malformed entry is an error so the caller can fail closed rather
+// than silently trusting fewer proxies than the operator configured.
+func ParseTrustedProxies(list string) ([]net.IPNet, error) {
+	var parsed []net.IPNet
+	for _, entry := range strings.Split(list, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(entry)
+		if err != nil {
+			return nil, fmt.Errorf("parse trusted proxy %q: %w", entry, err)
+		}
+		parsed = append(parsed, *network)
 	}
-	for _, c := range cidrs {
-		_, ipNet, err := net.ParseCIDR(c)
-		if err == nil {
-			defaultTrustedProxies = append(defaultTrustedProxies, *ipNet)
+	return parsed, nil
+}
+
+// SetTrustedProxies replaces the trusted proxy list. It exists so tests can
+// pin the trust decision without mutating process-wide environment state, and
+// so the lazily-resolved configuration can be replaced once resolved.
+func SetTrustedProxies(nets []net.IPNet) {
+	copied := append([]net.IPNet(nil), nets...)
+	trustedProxiesMu.Lock()
+	trustedProxies = copied
+	trustedProxiesMu.Unlock()
+	// Keep the resolved-config cache in step, otherwise the next lookup would
+	// re-read the environment and silently undo the call.
+	resolved := copied
+	trustedProxyConfig.Store(&resolved)
+}
+
+// TrustedProxies returns a copy of the current trusted proxy list.
+// TrustedProxies returns a copy of the current trusted proxy list, resolving
+// the configuration first if it has not been resolved yet.
+//
+// Resolving here rather than returning whatever happens to be cached matters:
+// before lazy resolution was introduced this was populated by init(), so a test
+// that saved and restored the value round-tripped the real list. With the list
+// resolved on demand, a caller that read it before anything had resolved got an
+// empty slice, and restoring that afterwards silently left the limiter trusting
+// nothing.
+func TrustedProxies() []net.IPNet {
+	resolveTrustedProxies()
+	trustedProxiesMu.RLock()
+	defer trustedProxiesMu.RUnlock()
+	return append([]net.IPNet(nil), trustedProxies...)
+}
+
+// overBroadProxyPrefixes is the set of prefixes that effectively disable
+// forwarded-header filtering. A peer that matches one of them is treated as a
+// proxy even when it is an ordinary client, and that client's own address is
+// then skipped as a proxy hop — so whatever the client placed to the left of
+// it becomes the accepted "client IP". That is the original spoofing hole, so
+// an over-broad list is accepted (it may be deliberate) but always logged.
+//
+// Loopback is exempt: 127.0.0.0/8 and ::1/128 are a single /8 out of
+// necessity, and no remote client can hold a loopback source address.
+func overBroadProxyPrefix(network net.IPNet) bool {
+	ones, _ := network.Mask.Size()
+	if ones < 0 {
+		return false // non-contiguous mask
+	}
+	if network.IP.IsLoopback() {
+		return false
+	}
+	if network.IP.To4() != nil {
+		return ones <= 8
+	}
+	return ones <= 16
+}
+
+// trustedProxyConfig is resolved from the environment on first use rather than
+// in init().
+//
+// Reading it in init() meant the value was captured before TestMain could clear
+// the ambient environment, so an operator (or a CI runner) with
+// SAFE_ZONE_TRUSTED_PROXIES exported got it applied to the whole test binary
+// with no way to undo: TestMain unset the variable while the package global
+// still held 0.0.0.0/0, which is exactly the configuration that makes the
+// limiter forgeable. A test that wants to assert hermetic behaviour could not.
+var trustedProxyConfig atomic.Pointer[[]net.IPNet]
+
+// resolveTrustedProxies computes the list once and caches it.
+func resolveTrustedProxies() []net.IPNet {
+	if cached := trustedProxyConfig.Load(); cached != nil {
+		return *cached
+	}
+	return configureTrustedProxies()
+}
+
+func configureTrustedProxies() []net.IPNet {
+	raw := config.String(TrustedProxiesEnv, DefaultTrustedProxies)
+	proxies, err := ParseTrustedProxies(raw)
+	if err != nil {
+		// Fail closed: a typo must never widen the trust boundary. Falling
+		// back to loopback only means forwarded headers are ignored until the
+		// operator fixes the value.
+		fallback, _ := ParseTrustedProxies(DefaultTrustedProxies)
+		logjson.Warn("invalid trusted proxy list; falling back to loopback only", map[string]any{
+			"service":  "ratelimit",
+			"env":      TrustedProxiesEnv,
+			"error":    err.Error(),
+			"fallback": DefaultTrustedProxies,
+		})
+		proxies = fallback
+	} else {
+		for _, network := range proxies {
+			if overBroadProxyPrefix(network) {
+				logjson.Warn("trusted proxy prefix is very broad; any client in this range can forge its own client IP", map[string]any{
+					"service": "ratelimit",
+					"env":     TrustedProxiesEnv,
+					"prefix":  network.String(),
+				})
+			}
 		}
 	}
+	SetTrustedProxies(proxies)
+	return proxies
 }
 
 func isTrustedProxy(ip string) bool {
@@ -110,7 +234,7 @@ func isTrustedProxy(ip string) bool {
 }
 
 func isTrustedProxyIP(parsedIP net.IP) bool {
-	for _, network := range defaultTrustedProxies {
+	for _, network := range resolveTrustedProxies() {
 		if network.Contains(parsedIP) {
 			return true
 		}
@@ -130,6 +254,14 @@ func parseHeaderIP(value string) net.IP {
 	return net.ParseIP(value)
 }
 
+// clientIPFromXForwardedFor returns the rightmost hop that is not itself a
+// trusted proxy, which is the real client behind a chain of proxies.
+//
+// If every hop is a trusted proxy there is no identifiable client, and the
+// chain is therefore either malformed or forged. Returning valid[0] here
+// would hand back the leftmost entry — the one furthest from the socket and
+// the most attacker-controlled value in the header. An empty string tells the
+// caller to fall back to the socket address, so this case fails closed.
 func clientIPFromXForwardedFor(xff string) string {
 	parts := strings.Split(xff, ",")
 	valid := make([]net.IP, 0, len(parts))
@@ -146,7 +278,7 @@ func clientIPFromXForwardedFor(xff string) string {
 			return valid[i].String()
 		}
 	}
-	return valid[0].String()
+	return ""
 }
 
 // ClientIP extracts the real client IP from the request.

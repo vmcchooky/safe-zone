@@ -3,10 +3,12 @@ package domaintrie
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"golang.org/x/net/idna"
-	"golang.org/x/net/publicsuffix"
+
+	"safe-zone/internal/analysis"
 )
 
 // RuleScope distinguishes exact hostname rules from suffix rules. An exact
@@ -49,6 +51,18 @@ var validRuleCategories = map[string]struct{}{
 func IsValidRuleCategory(category string) bool {
 	_, ok := validRuleCategories[category]
 	return ok
+}
+
+// ValidRuleCategories returns the closed set of recognized categories, sorted.
+// Exported so an operator-facing error message can list exactly what is
+// accepted instead of duplicating the list and drifting from it.
+func ValidRuleCategories() []string {
+	categories := make([]string, 0, len(validRuleCategories))
+	for category := range validRuleCategories {
+		categories = append(categories, category)
+	}
+	sort.Strings(categories)
+	return categories
 }
 
 // ScopeOrigin records why a rule carries its scope. It exists for
@@ -252,9 +266,12 @@ func (t *Trie) AddRule(rule Rule) bool {
 
 	// Safety guard: reject domains that ARE a public suffix (TLD or
 	// multi-label registries like "co.uk", "com.vn", "edu.vn").
-	// publicsuffix.EffectiveTLDPlusOne returns error when the input
-	// is itself a suffix, which is exactly what we want to reject.
-	if _, err := publicsuffix.EffectiveTLDPlusOne(checkDomain); err != nil {
+	//
+	// Delegated rather than re-derived: this rule was previously spelled out in
+	// three places and the copies had drifted. analysis.IsRegistrableDomain is
+	// the single definition, so a suffix rejected here cannot be accepted by the
+	// whitelist or the override path.
+	if !analysis.IsRegistrableDomain(checkDomain) {
 		return false
 	}
 

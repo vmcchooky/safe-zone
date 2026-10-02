@@ -56,7 +56,7 @@ func TestWhitelistHybridCorrectness(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.domain, func(t *testing.T) {
-			actual := wl.IsAllowed(tc.domain)
+			actual := wl.IsAllowed(t.Context(), tc.domain)
 			if actual != tc.expected {
 				t.Errorf("expected IsAllowed(%q) to be %v, got %v", tc.domain, tc.expected, actual)
 			}
@@ -68,16 +68,17 @@ func TestWhitelistFallbackCorrectness(t *testing.T) {
 	// Without SQLite DB
 	wl := NewWhitelist(nil)
 
-	// Fallback to allowed map
-	wl.allowed["google.com"] = struct{}{}
+	// Same index the file loader builds; there is no separate fallback path.
+	bf, exact := buildIndex([]string{"google.com"})
+	wl.publish(bf, exact)
 
-	if !wl.IsAllowed("google.com") {
+	if !wl.IsAllowed(t.Context(), "google.com") {
 		t.Fatal("expected google.com to be allowed in fallback mode")
 	}
-	if !wl.IsAllowed("sub.google.com") {
+	if !wl.IsAllowed(t.Context(), "sub.google.com") {
 		t.Fatal("expected sub.google.com to be allowed in fallback mode")
 	}
-	if wl.IsAllowed("evil.com") {
+	if wl.IsAllowed(t.Context(), "evil.com") {
 		t.Fatal("expected evil.com to not be allowed in fallback mode")
 	}
 }
@@ -92,6 +93,6 @@ func BenchmarkWhitelistLookup(b *testing.B) {
 
 	for b.Loop() {
 		// Mostly negative hits in real-world DNS blocking (which skips SQLite lookup)
-		wl.IsAllowed("not-whitelisted-domain.com")
+		wl.IsAllowed(b.Context(), "not-whitelisted-domain.com")
 	}
 }

@@ -4,7 +4,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 
@@ -130,11 +133,28 @@ func parseAdblockMatchMode(raw string) adblockMatchMode {
 	}
 }
 
-// parseAdblockSourcePolicies decodes the per-source policy JSON. Keys must
-// match sources in SAFE_ZONE_ADBLOCK_SOURCES exactly; unknown categories
-// normalize to "unknown" and unknown scopes to the global match mode at rule
-// creation time, so parsing only stores the raw strings. Invalid JSON keeps
-// every source on defaults (one-shot warning), never blocks startup.
+// parseAdblockSourcePolicies decodes the per-source policy JSON. Keys are
+// canonicalized (see canonicalSourceKey) so one source string has exactly one
+// identity across the policy fingerprint, the policy lookup, the per-source
+// download cache and the rule provenance digest. Before this, the fingerprint
+// canonicalized while the lookup and the cache path used the raw string, so
+// "HTTPS://Example.com/hosts" and "https://example.com/hosts" hashed the same
+// for change detection but produced two different cache files, and a pure case
+// change was deduped away as "no change" and never published.
+//
+// Two raw keys can canonicalize to the same identity ("https://Example.com"
+// and "https://example.com"). Collapsing them while ranging over a Go map would
+// make the winner depend on map iteration order, which is randomised per
+// process: the same document would parse to different policies on different
+// runs, and SourcePoliciesFingerprint — the digest that exists to detect two
+// nodes disagreeing — would report spurious divergence. So sources are sorted
+// before insertion, which makes the winner deterministic, and a collision is
+// reported instead of silently resolved.
+//
+// Unknown categories normalize to "unknown" and unknown scopes to the global
+// match mode at rule creation time, so parsing only stores the raw strings.
+// Invalid JSON keeps every source on defaults (one-shot warning), never blocks
+// startup.
 func parseAdblockSourcePolicies(raw string) adblockSourcePolicySet {
 	policies := make(adblockSourcePolicySet)
 	trimmed := strings.TrimSpace(raw)
@@ -148,10 +168,105 @@ func parseAdblockSourcePolicies(raw string) adblockSourcePolicySet {
 			map[string]any{"service": "risk", "error": err.Error()})
 		return policies
 	}
-	for source, policy := range decoded {
-		policies[source] = policy
+
+	// Sorted so that a canonical collision always resolves the same way, in
+	// every process and on every run.
+	sources := make([]string, 0, len(decoded))
+	for source := range decoded {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+
+	for _, source := range sources {
+		key := canonicalSourceKey(strings.TrimSpace(source))
+		if existing, collision := policies[key]; collision {
+			warnOnceFlags.once("adblock_source_policies_duplicate:"+canonicalSourceID(source),
+				"adblock source policies contain two sources that differ only in scheme or host case; the last one wins",
+				map[string]any{
+					"service":   "risk",
+					"source_id": canonicalSourceID(source),
+					"kept":      existing,
+					"dropped":   decoded[source],
+				})
+		}
+		policies[key] = decoded[source]
 	}
 	return policies
+}
+
+// ErrAdblockSourcePoliciesInvalid marks a policy document an operator wrote
+// that cannot be applied as written. Callers use it to answer 400 rather than
+// 500: the document is wrong, not the server.
+var ErrAdblockSourcePoliciesInvalid = errors.New("invalid adblock source policies")
+
+// validateAdblockSourcePoliciesJSON rejects a document the runtime would
+// silently repair.
+//
+// parseAdblockSourcePolicies is deliberately forgiving: an unknown category
+// becomes "unknown" and an unknown scope falls back to the global match mode,
+// each with a one-shot warning, because at runtime a typo in an environment
+// variable must not stop DNS from resolving. That leniency is wrong for an
+// operator save. Persisting a document the runtime will "fix" means the stored
+// policy and the effective policy differ, the operator's intent is not what
+// runs, and nothing in the API response says so.
+//
+// So the save path is strict: the document must be valid JSON, must be an
+// object, and every entry must name a valid category and a valid scope.
+func validateAdblockSourcePoliciesJSON(raw string) error {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	var decoded map[string]adblockSourcePolicy
+	if err := json.Unmarshal([]byte(trimmed), &decoded); err != nil {
+		return fmt.Errorf("%w: not a JSON object of source policies: %v", ErrAdblockSourcePoliciesInvalid, err)
+	}
+	if decoded == nil {
+		return fmt.Errorf("%w: expected a JSON object, got null", ErrAdblockSourcePoliciesInvalid)
+	}
+
+	// Sorted so the first error is deterministic across runs and across nodes.
+	sources := make([]string, 0, len(decoded))
+	for source := range decoded {
+		sources = append(sources, source)
+	}
+	sort.Strings(sources)
+
+	// A canonical collision would make the document mean different things on
+	// different processes. Refuse it here rather than resolving it silently:
+	// this is almost always a copy-paste of the same source with a different
+	// case, and the operator needs to know which one is in force.
+	seen := make(map[string]string, len(decoded))
+	for _, source := range sources {
+		key := canonicalSourceKey(strings.TrimSpace(source))
+		if previous, ok := seen[key]; ok {
+			return fmt.Errorf("%w: sources %q and %q are the same source (scheme and host case are ignored); keep one",
+				ErrAdblockSourcePoliciesInvalid, previous, source)
+		}
+		seen[key] = source
+	}
+
+	for _, source := range sources {
+		policy := decoded[source]
+		if strings.TrimSpace(source) == "" {
+			return fmt.Errorf("%w: a source key is empty", ErrAdblockSourcePoliciesInvalid)
+		}
+		if category := strings.ToLower(strings.TrimSpace(policy.Category)); category != "" {
+			if !domaintrie.IsValidRuleCategory(category) {
+				return fmt.Errorf("%w: source %q has unknown category %q (valid: %s)",
+					ErrAdblockSourcePoliciesInvalid, source, policy.Category,
+					strings.Join(domaintrie.ValidRuleCategories(), ", "))
+			}
+		}
+		if scope := strings.ToLower(strings.TrimSpace(policy.Scope)); scope != "" {
+			if scope != string(adblockMatchModeSuffix) && scope != string(adblockMatchModeExact) {
+				return fmt.Errorf("%w: source %q has unknown scope %q (valid: %s, %s)",
+					ErrAdblockSourcePoliciesInvalid, source, policy.Scope,
+					adblockMatchModeSuffix, adblockMatchModeExact)
+			}
+		}
+	}
+	return nil
 }
 
 // resolveAdblockSourcePolicy returns the effective (category, scope, origin)
@@ -174,7 +289,9 @@ func (s *Service) resolveAdblockSourcePolicy(source string) (string, domaintrie.
 	if policies == nil {
 		return category, scope, origin
 	}
-	policy, ok := policies[source]
+	// Look up by the same canonical identity the set was keyed with, so the
+	// answer does not depend on how the caller spelled the scheme or host.
+	policy, ok := policies[canonicalSourceKey(strings.TrimSpace(source))]
 	if !ok {
 		return category, scope, origin
 	}

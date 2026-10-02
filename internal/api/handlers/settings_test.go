@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
 	"safe-zone/internal/config"
+	"safe-zone/internal/risk"
 )
 
 func TestAnalysisConfigEndpoints(t *testing.T) {
@@ -369,5 +371,185 @@ func TestTestAlertEndpointRequiresWebhook(t *testing.T) {
 	}
 	if payload["error"] != "No webhook URL configured" {
 		t.Fatalf("unexpected missing webhook error: %q", payload["error"])
+	}
+}
+
+// A policy document saved through the settings API must be persisted and
+// applied. Before this the store key was read by the runtime but never written
+// by anything, while the docs promised a runtime change reached dns-resolver
+// without a restart.
+func TestSettingsSavesAdblockSourcePolicies(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	document := `{"https://a.test/hosts":{"category":"tracking","scope":"suffix"}}`
+	req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings", strings.NewReader(
+		`{"adblock_source_policies_json":`+strconv.Quote(document)+`}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.addAdminBearer(req)
+
+	resp, err := ts.Client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("save policies = %d, want 200: %s", resp.StatusCode, body)
+	}
+
+	// Persisted, so the peer process can reconcile it.
+	stored, err := ts.Store.GetSystemConfig(context.Background(), risk.SystemConfigAdblockSourcePolicies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != document {
+		t.Fatalf("stored document = %q, want %q", stored, document)
+	}
+
+	// Readable back, so the operator UI can round-trip it.
+	getReq, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/v1/settings", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ts.addAdminBearer(getReq)
+	getResp, err := ts.Client.Do(getReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		t.Fatalf("read settings = %d, want 200", getResp.StatusCode)
+	}
+	var payload settingsResponse
+	if err := json.NewDecoder(getResp.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.AdblockSourcePoliciesJSON != document {
+		t.Fatalf("read back %q, want %q", payload.AdblockSourcePoliciesJSON, document)
+	}
+}
+
+// A document the runtime would silently repair must be rejected rather than
+// stored: the operator's intent and the effective policy would otherwise
+// differ with nothing in the response saying so.
+func TestSettingsRejectsInvalidAdblockSourcePolicies(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	cases := []struct {
+		name     string
+		document string
+	}{
+		{"not json", `{nope`},
+		{"unknown category", `{"https://a.test/hosts":{"category":"banana"}}`},
+		{"unknown scope", `{"https://a.test/hosts":{"scope":"sideways"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings", strings.NewReader(
+				`{"adblock_source_policies_json":`+strconv.Quote(tc.document)+`}`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ts.addAdminBearer(req)
+
+			resp, err := ts.Client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400 for %q", resp.StatusCode, tc.document)
+			}
+			stored, err := ts.Store.GetSystemConfig(context.Background(), risk.SystemConfigAdblockSourcePolicies)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stored != "" {
+				t.Fatalf("a rejected document was persisted: %q", stored)
+			}
+		})
+	}
+}
+
+// Omitting the field must not clear the policies: saving some other setting
+// would otherwise wipe them.
+func TestSettingsOmitDoesNotClearAdblockSourcePolicies(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	document := `{"https://a.test/hosts":{"category":"ads"}}`
+
+	save := func(body string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts.addAdminBearer(req)
+		resp, err := ts.Client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	first := save(`{"adblock_source_policies_json":` + strconv.Quote(document) + `}`)
+	defer first.Body.Close()
+	if first.StatusCode != http.StatusOK {
+		t.Fatalf("initial save = %d, want 200", first.StatusCode)
+	}
+
+	second := save(`{"telemetry_retention_days":14}`)
+	defer second.Body.Close()
+	if second.StatusCode != http.StatusOK {
+		t.Fatalf("unrelated save = %d, want 200", second.StatusCode)
+	}
+
+	stored, err := ts.Store.GetSystemConfig(context.Background(), risk.SystemConfigAdblockSourcePolicies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != document {
+		t.Fatalf("an unrelated save changed the policies: %q", stored)
+	}
+}
+
+// An explicitly empty document is the way to clear the override, and is
+// distinct from omitting the field.
+func TestSettingsEmptyStringClearsAdblockSourcePolicies(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	save := func(body string) *http.Response {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings", strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts.addAdminBearer(req)
+		resp, err := ts.Client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+
+	first := save(`{"adblock_source_policies_json":"{\"https://a.test/hosts\":{\"category\":\"ads\"}}"}`)
+	defer first.Body.Close()
+	if first.StatusCode != http.StatusOK {
+		t.Fatalf("initial save = %d, want 200", first.StatusCode)
+	}
+
+	second := save(`{"adblock_source_policies_json":""}`)
+	defer second.Body.Close()
+	if second.StatusCode != http.StatusOK {
+		t.Fatalf("clear = %d, want 200", second.StatusCode)
+	}
+
+	stored, err := ts.Store.GetSystemConfig(context.Background(), risk.SystemConfigAdblockSourcePolicies)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored != "" {
+		t.Fatalf("an empty document must clear the stored value, got %q", stored)
 	}
 }

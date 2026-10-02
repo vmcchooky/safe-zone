@@ -63,9 +63,13 @@ $env:SAFE_ZONE_REDIS_ADDR = "localhost:6379"
 Useful endpoints:
 
 ```bash
-curl "http://localhost:8080/v1/status"
-curl "http://localhost:8080/metrics"
+# core-api status and metrics are admin-only: send the admin API key.
+# Locally it is generated on first start into tmp/local_admin_secrets.txt.
+export SAFE_ZONE_ADMIN_API_KEY=$(grep '^SAFE_ZONE_ADMIN_API_KEY=' tmp/local_admin_secrets.txt | cut -d= -f2)
+curl -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" "http://localhost:8080/v1/status"
+curl -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" "http://localhost:8080/metrics"
 curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
+# dns-resolver stays unauthenticated
 curl "http://localhost:8081/"
 curl "http://localhost:8081/metrics"
 curl "http://localhost:8081/v1/policy?domain=secure-login-wallet-example.com"

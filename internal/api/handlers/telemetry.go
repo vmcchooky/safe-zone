@@ -43,16 +43,45 @@ func (h *Handler) TelemetryRecentHandler(w http.ResponseWriter, r *http.Request)
 
 	entries, err := h.Risk.TelemetryRecentFiltered(filter, limit, offset)
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		httputil.WriteStoreError(w, r, err, "failed to list telemetry")
 		return
 	}
 	if entries == nil {
 		entries = []store.TelemetryEntry{}
 	}
+
+	// The read-only guest account exists for dashboard visibility, not for
+	// enumerating which clients resolved through this server. Every row is
+	// written from the fully anonymous /v1/analyze path, so the recent feed
+	// carries the IP and client id of every DoH client. Strip both fields
+	// for any caller that is not an administrator; the fields are
+	// omitempty, so they disappear from the payload entirely.
+	//
+	// redacted reports the policy applied to this response, not whether any
+	// row happened to change. Deriving it from "did we modify something" made
+	// it false for an empty page and false for a page whose rows happen to
+	// carry no identifier, which is exactly when a client cannot tell whether
+	// it was filtered.
+	identity, ok := authIdentityFromRequest(r)
+	isAdmin := ok && identity.isAdmin()
+	if !isAdmin {
+		redactTelemetryIdentities(entries)
+	}
+
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"items":  entries,
-		"filter": filter,
+		"items":    entries,
+		"filter":   filter,
+		"redacted": !isAdmin,
 	})
+}
+
+// redactTelemetryIdentities clears the per-client identifier fields in place.
+// It is a no-op for administrators and for an empty page.
+func redactTelemetryIdentities(entries []store.TelemetryEntry) {
+	for i := range entries {
+		entries[i].ClientIP = ""
+		entries[i].ClientID = ""
+	}
 }
 
 func (h *Handler) TelemetryStatsHandler(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +102,7 @@ func (h *Handler) TelemetryStatsHandler(w http.ResponseWriter, r *http.Request) 
 
 	stats, err := h.Risk.TelemetryStats(period)
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+		httputil.WriteStoreError(w, r, err, "failed to compute telemetry stats")
 		return
 	}
 	stats.Period = period

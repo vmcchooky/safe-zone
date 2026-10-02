@@ -36,6 +36,13 @@ type ollamaGenerateResponse struct {
 }
 
 // NewOllamaClient initializes an offline AI client for the local Ollama daemon.
+//
+// The transport is deliberately outside netguard. Ollama is a local inference
+// daemon on loopback by default, and that is the point of it: wrapping this in
+// the outbound address guard with allowPrivate=false would refuse to talk to
+// the only address it is meant to use. Unlike the Gemini client, this one does
+// not carry a secret that a redirect could exfiltrate — it posts a prompt to a
+// process the operator started themselves.
 func NewOllamaClient(baseURL, model string, timeout time.Duration) *OllamaClient {
 	baseURL = strings.TrimSpace(baseURL)
 	if baseURL == "" {
