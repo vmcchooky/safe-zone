@@ -823,9 +823,14 @@ func isOfficialHost(host string) bool {
 	return isGovVN(host) || strings.Contains(host, "bocongan") || strings.Contains(host, "congan")
 }
 
+// isBlockedIP defers to netguard so the two cannot drift.
+//
+// This was a third copy of the rule, and it had already drifted: it omitted
+// the CGNAT check, so an OSINT source (or a DNS record flipping under one)
+// resolving into 100.64.0.0/10 — the carrier-NAT and Tailscale range — was
+// accepted and fetched, where netguard would have rejected the same address.
 func isBlockedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified()
+	return netguard.IsBlockedIP(ip)
 }
 
 func containsReason(reasons []string, needle string) bool {

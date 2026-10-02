@@ -8,7 +8,11 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
+
+	"safe-zone/internal/config"
+	"safe-zone/internal/logjson"
 )
 
 var ErrBlockedAddress = errors.New("blocked private or local address")
@@ -33,7 +37,36 @@ func NewHTTPClient(base *http.Client, timeout time.Duration, allowPrivate bool) 
 	return &client
 }
 
+// OutboundProxyEnv opts back in to honouring the ambient HTTP proxy variables
+// on guarded transports. It exists because an egress-only deployment cannot
+// fetch anything without one, not because the proxy is safe.
+const OutboundProxyEnv = "SAFE_ZONE_OUTBOUND_PROXY"
+
+// proxyBypassWarned keeps the warning to one line per process. The condition is
+// a deployment mistake, not an event, so it must not become log noise on every
+// outbound request.
+//
+// It is an atomic rather than a sync.Once so it can be cleared, which matters
+// for correctness and not only for tests: a sync.Once can never be reset, so
+// after the opt-in was enabled and then disabled, a second enable would be
+// silent. Clearing it when the opt-in is off makes the warning track the
+// current configuration.
+var proxyBypassWarned atomic.Bool
+
 // GuardedTransport wraps the provided transport with outbound address checks.
+//
+// The transport's proxy function is cleared first. A cloned
+// http.DefaultTransport carries ProxyFromEnvironment, and when HTTP_PROXY or
+// HTTPS_PROXY is set the connection goes to the proxy: DialContext is then
+// handed the *proxy's* address, so the destination this guard exists to check is
+// never the one being validated. The proxy itself is public, so the check
+// passes and the guard quietly does nothing. Container deployments routinely
+// have these variables set, which is what made the hole reachable in practice.
+//
+// Clearing it is the fail-closed choice: the guard is what makes outbound
+// fetches safe, and an operator who genuinely needs a proxy can say so with
+// SAFE_ZONE_OUTBOUND_PROXY=true, which logs a warning that the destination is
+// no longer being checked.
 func GuardedTransport(base http.RoundTripper, allowPrivate bool) http.RoundTripper {
 	if transport, ok := baseTransport(base); ok {
 		baseDial := transport.DialContext
@@ -41,6 +74,7 @@ func GuardedTransport(base http.RoundTripper, allowPrivate bool) http.RoundTripp
 			dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 			baseDial = dialer.DialContext
 		}
+		transport.Proxy = guardedProxy(transport.Proxy)
 		transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
 			host, port, err := net.SplitHostPort(address)
 			if err != nil {
@@ -56,19 +90,26 @@ func GuardedTransport(base http.RoundTripper, allowPrivate bool) http.RoundTripp
 		return transport
 	}
 
-	if base == nil {
-		base = http.DefaultTransport
-	}
+	// A base that is not an *http.Transport cannot be guarded: the address
+	// check only works by rewriting DialContext, and a custom RoundTripper owns
+	// its own connection policy — including whether it proxies. Validating the
+	// URL and resolving the host below would look like protection while the
+	// connection still went wherever the base decided, which is exactly the
+	// proxy hole this function exists to close.
+	//
+	// So this fails closed. Every caller in the tree passes nil or an
+	// *http.Transport, so nothing legitimate is refused today, and the failure
+	// is loud at the point of wiring rather than silent at the point of fetch.
 	return roundTripperFunc(func(req *http.Request) (*http.Response, error) {
-		if err := ValidateParsedURL(req.URL, allowPrivate); err != nil {
-			return nil, err
-		}
-		if _, err := ResolveAllowedIPs(req.Context(), req.URL.Hostname(), allowPrivate); err != nil {
-			return nil, err
-		}
-		return base.RoundTrip(req)
+		return nil, fmt.Errorf("%w: guarded transport requires a base *http.Transport, got %T; "+
+			"a custom RoundTripper cannot be address-checked because it controls its own connections",
+			ErrUnguardableTransport, base)
 	})
 }
+
+// ErrUnguardableTransport reports a base RoundTripper netguard cannot install
+// its address check into.
+var ErrUnguardableTransport = errors.New("cannot guard transport")
 
 // ValidateURL parses and validates a URL that will be used for outbound HTTP.
 func ValidateURL(raw string, allowPrivate bool) (*url.URL, error) {
@@ -139,11 +180,104 @@ func ResolveAllowedIPs(ctx context.Context, host string, allowPrivate bool) ([]n
 	return ips, nil
 }
 
-// IsBlockedIP reports whether an address is loopback, private, link-local,
-// carrier-grade NAT, or otherwise not a routable public destination.
+// nonRoutableV4 lists the IPv4 ranges that are not globally routable and that
+// net.IP's own predicates do not cover.
+//
+//	0.0.0.0/8        "this network". Only 0.0.0.0 is IsUnspecified, but Linux
+//	                 routes the whole /8 to loopback, so http://0.0.0.1/ is a
+//	                 request to localhost.
+//	192.0.0.0/24     IETF protocol assignments.
+//	198.18.0.0/15    benchmarking (RFC 2544).
+//	240.0.0.0/4      reserved, including 255.255.255.255.
+//
+// Documentation ranges (RFC 5737 TEST-NET, 192.0.2.0/24 and friends) are
+// deliberately absent: they are widely used in fixtures and examples, and
+// blocking them would break test suites. They are also not routable, so a fetch
+// to one fails on its own. What blocking them does add is refusing to use a
+// documentation address as an SSRF target in a test harness.
+var nonRoutableV4 = mustParseCIDRs(
+	"0.0.0.0/8",
+	"192.0.0.0/24",
+	"198.18.0.0/15",
+	"240.0.0.0/4",
+)
+
+// nonRoutableV6 lists the IPv6 ranges that either carry no routable meaning or
+// tunnel an IPv4 destination past the IPv4 checks.
+//
+//	::/96            IPv4-compatible IPv6, deprecated; a mapped address here is
+//	                 a way to write 127.0.0.1 without To4() recognising it.
+//	2001::/32        Teredo, which wraps an IPv4 server and client address in
+//	                 the prefix and port fields.
+//	2002::/16        6to4, which embeds the IPv4 destination directly in the
+//	                 next 32 bits, so 2002:7f00:0001::1 is 127.0.0.1.
+//	64:ff9b::/96     NAT64 well-known prefix, used by IPv6-only networks.
+//
+// The first two are the interesting ones: without them
+// IsBlockedIP(127.0.0.1) is true while IsBlockedIP(2002:7f00:0001::1) — the
+// same host — is false, and 2002:a9fe:a9fe::1 is 6to4 for 169.254.169.254,
+// the cloud metadata endpoint that motivated the guard at all.
+//
+// These are not speculative: 6to4 relay deprecation is only partial, and
+// Teredo is still reachable. Exploitability is lower than for a plain private
+// IPv4 literal because the transition mechanism has to be up on the path, but
+// the whole point of one shared predicate is that it does not have a hole
+// shaped like "forgot the transition ranges".
+var nonRoutableV6 = mustParseCIDRs(
+	"::/96",
+	"64:ff9b::/96",
+	"2001::/32",
+	"2002::/16",
+)
+
+// IsBlockedIP reports whether an address is not a routable public destination:
+// loopback, private, link-local, multicast, CGNAT, unspecified, or inside one
+// of the non-routable ranges above.
+//
+// This is the single definition used by every outbound fetch in the codebase.
+// Two near-identical copies of it lived in the osint and tlsinspect packages
+// and had drifted: the osint copy omitted CGNAT, and the tlsinspect copy omitted
+// multicast. A source resolving into 100.64.0.0/10 — the carrier-NAT and
+// Tailscale range — was therefore accepted where netguard would have rejected
+// it. Callers should use this rather than re-deriving the rule.
 func IsBlockedIP(ip net.IP) bool {
-	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || IsCGNAT(ip)
+	if ip == nil {
+		return true
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() || IsCGNAT(ip) {
+		return true
+	}
+	// Compare against the 4-byte form so an IPv4-mapped IPv6 address is judged
+	// by its IPv4 value rather than escaping the check.
+	if ip4 := ip.To4(); ip4 != nil {
+		for _, network := range nonRoutableV4 {
+			if network.Contains(ip4) {
+				return true
+			}
+		}
+		return false
+	}
+	for _, network := range nonRoutableV6 {
+		if network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func mustParseCIDRs(cidrs ...string) []net.IPNet {
+	parsed := make([]net.IPNet, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		_, network, err := net.ParseCIDR(cidr)
+		if err != nil {
+			// The literals above are compile-time constants, so a failure here
+			// is a programming error rather than operator input.
+			panic("netguard: invalid built-in CIDR " + cidr + ": " + err.Error())
+		}
+		parsed = append(parsed, *network)
+	}
+	return parsed
 }
 
 // IsCGNAT reports whether the address falls into the RFC 6598 shared
@@ -201,6 +335,40 @@ func RedirectPolicyHTTPS(allowPrivate bool) func(*http.Request, []*http.Request)
 		}
 		return base(req, via)
 	}
+}
+
+// OutboundProxyEnabled reports whether the operator has switched the address
+// guard off in favour of an ambient proxy. Exposed so the decision can be
+// published as service state rather than inferred from a log line: with a proxy
+// configured, netguard validates the proxy's address instead of the
+// destination's, so every guarded fetch runs unchecked.
+func OutboundProxyEnabled() bool {
+	return config.Bool(OutboundProxyEnv, false)
+}
+
+// guardedProxy decides what proxy function a guarded transport keeps. The
+// returned value is nil unless the operator explicitly opts in, so the
+// destination — not a proxy — is what DialContext validates.
+func guardedProxy(inherited func(*http.Request) (*url.URL, error)) func(*http.Request) (*url.URL, error) {
+	if !config.Bool(OutboundProxyEnv, false) {
+		// Opt-in is off, so there is nothing to warn about. Clearing the flag
+		// here means a later re-enable warns again rather than being swallowed
+		// by a latch left over from a previous configuration.
+		proxyBypassWarned.Store(false)
+		return nil
+	}
+	proxy := inherited
+	if proxy == nil {
+		proxy = http.ProxyFromEnvironment
+	}
+	if proxy != nil && proxyBypassWarned.CompareAndSwap(false, true) {
+		logjson.Warn("outbound HTTP proxy enabled; the destination address is no longer checked by netguard", map[string]any{
+			"service": "netguard",
+			"env":     OutboundProxyEnv,
+			"risk":    "a proxy can reach addresses the address guard would reject, including loopback and link-local metadata endpoints",
+		})
+	}
+	return proxy
 }
 
 func baseTransport(base http.RoundTripper) (*http.Transport, bool) {
