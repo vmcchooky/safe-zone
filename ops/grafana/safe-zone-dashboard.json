@@ -511,7 +511,7 @@
       },
       "id": 10,
       "options": {
-        "content": "This template expects the Grafana Infinity datasource (`yesoreyeram-infinity-datasource`) and a dashboard variable `safe_zone_base` such as `http://127.0.0.1:8080` or `https://safe.example.com`. Panels read JSON directly from `/metrics`, `/`, `/v1/telemetry/stats`, and `/v1/telemetry/recent`.",
+        "content": "This template expects the Grafana Infinity datasource (`yesoreyeram-infinity-datasource`) and a dashboard variable `safe_zone_base` such as `http://127.0.0.1:8080` or `https://safe.example.com`. Panels read JSON directly from `/metrics`, `/`, `/v1/telemetry/stats`, and `/v1/telemetry/recent`.\n\n**Authentication required (changed 2026-09-29).** When `safe_zone_base` points at `core-api`, every panel URL is behind authentication. Add the admin API key to the Infinity datasource as an HTTP header, or the panels will show a 401:\n\n- Header name: `Authorization`\n- Header value: `Bearer <SAFE_ZONE_ADMIN_API_KEY>`\n\nConfigure this in Grafana under **Connections → Data sources → Infinity → Additional headers** (requires an Infinity datasource version that supports custom headers; on older versions put a header-injecting reverse proxy in front of `safe_zone_base`).\n\n`dns-resolver` (`:8081`) needs no header: its `/` and `/metrics` stay unauthenticated. `/v1/telemetry/recent` returns per-client IP and client id only for administrators; a guest or unauthenticated scraper receives those fields omitted.",
         "mode": "markdown"
       },
       "title": "Import Notes",

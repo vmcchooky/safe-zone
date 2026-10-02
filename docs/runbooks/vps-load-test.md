@@ -149,7 +149,8 @@ docker compose -p safe-zone-loadtest \
 ```
 
 *Trong lúc chạy soak, quan sát:*
-- `curl -fsS http://127.0.0.1:18080/metrics | jq .runtime`: `heap_alloc_mb` phải đạt bình nguyên (plateau $< 15$ MB), `goroutines` không tăng lũy tiến.
+- `docker stats --no-stream safe-zone-core-api`: RSS của container phải đạt bình nguyên (plateau $< 200$ MB) và không tăng lũy tiến. Heap/goroutine internals đã bị gỡ khỏi cả `/metrics` lẫn `/v1/status` (quyết định ghi tại `docs/research/backend/observability-hardening.md`: đọc `ReadMemStats` tốn stop-the-world và không consumer nào dùng), nên RSS qua `docker stats` là tín hiệu duy nhất còn đúng.
+- `curl -fsS -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" http://127.0.0.1:18080/v1/status | jq '.runtime'`: **không** dùng lệnh này, field `runtime` không tồn tại trên bất kỳ endpoint nào (trả `null`).
 - `ls -lh /var/lib/docker/volumes/...`: Kích thước file database SQLite và WAL không tăng đột biến.
 
 ---

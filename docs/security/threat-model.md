@@ -88,6 +88,145 @@ Primary assets:
 - Admin credentials are operator-managed and should come from env vars or `*_FILE` secrets.
 - Redis, AI, TLS/WHOIS enrichment, and OSINT are optional dependencies from an availability perspective.
 - SQLite-backed persistence is operationally important because it stores admin intent and audit-relevant history.
+- Forwarded-client headers are only trusted from peers listed in `SAFE_ZONE_TRUSTED_PROXIES`. The default is loopback-only; the Compose stack adds the Docker bridge network because Caddy reaches the services over it. A client on the LAN can otherwise choose its own rate-limit key by setting `X-Forwarded-For`. See §6a for the sizing and the accepted residual.
+- Rate-limiter key maps are capped (`SAFE_ZONE_RATELIMIT_MAX_KEYS`, default 50 000 per limiter) and trimmed by an intrusive LRU split into keys holding a token and keys currently throttled. A throttled key is the **last** thing eviction spends, which is what stops a client being rate limited from losing its bucket when unrelated traffic arrives.
+
+  This is **not** flood resistance. The "prefer keys seen once" first pass is LRU-blind among one-shot keys, and an attacker who visits each decoy twice empties that counter of its own keys, so the pass then removes only real one-shot keys and keeps the decoys — the opposite of its intent. Measured at a cap of 5 000 with 2 500 real keys interleaved with 2 500 decoys: at one visit per decoy 250 of 2 500 real keys survive, at two visits none do, and filling the key space either way costs about 6 ms. Real resistance would need a signal the client cannot forge, such as aggregating by prefix rather than by full address.
+
+## 6a. Authenticated Surface
+
+Changed 2026-09-29. This reverses the decision recorded in
+`docs/research/backend/observability-hardening.md` to leave `/metrics`
+public, which was made to avoid breaking unauthenticated Grafana scrapes.
+
+| Endpoint | Auth | Note |
+| --- | --- | --- |
+| `GET /metrics` on `core-api` | Admin only (bearer key or admin session) | Exposes the per-endpoint request summary (method, path, status, counts, bytes, latency). Any authenticated caller — including the read-only `guest` role — could otherwise fingerprint the API surface and read 401/403/429 rates as a brute-force progress signal, so `RequireAdminFunc` is required rather than `RequireAuthFunc`. |
+| `POST /v1/auth/logout` | Bearer key, or admin session plus same-origin `Origin`/`Referer` | Revokes the persisted session row, so it is a state-changing cookie route and now runs the CSRF gate. **Breaking change:** an anonymous POST now returns 401 instead of 200. |
+| `/v1/telemetry/recent` | Any authenticated role | Per-client `client_ip` and `client_id` are returned to administrators only; every other role receives those fields omitted, and `redacted` reports the policy applied (`true` for non-admin, including on an empty page). |
+| `admin_session` cookie | `Secure` from configuration | `X-Forwarded-Proto` is only honoured from a peer inside `SAFE_ZONE_TRUSTED_PROXIES`; otherwise the `Secure` attribute follows `SAFE_ZONE_FORCE_SECURE_COOKIES` (default: on in production). A client-supplied header from an untrusted peer can neither set nor clear it, and an ignored header is logged once so a deployment that forgets to declare its TLS terminator is diagnosable. |
+| `dns-resolver` `/` and `/metrics` | none | The resolver has no auth surface; it is loopback-only in production. It shares `ratelimit.ClientIP` for DoH limiter keys, so it inherits that decision. |
+
+### Known exceptions to the outbound address guard
+
+`netguard` covers every outbound fetch: threat feeds, OSINT, WHOIS and TLS
+enrichment, alert webhooks, whitelist imports, and the DoH upstream client.
+Two paths are deliberately outside it, and the reason is recorded so a later
+change does not "fix" them by accident:
+
+- **AI provider clients** (`internal/ai`). The Gemini base URL is operator
+  configuration rather than anything derived from user input, and the connection
+  is TLS with a pinned minimum version to a named public host, so a substituted
+  endpoint fails the handshake instead of receiving the API key. Wrapping it
+  would mean a second policy switch for operators who front Gemini with a
+  private proxy. The Ollama client targets a loopback daemon by design — it is
+  the reason local inference works — and posts no secret.
+- **RFC 5737 documentation ranges** (`192.0.2.0/24`, `198.51.100.0/24`,
+  `203.0.113.0/24`) are not blocked. They are not routable, so a fetch to one
+  fails on its own, and blocking them breaks test fixtures. What the omission
+  does add is refusing to use a documentation address as an SSRF target inside a
+  test harness.
+
+Two behaviours worth stating because they are deliberate rather than
+accidental:
+
+- A **cancelled request context makes `Whitelist.IsAllowed` report "not
+  whitelisted"**. The result is discarded by the request that cancelled, and the
+  direction is the safe one: the domain is evaluated normally (and can be
+  blocked) rather than short-circuited to `SAFE`.
+- A **custom `http.RoundTripper` passed to `netguard.NewHTTPClient` is refused**
+  (`ErrUnguardableTransport`) rather than wrapped. The address check works by
+  rewriting `DialContext`; a custom base controls its own connections, including
+  whether it proxies, so wrapping it would look protected while not being so.
+  Every caller in the tree passes `nil` or an `*http.Transport`.
+
+### Whitelist reads on the DNS hot path
+
+The whitelist is consulted for every analysis. It is now held entirely in RAM: a
+Bloom filter answers negatives in constant time, and a sorted, deduplicated slice
+of every whitelisted domain answers positives exactly, by binary search. **Lookups
+never touch the database.**
+
+They used to. A positive — a domain genuinely on the list, plus the 1% false
+positives — was verified against SQLite on every request. The store is a single
+connection, so an operator-triggered reload of a large whitelist held it for
+seconds. Measured against a 400k-row reload:
+
+| | worst lookup | verdict flipped to "not whitelisted" |
+|---|---|---|
+| Verifying each hit in SQLite | **3s** (the whole DoT budget) | 1 of 751 |
+| Bounding each read to 250ms | 251ms | 16 of 751 |
+| RAM index | **553µs** | **0 of 974** |
+
+A flipped verdict is not cosmetic: the domain then went through the rest of the
+pipeline, where any layer can block it. It was also unobservable — no counter,
+no log, nothing in the status output.
+
+Bounding the read was tried and rejected as the fix: it capped the worst case but
+raised the flipped count sevenfold, trading an unbounded stall for more silent
+wrong answers. The RAM index removes the failure mode instead of bounding it.
+
+Two consequences to know:
+
+- **Lookups survive a store outage.** With the database closed, a whitelisted
+  domain still resolves as whitelisted. That is the property that makes the
+  allow list dependable rather than best-effort.
+- **Memory scales with the list.** Measured on this build: **65 bytes per entry**,
+  about 62 MiB for a million domains, of which the Bloom filter is only 1.1 MiB
+  and the rest is the domain text plus its slice. `whitelist.exact_index_entries`
+  in the agent metrics is the number to watch when choosing a source. A cheaper
+  option was considered and rejected: a sorted array of 64-bit hashes is about 8
+  bytes per entry, but a collision silently reports "not whitelisted",
+  reintroducing exactly the failure this change removed.
+
+### Rate-limiter key cap
+
+`SAFE_ZONE_RATELIMIT_MAX_KEYS` (default 50 000) bounds how many distinct keys
+each limiter tracks. It is a **memory ceiling, not a brute-force defence**:
+
+- The key is the full client IP. A client arriving from a routed IPv6 prefix can
+  present 2^64 distinct addresses, so reaching the cap is easy for an
+  IPv6-only client. What stops login brute force is the login limiter's rate
+  (8 rpm) and credential policy, not the cap.
+- Measured cost: ~179 bytes per tracked key against ~83 for a plain map entry,
+  so at full capacity the 11 configured limiters hold roughly 94 MiB of key
+  state. Lowering the cap lowers that proportionally.
+- The trim is 90% of the cap. A very small cap therefore rewrites nearly the
+  whole map on every new key, which resets rate limits for live clients; keep it
+  in the thousands unless measuring.
+
+Eviction splits keys into two intrusive LRU lists: those holding a token, and
+those currently throttled. A throttled key is the last thing spent, so a client
+being rate limited does not lose its bucket when unrelated traffic arrives. This
+depends on the invariant that a key is filed as blocked exactly when its next
+request would be denied; a key that has just spent its last token must be
+protected too, or it is the cheapest thing for the eviction sweep to take.
+
+### Forwarded-header trust
+
+`SAFE_ZONE_TRUSTED_PROXIES` is a trust boundary and is sized deliberately:
+
+- Default (binary): loopback only.
+- Compose: loopback plus `172.16.0.0/12`, which contains every default
+  Docker address pool. `10/8` and `192.168/16` are deliberately **not** listed:
+  they are not used by default, and listing them let any host in those ranges
+  choose its own rate-limit key.
+- A malformed entry fails closed to loopback with a warning. A prefix at or
+  wider than a `/8` (IPv4) or `/16` (IPv6) is accepted but warned about,
+  because it effectively disables the filtering.
+
+**Accepted residual:** a client whose own source address falls *inside* a
+trusted range is indistinguishable from a proxy hop, so the walk skips it and
+accepts whatever the client placed to its left. No header heuristic can
+separate the two cases. The mitigation is the trust list: prefer a `/32` for
+the proxy over a subnet. The behaviour is pinned by
+`TestClientInsideTrustedRangeCanStillForge` in `internal/ratelimit` so the
+property cannot change silently.
+
+`Authorization: Bearer ` with an empty token, against an empty configured
+`SAFE_ZONE_ADMIN_API_KEY`, is rejected. Both auth paths share one credential
+comparison so they cannot disagree; `internal/api/handlers/auth_middleware_test.go`
+pins the behaviour.
 
 ## 7. Release-Blocking Risks
 

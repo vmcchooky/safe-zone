@@ -28,14 +28,18 @@ Mục tiêu là xóa recon miễn phí (model version/threshold/canary %, feed s
 | Quyết định | Phương pháp chọn | Các phương pháp thay thế | Lý do |
 |---|---|---|---|
 | `/v1/status` → RequireAuth | Mọi role authed (kể cả guest) đọc full | Public rút gọn + authed full (hai shape) | Một shape duy nhất, không fork contract; healthcheck riêng đã có `/healthz`; UI SystemPage vốn sau login |
-| `/metrics` public tối thiểu | Giữ đúng `{service, status, metrics}` UI/Grafana dùng | Auth toàn bộ `/metrics` | Grafana scrape không auth sẽ gãy, phải cấu hình lại phía operator; counters per-endpoint là public surface vốn có |
-| Bỏ runtime khỏi `/metrics` | Xóa `ReadMemStats` + heap/goroutines | Cache 5s | Xóa hẳn vừa hết STW-DoS vừa hết recon tài nguyên; không consumer nào (UI/Grafana) dùng các field này — đã kiểm chứng code |
+| `/metrics` ~~public tối thiểu~~ **→ admin-only từ 2026-09-29** | ~~Giữ đúng `{service, status, metrics}` UI/Grafana dùng~~ | Auth toàn bộ `/metrics` | ~~Grafana scrape không auth sẽ gãy, phải cấu hình lại phía operator; counters per-endpoint là public surface vốn có~~ — **Quyết định này đã bị đảo ngược.** `request_summary` là map per-endpoint kèm tỉ lệ 401/403/429, tức tín hiệu tiến trình brute-force đối với admin login. Ban đầu chỉ yêu cầu auth, nhưng `RequireAuthFunc` vẫn cho role `guest` read-only đi qua, nên phải dùng `RequireAdminFunc`. Grafana phải thêm header `Authorization: Bearer <admin key>` ở datasource; xem `ops/grafana/safe-zone-dashboard.json` (Import Notes) và `docs/runbooks/alert-rules.md` |
+| Bỏ runtime khỏi `/metrics` | Xóa `ReadMemStats` + heap/goroutines | Cache 5s | Xóa hẳn vừa hết STW-DoS vừa hết recon tài nguyên; không consumer nào (UI/Grafana) dùng các field này — đã kiểm chứng code. **Lưu ý 2026-09-29:** field `runtime` không tồn tại trên **cả** `/metrics` lẫn `/v1/status`; dùng `docker stats` cho RSS. Runbook load-test đã từng hướng dẫn `jq .runtime` trên `/v1/status` — sai, đã sửa |
 | Tier cho `/metrics` | `dashboardLimiter` 240rpm có sẵn | Limiter riêng | Chung nhóm dashboard là đúng đối tượng; 240rpm dư cho scrape 30-60s |
 | `/` fallback | Gate khi serve status (UI-less builds) | Để public | Tránh rò cùng payload qua đường khác; redirect `/app/` giữ public vì chỉ là chuyển hướng |
 
 ### ★ Cách thức Thực hiện (Implementation Details)
 
 Hệ thống bọc `/v1/status` (và nhánh `/` fallback) bằng `RequireAuthFunc`, rút `MetricsHandler` còn 3 field, thêm tier `/metrics` trong `cmd/core-api/main.go`, cập nhật `TestMetricsEndpointHTTP` sang shape mới + assert absence 7 key nhạy cảm, thêm test router 401. Phát hiện phụ khi audit (không đổi code): đã có CSRF Origin-check cho cookie POST — kết luận CSRF Low trước đây được rút lại thành verified-negative. Nếu dùng AI agent: mô hình `muse-spark`, chiến lược liệt kê consumer (UI/Grafana/healthcheck/test) trước khi cắt field, kiểm soát bằng test absence, vai trò con người duyệt.
+
+**Bổ sung 2026-09-29 (sau khi `/metrics` được bọc auth):** consumer đã cập nhật đồng bộ — `ops/alerts/safe-zone-alert-rules.yaml` (khối `auth:` cho cả `core_api_status` và `core_api_metrics`), `ops/grafana/safe-zone-dashboard.json` (Import Notes hướng dẫn thêm header vào Infinity datasource), `docs/runbooks/alert-rules.md`, `docs/index.md`, `README.md`, `README.vi.md`. `dns-resolver` không đổi: `/` và `/metrics` vẫn public. `TestMetricsEndpointRequiresAuth` ghim cả anonymous (401) và guest (403); `TestNewRouterRequiresAuthForMetrics` chống regression ở tầng router.
+
+**Bài học cho lần sau:** consumer inventory phải chạy *trước* khi cắt quyền, và phải bao gồm cả vai trò `guest` — `RequireAuthFunc` trông như đã chặn anonymous nhưng guest vẫn đọc được đúng payload nhạy cảm cần chặn.
 
 ### ★ Số liệu (Metrics & Results)
 

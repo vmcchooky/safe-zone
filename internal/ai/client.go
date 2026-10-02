@@ -180,6 +180,19 @@ func (c *Client) Refine(ctx context.Context, domain string, current analysis.Res
 }
 
 // NewGeminiClient creates a new client for Google's Gemini API.
+// NewGeminiClient builds a client for the Gemini API.
+//
+// The transport is deliberately outside netguard, unlike every other outbound
+// fetch in the codebase (feeds, OSINT, WHOIS/TLS enrichment, alert webhooks).
+// The reasoning is that the SSRF guard protects against a *destination* the
+// service chooses, and here both halves of that are already closed: the base URL
+// is operator configuration rather than anything derived from user input, and
+// the connection is TLS with a pinned minimum version to a named public host —
+// so a hijacked or substituted endpoint fails the handshake instead of receiving
+// the API key. Adding the guard here would mean a second policy switch for
+// operators who front Gemini with a private proxy, and a default that breaks
+// local Ollama. Documented in docs/security/threat-model.md as a known
+// exception rather than left implicit.
 func NewGeminiClient(baseURL, apiKey, model string, timeout time.Duration) *GeminiClient {
 	baseURL = strings.TrimSpace(baseURL)
 	apiKey = strings.TrimSpace(apiKey)

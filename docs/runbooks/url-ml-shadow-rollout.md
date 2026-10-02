@@ -19,7 +19,7 @@ For a stable partial cohort, set `SAFE_ZONE_URL_ML_SHADOW_PERCENT` to `1`–`99`
 ## Verify readiness
 
 ```sh
-curl -fsS http://127.0.0.1:8080/v1/status | jq '.ml.url'
+curl -fsS -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" http://127.0.0.1:8080/v1/status | jq '.ml.url'
 ```
 
 Required state:

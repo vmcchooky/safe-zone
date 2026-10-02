@@ -3,10 +3,16 @@
 Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert rules live in `ops/alerts/safe-zone-alert-rules.yaml`.
 
 > Subsystem detail (redis, `feed_sync`, `ml`, analysis config) lives behind
-> authenticated `GET /v1/status`, not on public `/metrics` (request counters
-> only). Every `curl` below targeting `/v1/status` needs admin auth, e.g.
-> `-H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY"`. The YAML rule file
-> already uses these exact sources and field paths.
+> authenticated `GET /v1/status`, not on `/metrics` (request counters only).
+> Every `curl` below targeting `core-api` — `/v1/status` **and `/metrics`** —
+> needs admin auth, e.g. `-H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY"`.
+> The YAML rule file already uses these exact sources and field paths.
+>
+> `/metrics` became authenticated on 2026-09-29. It previously exposed the
+> per-endpoint request summary to anonymous callers, which let anyone
+> fingerprint the API surface and read 401/403/429 rates as a brute-force
+> progress signal. A stale unauthenticated scrape now returns 401 and every
+> `core_api_*` rule fires as "down". `dns-resolver` (`:8081`) is unaffected.
 
 ## Covered alerts
 
@@ -31,14 +37,45 @@ Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert ru
 ```sh
 AUTH_HEADER="Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY"
 curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status
-curl -fsS http://127.0.0.1:8080/metrics
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/metrics
 curl -fsS http://127.0.0.1:8081/
 curl -fsS http://127.0.0.1:8081/metrics
 ```
 
+Locally, `core-api` generates a temporary key on first start and writes it to
+`tmp/local_admin_secrets.txt`; `export SAFE_ZONE_ADMIN_API_KEY=$(grep
+'^SAFE_ZONE_ADMIN_API_KEY=' tmp/local_admin_secrets.txt | cut -d= -f2)` reuses
+it across restarts. In production set `SAFE_ZONE_ADMIN_API_KEY` (or
+`..._FILE`) explicitly — an empty key is rejected and no bearer can match.
+
+## Grafana
+
+`ops/grafana/safe-zone-dashboard.json` reads the same endpoints. Add
+`Authorization: Bearer <key>` to the Infinity datasource ("Additional
+headers"); without it the `core-api` panels render 401.
+
+## Adblock source cache is invalidated once on upgrade (2026-09-29)
+
+`adblockSourceCachePath` keys the per-source download cache by the canonical
+source URL (scheme and host lowercased) instead of the raw string, so one source
+has one identity across the policy fingerprint, the policy lookup, the cache
+path and the rule provenance digest. Cache files written by an earlier build are
+keyed by the raw string and no longer match.
+
+Expect one full re-download of every configured adblock source on the first
+start after upgrading, and a correspondingly longer first sync tick. The cost is
+one-off; steady state is unchanged. If the operator's `SAFE_ZONE_ADBLOCK_SOURCES`
+spells a source differently from what an older build stored, that is the trigger.
+
+Separately, a per-source policy document is canonicalized when it is read, so a
+stored document whose keys are not already canonical produces a different
+`adblock.source_policies_fingerprint` than before the upgrade. That fires one
+extra rule rebuild, then settles. The two digests across nodes still have to
+match — that is what the fingerprint is for.
+
 ## Runtime Memory & Observability Metrics
 
-Heap/goroutine internals are intentionally NOT on public `/metrics`
+Heap/goroutine internals are intentionally NOT on `/metrics`
 (stop-the-world cost + info minimization). For soak/load diagnosis use
 `docker stats` (container RSS) plus the authenticated status surface:
 
@@ -111,7 +148,7 @@ Runtime memory status (request counters; heap internals are not public —
 see the section above):
 
 ```sh
-curl -fsS http://127.0.0.1:8080/metrics | jq '.metrics.request_summary'
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/metrics | jq '.metrics.request_summary'
 ```
 
 ## Log retention

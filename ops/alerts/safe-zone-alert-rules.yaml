@@ -1,15 +1,36 @@
 version: 1
 metrics_format: json
 # 2026-09-20: core_api_status moved from "/" to authenticated /v1/status.
-# "/" now serves the dashboard redirect (or authed status on UI-less builds)
-# and /metrics is request counters only. The scraper MUST authenticate
-# (admin API key Bearer or session) for core_api_status; dns-resolver
-# /metrics stays public with redis/ml/upstream_doh attached.
+# 2026-09-29: /metrics on core-api is now authenticated too. It exposes the
+# per-endpoint request summary (method, path, status, counts, latency), which
+# an anonymous caller can use to fingerprint the API surface and read
+# 401/403/429 rates as a brute-force progress signal.
+#
+# EVERY core-api source below must authenticate with the admin API key as a
+# bearer token. This reverses the earlier decision to leave /metrics public,
+# which was made to avoid breaking unauthenticated Grafana scrapes; the
+# scraper configuration is updated in the same change.
+#
+# Example (Prometheus/blackbox style):
+#   Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY
+#
+# dns-resolver is unaffected: its /metrics and / stay unauthenticated.
 source_endpoints:
   core_api_status: http://127.0.0.1:8080/v1/status
   core_api_metrics: http://127.0.0.1:8080/metrics
   dns_resolver_status: http://127.0.0.1:8081/
   dns_resolver_metrics: http://127.0.0.1:8081/metrics
+# Auth header required for every core_api_* source above. Supply the value
+# from SAFE_ZONE_ADMIN_API_KEY; never commit the token itself.
+auth:
+  core_api_status:
+    header: Authorization
+    scheme: Bearer
+    value_from: SAFE_ZONE_ADMIN_API_KEY
+  core_api_metrics:
+    header: Authorization
+    scheme: Bearer
+    value_from: SAFE_ZONE_ADMIN_API_KEY
 
 rules:
   - id: core-api-down

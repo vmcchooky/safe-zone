@@ -128,9 +128,14 @@ curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
 # The policy decision the DNS layer will enforce
 curl "http://localhost:8081/v1/policy?domain=secure-login-wallet-example.com"
 
-# Service health and feed freshness
-curl "http://localhost:8080/v1/status"
-curl "http://localhost:8080/metrics"
+# Service health and feed freshness (both endpoints require admin auth)
+# Locally the key is generated on first start into tmp/local_admin_secrets.txt
+export SAFE_ZONE_ADMIN_API_KEY=$(grep '^SAFE_ZONE_ADMIN_API_KEY=' tmp/local_admin_secrets.txt | cut -d= -f2)
+curl -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" "http://localhost:8080/v1/status"
+curl -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" "http://localhost:8080/metrics"
+
+# dns-resolver metrics stay unauthenticated
+curl "http://localhost:8081/metrics"
 ```
 
 Blocked-domain behavior: plain-HTTP sinkhole renders the block page with a
@@ -151,6 +156,9 @@ by every non-MITM DNS filter, not a bug.
 | `SAFE_ZONE_ML_MODE` | `disabled` | `disabled` / `shadow` / canary / `enforce` (gated) |
 | `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` locally, `5` in prod | Telemetry sampling ([sizing](docs/runbooks/production-edge.md)) |
 | `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS` | `7` | WHOIS cache TTL in SQLite |
+| `SAFE_ZONE_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128` | Peers allowed to set `X-Forwarded-For`/`X-Real-IP` (CIDR list). Loopback-only by default; Compose adds the Docker bridge. List proxy addresses only |
+| `SAFE_ZONE_FORCE_SECURE_COOKIES` | on in production | Force the `Secure` attribute on the session cookie |
+| `SAFE_ZONE_RATELIMIT_MAX_KEYS` | `50000` | Per-limiter cap on distinct rate-limit keys (memory ceiling) |
 
 Secrets accept `VAR_FILE=./ops/secrets/name` (local runs, Compose, and
 host-side helpers — see [ops/secrets/README.md](ops/secrets/README.md)).

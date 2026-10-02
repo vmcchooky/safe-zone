@@ -129,9 +129,14 @@ curl "http://localhost:8080/v1/analyze?domain=secure-login-wallet-example.com"
 # Quyết định policy mà lớp DNS sẽ thực thi
 curl "http://localhost:8081/v1/policy?domain=secure-login-wallet-example.com"
 
-# Sức khỏe dịch vụ và độ tươi của feed
-curl "http://localhost:8080/v1/status"
-curl "http://localhost:8080/metrics"
+# Sức khỏe dịch vụ và độ tươi của feed (cả hai endpoint đều cần admin auth)
+# Ở local, khóa được sinh lần chạy đầu và ghi vào tmp/local_admin_secrets.txt
+export SAFE_ZONE_ADMIN_API_KEY=$(grep '^SAFE_ZONE_ADMIN_API_KEY=' tmp/local_admin_secrets.txt | cut -d= -f2)
+curl -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" "http://localhost:8080/v1/status"
+curl -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" "http://localhost:8080/metrics"
+
+# metrics của dns-resolver không yêu cầu xác thực
+curl "http://localhost:8081/metrics"
 ```
 
 Trải nghiệm chặn: sinkhole HTTP thường render trang block kèm form báo cáo
@@ -151,6 +156,9 @@ của mọi DNS filter không MITM, không phải bug.
 | `SAFE_ZONE_ML_MODE` | `disabled` | `disabled` / `shadow` / canary / `enforce` (có cổng) |
 | `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` local, `5` prod | Sample telemetry ([cách tính](docs/runbooks/production-edge.md)) |
 | `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS` | `7` | TTL cache WHOIS trong SQLite |
+| `SAFE_ZONE_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128` | Các peer được phép gửi `X-Forwarded-For`/`X-Real-IP` (danh sách CIDR). Mặc định chỉ loopback; Compose thêm bridge Docker. Chỉ liệt kê địa chỉ proxy |
+| `SAFE_ZONE_FORCE_SECURE_COOKIES` | bật ở production | Ép thuộc tính `Secure` cho cookie phiên |
+| `SAFE_ZONE_RATELIMIT_MAX_KEYS` | `50000` | Trần số key rate-limit khác nhau cho mỗi limiter (giới hạn bộ nhớ) |
 
 Secret nhận `VAR_FILE=./ops/secrets/name` (local run, Compose và helper phía
 host — xem [ops/secrets/README.md](ops/secrets/README.md)). Admin có thể

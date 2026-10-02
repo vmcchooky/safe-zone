@@ -45,7 +45,7 @@ rather than instantly.
 ### Verify the current state
 
 ```sh
-curl -s http://127.0.0.1:8080/v1/status | jq '.adblock | {enabled, match_mode, domain_count}'
+curl -s -H "Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY" http://127.0.0.1:8080/v1/status | jq '.adblock | {enabled, match_mode, domain_count}'
 ```
 
 ### API
