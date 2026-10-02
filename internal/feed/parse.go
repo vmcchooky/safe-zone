@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"safe-zone/internal/analysis"
+	"safe-zone/internal/config"
+	"safe-zone/internal/logjson"
 )
 
 type ParseStats struct {
@@ -26,6 +28,12 @@ type ParseStats struct {
 	// window. They are still admitted and still block: the counter exists
 	// so feed composition is visible instead of inferred.
 	ChurnProneTenants int `json:"churn_prone_tenants"`
+	// TruncatedDomains counts distinct domains that arrived after the
+	// deduplication set hit maxDistinctFeedDomains. They were still passed to
+	// the caller and are not lost, but they are classified as duplicates, so
+	// the count is how an operator tells a healthy feed from one whose
+	// distinct-domain count exceeded what the process is willing to track.
+	TruncatedDomains int `json:"truncated_domains"`
 }
 
 type IndicatorKind string
@@ -67,7 +75,23 @@ func ParseEach(r io.Reader, onDomain func(domain string) error, stats *ParseStat
 // duplicate flag reports whether the normalized domain was already observed;
 // callers that need URL corroboration can therefore distinguish repeated
 // resources without changing the legacy ParseEach deduplication contract.
+//
+// The deduplication set is bounded by maxDistinctFeedDomains. A 100MB feed of
+// short hostnames holds millions of distinct entries, and the set retains one of
+// them all: at roughly 15 bytes per hostname that is several hundred megabytes
+// before the caller retains anything of its own, on a service sized for a small
+// VPS. Past the cap an unseen domain is treated as already seen, which costs a
+// duplicate classification and nothing else — the handler still runs for every
+// indicator, so no IOC is lost. The overflow is reported through
+// ParseStats.TruncatedDomains rather than being invisible.
 func ParseEachIndicator(r io.Reader, onIndicator func(indicator Indicator, duplicate bool) error, stats *ParseStats) error {
+	return parseIndicatorsWithLimit(r, newBoundedSeenSet(maxDistinctFeedDomains()), stats, onIndicator)
+}
+
+// parseIndicatorsWithLimit is ParseEachIndicator with an explicit dedup-set
+// limit, so tests can exercise the cap without building a multi-million-entry
+// feed. Production callers get the default via ParseEachIndicator.
+func parseIndicatorsWithLimit(r io.Reader, seen *boundedSeenSet, stats *ParseStats, onIndicator func(Indicator, bool) error) error {
 	if onIndicator == nil {
 		return errors.New("indicator handler is required")
 	}
@@ -75,22 +99,78 @@ func ParseEachIndicator(r io.Reader, onIndicator func(indicator Indicator, dupli
 		stats = &ParseStats{}
 	}
 
-	// Enforce 100MB decompression limit
 	limited := io.LimitReader(r, 100*1024*1024)
-
 	br := bufio.NewReader(limited)
 	peekBytes, _ := br.Peek(4096)
 
-	seen := make(map[string]struct{})
-
+	var parseErr error
 	if isProbablyCSV(peekBytes) {
-		return parseCSVStream(br, seen, stats, onIndicator)
+		parseErr = parseCSVStream(br, seen, stats, onIndicator)
+	} else {
+		parseErr = parseTextStream(br, seen, stats, onIndicator)
 	}
-
-	return parseTextStream(br, seen, stats, onIndicator)
+	stats.TruncatedDomains = seen.overflowed
+	if stats.TruncatedDomains > 0 {
+		// Logged rather than latched: the sync report carries the number, and
+		// this is a per-sync occurrence rather than a startup condition, so a
+		// one-shot warning would hide a feed that keeps exceeding the cap.
+		logjson.Warn("threat feed exceeded the distinct-domain cap; later distinct domains were classified as duplicates", map[string]any{
+			"service":   "feed",
+			"limit":     seen.limit,
+			"truncated": seen.overflowed,
+		})
+	}
+	return parseErr
 }
 
-func parseCSVStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, onIndicator func(Indicator, bool) error) error {
+// maxDistinctFeedDomains bounds the deduplication set, and the admission state
+// map. Sized well above a real threat feed (URLhaus recent is O(10^4), OpenPhish
+// O(10^5)) and far below what would exhaust a small host, so ordinary feeds are
+// unaffected and a hostile one is degraded rather than fatal.
+//
+// Overridable because the right value depends on the host: a larger deployment
+// importing a very large list may need more headroom, and a small one may want
+// less. Set it to 0 to restore the previous unbounded behaviour.
+const defaultMaxDistinctFeedDomains = 2_000_000
+
+func maxDistinctFeedDomains() int {
+	value := config.Int("SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS", defaultMaxDistinctFeedDomains)
+	if value < 0 {
+		return 0
+	}
+	return value
+}
+
+// boundedSeenSet is the deduplication set with a hard entry limit.
+type boundedSeenSet struct {
+	entries    map[string]struct{}
+	limit      int
+	overflowed int
+}
+
+func newBoundedSeenSet(limit int) *boundedSeenSet {
+	if limit <= 0 {
+		limit = maxDistinctFeedDomains()
+	}
+	return &boundedSeenSet{entries: make(map[string]struct{}, 1024), limit: limit}
+}
+
+// mark reports whether the domain was already recorded, recording it otherwise.
+// Once the limit is reached, an unseen domain is reported as already seen: the
+// indicator still reaches the caller, only the duplicate flag differs.
+func (s *boundedSeenSet) mark(domain string) (duplicate bool) {
+	if _, ok := s.entries[domain]; ok {
+		return true
+	}
+	if len(s.entries) >= s.limit {
+		s.overflowed++
+		return true
+	}
+	s.entries[domain] = struct{}{}
+	return false
+}
+
+func parseCSVStream(r io.Reader, seen *boundedSeenSet, stats *ParseStats, onIndicator func(Indicator, bool) error) error {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1 // Allow variable fields per row to prevent drift crashes
 
@@ -123,7 +203,7 @@ func parseCSVStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, on
 	return nil
 }
 
-func parseTextStream(r io.Reader, seen map[string]struct{}, stats *ParseStats, onIndicator func(Indicator, bool) error) error {
+func parseTextStream(r io.Reader, seen *boundedSeenSet, stats *ParseStats, onIndicator func(Indicator, bool) error) error {
 	scanner := bufio.NewScanner(r)
 	// Enforce maximum line size of 1MB (1024*1024 bytes) as asserted by tests
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -207,13 +287,13 @@ func firstIndicator(fields []string) (Indicator, bool) {
 	return Indicator{}, false
 }
 
-func addIndicator(stats *ParseStats, seen map[string]struct{}, indicator Indicator, onIndicator func(Indicator, bool) error) error {
-	if _, exists := seen[indicator.Domain]; exists {
+func addIndicator(stats *ParseStats, seen *boundedSeenSet, indicator Indicator, onIndicator func(Indicator, bool) error) error {
+	duplicate := seen.mark(indicator.Domain)
+	if duplicate {
 		stats.Duplicates++
 		return onIndicator(indicator, true)
 	}
 
-	seen[indicator.Domain] = struct{}{}
 	stats.Valid++
 	return onIndicator(indicator, false)
 }

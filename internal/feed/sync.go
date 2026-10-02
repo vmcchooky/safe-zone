@@ -214,7 +214,12 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 
 	fail := func(syncErr error) (SyncReport, error) {
 		if redisCache != nil {
-			_ = recordSyncFailure(ctx, redisCache, options.Key, options.Source, syncErr)
+			// Same reasoning as the success path: recording the failure must
+			// not be defeated by a context that already expired, or the
+			// feed_error never lands and the source looks un-synced.
+			statusCtx, statusCancel := context.WithTimeout(context.WithoutCancel(ctx), statusWriteTimeout)
+			defer statusCancel()
+			_ = recordSyncFailure(statusCtx, redisCache, options.Key, options.Source, syncErr)
 		}
 		return SyncReport{}, syncErr
 	}
@@ -407,11 +412,31 @@ func Sync(parent context.Context, options SyncOptions) (SyncReport, error) {
 			report.FeedRevision = revision
 		}
 	}
-	if err := recordSyncSuccess(ctx, redisCache, report); err != nil {
+	// The status write gets its own short budget, not the sync's.
+	//
+	// A sync that downloads and writes every member successfully but overruns
+	// options.Timeout arrives here with an already-expired context. The status
+	// write then fails, fail() runs, and the caller records a feed_error event —
+	// which is the event type the alert task pages on. The feed is live and
+	// healthy; the operator is paged about a timeout that actually only
+	// overran while recording the fact that nothing went wrong.
+	//
+	// Shutdown is still honoured: WithoutCancel drops the deadline and the
+	// cancellation of the *sync*, and the lifecycle signal is the caller's
+	// parent, which is what a shutdown cancels.
+	statusCtx, statusCancel := context.WithTimeout(context.WithoutCancel(ctx), statusWriteTimeout)
+	defer statusCancel()
+
+	if err := recordSyncSuccess(statusCtx, redisCache, report); err != nil {
 		return fail(err)
 	}
 	return report, nil
 }
+
+// statusWriteTimeout bounds the status write that closes a sync. It is separate
+// from the sync budget on purpose: the record of a successful sync must be
+// writable even when the sync itself overran.
+const statusWriteTimeout = 5 * time.Second
 
 func OpenSourceWithin(ctx context.Context, source string, client *http.Client, fileRoot string, maxBytes int64, allowInsecureHTTP bool) (io.ReadCloser, func(), error) {
 	resp, err := OpenSourceResponseWithin(ctx, source, client, fileRoot, maxBytes, nil, allowInsecureHTTP)
