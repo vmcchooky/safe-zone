@@ -153,7 +153,7 @@ func (h *Handler) CacheFlushHandler(w http.ResponseWriter, r *http.Request) {
 	if h.Risk != nil && h.Risk.Whitelist() != nil {
 		err := h.Risk.Whitelist().LoadFromDB()
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, "Failed to flush cache: "+err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to reload the whitelist")
 			return
 		}
 	}

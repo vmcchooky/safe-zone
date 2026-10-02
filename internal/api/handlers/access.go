@@ -36,7 +36,7 @@ func (h *Handler) guestAccessStore() (*store.DB, error) {
 	}
 	db := h.Risk.StoreDB()
 	if db == nil || !db.Enabled() {
-		return nil, fmt.Errorf("database not configured")
+		return nil, store.ErrDisabled
 	}
 	return db, nil
 }
@@ -130,7 +130,7 @@ func (h *Handler) GuestAccessHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cfg, err := h.loadGuestAccessConfig(r.Context())
 		if err != nil {
-			httputil.WriteError(w, http.StatusServiceUnavailable, err.Error())
+			httputil.WriteStoreError(w, r, err, "database not available")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, guestAccessStatus(cfg))
@@ -156,7 +156,7 @@ func (h *Handler) GuestAccessHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		hash, err := auth.HashPassword(password)
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteInternalError(w, r, http.StatusInternalServerError, err, "failed to set the guest password")
 			return
 		}
 
@@ -169,7 +169,7 @@ func (h *Handler) GuestAccessHandler(w http.ResponseWriter, r *http.Request) {
 			PasswordHash: hash,
 		}
 		if err := h.saveGuestAccessConfig(r.Context(), cfg); err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to save the guest account")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, guestAccessStatus(cfg))
@@ -180,7 +180,7 @@ func (h *Handler) GuestAccessHandler(w http.ResponseWriter, r *http.Request) {
 
 		cfg, err := h.loadGuestAccessConfig(r.Context())
 		if err != nil {
-			httputil.WriteError(w, http.StatusServiceUnavailable, err.Error())
+			httputil.WriteStoreError(w, r, err, "database not available")
 			return
 		}
 		if !cfg.Exists() {
@@ -204,21 +204,21 @@ func (h *Handler) GuestAccessHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			hash, err := auth.HashPassword(password)
 			if err != nil {
-				httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+				httputil.WriteInternalError(w, r, http.StatusInternalServerError, err, "failed to set the guest password")
 				return
 			}
 			cfg.PasswordHash = hash
 		}
 
 		if err := h.saveGuestAccessConfig(r.Context(), cfg); err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to save the guest account")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, guestAccessStatus(cfg))
 
 	case http.MethodDelete:
 		if err := h.clearGuestAccessConfig(r.Context()); err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to delete the guest account")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

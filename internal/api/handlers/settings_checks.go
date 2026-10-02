@@ -190,7 +190,7 @@ func (h *Handler) TestAlertHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, "failed to marshal payload: "+err.Error())
+		httputil.WriteInternalError(w, r, http.StatusInternalServerError, err, "failed to build the webhook payload")
 		return
 	}
 
@@ -199,7 +199,7 @@ func (h *Handler) TestAlertHandler(w http.ResponseWriter, r *http.Request) {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, webhookURL, bytes.NewReader(body))
 	if err != nil {
-		httputil.WriteError(w, http.StatusInternalServerError, "failed to create request: "+err.Error())
+		httputil.WriteInternalError(w, r, http.StatusInternalServerError, err, "failed to build the webhook request")
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")

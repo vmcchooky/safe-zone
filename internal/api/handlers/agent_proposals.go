@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -33,7 +34,10 @@ func (h *Handler) AgentProposalsHandler(w http.ResponseWriter, r *http.Request) 
 		status := r.URL.Query().Get("status")
 		proposals, err := db.ListAgentProposals(r.Context(), status, 100)
 		if err != nil {
-			httputil.WriteError(w, http.StatusBadRequest, err.Error())
+			// Was a 400 with the store's own message in the body. A store failure
+			// is not a client mistake, and an empty proposal queue reported as
+			// "bad request" told the operator their status filter was wrong.
+			httputil.WriteStoreError(w, r, err, "failed to list proposals")
 			return
 		}
 		if proposals == nil {
@@ -60,7 +64,16 @@ func (h *Handler) AgentProposalsHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		proposal, err := db.ReviewAgentProposal(r.Context(), req.ID, decision == "approve", reviewer, req.Reason)
 		if err != nil {
-			httputil.WriteError(w, http.StatusConflict, err.Error())
+			// Two distinct outcomes that used to share one branch. A proposal that
+			// is decided, expired, or absent is a conflict the operator can act on,
+			// and its detail names the proposal's own status, so it is echoed.
+			// Everything else came out of the store and is not the caller's to see.
+			switch {
+			case errors.Is(err, store.ErrProposalNotReviewable), errors.Is(err, store.ErrAgentProposalConflict):
+				httputil.WriteError(w, http.StatusConflict, err.Error())
+			default:
+				httputil.WriteStoreError(w, r, err, "failed to review proposal")
+			}
 			return
 		}
 		if decision == "approve" {
@@ -72,7 +85,7 @@ func (h *Handler) AgentProposalsHandler(w http.ResponseWriter, r *http.Request) 
 				reason += " (reviewer: " + reviewer + ")"
 			}
 			if err := h.Risk.UpsertOverride(r.Context(), proposal.Domain, proposal.Action, reason); err != nil {
-				httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+				httputil.WriteStoreError(w, r, err, "failed to apply the reviewed override")
 				return
 			}
 			_ = db.RecordAgentEvent(r.Context(), "audit", "proposal_approved", proposal.Domain,
