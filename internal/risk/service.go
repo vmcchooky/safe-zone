@@ -1389,6 +1389,115 @@ func (s *Service) Close() error {
 	return err
 }
 
+// resolvedLayer is the outcome of one of the administrative layers that both
+// decision paths consult: an admin override or a whitelist match.
+//
+// The two paths build identical Results and identical Decisions from these
+// layers, and each had grown its own copy of the construction. The Assessment
+// bookkeeping stays with the caller on purpose: Analyze appends its layer list
+// eagerly before consulting anything, while Policy appends per branch as it
+// returns, and Assessment is serialized into API responses and telemetry. Sharing
+// that would change output, so only the computation is shared here.
+type resolvedLayer struct {
+	result   analysis.Result
+	cacheHit bool
+	decision *PolicyDecision
+}
+
+// resolveClientGroup returns the policy group for a client, defaulting when the
+// store is unavailable or the lookup fails.
+//
+// Client-supplied identifiers (DoH client_id) are unauthenticated, so policy is
+// derived from the trusted client IP only. The request context bounds this lookup
+// so a disconnected caller stops consuming database work.
+func (s *Service) resolveClientGroup(ctx context.Context, client ClientInfo, t *layerTimer) *store.ClientGroup {
+	var group *store.ClientGroup
+	if s.store != nil && s.store.Enabled() {
+		var g *store.ClientGroup
+		var groupErr error
+		t.measure(LayerClientGroup, func() {
+			g, groupErr = s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
+		})
+		if groupErr == nil {
+			group = g
+		}
+	}
+	if group == nil {
+		group = &store.ClientGroup{ID: 1, Name: "default", StrictMalware: true}
+	}
+	return group
+}
+
+// resolveOverride consults the administrative override chain. It returns nil when
+// no override applies.
+//
+// A lookup error resolves to "no override" rather than propagating: the layer is
+// fail-open by design so a transient store failure cannot block every domain for
+// every client. lookupEffectiveOverride counts and publishes those failures.
+func (s *Service) resolveOverride(ctx context.Context, group *store.ClientGroup, normalized string, t *layerTimer) *resolvedLayer {
+	if s.store == nil || !s.store.Enabled() {
+		return nil
+	}
+	var override *store.Override
+	t.measure(LayerOverride, func() {
+		var overrideErr error
+		override, overrideErr = s.lookupEffectiveOverride(ctx, group.ID, normalized)
+		if overrideErr != nil {
+			override = nil
+		}
+	})
+	if override == nil {
+		return nil
+	}
+
+	verdict := analysis.VerdictSafe
+	score := 0
+	if override.Action == "block" {
+		verdict = analysis.VerdictMalicious
+		score = 100
+	}
+	reason := fmt.Sprintf("admin override: %s", override.Action)
+	if override.Reason != "" {
+		reason = fmt.Sprintf("admin override: %s (%s)", override.Action, override.Reason)
+	}
+	return &resolvedLayer{
+		result: analysis.Result{
+			Domain:     normalized,
+			Verdict:    verdict,
+			Confidence: 1.0,
+			Score:      score,
+			Reasons:    []string{reason},
+			Category:   analysis.ClassifyCategory(normalized),
+		},
+		cacheHit: false,
+		decision: adminPolicyDecision(override.Action),
+	}
+}
+
+// resolveWhitelist consults the allowlist. It returns nil when the domain is not
+// allowlisted.
+func (s *Service) resolveWhitelist(ctx context.Context, normalized string, t *layerTimer) *resolvedLayer {
+	whitelisted := false
+	t.measure(LayerWhitelist, func() {
+		whitelisted = s.whitelist.IsAllowed(ctx, normalized)
+	})
+	if !whitelisted {
+		return nil
+	}
+	return &resolvedLayer{
+		result: analysis.Result{
+			Domain:     normalized,
+			Verdict:    analysis.VerdictSafe,
+			Confidence: 1.0,
+			Score:      0,
+			Reasons:    []string{"whitelisted"},
+			Category:   "uncategorized",
+		},
+		cacheHit: false,
+		decision: allowlistPolicyDecision(),
+	}
+}
+
 func (s *Service) Analyze(ctx context.Context, domain string, client ClientInfo) Analysis {
 	return s.AnalyzeWithOptions(ctx, domain, client, AnalyzeOptions{})
 }
@@ -1416,84 +1525,28 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 		assess.Timings = preTimer.timings
 	} else {
-		// Get group
-		var group *store.ClientGroup
-		if s.store != nil && s.store.Enabled() {
-			// Client-supplied identifiers (DoH client_id) are unauthenticated:
-			// policy must be derived from the trusted client IP only.
-			// The request context (not Background) bounds this lookup so a
-			// disconnected caller stops consuming database work.
-			var g *store.ClientGroup
-			var groupErr error
-			preTimer.measure(LayerClientGroup, func() {
-				g, groupErr = s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
-			})
-			if groupErr == nil {
-				group = g
-			}
-		}
-		if group == nil {
-			group = &store.ClientGroup{ID: 1, Name: "default", StrictMalware: true}
-		}
+		group := s.resolveClientGroup(ctx, client, &preTimer)
 
 		assess.Evaluated = append(assess.Evaluated, LayerIdentity, LayerOverride)
 		// 1. Check Overrides
-		if s.store != nil && s.store.Enabled() {
-			var override *store.Override
-			preTimer.measure(LayerOverride, func() {
-				var overrideErr error
-				override, overrideErr = s.lookupEffectiveOverride(ctx, group.ID, normalized)
-				if overrideErr != nil {
-					override = nil
-				}
-			})
-			if override != nil {
-				verdict := analysis.VerdictSafe
-				score := 0
-				if override.Action == "block" {
-					verdict = analysis.VerdictMalicious
-					score = 100
-				}
-				reason := fmt.Sprintf("admin override: %s", override.Action)
-				if override.Reason != "" {
-					reason = fmt.Sprintf("admin override: %s (%s)", override.Action, override.Reason)
-				}
-				result = analysis.Result{
-					Domain:     normalized,
-					Verdict:    verdict,
-					Confidence: 1.0,
-					Score:      score,
-					Reasons:    []string{reason},
-					Category:   analysis.ClassifyCategory(normalized),
-				}
-				cacheHit = false
-				decision = adminPolicyDecision(override.Action)
-				assess.Skipped = append(assess.Skipped, LayerWhitelist, LayerAdblock)
-				assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
-			}
+		if override := s.resolveOverride(ctx, group, normalized, &preTimer); override != nil {
+			result = override.result
+			cacheHit = override.cacheHit
+			decision = override.decision
+			assess.Skipped = append(assess.Skipped, LayerWhitelist, LayerAdblock)
+			assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 		}
 
 		// 2. Check Whitelist
-		whitelisted := false
 		if result.Domain == "" {
-			preTimer.measure(LayerWhitelist, func() {
-				whitelisted = s.whitelist.IsAllowed(ctx, normalized)
-			})
-		}
-		if result.Domain == "" && whitelisted {
-			result = analysis.Result{
-				Domain:     normalized,
-				Verdict:    analysis.VerdictSafe,
-				Confidence: 1.0,
-				Score:      0,
-				Reasons:    []string{"whitelisted"},
-				Category:   "uncategorized",
+			if allow := s.resolveWhitelist(ctx, normalized, &preTimer); allow != nil {
+				result = allow.result
+				cacheHit = allow.cacheHit
+				decision = allow.decision
+				assess.Evaluated = append(assess.Evaluated, LayerWhitelist)
+				assess.Skipped = append(assess.Skipped, LayerAdblock)
+				assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 			}
-			cacheHit = false
-			decision = allowlistPolicyDecision()
-			assess.Evaluated = append(assess.Evaluated, LayerWhitelist)
-			assess.Skipped = append(assess.Skipped, LayerAdblock)
-			assess.Skipped = append(assess.Skipped, engineSkippedLayers()...)
 		}
 
 		if result.Domain == "" {
@@ -1578,105 +1631,44 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	}
 
 	// 1. Get Group for Client
-	var group *store.ClientGroup
-	if s.store != nil && s.store.Enabled() {
-		// Client-supplied identifiers (DoH client_id) are unauthenticated:
-		// policy must be derived from the trusted client IP only.
-		// The request context (not Background) bounds this lookup so a
-		// disconnected caller stops consuming database work.
-		var g *store.ClientGroup
-		var groupErr error
-		preTimer.measure(LayerClientGroup, func() {
-			g, groupErr = s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
-		})
-		if groupErr == nil {
-			group = g
-		}
-	}
-	if group == nil {
-		group = &store.ClientGroup{
-			ID:             1,
-			Name:           "default",
-			StrictMalware:  true,
-			StrictPhishing: false,
-		}
-	}
+	group := s.resolveClientGroup(ctx, client, &preTimer)
 
 	// 2. Check Overrides
-	if s.store != nil && s.store.Enabled() {
-		var override *store.Override
-		preTimer.measure(LayerOverride, func() {
-			var overrideErr error
-			override, overrideErr = s.lookupEffectiveOverride(ctx, group.ID, normalized)
-			if overrideErr != nil {
-				override = nil
-			}
-		})
-		if override != nil {
-			policyAction := override.Action
-			verdict := analysis.VerdictSafe
-			score := 0
-			if policyAction == "block" {
-				verdict = analysis.VerdictMalicious
-				score = 100
-			}
-			reason := fmt.Sprintf("admin override: %s", policyAction)
-			if override.Reason != "" {
-				reason = fmt.Sprintf("admin override: %s (%s)", policyAction, override.Reason)
-			}
-			decision := adminPolicyDecision(policyAction)
-			policyResult := Policy{
-				Domain: normalized,
-				Policy: policyAction,
-				Result: analysis.Result{
-					Domain:     normalized,
-					Verdict:    verdict,
-					Confidence: 1.0,
-					Score:      score,
-					Reasons:    []string{reason},
-					Category:   analysis.ClassifyCategory(normalized),
-				},
-				CacheHit:   false,
-				Assessment: assess,
-			}
-			policyResult.Assessment.Evaluated = append(policyResult.Assessment.Evaluated,
-				LayerIdentity, LayerOverride)
-			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
-				LayerWhitelist, LayerAdblock, LayerGroupPolicy)
-			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
-			policyResult.Assessment.Timings = preTimer.timings
-			policyResult.DecisionID = decisionID
-			s.recordTelemetry(Analysis{
-				Result:     policyResult.Result,
-				CacheHit:   false,
-				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
-				Decision:   decision,
-				DecisionID: decisionID,
-				Assessment: policyResult.Assessment,
-			}, client)
-			return policyResult
+	if override := s.resolveOverride(ctx, group, normalized, &preTimer); override != nil {
+		decision := override.decision
+		policyResult := Policy{
+			Domain:     normalized,
+			Policy:     override.decision.Action,
+			Result:     override.result,
+			CacheHit:   override.cacheHit,
+			Assessment: assess,
 		}
+		policyResult.Assessment.Evaluated = append(policyResult.Assessment.Evaluated,
+			LayerIdentity, LayerOverride)
+		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped,
+			LayerWhitelist, LayerAdblock, LayerGroupPolicy)
+		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
+		policyResult.Assessment.Timings = preTimer.timings
+		policyResult.DecisionID = decisionID
+		s.recordTelemetry(Analysis{
+			Result:     policyResult.Result,
+			CacheHit:   policyResult.CacheHit,
+			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
+			Decision:   decision,
+			DecisionID: decisionID,
+			Assessment: policyResult.Assessment,
+		}, client)
+		return policyResult
 	}
 
 	// 3. Check Whitelist
-	whitelisted := false
-	preTimer.measure(LayerWhitelist, func() {
-		whitelisted = s.whitelist.IsAllowed(ctx, normalized)
-	})
-	if whitelisted {
-		decision := allowlistPolicyDecision()
+	if allow := s.resolveWhitelist(ctx, normalized, &preTimer); allow != nil {
+		decision := allow.decision
 		policyResult := Policy{
-			Domain: normalized,
-			Policy: "allow",
-			Result: analysis.Result{
-				Domain:     normalized,
-				Verdict:    analysis.VerdictSafe,
-				Confidence: 1.0,
-				Score:      0,
-				Reasons:    []string{"whitelisted"},
-				Category:   "uncategorized",
-			},
-			CacheHit:   false,
+			Domain:     normalized,
+			Policy:     "allow",
+			Result:     allow.result,
+			CacheHit:   allow.cacheHit,
 			Assessment: assess,
 		}
 		policyResult.Assessment.Evaluated = append(policyResult.Assessment.Evaluated,
@@ -1688,7 +1680,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		policyResult.DecisionID = decisionID
 		s.recordTelemetry(Analysis{
 			Result:     policyResult.Result,
-			CacheHit:   false,
+			CacheHit:   policyResult.CacheHit,
 			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
 			Decision:   decision,
 			DecisionID: decisionID,
