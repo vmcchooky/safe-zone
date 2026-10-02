@@ -179,3 +179,35 @@ func TestNewRouterRequiresAuthForStatus(t *testing.T) {
 		t.Fatalf("expected unauthenticated /v1/status to be 401, got %d", rec.Code)
 	}
 }
+
+// /metrics carries the per-endpoint request summary, which an anonymous
+// caller can use to fingerprint the API surface and read 401/403/429 rates.
+// It must sit behind the same auth gate as /v1/status.
+func TestNewRouterRequiresAuthForMetrics(t *testing.T) {
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, nil)
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		req := httptest.NewRequest(method, "/metrics", nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("expected unauthenticated %s /metrics to be 401, got %d", method, rec.Code)
+		}
+	}
+}
+
+// Logout revokes the persisted admin session, so it must go through the auth
+// wrapper: that is what runs VerifyCSRF for a state-changing method. Without
+// the wrapper a cross-site form POST could force a session revocation.
+func TestNewRouterGuardsLogoutWithAuth(t *testing.T) {
+	mux := NewRouter(&handlers.Handler{}, (*agent.Engine)(nil), nil, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/auth/logout", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected unauthenticated POST /v1/auth/logout to be 401, got %d", rec.Code)
+	}
+}

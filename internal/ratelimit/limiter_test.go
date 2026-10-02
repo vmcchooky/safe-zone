@@ -2,6 +2,7 @@ package ratelimit_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -12,6 +13,123 @@ import (
 )
 
 // ── Limiter tests ──────────────────────────────────────────────────────────────
+
+// The key map must stay bounded. It was previously unbounded, so a flood
+// that rotated the client IP (one forged X-Forwarded-For value per request)
+// grew the map faster than the 5-minute idle sweep could reclaim it.
+func TestLimiterKeyMapStaysBounded(t *testing.T) {
+	const maxKeys = 50
+	l := ratelimit.NewWithMaxKeys(60, 1, maxKeys)
+	defer l.Close()
+
+	for i := range 2000 {
+		if !l.Allow(fmt.Sprintf("10.0.0.%d", i%256) + fmt.Sprintf(".%d", i/256)) {
+			t.Fatalf("first request for a fresh key must be allowed (i=%d)", i)
+		}
+	}
+
+	if got := l.Len(); got > maxKeys {
+		t.Fatalf("tracked keys = %d, want <= %d", got, maxKeys)
+	}
+}
+
+// A client that keeps sending traffic must not be evicted, or the limiter
+// hands it a fresh burst and its rate limit resets.
+func TestEvictionKeepsAnActiveClient(t *testing.T) {
+	l := ratelimit.NewWithMaxKeys(60, 1, 3)
+	defer l.Close()
+
+	const active = "active-client"
+	l.Allow(active)
+
+	// Flood with fresh one-shot keys while keeping the active client warm
+	// often enough that it is always among the most recently used.
+	for i := range 50 {
+		l.Allow(fmt.Sprintf("flood-%d", i))
+		if i%2 == 0 {
+			time.Sleep(time.Millisecond)
+			l.Allow(active)
+		}
+	}
+
+	if got := l.Len(); got > 3 {
+		t.Fatalf("tracked keys = %d, want <= 3", got)
+	}
+	// The active client spent its burst, so a surviving bucket still denies it.
+	// A wiped bucket would allow it.
+	if l.Allow(active) {
+		t.Fatal("the active client lost its bucket to eviction and had its rate limit reset")
+	}
+}
+
+// The shipped constructor must apply the cap too: every service builds its
+// limiters with New, not NewWithMaxKeys.
+func TestNewAppliesDefaultKeyCap(t *testing.T) {
+	l := ratelimit.New(60, 1)
+	defer l.Close()
+
+	for i := range ratelimit.DefaultMaxKeys + 5000 {
+		l.Allow(fmt.Sprintf("key-%d", i))
+	}
+
+	if got := l.Len(); got > ratelimit.DefaultMaxKeys {
+		t.Fatalf("tracked keys = %d, want <= DefaultMaxKeys (%d)", got, ratelimit.DefaultMaxKeys)
+	}
+}
+
+func TestLimiterUnlimitedWhenMaxKeysNonPositive(t *testing.T) {
+	l := ratelimit.NewWithMaxKeys(60, 1, 0)
+	defer l.Close()
+
+	for i := range 500 {
+		l.Allow(fmt.Sprintf("key-%d", i))
+	}
+	if got := l.Len(); got != 500 {
+		t.Fatalf("tracked keys = %d, want 500 (cap disabled)", got)
+	}
+}
+
+// Eviction must not stall the limiter. A previous implementation sorted the
+// whole key space under the write lock, which measured 88-215 ms at 50k keys
+// and blocked every concurrent caller for the duration.
+//
+// The fill deliberately makes every key a repeat visitor (hits >= 2). That is
+// the worst case: the one-shot pass finds nothing to take and has to walk the
+// active list before the sweep pass can start. Filling with fresh one-shot keys
+// instead would let the cheap pass do all the work and measure nothing — which
+// is what an earlier version of this test accidentally did.
+func TestEvictionDoesNotStallTheLimiter(t *testing.T) {
+	const maxKeys = 20_000
+	l := ratelimit.NewWithMaxKeys(600, 1000, maxKeys) // high burst, so keys land in active
+	defer l.Close()
+
+	for i := range maxKeys {
+		key := fmt.Sprintf("key-%d", i)
+		l.Allow(key)
+		l.Allow(key) // repeat visitor, so pass 1 cannot drain it
+	}
+	if got := l.Len(); got != maxKeys {
+		t.Fatalf("precondition: %d keys tracked, want %d", got, maxKeys)
+	}
+
+	worst := time.Duration(0)
+	for i := range 200 {
+		// Each insert trips eviction, because the map is already at the cap.
+		start := time.Now()
+		l.Allow(fmt.Sprintf("trigger-%d", i))
+		if elapsed := time.Since(start); elapsed > worst {
+			worst = elapsed
+		}
+	}
+	t.Logf("worst eviction-bearing request: %v at %d tracked keys", worst, maxKeys)
+
+	// Generous against the measured 12.5 ms worst case, but far below the
+	// 88-215 ms of the sorted implementation, and loose enough not to flake on
+	// a slow or ARM host.
+	if worst > 100*time.Millisecond {
+		t.Fatalf("slowest eviction-bearing request took %v; eviction is stalling the limiter", worst)
+	}
+}
 
 func TestLimiter_AllowBasic(t *testing.T) {
 	l := ratelimit.New(60, 3) // 1 req/sec, burst 3

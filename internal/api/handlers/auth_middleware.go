@@ -14,22 +14,43 @@ import (
 	"safe-zone/internal/config"
 )
 
+func hasBearerPrefix(r *http.Request) bool {
+	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+}
+
+// bearerMatches reports whether the request presents the configured admin
+// API key. Both the enforcing and the annotating auth path call this so the
+// two can never disagree about what counts as a valid bearer credential.
+//
+// An empty presented token and an empty configured key never match. Without
+// that guard the comparison degenerates to sha256("") == sha256(""), which
+// authenticates a bare "Authorization: Bearer " header as admin on every
+// route whenever AdminAPIKey is unset (e.g. an embedder that constructs
+// handlers.Config itself).
+//
+// The comparison uses ConstantTimeCompare over SHA-256 digests to keep the
+// check free of length- and byte-dependent timing.
+func (h *Handler) bearerMatches(r *http.Request) bool {
+	if !hasBearerPrefix(r) {
+		return false
+	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if token == "" || h.Config.AdminAPIKey == "" {
+		return false
+	}
+
+	tokenHash := sha256.Sum256([]byte(token))
+	expectedHash := sha256.Sum256([]byte(h.Config.AdminAPIKey))
+	return subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1
+}
+
 func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// 1. Check Authorization Header for static API Key
-		authHeader := r.Header.Get("Authorization")
-		if strings.HasPrefix(authHeader, "Bearer ") {
-			token := strings.TrimPrefix(authHeader, "Bearer ")
-
-			// Use ConstantTimeCompare with SHA-256 hashing to secure token comparisons against timing attacks
-			tokenHash := sha256.Sum256([]byte(token))
-			expectedHash := sha256.Sum256([]byte(h.Config.AdminAPIKey))
-
-			if subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1 {
-				identity := authIdentity{Username: h.adminUsername(), Role: auth.RoleAdmin, AuthMethod: "bearer"}
-				next(w, r.WithContext(withAuthIdentity(r.Context(), identity)))
-				return
-			}
+		if h.bearerMatches(r) {
+			identity := authIdentity{Username: h.adminUsername(), Role: auth.RoleAdmin, AuthMethod: "bearer"}
+			next(w, r.WithContext(withAuthIdentity(r.Context(), identity)))
+			return
 		}
 
 		// 2. Check Session Cookie
@@ -173,21 +194,20 @@ func (h *Handler) AttachAuthIdentityFunc(next http.HandlerFunc) http.HandlerFunc
 
 // tryAuthIdentity mirrors the credential validation of RequireAuthFunc
 // (constant-time bearer compare, revocable admin sessions, guest config
-// check) without any of its side effects. An empty bearer token or an
-// empty configured key never matches.
+// check) without any of its side effects.
+//
+// It deliberately fails closed on a *present but invalid* bearer token
+// instead of falling through to the cookie, so a caller cannot reach an
+// authenticated capability by sending a stale Authorization header. The
+// bearer comparison itself is shared with RequireAuthFunc via
+// bearerMatches; only this fall-through policy is specific to the
+// annotating variant.
 func (h *Handler) tryAuthIdentity(r *http.Request) (authIdentity, bool) {
-	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		if token == "" || h.Config.AdminAPIKey == "" {
+	if hasBearerPrefix(r) {
+		if !h.bearerMatches(r) {
 			return authIdentity{}, false
 		}
-		tokenHash := sha256.Sum256([]byte(token))
-		expectedHash := sha256.Sum256([]byte(h.Config.AdminAPIKey))
-		if subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1 {
-			return authIdentity{Username: h.adminUsername(), Role: auth.RoleAdmin, AuthMethod: "bearer"}, true
-		}
-		return authIdentity{}, false
+		return authIdentity{Username: h.adminUsername(), Role: auth.RoleAdmin, AuthMethod: "bearer"}, true
 	}
 	cookie, err := r.Cookie("admin_session")
 	if err != nil || cookie.Value == "" {
