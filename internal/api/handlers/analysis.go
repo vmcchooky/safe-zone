@@ -130,7 +130,9 @@ func (h *Handler) OsintEvidenceHandler(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("refresh") == "1" || r.URL.Query().Get("force") == "1"
 	report, err := h.Risk.OSINTEvidence(r.Context(), domain, force)
 	if err != nil {
-		httputil.WriteError(w, http.StatusBadGateway, err.Error())
+		// 502 rather than 500: the failure is in an upstream lookup, not in this
+		// service. The detail stays in the log.
+		httputil.WriteInternalError(w, r, http.StatusBadGateway, err, "OSINT evidence lookup failed")
 		return
 	}
 	httputil.WriteJSON(w, http.StatusOK, report)

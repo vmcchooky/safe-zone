@@ -1300,7 +1300,7 @@ func (s *Service) reconcileAnalysisConfig() {
 
 func (s *Service) reloadAnalysisConfigFromStore(source string) (string, string, bool, error) {
 	if s == nil || s.store == nil || !s.store.Enabled() {
-		return "", "", false, fmt.Errorf("store not configured")
+		return "", "", false, store.ErrDisabled
 	}
 
 	storedConfig, err := s.store.GetAnalysisConfig(context.Background())
@@ -3878,7 +3878,7 @@ func (s *Service) UpdateAnalysisConfig(ctx context.Context, cfg config.AnalysisC
 	}
 	cfg = cfg.Clone()
 	if s.store == nil || !s.store.Enabled() {
-		return fmt.Errorf("store not configured")
+		return store.ErrDisabled
 	}
 	if err := s.store.SetAnalysisConfig(ctx, cfg); err != nil {
 		return err
@@ -4053,7 +4053,7 @@ func (s *Service) ListOverrides(ctx context.Context, action string) ([]store.Ove
 // the write; see ListOverrides.
 func (s *Service) UpsertOverride(ctx context.Context, domain, action, reason string) error {
 	if s.store == nil {
-		return fmt.Errorf("store not configured")
+		return store.ErrDisabled
 	}
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {
@@ -4067,7 +4067,7 @@ func (s *Service) UpsertOverride(ctx context.Context, domain, action, reason str
 // ListOverrides.
 func (s *Service) DeleteOverride(ctx context.Context, domain string) error {
 	if s.store == nil {
-		return fmt.Errorf("store not configured")
+		return store.ErrDisabled
 	}
 	normalized, err := analysis.NormalizeDomain(domain)
 	if err != nil {

@@ -220,6 +220,20 @@ func (d *DB) ListAgentProposals(ctx context.Context, status string, limit int) (
 // report the real state instead of being handed the winner's row.
 var ErrAgentProposalConflict = errors.New("agent proposal was reviewed concurrently")
 
+// ErrProposalNotReviewable reports that a proposal cannot be reviewed in its
+// current state: it does not exist, it has already been decided, or it has
+// expired.
+//
+// This exists so an HTTP layer can tell "this proposal is not reviewable" from
+// "the database failed". Those used to be the same opaque error, so a store
+// failure was answered with 409 Conflict and the store's own message in the body,
+// telling the operator their proposal was in the wrong state when the query had
+// never run.
+//
+// The wrapped detail names the proposal's own status, which is the caller's own
+// resource and safe to echo; only the sentinel decides the status code.
+var ErrProposalNotReviewable = errors.New("agent proposal is not reviewable")
+
 // ReviewAgentProposal transitions a pending, unexpired proposal to
 // approved or rejected. Expired rows report AgentProposalExpired without
 // mutating, so reviewers can distinguish stale evidence from rejection.
@@ -234,13 +248,17 @@ var ErrAgentProposalConflict = errors.New("agent proposal was reviewed concurren
 func (d *DB) ReviewAgentProposal(ctx context.Context, id int64, approve bool, reviewer, reason string) (AgentProposal, error) {
 	p, err := d.GetAgentProposal(ctx, id)
 	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AgentProposal{}, fmt.Errorf("%w: proposal %d does not exist", ErrProposalNotReviewable, id)
+		}
 		return AgentProposal{}, err
 	}
 	if p.Status != AgentProposalPending {
-		return AgentProposal{}, fmt.Errorf("proposal %d is %s, only pending proposals are reviewable", id, p.Status)
+		return AgentProposal{}, fmt.Errorf("%w: proposal %d is %s, only pending proposals are reviewable",
+			ErrProposalNotReviewable, id, p.Status)
 	}
 	if expired, err := time.Parse(time.RFC3339Nano, p.ExpiresAt); err != nil || !time.Now().Before(expired) {
-		return AgentProposal{}, fmt.Errorf("proposal %d is expired", id)
+		return AgentProposal{}, fmt.Errorf("%w: proposal %d is expired", ErrProposalNotReviewable, id)
 	}
 	next := AgentProposalRejected
 	if approve {

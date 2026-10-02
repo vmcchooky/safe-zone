@@ -73,7 +73,7 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		id, err := db.CreateGroup(r.Context(), req.Name, req.Description, req.BlockCategories, req.StrictPhishing, req.StrictMalware)
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to create group")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusCreated, map[string]any{"id": id, "status": "created"})

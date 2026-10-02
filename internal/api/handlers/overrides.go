@@ -153,7 +153,11 @@ func (h *Handler) ReviewFalsePositiveHandler(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, store.ErrBlockReportDomainMismatch):
 			httputil.WriteError(w, http.StatusConflict, "report domain does not match review domain")
 		default:
-			httputil.WriteError(w, http.StatusInternalServerError, "failed to apply false-positive review: "+err.Error())
+			// The two sentinels above are the operator-actionable outcomes and keep
+			// their own status. Everything else here came out of the store and used
+			// to be echoed into the body, which could carry a file path or a SQL
+			// fragment.
+			httputil.WriteStoreError(w, r, err, "failed to apply the false-positive review")
 		}
 		return
 	}
