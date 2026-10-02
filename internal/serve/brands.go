@@ -3,10 +3,13 @@ package serve
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 
 	"safe-zone/internal/analysis"
+	"safe-zone/internal/logjson"
+	"safe-zone/internal/store"
 )
 
 type BrandManager interface {
@@ -15,6 +18,49 @@ type BrandManager interface {
 	CreateBrand(ctx context.Context, brand analysis.Brand) (analysis.Brand, error)
 	UpdateBrand(ctx context.Context, id int64, brand analysis.Brand) (analysis.Brand, error)
 	DeleteBrand(ctx context.Context, id int64) error
+}
+
+// writeBrandStoreError maps a brand store failure to a status and a message.
+//
+// The mapping is sentinel-driven rather than message-driven. Before, every
+// failure was interpolated into the response body, so a disabled store answered
+// "sqlite store disabled" with a 404 on GET and a 400 on POST — telling the
+// client its brand did not exist when the database had never been consulted.
+//
+// Only ErrInvalidBrand reaches the client verbatim. It describes the request the
+// caller just sent, so echoing it leaks nothing and saves a log lookup. Anything
+// else is logged with the request id and answered generically.
+func writeBrandStoreError(w http.ResponseWriter, r *http.Request, err error) {
+	switch {
+	case err == nil:
+		writeServeError(w, http.StatusInternalServerError, "brand operation failed")
+
+	case errors.Is(err, store.ErrDisabled):
+		logjson.Warn("brand store unavailable while serving request", map[string]any{
+			"service":    "api",
+			"path":       r.URL.Path,
+			"method":     r.Method,
+			"error":      err.Error(),
+			"request_id": RequestID(r.Context()),
+		})
+		writeServeError(w, http.StatusServiceUnavailable, "database not available")
+
+	case errors.Is(err, store.ErrBrandNotFound):
+		writeServeError(w, http.StatusNotFound, "brand not found")
+
+	case errors.Is(err, store.ErrInvalidBrand):
+		writeServeError(w, http.StatusBadRequest, err.Error())
+
+	default:
+		logjson.Error("brand store operation failed while serving request", map[string]any{
+			"service":    "api",
+			"path":       r.URL.Path,
+			"method":     r.Method,
+			"error":      err.Error(),
+			"request_id": RequestID(r.Context()),
+		})
+		writeServeError(w, http.StatusInternalServerError, "brand operation failed")
+	}
 }
 
 func BrandHandler(manager BrandManager) http.HandlerFunc {
@@ -33,7 +79,7 @@ func BrandHandler(manager BrandManager) http.HandlerFunc {
 			if id > 0 {
 				brand, err := manager.GetBrand(r.Context(), id)
 				if err != nil {
-					writeServeError(w, http.StatusNotFound, err.Error())
+					writeBrandStoreError(w, r, err)
 					return
 				}
 				writeServeJSON(w, http.StatusOK, brand)
@@ -41,7 +87,7 @@ func BrandHandler(manager BrandManager) http.HandlerFunc {
 			}
 			brands, err := manager.ListBrands(r.Context())
 			if err != nil {
-				writeServeError(w, http.StatusInternalServerError, err.Error())
+				writeBrandStoreError(w, r, err)
 				return
 			}
 			if brands == nil {
@@ -56,7 +102,7 @@ func BrandHandler(manager BrandManager) http.HandlerFunc {
 			}
 			created, err := manager.CreateBrand(r.Context(), brand)
 			if err != nil {
-				writeServeError(w, http.StatusBadRequest, err.Error())
+				writeBrandStoreError(w, r, err)
 				return
 			}
 			writeServeJSON(w, http.StatusCreated, created)
@@ -72,7 +118,7 @@ func BrandHandler(manager BrandManager) http.HandlerFunc {
 			}
 			updated, err := manager.UpdateBrand(r.Context(), id, brand)
 			if err != nil {
-				writeServeError(w, http.StatusBadRequest, err.Error())
+				writeBrandStoreError(w, r, err)
 				return
 			}
 			writeServeJSON(w, http.StatusOK, updated)
@@ -83,7 +129,7 @@ func BrandHandler(manager BrandManager) http.HandlerFunc {
 				return
 			}
 			if err := manager.DeleteBrand(r.Context(), id); err != nil {
-				writeServeError(w, http.StatusNotFound, err.Error())
+				writeBrandStoreError(w, r, err)
 				return
 			}
 			writeServeJSON(w, http.StatusOK, map[string]any{"status": "deleted", "id": id})

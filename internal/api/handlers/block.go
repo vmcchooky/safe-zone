@@ -72,6 +72,7 @@ func (h *Handler) BlockReportHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
+	defer func() { _ = r.Body.Close() }()
 	if err := r.ParseForm(); err != nil {
 		httputil.WriteError(w, http.StatusBadRequest, "invalid form body")
 		return
@@ -114,11 +115,18 @@ func (h *Handler) BlockReportHandler(w http.ResponseWriter, r *http.Request) {
 		"reported_at":    time.Now().UTC().Format(time.RFC3339Nano),
 	}
 
-	if db := h.Risk.StoreDB(); db != nil && db.Enabled() {
-		if _, err := db.CreateBlockReportWithAudit(r.Context(), domain, contact, note, reportDetails); err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, "failed to record report")
-			return
-		}
+	// The report has to be stored before the redirect claims it was. This
+	// endpoint is unauthenticated and only rate limited, so it is the most
+	// likely place to hit an unavailable store — and silently redirecting with
+	// "reported=1" told the user their report was filed when it was dropped.
+	db := h.Risk.StoreDB()
+	if db == nil || !db.Enabled() {
+		httputil.WriteError(w, http.StatusServiceUnavailable, "reporting is temporarily unavailable; the block itself is unaffected")
+		return
+	}
+	if _, err := db.CreateBlockReportWithAudit(r.Context(), domain, contact, note, reportDetails); err != nil {
+		httputil.WriteStoreError(w, r, err, "failed to record report")
+		return
 	}
 
 	redirectTarget := "/block?reported=1"

@@ -17,7 +17,7 @@ const adminSessionDatetime = "2006-01-02 15:04:05"
 // SHA-256 fingerprint. DB failures must fail the login (fail closed).
 func (d *DB) CreateAdminSession(ctx context.Context, fingerprint, username string, expiresAt time.Time) error {
 	if !d.Enabled() {
-		return fmt.Errorf("sqlite store disabled")
+		return ErrDisabled
 	}
 	_, err := d.db.ExecContext(ctx,
 		`INSERT INTO admin_sessions (session_fingerprint, username, expires_at) VALUES (?, ?, ?)`,
@@ -34,7 +34,7 @@ func (d *DB) CreateAdminSession(ctx context.Context, fingerprint, username strin
 // a database failure returns an error so callers can fail closed.
 func (d *DB) AdminSessionActive(ctx context.Context, fingerprint string) (bool, error) {
 	if !d.Enabled() {
-		return false, fmt.Errorf("sqlite store disabled")
+		return false, ErrDisabled
 	}
 	var one int
 	err := d.db.QueryRowContext(ctx,
@@ -54,7 +54,7 @@ func (d *DB) AdminSessionActive(ctx context.Context, fingerprint string) (bool, 
 // successful revoke, any copy of the cookie is rejected at the next request.
 func (d *DB) RevokeAdminSession(ctx context.Context, fingerprint string) error {
 	if !d.Enabled() {
-		return fmt.Errorf("sqlite store disabled")
+		return ErrDisabled
 	}
 	_, err := d.db.ExecContext(ctx,
 		`UPDATE admin_sessions SET revoked_at = datetime('now') WHERE session_fingerprint = ? AND revoked_at IS NULL`,
@@ -70,7 +70,7 @@ func (d *DB) RevokeAdminSession(ctx context.Context, fingerprint string) error {
 // bounded batch and returns how many rows were removed.
 func (d *DB) CleanupExpiredAdminSessions(ctx context.Context) (int64, error) {
 	if !d.Enabled() {
-		return 0, fmt.Errorf("sqlite store disabled")
+		return 0, ErrDisabled
 	}
 	result, err := d.db.ExecContext(ctx, `
 		DELETE FROM admin_sessions

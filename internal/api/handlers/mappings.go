@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -17,8 +18,8 @@ type mappingRequest struct {
 
 func (h *Handler) MappingsHandler(w http.ResponseWriter, r *http.Request) {
 	db := h.Risk.StoreDB()
-	if db == nil {
-		httputil.WriteError(w, http.StatusServiceUnavailable, "store not configured")
+	if db == nil || !db.Enabled() {
+		httputil.WriteError(w, http.StatusServiceUnavailable, "store is unavailable")
 		return
 	}
 
@@ -26,7 +27,7 @@ func (h *Handler) MappingsHandler(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		mappings, err := db.ListMappings(r.Context())
 		if err != nil {
-			httputil.WriteError(w, http.StatusInternalServerError, err.Error())
+			httputil.WriteStoreError(w, r, err, "failed to list mappings")
 			return
 		}
 		if mappings == nil {
@@ -48,6 +49,12 @@ func (h *Handler) MappingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		id, err := db.AddMappingInt(r.Context(), req.MappingType, req.Value, req.GroupID)
 		if err != nil {
+			// A store failure must not be reported as a bad request: that tells
+			// the operator their input is wrong when the input was fine.
+			if httputil.StoreUnavailable(err) {
+				httputil.WriteStoreError(w, r, err, "failed to create mapping")
+				return
+			}
 			httputil.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -65,7 +72,11 @@ func (h *Handler) MappingsHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := db.DeleteMapping(r.Context(), mid); err != nil {
-			httputil.WriteError(w, http.StatusNotFound, err.Error())
+			if errors.Is(err, store.ErrMappingNotFound) {
+				httputil.WriteError(w, http.StatusNotFound, "mapping not found")
+				return
+			}
+			httputil.WriteStoreError(w, r, err, "failed to delete mapping")
 			return
 		}
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
