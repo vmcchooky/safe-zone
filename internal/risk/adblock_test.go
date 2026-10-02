@@ -121,8 +121,8 @@ func TestAdblockTrieMatchInAnalyze(t *testing.T) {
 	if len(result.Reasons) == 0 || result.Reasons[0] != "adblock" {
 		t.Fatalf("expected reason 'adblock', got %v", result.Reasons)
 	}
-	if result.Result.Category != "adware" {
-		t.Fatalf("expected category 'adware', got %s", result.Result.Category)
+	if result.Category != "adware" {
+		t.Fatalf("expected category 'adware', got %s", result.Category)
 	}
 }
 

@@ -1481,7 +1481,7 @@ func TestOverrideBeatsWhitelist(t *testing.T) {
 		WhitelistPath:  whitelistPath,
 		Store:          storeDB,
 	})
-	t.Cleanup(func() { service.Close() })
+	t.Cleanup(func() { _ = service.Close() })
 
 	// Without override, should be whitelisted (SAFE).
 	result := service.Analyze(context.Background(), "whitelisted.test", ClientInfo{})

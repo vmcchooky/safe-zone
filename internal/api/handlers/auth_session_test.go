@@ -47,7 +47,7 @@ func TestAdminLoginCreatesActiveSession(t *testing.T) {
 	ts := newHandlerTestServer(t)
 
 	resp, cookie := loginAdmin(t, ts, "adminpass1234")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on admin login, got %d", resp.StatusCode)
 	}
@@ -65,7 +65,7 @@ func TestAdminLoginCreatesActiveSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer authResp.Body.Close()
+	defer func() { _ = authResp.Body.Close() }()
 	if authResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 with minted admin session, got %d", authResp.StatusCode)
 	}
@@ -80,7 +80,7 @@ func TestAdminLoginUsesConfiguredUsername(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for configured admin username, got %d", resp.StatusCode)
 	}
@@ -105,7 +105,7 @@ func TestAdminLoginUsesConfiguredUsername(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer adminResp.Body.Close()
+	defer func() { _ = adminResp.Body.Close() }()
 	if adminResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected legacy admin username to be rejected after configuration, got %d", adminResp.StatusCode)
 	}
@@ -119,7 +119,7 @@ func TestAdminLoginUsesConfiguredUsername(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer sessionResp.Body.Close()
+	defer func() { _ = sessionResp.Body.Close() }()
 	body, err := io.ReadAll(sessionResp.Body)
 	if err != nil {
 		t.Fatal(err)
@@ -134,7 +134,7 @@ func TestAdminLoginRejectsWrongCredentials(t *testing.T) {
 	ts := newHandlerTestServer(t)
 
 	resp, cookie := loginAdmin(t, ts, "wrong-password")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d", resp.StatusCode)
 	}
@@ -157,7 +157,7 @@ func TestLogoutRevokesSessionAndReplayFails(t *testing.T) {
 	ts := newHandlerTestServer(t)
 
 	resp, cookie := loginAdmin(t, ts, "adminpass1234")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if cookie == nil {
 		t.Fatal("expected admin_session cookie")
 	}
@@ -177,7 +177,7 @@ func TestLogoutRevokesSessionAndReplayFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer logoutResp.Body.Close()
+	defer func() { _ = logoutResp.Body.Close() }()
 	if logoutResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 on logout, got %d", logoutResp.StatusCode)
 	}
@@ -191,7 +191,7 @@ func TestLogoutRevokesSessionAndReplayFails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer replayResp.Body.Close()
+	defer func() { _ = replayResp.Body.Close() }()
 	if replayResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for replayed cookie after logout, got %d", replayResp.StatusCode)
 	}
@@ -211,7 +211,7 @@ func TestExpiredAndLegacyAdminSessionsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for expired session, got %d", resp.StatusCode)
 	}
@@ -229,7 +229,7 @@ func TestExpiredAndLegacyAdminSessionsRejected(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer legacyResp.Body.Close()
+	defer func() { _ = legacyResp.Body.Close() }()
 	if legacyResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for legacy stateless admin token, got %d", legacyResp.StatusCode)
 	}
@@ -248,7 +248,7 @@ func TestSessionStoreUnavailableFailsClosed(t *testing.T) {
 	}
 
 	resp, cookie := loginAdmin(t, ts, "adminpass1234")
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 login without session store, got %d", resp.StatusCode)
 	}
@@ -267,7 +267,7 @@ func TestSessionStoreUnavailableFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer authResp.Body.Close()
+	defer func() { _ = authResp.Body.Close() }()
 	if authResp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("expected 503 session validation without store, got %d", authResp.StatusCode)
 	}
@@ -284,7 +284,7 @@ func TestSessionStoreUnavailableFailsClosed(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer bearerResp.Body.Close()
+	defer func() { _ = bearerResp.Body.Close() }()
 	if bearerResp.StatusCode != http.StatusServiceUnavailable {
 		t.Fatalf("bearer auth with no usable store = %d, want 503: a 401 or 403 would mean the credential was rejected", bearerResp.StatusCode)
 	}

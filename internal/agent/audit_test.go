@@ -14,7 +14,7 @@ func newTestStore(t *testing.T) *store.DB {
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 	return db
 }
 

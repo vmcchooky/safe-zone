@@ -29,8 +29,11 @@ func TestOllamaRefineSuccess(t *testing.T) {
 		if req.Model != "test-ollama-model" {
 			t.Errorf("expected model 'test-ollama-model', got '%s'", req.Model)
 		}
-		if !req.Stream {
-			// Ensure streaming is disabled
+		if req.Stream {
+			// This was an empty branch holding only a comment, so the request body
+			// was never actually checked. Making it a real assertion is the point:
+			// a client that asked for a streaming response would hang the caller.
+			t.Errorf("expected stream=false so the reply is a single JSON body, got true")
 		}
 		if req.Format != "json" {
 			t.Errorf("expected format 'json', got '%s'", req.Format)

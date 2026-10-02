@@ -123,7 +123,7 @@ func TestMetricsHandlerRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 
 	if response.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", response.StatusCode)
@@ -358,8 +358,8 @@ func TestPolicyHandlerGroupMapping(t *testing.T) {
 	if payload.Policy.Policy != "block" {
 		t.Fatalf("expected block policy, got %s", payload.Policy.Policy)
 	}
-	if payload.Policy.Result.Category != "adult" {
-		t.Fatalf("expected category adult, got %s", payload.Policy.Result.Category)
+	if payload.Result.Category != "adult" {
+		t.Fatalf("expected category adult, got %s", payload.Result.Category)
 	}
 
 	// Case 2: IP không mapped → group mặc định → allow.

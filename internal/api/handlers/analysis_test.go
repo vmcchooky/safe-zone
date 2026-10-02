@@ -37,7 +37,7 @@ func TestRecentAnalysisHandlerRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("expected 401 for unauthenticated request, got %d", resp.StatusCode)
 	}
@@ -54,7 +54,7 @@ func TestRecentAnalysisHandlerRequiresAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer authedResp.Body.Close()
+	defer func() { _ = authedResp.Body.Close() }()
 	if authedResp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200 for authenticated request, got %d", authedResp.StatusCode)
 	}
@@ -74,7 +74,7 @@ func TestAnalyzeEndpointStillWorks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -109,7 +109,7 @@ func TestAnalyzeEndpointContractUnchangedForAdblockDomain(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -143,7 +143,7 @@ func TestAnalyzeEndpointDetectsVietnamPublicServiceAbuse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
@@ -213,7 +213,7 @@ func TestAnalyzeEndpointRejectsOversizedJSONBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", resp.StatusCode)
@@ -260,7 +260,7 @@ func TestAnalyzeGetDoesNotAcceptURLContext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var payload map[string]any
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatal(err)

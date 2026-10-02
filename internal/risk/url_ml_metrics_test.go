@@ -138,9 +138,7 @@ func TestDriftPSIIsSkippedWithoutAReferenceRowCount(t *testing.T) {
 func newDriftTestService(t *testing.T, distribution []float64, referenceRows int) *Service {
 	t.Helper()
 	bucketNames := make([]string, len(mlProbabilityBuckets))
-	for index, name := range mlProbabilityBuckets {
-		bucketNames[index] = name
-	}
+	copy(bucketNames, mlProbabilityBuckets[:])
 	return &Service{
 		urlMLOpsBaseline: &URLOperationalBaseline{
 			ReferenceKind:      "frozen_operational_shadow_traffic",

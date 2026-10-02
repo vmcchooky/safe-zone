@@ -38,7 +38,7 @@ func TestFeedSyncTaskEmptySourcesFiltered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create test store: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	task := NewFeedSyncTask(db, FeedSyncConfig{
 		Sources:   []string{"", "  ", ""},

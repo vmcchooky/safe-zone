@@ -46,7 +46,7 @@ func TestSyncRefusesSelfServiceRootsButAdmitsTenants(t *testing.T) {
 	}
 	defer server.Close()
 	redisCache := cache.NewRedis(server.Addr(), "", 0)
-	defer redisCache.Close()
+	defer func() { _ = redisCache.Close() }()
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "feed.txt")
@@ -107,7 +107,7 @@ func TestSyncWriteSkipsPublicSuffixMembers(t *testing.T) {
 		t.Fatalf("expected only evil.github.io and evil.com written, got %d (%#v)", report.Written, report.Stats)
 	}
 	redisCache := cache.NewRedis(server.Addr(), "", 0)
-	defer redisCache.Close()
+	defer func() { _ = redisCache.Close() }()
 	for _, blocked := range []string{"github.io", "workers.dev", "co.uk"} {
 		if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, blocked); err == nil {
 			t.Fatalf("public suffix %s must not be admitted to the feed", blocked)
@@ -174,7 +174,7 @@ func TestSyncSkipsSharedServingHosts(t *testing.T) {
 	}
 
 	redisCache := cache.NewRedis(server.Addr(), "", 0)
-	defer redisCache.Close()
+	defer func() { _ = redisCache.Close() }()
 	for _, skipped := range []string{"docs.google.com", "raw.githubusercontent.com", "cdn.jsdelivr.net", "s3.amazonaws.com"} {
 		if _, err := redisCache.ZScore(context.Background(), DefaultThreatFeedKey, skipped); err == nil {
 			t.Fatalf("shared serving host %s must not be admitted to the threat feed", skipped)
