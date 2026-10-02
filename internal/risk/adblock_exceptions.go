@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"golang.org/x/net/idna"
-	"golang.org/x/net/publicsuffix"
 
+	"safe-zone/internal/analysis"
 	"safe-zone/internal/config"
 	"safe-zone/internal/domaintrie"
 	"safe-zone/internal/logjson"
@@ -328,7 +328,7 @@ func validateAdblockExceptions(body []byte) ([]adblockException, error) {
 			category = trimmed
 		}
 		if scope == domaintrie.RuleScopeSuffix {
-			if _, err := publicsuffix.EffectiveTLDPlusOne(domain); err != nil {
+			if !analysis.IsRegistrableDomain(domain) {
 				return nil, fmt.Errorf("%s: entry %d selector is a public suffix", adblockExcErrInvalidEntry, i)
 			}
 		}
