@@ -227,7 +227,7 @@ func TestAdminOverrideWinsOverException(t *testing.T) {
 	if pol.Policy != "block" {
 		t.Fatalf("expected admin block, got %s", pol.Policy)
 	}
-	if pol.Decision != nil {
+	if pol.Decision != nil && pol.Decision.Kind == "content" {
 		t.Fatalf("override path must not carry a content decision, got %+v", pol.Decision)
 	}
 	if got := service.AdblockExceptionStatus().Matches; got != 0 {
@@ -256,8 +256,8 @@ func TestWhitelistPrecedenceLockedWithException(t *testing.T) {
 	if pol.Policy != "allow" {
 		t.Fatalf("expected whitelist allow, got %s", pol.Policy)
 	}
-	if pol.Decision != nil {
-		t.Fatalf("whitelist path must not carry a decision, got %+v", pol.Decision)
+	if pol.Decision != nil && pol.Decision.Kind == "content" {
+		t.Fatalf("whitelist path must not carry a content decision, got %+v", pol.Decision)
 	}
 }
 

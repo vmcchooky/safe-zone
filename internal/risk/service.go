@@ -1640,6 +1640,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 			Domain:     normalized,
 			Policy:     override.decision.Action,
 			Result:     override.result,
+			Decision:   decision,
 			CacheHit:   override.cacheHit,
 			Assessment: assess,
 		}
@@ -1668,6 +1669,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 			Domain:     normalized,
 			Policy:     "allow",
 			Result:     allow.result,
+			Decision:   decision,
 			CacheHit:   allow.cacheHit,
 			Assessment: assess,
 		}
