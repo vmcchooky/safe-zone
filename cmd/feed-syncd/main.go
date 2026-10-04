@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -150,6 +151,16 @@ func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error)
 	churnTTLDays := flags.Int("churn-ttl-days", config.Int("SAFE_ZONE_FEED_CHURN_TTL_DAYS", 0), "shorter expiry in days for members on recycled-label roots (0 disables; must be at least 2 and exceed the sync interval)")
 	if err := flags.Parse(args); err != nil {
 		return syncSettings{}, err
+	}
+	// time.NewTicker panics on a non-positive duration, and
+	// CheckChurnTTLAgainstInterval below only reaches the interval when a churn
+	// window is configured — with the default churn of 0 it returns nil
+	// immediately, so an explicit --interval=0 or a
+	// SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS=0 reached the ticker and crashed the
+	// daemon instead of being refused. Validate it here, where the other inputs are
+	// refused, rather than at the point of use.
+	if *interval <= 0 {
+		return syncSettings{}, fmt.Errorf("interval must be positive, got %s", *interval)
 	}
 
 	feedTTL, ttlErr := feed.TTLFromDays(*ttlDays)
