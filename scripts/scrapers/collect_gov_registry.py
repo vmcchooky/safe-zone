@@ -5,13 +5,15 @@ This data is PUBLIC and used for building a whitelist for anti-phishing AI train
 """
 import json
 import os
+from pathlib import Path
 import time
 import urllib.request
 import urllib.error
 import re
 import ssl
 
-output_path = r"d:\Quorix\services\safe-zone\data\collected_gov_registry.json"
+ROOT = Path(__file__).resolve().parents[2]
+output_path = str(ROOT / "data/collected_gov_registry.json")
 all_domains = set()
 
 # ============================================================

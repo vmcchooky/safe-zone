@@ -1,10 +1,13 @@
 import json
 import re
 import os
+from pathlib import Path
 import csv
 from datetime import datetime
 
-def clean_dataset(data_dir="D:\\Quorix\\services\\safe-zone\\data", prefix="tvpl_whitelist"):
+ROOT = Path(__file__).resolve().parents[2]
+
+def clean_dataset(data_dir=str(ROOT / "data"), prefix="tvpl_whitelist"):
     json_path = os.path.join(data_dir, f"{prefix}_websites.json")
     csv_path = os.path.join(data_dir, f"{prefix}_websites.csv")
     txt_path = os.path.join(data_dir, f"{prefix}_domains.txt")

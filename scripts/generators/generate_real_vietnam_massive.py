@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import glob
 import csv
 import json
@@ -6,10 +7,11 @@ import datetime
 import urllib.request
 import zipfile
 
-data_dir = r"d:\Quorix\services\safe-zone\data"
+ROOT = Path(__file__).resolve().parents[2]
+data_dir = str(ROOT / "data")
 
 print("Extracting real .vn domains from DNS Leak and Github repo...")
-leak_dir = r"d:\Quorix\services\safe-zone\tmp\VietnamDNSLeak"
+leak_dir = str(ROOT / "tmp/VietnamDNSLeak")
 txt_files = glob.glob(os.path.join(leak_dir, "**", "*.txt"), recursive=True)
 
 unique_domains = set()
@@ -26,7 +28,7 @@ for fpath in txt_files:
                     unique_domains.add(domain)
 
 # Add from VietnamDomains repo
-repo2_dir = r"d:\Quorix\services\safe-zone\tmp\VietnamDomains2"
+repo2_dir = str(ROOT / "tmp/VietnamDomains2")
 for fname in ["dotcom.vn.txt", "dotvn.txt"]:
     fpath = os.path.join(repo2_dir, fname)
     if os.path.exists(fpath):

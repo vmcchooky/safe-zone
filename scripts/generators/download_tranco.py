@@ -1,11 +1,13 @@
 import os
+from pathlib import Path
 import csv
 import json
 import urllib.request
 import zipfile
 import datetime
 
-data_dir = r"d:\Quorix\services\safe-zone\data"
+ROOT = Path(__file__).resolve().parents[2]
+data_dir = str(ROOT / "data")
 zip_path = os.path.join(data_dir, "top-1m.csv.zip")
 
 url = "https://tranco-list.eu/top-1m.csv.zip"

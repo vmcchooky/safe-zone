@@ -3,7 +3,9 @@ import urllib.request
 import time
 import re
 import os
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
 QUERIES = [
     "https://crt.sh/?q=%.com.vn&output=json",
     "https://crt.sh/?q=%.vn&output=json",
@@ -15,7 +17,7 @@ QUERIES = [
     "https://crt.sh/?q=%.info.vn&output=json"
 ]
 
-OUTPUT_FILE = r"d:\Quorix\services\safe-zone\data\collected_crtsh.json"
+OUTPUT_FILE = str(ROOT / "data/collected_crtsh.json")
 
 def clean_domain(domain):
     domain = domain.strip().lower()

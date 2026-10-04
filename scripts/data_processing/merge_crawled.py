@@ -1,8 +1,11 @@
 import json
 import os
+from pathlib import Path
 import csv
 from datetime import datetime
 import shutil
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def load_json(filepath):
     if not os.path.exists(filepath):
@@ -11,7 +14,7 @@ def load_json(filepath):
         return json.load(f)
 
 def merge_crawled():
-    data_dir = r"D:\Quorix\services\safe-zone\data"
+    data_dir = str(ROOT / "data")
     vietnam_dir = os.path.join(data_dir, r"whitelist\vietnam")
     
     edu_path = os.path.join(data_dir, "crawled_edu.json")

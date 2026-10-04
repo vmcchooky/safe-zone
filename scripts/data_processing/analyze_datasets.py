@@ -1,9 +1,12 @@
 import json
 import os
+from pathlib import Path
 import glob
 from collections import Counter
 
-def analyze_datasets(data_dir="D:\\Quorix\\services\\safe-zone\\data"):
+ROOT = Path(__file__).resolve().parents[2]
+
+def analyze_datasets(data_dir=str(ROOT / "data")):
     json_files = glob.glob(os.path.join(data_dir, "*_websites.json"))
     
     total_domains = 0

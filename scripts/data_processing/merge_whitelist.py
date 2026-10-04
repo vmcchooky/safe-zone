@@ -1,12 +1,15 @@
 import json
 import csv
 import os
+from pathlib import Path
 import glob
 from collections import OrderedDict
 from datetime import datetime
 
+ROOT = Path(__file__).resolve().parents[2]
+
 def merge_datasets():
-    data_dir = r"D:\Quorix\services\safe-zone\data"
+    data_dir = str(ROOT / "data")
     whitelist_vn_dir = os.path.join(data_dir, "whitelist", "vietnam")
     blacklist_dir = os.path.join(data_dir, "blacklist")
     

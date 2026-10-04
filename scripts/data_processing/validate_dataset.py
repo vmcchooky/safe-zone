@@ -3,8 +3,11 @@ import json
 import csv
 import socket
 import os
+from pathlib import Path
 from datetime import datetime
 import time
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def check_domain(domain):
     try:
@@ -17,7 +20,7 @@ def check_domain(domain):
     except Exception:
         return False
 
-def validate_dataset(prefix, data_dir="D:\\Quorix\\services\\safe-zone\\data"):
+def validate_dataset(prefix, data_dir=str(ROOT / "data")):
     json_path = os.path.join(data_dir, f"{prefix}_websites.json")
     csv_path = os.path.join(data_dir, f"{prefix}_websites.csv")
     txt_path = os.path.join(data_dir, f"{prefix}_domains.txt")
