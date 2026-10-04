@@ -185,6 +185,25 @@ func main() {
 			len(feedSources) > 0,
 		)
 
+		osintInterval := config.DurationSeconds("SAFE_ZONE_AGENT_OSINT_INTERVAL_SECONDS", 1*time.Hour)
+		// The churn split is only safe while the shortened window outlives the
+		// interval at which members get re-scored, otherwise an entry that is still
+		// live expires in the gap between cycles. feed.CheckChurnTTLAgainstInterval
+		// refuses the process for the feed entrypoints; this one degrades to the base
+		// TTL with a warning instead, because the OSINT audit task is optional and
+		// currently disabled, and a bad value in an unused task must not keep
+		// core-api from serving DNS.
+		if err := feed.CheckChurnTTLAgainstInterval(feedChurnTTL, osintInterval); err != nil {
+			logjson.Warn("osint promotion churn TTL unusable; falling back to the base feed TTL", map[string]any{
+				"service":   "core-api",
+				"task":      "osint-audit",
+				"churn_ttl": feedChurnTTL.String(),
+				"interval":  osintInterval.String(),
+				"error":     err.Error(),
+			})
+			feedChurnTTL = 0
+		}
+
 		osintTask := agent.NewOSINTTask(
 			riskService.StoreDB(),
 			riskService.OSINT(),
@@ -194,11 +213,12 @@ func main() {
 				Lookback:    config.DurationSeconds("SAFE_ZONE_AGENT_OSINT_LOOKBACK_SECONDS", 24*time.Hour),
 				ThreatKey:   feedKey,
 				TTL:         feedTTL,
+				ChurnTTL:    feedChurnTTL,
 			},
 		)
 		agentEngine.Register(
 			osintTask,
-			config.DurationSeconds("SAFE_ZONE_AGENT_OSINT_INTERVAL_SECONDS", 1*time.Hour),
+			osintInterval,
 			config.DurationSeconds("SAFE_ZONE_AGENT_OSINT_TIMEOUT_SECONDS", 2*time.Minute),
 			config.Bool("SAFE_ZONE_OSINT_ENABLED", false),
 		)
