@@ -30,6 +30,15 @@ type OSINTConfig struct {
 	// mirror the threat-feed TTL (SAFE_ZONE_FEED_TTL_DAYS): risk.Service
 	// only matches members whose score is still in the future.
 	TTL time.Duration
+	// ChurnTTL is the shortened window for churn-prone tenants. It must mirror
+	// SAFE_ZONE_FEED_CHURN_TTL_DAYS and is applied per member through
+	// feed.MemberTTL, exactly as the feed sync path applies it.
+	//
+	// It was absent here, so a promoted recycled-label tenant such as
+	// something.ddns.net got the full base window instead of the churn window.
+	// That is the precise harm the churn split exists to bound: an over-block on a
+	// label that gets recycled within days.
+	ChurnTTL time.Duration
 }
 
 // evidenceLookup decouples the task from the concrete OSINT service so tests
@@ -205,7 +214,7 @@ func (t *OSINTTask) promote(ctx context.Context, domain string, evidence int) bo
 		_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_promote_refused", normalized, err.Error())
 		return false
 	}
-	expiryScore := float64(time.Now().Add(t.config.TTL).Unix())
+	expiryScore := float64(time.Now().Add(feed.MemberTTL(normalized, t.config.TTL, t.config.ChurnTTL)).Unix())
 	if _, err := t.redis.ZAdd(ctx, t.config.ThreatKey, redis.Z{Score: expiryScore, Member: normalized}); err != nil {
 		t.logPromotionFailure(ctx, normalized, "zadd", err)
 		return false
