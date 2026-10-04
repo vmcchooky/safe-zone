@@ -51,6 +51,26 @@ const defaultAnalysisConfigReloadPollInterval = 30 * time.Second
 const analysisConfigReloadBackoffMin = 250 * time.Millisecond
 const analysisConfigReloadBackoffMax = 5 * time.Second
 
+// Fallbacks for the durations a caller can supply through Options without also
+// supplying a default.
+//
+// The cache TTLs and the Redis timeout are used as-is, so a zero or negative value
+// has a real and opposite effect at each site. go-redis attaches no expiry when the
+// duration is not positive, so a zero TTL turns the analysis-verdict cache into a set
+// of immortal keys; the config helper that supplies these values only falls back when
+// the variable is unset or unparseable, so an explicit "0" reaches us intact. A zero
+// Redis timeout is worse still: every cache call is wrapped in
+// context.WithTimeout(ctx, 0), which is already expired.
+//
+// These match the defaults in env.go, and match the treatment RecentTTL and
+// BrandCacheTTL already receive a few lines below in NewService.
+const (
+	defaultRedisTimeout       = 250 * time.Millisecond
+	defaultCacheTTLAllowed    = 3 * time.Hour
+	defaultCacheTTLSuspicious = time.Hour
+	defaultCacheTTLBlocked    = 6 * time.Hour
+)
+
 const (
 	analysisConfigReloadEventType = "analysis_config_updated"
 	configReloadSourceStartup     = "startup"
@@ -990,10 +1010,10 @@ func NewService(options Options) *Service {
 		lifecycleCtx:               lifecycleCtx,
 		lifecycleCancel:            lifecycleCancel,
 		redis:                      options.Redis,
-		redisTimeout:               options.RedisTimeout,
-		ttlAllowed:                 options.TTLAllowed,
-		ttlSuspicious:              options.TTLSuspicious,
-		ttlBlocked:                 options.TTLBlocked,
+		redisTimeout:               configDuration(options.RedisTimeout, defaultRedisTimeout),
+		ttlAllowed:                 configDuration(options.TTLAllowed, defaultCacheTTLAllowed),
+		ttlSuspicious:              configDuration(options.TTLSuspicious, defaultCacheTTLSuspicious),
+		ttlBlocked:                 configDuration(options.TTLBlocked, defaultCacheTTLBlocked),
 		recentLimit:                recentLimit,
 		recentTTL:                  configDuration(options.RecentTTL, 24*time.Hour),
 		threatFeedKey:              threatFeedKey,
