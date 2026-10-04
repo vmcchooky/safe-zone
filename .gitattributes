@@ -8,3 +8,7 @@
 # Shell scripts must stay LF: a CRLF checkout breaks `sh`/`dash` on Linux
 # (e.g. `set: Illegal option -` after scp to the VPS). Found 2026-09-20.
 *.sh text eol=lf
+# Python sources follow the same rule as Go: with core.autocrlf=true on
+# Windows they otherwise show up as a phantom whole-tree diff after any edit,
+# and a CRLF shebang would break on Linux. Found 2026-09-27.
+*.py text eol=lf
