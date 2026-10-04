@@ -11,23 +11,37 @@ metrics_format: json
 # which was made to avoid breaking unauthenticated Grafana scrapes; the
 # scraper configuration is updated in the same change.
 #
+# 2026-09-27: dns-resolver /metrics is now gated the same way. It was left open
+# on the argument that it has no login endpoint and therefore no 401/403/429 to
+# leak, but the request summary still discloses which endpoints exist, how they
+# are used, and when the resolver is under load, which is reconnaissance for an
+# attack that never needs a password. dns-resolver status ("/") stays public:
+# it is the liveness source for the dns-resolver-down rule and backs no
+# privileged capability.
+#
 # Example (Prometheus/blackbox style):
 #   Authorization: Bearer $SAFE_ZONE_ADMIN_API_KEY
 #
-# dns-resolver is unaffected: its /metrics and / stay unauthenticated.
+# An unset SAFE_ZONE_ADMIN_API_KEY makes dns-resolver /metrics fail closed with
+# 401. That is deliberate: it is better a scraper reports a credential problem
+# than an operator believes the endpoint is protected while it is public.
 source_endpoints:
   core_api_status: http://127.0.0.1:8080/v1/status
   core_api_metrics: http://127.0.0.1:8080/metrics
   dns_resolver_status: http://127.0.0.1:8081/
   dns_resolver_metrics: http://127.0.0.1:8081/metrics
-# Auth header required for every core_api_* source above. Supply the value
-# from SAFE_ZONE_ADMIN_API_KEY; never commit the token itself.
+# Auth header required for every source above except dns_resolver_status.
+# Supply the value from SAFE_ZONE_ADMIN_API_KEY; never commit the token itself.
 auth:
   core_api_status:
     header: Authorization
     scheme: Bearer
     value_from: SAFE_ZONE_ADMIN_API_KEY
   core_api_metrics:
+    header: Authorization
+    scheme: Bearer
+    value_from: SAFE_ZONE_ADMIN_API_KEY
+  dns_resolver_metrics:
     header: Authorization
     scheme: Bearer
     value_from: SAFE_ZONE_ADMIN_API_KEY

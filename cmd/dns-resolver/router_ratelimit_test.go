@@ -19,7 +19,7 @@ import (
 // removing the Wrap in main would be observable.
 func TestOuterTieredWrapEnforcesRateLimit(t *testing.T) {
 	res := resolver.New(risk.NewService(risk.Options{}), observability.NewRegistry(), nil, resolver.Config{DeploymentTier: "test"}, nil)
-	mux := server.NewRouter(res)
+	mux := server.NewRouter(res, "")
 
 	limiter := ratelimit.New(240, 2)
 	defer limiter.Close()
