@@ -16,7 +16,7 @@ run = "echo Safe Zone checks passed."
 
 [tasks.ci]
 description = "Run the CI verification suite"
-depends = ["check", "ui:e2e", "go:security"]
+depends = ["check", "ui:e2e", "go:security", "ml:test"]
 run = "echo Safe Zone CI checks passed."
 
 [tasks."ui:install"]
@@ -102,6 +102,17 @@ run = [
   "go run github.com/securego/gosec/v2/cmd/gosec@v2.28.0 ./...",
   "go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...",
 ]
+
+[tasks."ml:install"]
+description = "Create the ML virtualenv and install the pinned dependencies from ml/pyproject.toml"
+run = "python -m venv ml/.venv && ml/.venv/bin/python -m pip install --quiet --upgrade pip && ml/.venv/bin/python -m pip install --quiet './ml[dev]'"
+run_windows = 'python -m venv ml\.venv; if not exist ml\.venv\Scripts\python.exe exit /b 1; ml\.venv\Scripts\python.exe -m pip install --quiet --upgrade pip; ml\.venv\Scripts\python.exe -m pip install --quiet "ml[dev]"'
+
+[tasks."ml:test"]
+description = "Run the ML test suite (pytest over ml/tests)"
+depends = ["ml:install"]
+run = "cd ml && .venv/bin/python -m pytest -q"
+run_windows = 'cmd.exe /c "cd ml && .venv\Scripts\python.exe -m pytest -q"'
 
 [tasks."ops:deploy"]
 description = "Deploy the production compose stack through the standardized ops entrypoint"
