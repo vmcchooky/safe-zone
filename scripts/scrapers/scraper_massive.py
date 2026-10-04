@@ -1,7 +1,9 @@
 import json
 import os
+from pathlib import Path
 import random
 
+ROOT = Path(__file__).resolve().parents[2]
 provinces = ["hanoi", "hcm", "danang", "haiphong", "cantho", "angiang", "bariavungtau", "baclieu", "backan", "bacgiang", "bacninh", "bentre", "binhduong", "binhdinh", "binhphuoc", "binhthuan", "camau", "caobang", "daklak", "daknong", "dienbien", "dongnai", "dongthap", "gialai", "hagiang", "hanam", "hatinh", "haiduong", "haugiang", "hoabinh", "hungyen", "khanhhoa", "kiengiang", "kontum", "laichau", "lamdong", "langson", "laocai", "longan", "namdinh", "nghean", "ninhbinh", "ninhthuan", "phutho", "phuyen", "quangbinh", "quangnam", "quangngai", "quangninh", "quangtri", "soctrang", "sonla", "tayninh", "thaibinh", "thainguyen", "thanhhoa", "thuathienhue", "tiengiang", "travinh", "tuyenquang", "vinhlong", "vinhphuc", "yenbai"]
 
 departments = ["sotttt", "sotuphap", "syt", "sgddt", "sxd", "stnmt", "skhdt", "snv", "slbdtbxh", "svhttdl", "skhcn", "snnptnt", "sct", "sgtvt", "thanhtra", "ubnd"]
@@ -48,11 +50,11 @@ if __name__ == "__main__":
     edu = generate_edu()
     biz = generate_biz()
     
-    with open(r"D:\Quorix\services\safe-zone\data\crawled_gov.json", "w", encoding="utf-8") as f:
+    with open(str(ROOT / "data/crawled_gov.json"), "w", encoding="utf-8") as f:
         json.dump(gov, f, ensure_ascii=False, indent=2)
-    with open(r"D:\Quorix\services\safe-zone\data\crawled_edu.json", "w", encoding="utf-8") as f:
+    with open(str(ROOT / "data/crawled_edu.json"), "w", encoding="utf-8") as f:
         json.dump(edu, f, ensure_ascii=False, indent=2)
-    with open(r"D:\Quorix\services\safe-zone\data\crawled_biz_news.json", "w", encoding="utf-8") as f:
+    with open(str(ROOT / "data/crawled_biz_news.json"), "w", encoding="utf-8") as f:
         json.dump(biz, f, ensure_ascii=False, indent=2)
         
     print(f"Generated Gov: {len(gov)}")

@@ -7,11 +7,13 @@ import urllib.request
 import urllib.parse
 import json
 import os
+from pathlib import Path
 import re
 import ssl
 import time
 
-data_dir = r"d:\Quorix\services\safe-zone\data"
+ROOT = Path(__file__).resolve().parents[2]
+data_dir = str(ROOT / "data")
 output_path = os.path.join(data_dir, "expansion_public_indices.json")
 
 all_found_domains = set()

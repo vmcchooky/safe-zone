@@ -1,10 +1,12 @@
 import os
+from pathlib import Path
 import csv
 import json
 import random
 import datetime
 
-data_dir = r"d:\Quorix\services\safe-zone\data"
+ROOT = Path(__file__).resolve().parents[2]
+data_dir = str(ROOT / "data")
 
 # List of common Vietnamese words without diacritics
 words = [

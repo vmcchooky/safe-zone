@@ -8,10 +8,12 @@ import urllib.request
 import ipaddress
 import json
 import os
+from pathlib import Path
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-data_dir = r"d:\Quorix\services\safe-zone\data"
+ROOT = Path(__file__).resolve().parents[2]
+data_dir = str(ROOT / "data")
 output_path = os.path.join(data_dir, "expansion_tranco_vn.json")
 
 print("Downloading official Vietnam IPv4 CIDR blocks...")

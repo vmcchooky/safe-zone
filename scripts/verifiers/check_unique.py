@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 
-unique_file = r"d:\Quorix\services\safe-zone\tmp\unique_vn_domains.txt"
-whitelist_file = r"d:\Quorix\services\safe-zone\data\whitelist\vietnam\vietnam_domains.txt"
+ROOT = Path(__file__).resolve().parents[2]
+unique_file = str(ROOT / "tmp/unique_vn_domains.txt")
+whitelist_file = str(ROOT / "data/whitelist/vietnam/vietnam_domains.txt")
 
 print("Reading unique_vn_domains.txt...")
 with open(unique_file, 'r', encoding='utf-8') as f:

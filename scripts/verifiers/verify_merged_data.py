@@ -1,12 +1,15 @@
 import json
 import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def load_json(filepath):
     with open(filepath, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def verify():
-    data_dir = r"D:\Quorix\services\safe-zone\data"
+    data_dir = str(ROOT / "data")
     tvpl_path = os.path.join(data_dir, "tvpl_whitelist_websites.json")
     abei_path = os.path.join(data_dir, "abei_websites.json")
     vietnam_path = os.path.join(data_dir, r"whitelist\vietnam\vietnam_websites.json")

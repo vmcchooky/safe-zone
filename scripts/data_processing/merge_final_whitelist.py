@@ -4,6 +4,7 @@ the definitive whitelist dataset. Outputs 4 files in data/ directory.
 """
 import json
 import os
+from pathlib import Path
 import csv
 import datetime
 import re
@@ -11,9 +12,10 @@ import sys
 import io
 import glob
 
+ROOT = Path(__file__).resolve().parents[2]
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 
-data_dir = r"d:\Quorix\services\safe-zone\data"
+data_dir = str(ROOT / "data")
 
 def is_valid_domain(d):
     """Check if a string looks like a valid domain name."""
@@ -60,7 +62,7 @@ source_map = {}
 
 # 1. DNS Leak data (628k .vn domains)
 print("\n[1/7] Loading DNS Leak .vn domains...")
-leak_dir = r"d:\Quorix\services\safe-zone\tmp\VietnamDNSLeak"
+leak_dir = str(ROOT / "tmp/VietnamDNSLeak")
 txt_files = glob.glob(os.path.join(leak_dir, "**", "*.txt"), recursive=True)
 for fpath in txt_files:
     with open(fpath, 'r', encoding='utf-8', errors='ignore') as f:
@@ -74,7 +76,7 @@ for fpath in txt_files:
                     all_domains.add(domain)
                     source_map[domain] = "DNS Zone File (VNNIC)"
 
-repo2_dir = r"d:\Quorix\services\safe-zone\tmp\VietnamDomains2"
+repo2_dir = str(ROOT / "tmp/VietnamDomains2")
 for fname in ["dotcom.vn.txt", "dotvn.txt"]:
     fpath = os.path.join(repo2_dir, fname)
     if os.path.exists(fpath):

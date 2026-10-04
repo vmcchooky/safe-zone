@@ -1,6 +1,9 @@
 import json
 import os
+from pathlib import Path
 import glob
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def load_json(filepath):
     if not os.path.exists(filepath):
@@ -9,7 +12,7 @@ def load_json(filepath):
         return json.load(f)
 
 def check_coverage():
-    data_dir = r"D:\Quorix\services\safe-zone\data"
+    data_dir = str(ROOT / "data")
     vietnam_json = os.path.join(data_dir, r"whitelist\vietnam\vietnam_websites.json")
     
     vietnam_data = load_json(vietnam_json)

@@ -1,6 +1,9 @@
 import urllib.request
+from pathlib import Path
 import json
 import time
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def scrape_edu():
     queries = ["edu.vn"]
@@ -21,7 +24,7 @@ def scrape_edu():
             print(f"[Scraper Edu] Error fetching {q}: {e}")
         time.sleep(2) # rate limit
 
-    out_path = r"D:\Quorix\services\safe-zone\data\crawled_edu.json"
+    out_path = str(ROOT / "data/crawled_edu.json")
     output_data = [{"domain": d, "owner": "Unknown", "category_type": "Giáo dục", "source": "hackertarget"} for d in domains]
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(output_data, f, ensure_ascii=False, indent=2)

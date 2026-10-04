@@ -1,8 +1,11 @@
 import json
 import os
+from pathlib import Path
 import csv
 from collections import defaultdict
 from datetime import datetime
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def load_json(filepath):
     if not os.path.exists(filepath):
@@ -12,7 +15,7 @@ def load_json(filepath):
         return json.load(f)
 
 def merge_datasets():
-    data_dir = r"D:\Quorix\services\safe-zone\data"
+    data_dir = str(ROOT / "data")
     tvpl_path = os.path.join(data_dir, "tvpl_whitelist_websites.json")
     abei_path = os.path.join(data_dir, "abei_websites.json")
     vietnam_path = os.path.join(data_dir, r"whitelist\vietnam\vietnam_websites.json")

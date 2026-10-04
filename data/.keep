@@ -1,0 +1,7 @@
+# Keeps data/ present in a fresh clone.
+#
+# The dataset scripts under scripts/ write their outputs here, and compose
+# mounts this directory for the running services. Nothing inside it is tracked
+# -- data/whitelist/, data/blacklist/ and data/archive/ are all gitignored --
+# so without this file the directory would not exist after a clone and every
+# one of those scripts would fail on its first write.

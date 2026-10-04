@@ -5,7 +5,10 @@ import urllib.parse
 from urllib.parse import urlparse
 import time
 import os
+from pathlib import Path
 import re
+
+ROOT = Path(__file__).resolve().parents[2]
 
 def extract_domain(url):
     try:
@@ -85,7 +88,7 @@ def get_curated_list():
     return base_list + extended_list
 
 def main():
-    out_file = r'd:\Quorix\services\safe-zone\data\collected_business.json'
+    out_file = str(ROOT / "data/collected_business.json")
     os.makedirs(os.path.dirname(out_file), exist_ok=True)
     
     all_domains = set()

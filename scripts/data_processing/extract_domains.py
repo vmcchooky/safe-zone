@@ -1,7 +1,9 @@
 import os
+from pathlib import Path
 import glob
 
-data_dir = r"d:\Quorix\services\safe-zone\tmp\VietnamDNSLeak"
+ROOT = Path(__file__).resolve().parents[2]
+data_dir = str(ROOT / "tmp/VietnamDNSLeak")
 txt_files = glob.glob(os.path.join(data_dir, "**", "*.txt"), recursive=True)
 
 unique_domains = set()
@@ -20,7 +22,10 @@ for fpath in txt_files:
 
 print(f"Extracted {len(unique_domains)} unique .vn domains.")
 
-# Save to a temporary file just to check
-with open(r"d:\Quorix\services\safe-zone\tmp\unique_vn_domains.txt", 'w', encoding='utf-8') as f:
+# Save to a temporary file just to check. tmp/ is gitignored, so it is absent
+# from a fresh clone and the write below would fail without this.
+tmp_out = ROOT / "tmp/unique_vn_domains.txt"
+tmp_out.parent.mkdir(parents=True, exist_ok=True)
+with tmp_out.open('w', encoding='utf-8') as f:
     for d in unique_domains:
         f.write(f"{d}\n")
