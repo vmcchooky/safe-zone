@@ -82,6 +82,22 @@ ui/coverage/
 *.tsbuildinfo
 coverage.txt
 
+# Domain-enumeration and state-actor research scripts, kept out of this PUBLIC
+# repository on purpose. These build candidate domains from a Vietnamese
+# syllable wordlist and mass-resolve them (scripts/generators/expansion_1_dns_bruteforce.py
+# is the clearest case), and one compiles a full map of Vietnamese state and
+# party organs. The same technique that makes a whitelist also maps a country's
+# domain space, so shipping it here hands a third party a working tool.
+#
+# The legitimate outputs still belong in the repo: the model pipeline under ml/
+# and the merge/validate/verify scripts under scripts/ stay tracked. Copies live
+# outside version control for whoever needs to regenerate the datasets.
+scripts/generators/expansion_*.py
+scripts/generators/*massive*.py
+scripts/generators/hardcoded_seeds.py
+scripts/scrapers/scraper_massive.py
+scripts/scrapers/*political*.py
+
 # Runtime adblock cache/meta
 **/adblock_cache.txt
 **/adblock_cache.txt.tmp*
