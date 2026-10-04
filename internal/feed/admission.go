@@ -118,7 +118,7 @@ func NormalizeAdmissionMode(value string) (AdmissionMode, error) {
 // resource corroborates the host. IP URL indicators remain authoritative because
 // their address is already the narrowest host-level identity available here.
 func PlanAdmission(r io.Reader, mode AdmissionMode) (AdmissionPlan, error) {
-	return planAdmissionWithLimit(r, mode, maxDistinctFeedDomains())
+	return planAdmissionWithLimit(r, mode, resolvedFeedDomainLimit())
 }
 
 // planAdmissionWithLimit is PlanAdmission with an explicit cap on the
@@ -128,6 +128,14 @@ func planAdmissionWithLimit(r io.Reader, mode AdmissionMode, limit int) (Admissi
 	mode, err := NormalizeAdmissionMode(string(mode))
 	if err != nil {
 		return AdmissionPlan{}, err
+	}
+	// A non-positive limit means unbounded, per the documented meaning of
+	// SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS=0. Normalising at the boundary rather
+	// than only at the environment reader keeps every caller correct: a raw 0
+	// made len(states) >= limit true for every domain, so an "unbounded" run
+	// classified everything as unclassifiable and ingested nothing.
+	if limit <= 0 {
+		limit = unboundedFeedDomains
 	}
 	// states is bounded for the same reason as the parser's deduplication set:
 	// one entry per distinct domain, each a heap-allocated struct, and a
@@ -141,7 +149,11 @@ func planAdmissionWithLimit(r io.Reader, mode AdmissionMode, limit int) (Admissi
 	err = ParseEachIndicator(r, func(indicator Indicator, _ bool) error {
 		state := states[indicator.Domain]
 		if state == nil {
-			if len(states) >= limit {
+			// A non-positive limit means unbounded, per
+			// SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS=0. Testing it unguarded made
+			// len(states) >= 0 true for every domain, so an "unbounded" run
+			// classified everything as unclassifiable and ingested nothing.
+			if limit >= 0 && len(states) >= limit {
 				overCapacity++
 				return nil
 			}
