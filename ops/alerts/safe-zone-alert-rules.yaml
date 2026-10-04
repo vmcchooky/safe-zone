@@ -73,6 +73,22 @@ rules:
     condition: any core_api_status.json.feed_sync.sources[*].parser_drift == true for 15m
     action: inspect parser_drift_reason and confirm the upstream feed format did not change
 
+  # A source that syncs successfully with zero valid domains. Unlike a stale or
+  # failing source, this one leaves no error anywhere: parser_drift cannot see it
+  # either, because an empty or comment-only body has no invalid lines, so the
+  # ratio denominator is zero. The sync exits 0 and records success while that
+  # source's members age out over their TTL, so coverage shrinks quietly.
+  #
+  # Severity and window match threat-feed-parser-drift deliberately. It is a
+  # warning rather than critical because the other three sources still refresh, and
+  # 15m rather than immediate so a single unlucky upstream response is not paged.
+  # If a source is legitimately empty most of the time, suppress it here rather
+  # than raising the threshold globally.
+  - id: threat-feed-empty-ingest
+    severity: warning
+    condition: any core_api_status.json.feed_sync.sources[*].empty_ingest == true for 15m
+    action: inspect sources[*].empty_ingest_reason and confirm the upstream feed is still serving domains; blocking coverage for that source decays until its members expire
+
   - id: high-http-5xx-rate
     severity: warning
     condition: sum core_api_metrics.json.metrics.request_summary[* where status>=500].count increases by > 10 over 5m
