@@ -150,19 +150,23 @@ func TestPlanAdmissionReportsUnclassifiableDomains(t *testing.T) {
 // rather than assumed. A documented setting that is not wired up is worse than
 // no setting at all.
 func TestDistinctDomainCapIsConfigurable(t *testing.T) {
+	// Hermetic against the ambient environment: without this the first assertion
+	// below fails for anyone running the suite with the cap exported, which reads
+	// as a regression in the cap rather than a test that is not isolated.
+	t.Setenv(envMaxDistinctFeedDomains, "")
 	if got := maxDistinctFeedDomains(); got != defaultMaxDistinctFeedDomains {
 		t.Fatalf("default cap = %d, want %d", got, defaultMaxDistinctFeedDomains)
 	}
 
-	t.Setenv("SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS", "500")
+	t.Setenv(envMaxDistinctFeedDomains, "500")
 	if got := maxDistinctFeedDomains(); got != 500 {
 		t.Fatalf("cap = %d, want the configured 500", got)
 	}
 
-	// A zero cap restores the previous unbounded behaviour, which is why
-	// newBoundedSeenSet treats a non-positive limit as "use the default" and
-	// the env reader clamps negatives to zero.
-	t.Setenv("SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS", "-1")
+	// A zero cap restores the previous unbounded behaviour, so both
+	// newBoundedSeenSet and planAdmissionWithLimit read a non-positive limit as
+	// unbounded, and the environment reader clamps negatives to zero.
+	t.Setenv(envMaxDistinctFeedDomains, "-1")
 	if got := maxDistinctFeedDomains(); got != 0 {
 		t.Fatalf("cap = %d for a negative setting, want 0", got)
 	}
