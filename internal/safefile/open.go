@@ -14,6 +14,15 @@ type File struct {
 	root *os.Root
 }
 
+// DefaultMaxReadBytes bounds ReadFileWithin and ReadFile. The callers read
+// secrets, checksums, configs and eval corpora -- the largest legitimate input
+// today is a 13KB corpus file -- so a megabyte of headroom is generous while
+// still making a compromised or accidentally enormous file in a trusted
+// directory a bounded error instead of unbounded memory growth. A caller that
+// streams (OpenWithin) is unaffected; only the convenience whole-file readers
+// are capped, following the same LimitReader(n+1) pattern the feed code uses.
+const DefaultMaxReadBytes = 1 << 20
+
 // OpenWithin opens requestedPath through an os.Root scoped to rootDir.
 // requestedPath may be relative to rootDir, or it may be an existing documented
 // root-prefixed path. Paths outside rootDir are rejected before final resolution,
@@ -111,7 +120,7 @@ func ReadFileWithin(rootDir, requestedPath string) ([]byte, error) {
 		_ = file.Close()
 	}()
 
-	return io.ReadAll(file)
+	return readBounded(file, requestedPath)
 }
 
 // ReadFile reads a path relative to the current directory.
@@ -125,7 +134,22 @@ func ReadFile(path string) ([]byte, error) {
 		_ = file.Close()
 	}()
 
-	return io.ReadAll(file)
+	return readBounded(file, path)
+}
+
+// readBounded drains at most DefaultMaxReadBytes from an already-opened safe
+// file. Reading one byte past the limit distinguishes "exactly at the limit",
+// which succeeds, from "over the limit", which fails with the limit named so
+// the operator can tell a misconfigured path from a genuinely oversized file.
+func readBounded(file *File, displayPath string) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(file, DefaultMaxReadBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read file %q: %w", displayPath, err)
+	}
+	if len(body) > DefaultMaxReadBytes {
+		return nil, fmt.Errorf("refusing to read %q: size exceeds %d bytes", displayPath, DefaultMaxReadBytes)
+	}
+	return body, nil
 }
 
 func relativeWithinRoot(rootDir, requestedPath string) (string, error) {
