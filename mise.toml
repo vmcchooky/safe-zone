@@ -76,7 +76,13 @@ run_windows = "cmd.exe /c \"cd ui && npm run test:e2e\""
 [tasks."go:test"]
 description = "Run the Go test suite with the embedded UI bundle refreshed first"
 depends = ["ui:bundle"]
-run = "go test ./..."
+# -race is non-negotiable here. This is a concurrent DNS resolver with a
+# Redis-backed pub/sub config channel, so a data race is a correctness bug with
+# a security consequence, not a flaky-test nuisance. The five most concurrent
+# packages (risk, resolver, store, cache, ratelimit) were measured race-clean
+# before this flag was added; the cost is CI time, roughly 33s to 185s on the
+# risk suite, absorbed by the timeout on the quality job in ci.yml.
+run = "go test -race ./..."
 
 [tasks."go:build"]
 description = "Build all Go packages with the embedded UI bundle refreshed first"
