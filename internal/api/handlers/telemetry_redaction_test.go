@@ -110,6 +110,7 @@ func seedTelemetry(t *testing.T, ts *handlerTestServer) {
 func TestTelemetryRecentRedactsClientIdentityForGuest(t *testing.T) {
 	ts := newHandlerTestServer(t)
 	seedTelemetry(t, ts)
+	waitForTelemetryEntries(t, ts.Store, 1)
 
 	admin := fetchTelemetryRecent(t, ts, ts.addAdminBearer)
 	if len(admin.Items) == 0 {
@@ -145,6 +146,7 @@ func TestTelemetryRecentRedactsClientIdentityForGuest(t *testing.T) {
 func TestTelemetryRecentOmitsIdentityKeysForGuest(t *testing.T) {
 	ts := newHandlerTestServer(t)
 	seedTelemetry(t, ts)
+	waitForTelemetryEntries(t, ts.Store, 1)
 	guestCookie := enableGuestAccount(t, ts)
 
 	req, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/v1/telemetry/recent", nil)
@@ -268,7 +270,11 @@ func TestRedactedFlagReportsPolicyNotRowChanges(t *testing.T) {
 	}
 
 	// Seed, then confirm the flag is unchanged and the row is still stripped.
+	// RecordAnalysis only enqueues to the background telemetry writer, so the
+	// row is not guaranteed visible on the immediate next fetch -- poll until
+	// it flushes instead of asserting on a race with the writer goroutine.
 	seedTelemetry(t, ts)
+	waitForTelemetryEntries(t, ts.Store, 1)
 	after := fetchTelemetryRecent(t, ts, func(r *http.Request) { r.AddCookie(guestCookie) })
 	if len(after.Items) == 0 {
 		t.Fatal("expected the seeded row")
