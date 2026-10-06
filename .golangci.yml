@@ -12,6 +12,14 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    # misspell and unconvert were trialled against the whole tree and came back
+    # with zero issues. Heavier linters were tried and rejected, not forgotten:
+    # revive reports 50 mostly unused-parameter findings, gocritic flags four
+    # genuine exitAfterDefer shutdown paths plus two intentional whitespace test
+    # fixtures, and prealloc/nilnil report five. Each of those wants its own
+    # cleanup PR, not a drive-by enable here.
+    - misspell
+    - unconvert
   exclusions:
     paths:
       - ^tmp/
