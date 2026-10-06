@@ -16,6 +16,7 @@ func getFreeDiskSpace(path string) (float64, error) {
 	}
 	// Available blocks * block size
 	// #nosec G115 -- block counts and sizes are positive and won't overflow
+	//nolint:unconvert // stat.Bavail is already uint64 on Linux but int64 on darwin; the conversion keeps this file portable.
 	freeBytes := uint64(stat.Bavail) * uint64(stat.Bsize)
 	return float64(freeBytes) / 1024.0 / 1024.0 / 1024.0, nil // in GB
 }
