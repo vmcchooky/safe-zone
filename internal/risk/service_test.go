@@ -870,15 +870,31 @@ func TestSuspiciousDomainEnrichmentRunsInBackgroundAndUpdatesCache(t *testing.T)
 	defer server.Close()
 
 	service := NewService(Options{
-		AnalysisConfig:  config.DefaultAnalysisConfig(),
-		Redis:           cache.NewRedis(server.Addr(), "", 0),
-		RedisTimeout:    100 * time.Millisecond,
+		AnalysisConfig: config.DefaultAnalysisConfig(),
+		Redis:          cache.NewRedis(server.Addr(), "", 0),
+		// Generous on purpose: under -race everything runs several times
+		// slower, and a 100ms budget turns an ordinary miniredis round trip
+		// into a failed cache write. A failed worker write clears the
+		// in-flight guard without persisting, so the next poll re-enqueues
+		// and the exactly-once counter below observes two lookups. This
+		// timeout is not what the test exercises.
+		RedisTimeout:    time.Second,
 		TTLAllowed:      time.Hour,
 		TTLSuspicious:   time.Hour,
 		TTLBlocked:      time.Hour,
 		EnrichEnabled:   true,
 		EnrichTimeout:   time.Second,
 		EnrichQueueSize: 4,
+		// Freeze background revision writers for the duration of this test.
+		// The exactly-once assertion below is about one enrichment episode:
+		// a feed or adblock sync landing between enqueue and the worker's
+		// cache write legitimately advances the revision, the worker's
+		// revision guard then skips the stale snapshot by design, and the
+		// next poll re-enqueues under the new revision -- a second lookup
+		// that is correct convergence, not a bug, but it fails the counter.
+		// Those subsystems have their own tests; here they are noise.
+		DisableAdblockSync:  true,
+		ConfigReloadEnabled: false,
 	})
 	defer func() {
 		if err := service.Close(); err != nil {
