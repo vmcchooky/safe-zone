@@ -61,7 +61,8 @@ func TestIsAllowedDoesNotBlockAReload(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SAFE_ZONE_FEED_FILE_ROOT", dir)
 
-	var lines []byte
+	// Preallocated: 200k lines of roughly "hNNNNN.example\n" (~16 bytes each).
+	lines := make([]byte, 0, 200_000*16)
 	for i := range 200_000 {
 		lines = append(lines, "h"+strconv.Itoa(i)+".example\n"...)
 	}
@@ -110,7 +111,8 @@ func TestIsAllowedIsRaceFreeAcrossAReload(t *testing.T) {
 
 	write := func(seed int) {
 		t.Helper()
-		var lines []byte
+		// Preallocated: 500 lines of roughly "sN-M.example\n" (~24 bytes each).
+		lines := make([]byte, 0, 500*24)
 		for i := range 500 {
 			lines = append(lines, "s"+strconv.Itoa(seed)+"-"+strconv.Itoa(i)+".example\n"...)
 		}
