@@ -136,7 +136,7 @@ func TestShadowPerSourceCacheReparseOrigin(t *testing.T) {
 // Legacy v1 global cache loads as OriginLegacyCache.
 func TestShadowLegacyCacheOrigin(t *testing.T) {
 	svc := newParseTestService(t)
-	svc.saveAdblockCacheRaw("legacy-origin.example.com\n")
+	svc.adblock.saveAdblockCacheRaw("legacy-origin.example.com\n")
 	loaded := domaintrie.NewTrie()
 	if !svc.adblock.loadAdblockCache(loaded) {
 		t.Fatal("expected legacy cache to load")
@@ -198,7 +198,7 @@ func TestShadowCacheV2GoldenBytes(t *testing.T) {
 // record is rejected exactly like before.
 func TestShadowOldFixtureAndSixFieldRejected(t *testing.T) {
 	svc := newParseTestService(t)
-	svc.saveAdblockCacheRaw(domaintrie.CacheV2Header + "\n" +
+	svc.adblock.saveAdblockCacheRaw(domaintrie.CacheV2Header + "\n" +
 		"old.example.com\tsuffix\tads\tblock\tsrc-old\n")
 	loaded := domaintrie.NewTrie()
 	if !svc.adblock.loadAdblockCache(loaded) {

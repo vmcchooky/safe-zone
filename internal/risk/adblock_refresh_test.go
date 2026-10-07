@@ -128,14 +128,14 @@ func TestUnchangedSourcePoliciesDoNotRequestARebuild(t *testing.T) {
 	}
 
 	svc.adblock.refreshAdblockSourcePolicies(svc.store)
-	if !svc.drainAdblockResync() {
+	if !svc.adblock.drainAdblockResync() {
 		t.Fatal("the first refresh applies a new policy and must request a rebuild")
 	}
 
 	for range 3 {
 		svc.adblock.refreshAdblockSourcePolicies(svc.store)
 	}
-	if svc.drainAdblockResync() {
+	if svc.adblock.drainAdblockResync() {
 		t.Fatal("an unchanged policy must not request a rebuild")
 	}
 
@@ -146,19 +146,19 @@ func TestUnchangedSourcePoliciesDoNotRequestARebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc.adblock.refreshAdblockSourcePolicies(svc.store)
-	if !svc.drainAdblockResync() {
+	if !svc.adblock.drainAdblockResync() {
 		t.Fatal("a changed policy must request a rebuild")
 	}
 }
 
 // drainAdblockResync reports whether a rebuild request was pending, consuming
 // it if so.
-func (s *Service) drainAdblockResync() bool {
-	if s.adblock.adblockResync == nil {
+func (e *AdblockEngine) drainAdblockResync() bool {
+	if e.adblockResync == nil {
 		return false
 	}
 	select {
-	case <-s.adblock.adblockResync:
+	case <-e.adblockResync:
 		return true
 	default:
 		return false

@@ -209,7 +209,7 @@ func TestAdblockLegacyCacheLoadSemantics(t *testing.T) {
 	svc := newParseTestService(t)
 
 	legacy := "exact.example.com\nsuffix.example.com\n"
-	svc.saveAdblockCacheRaw(legacy)
+	svc.adblock.saveAdblockCacheRaw(legacy)
 
 	reloaded := domaintrie.NewTrie()
 	if !svc.adblock.loadAdblockCache(reloaded) {
@@ -231,7 +231,7 @@ func TestAdblockCacheSkipsMalformedRecords(t *testing.T) {
 		"good.example.com\texact\tads\tblock\tsrc-a\n" +
 		"bad.example.com\tweird-scope\tunknown\tblock\tsrc-a\n" +
 		"another.example.com\tsuffix\tunknown\tblock\tsrc-b\n"
-	svc.saveAdblockCacheRaw(mixed)
+	svc.adblock.saveAdblockCacheRaw(mixed)
 
 	reloaded := domaintrie.NewTrie()
 	if !svc.adblock.loadAdblockCache(reloaded) {
@@ -725,11 +725,11 @@ func TestCanonicalSourceKeyUnparsableDeterministic(t *testing.T) {
 
 // saveAdblockCacheRaw writes raw content to the global cache path, used to
 // simulate legacy and malformed cache files.
-func (s *Service) saveAdblockCacheRaw(content string) {
-	if err := s.adblock.ensureAdblockDataRoot(); err != nil {
+func (e *AdblockEngine) saveAdblockCacheRaw(content string) {
+	if err := e.ensureAdblockDataRoot(); err != nil {
 		panic(err)
 	}
-	f, tmpPath, err := createReplaceTempFile(s.adblock.adblockCachePath())
+	f, tmpPath, err := createReplaceTempFile(e.adblockCachePath())
 	if err != nil {
 		panic(err)
 	}
@@ -739,7 +739,7 @@ func (s *Service) saveAdblockCacheRaw(content string) {
 		panic(err)
 	}
 	_ = f.Close()
-	if err := replaceFile(tmpPath, s.adblock.adblockCachePath()); err != nil {
+	if err := replaceFile(tmpPath, e.adblockCachePath()); err != nil {
 		panic(err)
 	}
 }
