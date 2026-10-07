@@ -18,6 +18,11 @@ linters:
     - misspell
     - unconvert
     - prealloc
+    # gocritic earned its place by finding four real exitAfterDefer shutdown
+    # paths (os.Exit skipping deferred cleanup in four binaries, restructured
+    # to run()/realMain returning codes) plus two intentional whitespace test
+    # fixtures, which carry targeted nolints instead of being "fixed".
+    - gocritic
     # revive runs with ONLY the bug-finding rules below (a `rules:` list means
     # nothing else runs). The style rules were measured at 297 exported, 91
     # unused-parameter and 34 package-comments findings and deliberately left

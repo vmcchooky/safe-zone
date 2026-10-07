@@ -45,7 +45,7 @@ func TestParseAdblockMatchModeFallbacks(t *testing.T) {
 		"suffix": adblockMatchModeSuffix,
 		"SUFFIX": adblockMatchModeSuffix,
 		"exact":  adblockMatchModeExact,
-		" EXACT": adblockMatchModeExact,
+		" EXACT": adblockMatchModeExact, //nolint:gocritic // the surrounding space is the point: parsing must tolerate it.
 		"bogus":  adblockMatchModeSuffix,
 	}
 	for raw, want := range cases {

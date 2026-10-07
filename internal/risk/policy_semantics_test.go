@@ -193,7 +193,7 @@ func TestNormalizePolicySemantics(t *testing.T) {
 	cases := map[string]PolicySemantics{
 		"separated": PolicySemanticsSeparated,
 		"SEPARATED": PolicySemanticsSeparated,
-		" legacy ":  PolicySemanticsLegacy,
+		" legacy ":  PolicySemanticsLegacy, //nolint:gocritic // the surrounding spaces are the point: normalization must trim them.
 		"legacy":    PolicySemanticsLegacy,
 		"":          PolicySemanticsSeparated,
 		"bogus":     PolicySemanticsSeparated,

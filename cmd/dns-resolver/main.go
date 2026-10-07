@@ -35,6 +35,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	// Loopback by default. Caddy fronts /dns-query over 443 (see Caddyfile) and
 	// docker-compose.production.yml publishes 8081 on 127.0.0.1, so nothing
 	// legitimate needs this listener on a public interface. Binding 0.0.0.0 by
@@ -51,7 +55,7 @@ func main() {
 			"service": "dns-resolver",
 			"error":   err.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
 	if adminAPIKey == "" {
 		logjson.Warn("SAFE_ZONE_ADMIN_API_KEY is not set; /metrics will reject every request", map[string]any{
@@ -67,7 +71,7 @@ func main() {
 			"service": "dns-resolver",
 			"value":   ttlVal,
 		})
-		os.Exit(1)
+		return 1
 	}
 
 	blockStrategy := strings.ToLower(strings.TrimSpace(config.String("SAFE_ZONE_DNS_BLOCK_STRATEGY", resolver.BlockStrategySinkhole)))
@@ -77,7 +81,7 @@ func main() {
 			"value":   blockStrategy,
 			"allowed": []string{resolver.BlockStrategySinkhole, resolver.BlockStrategyNXDomain, resolver.BlockStrategyRefused, resolver.BlockStrategyNullIP},
 		})
-		os.Exit(1)
+		return 1
 	}
 
 	// Upstream fetches go through the shared outbound guard: every dial —
@@ -195,7 +199,7 @@ func main() {
 					"key_file":  keyFile,
 					"error":     certErr.Error(),
 				})
-				os.Exit(1)
+				return 1
 			}
 		} else {
 			logjson.Warn("TLS key files not configured; generating temporary self-signed cert", map[string]any{
@@ -207,7 +211,7 @@ func main() {
 					"service": "dns-resolver",
 					"error":   certErr.Error(),
 				})
-				os.Exit(1)
+				return 1
 			}
 		}
 
@@ -300,6 +304,7 @@ func main() {
 	}
 
 	logjson.Info("all services stopped gracefully", map[string]any{"service": "dns-resolver"})
+	return 0
 }
 
 // generateSelfSignedCert sinh chứng chỉ SSL tự ký 2048-bit RSA trực tiếp trên RAM làm fallback
