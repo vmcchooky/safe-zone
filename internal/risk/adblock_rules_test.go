@@ -67,9 +67,11 @@ func newParseTestService(t *testing.T) *Service {
 	}
 	t.Cleanup(func() { _ = storeDB.Close() })
 	return &Service{
-		adblockDataRoot: tempDir,
-		lifecycleCtx:    context.Background(),
-		store:           storeDB,
+		adblock: &AdblockEngine{
+			adblockDataRoot: tempDir,
+		},
+		lifecycleCtx: context.Background(),
+		store:        storeDB,
 	}
 }
 
@@ -136,10 +138,12 @@ func TestResolveAdblockSourcePolicyFallbacks(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = storeDB.Close() })
 	svc := &Service{
-		adblockDataRoot: tempDir,
-		store:           storeDB,
+		adblock: &AdblockEngine{
+			adblockDataRoot: tempDir,
+		},
+		store: storeDB,
 	}
-	svc.adblockMatchMode.Store(string(adblockMatchModeExact))
+	svc.adblock.adblockMatchMode.Store(string(adblockMatchModeExact))
 	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
 		"https://good.test/hosts": {"category":"telemetry","scope":"suffix"},
 		"https://badcat.test/hosts": {"category":"spyware"},
@@ -290,7 +294,7 @@ func TestAdblockStatusCountsAndMode(t *testing.T) {
 	trie.AddRule(domaintrie.Rule{Domain: "a.example.com", Scope: domaintrie.RuleScopeExact, SourceID: "s", Category: "ads", Action: domaintrie.RuleActionBlock})
 	trie.AddRule(domaintrie.Rule{Domain: "b.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "s", Category: "ads", Action: domaintrie.RuleActionBlock})
 	service.AdblockTrieOverride(trie)
-	service.adblockMatchMode.Store(string(adblockMatchModeExact))
+	service.adblock.adblockMatchMode.Store(string(adblockMatchModeExact))
 
 	status := service.AdblockStatus()
 	if status.MatchMode != "exact" {
@@ -326,11 +330,11 @@ func TestSyncTickReloadsMatchMode(t *testing.T) {
 
 	t.Setenv(envAdblockMatchMode, "exact")
 	t.Setenv(envAdblockSourcePoliciesJSON, `{"https://x.test/hosts":{"category":"tracking"}}`)
-	service.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+	service.adblock.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
 	policySet := parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
-	service.adblockSourcePolicies.Store(&policySet)
+	service.adblock.adblockSourcePolicies.Store(&policySet)
 
-	if v := service.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
+	if v := service.adblock.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
 		t.Fatalf("expected exact mode after reload, got %v", v)
 	}
 	if _, ok := service.currentAdblockSourcePolicies()["https://x.test/hosts"]; !ok {
@@ -340,7 +344,7 @@ func TestSyncTickReloadsMatchMode(t *testing.T) {
 	// syncAdblockLists with no reachable sources still refreshes the mode.
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "")
 	service.syncAdblockLists()
-	if v := service.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
+	if v := service.adblock.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
 		t.Fatalf("expected mode to persist after sync, got %v", v)
 	}
 }
@@ -368,9 +372,9 @@ func TestAdblockSyncFailureRetainsCurrentTrie(t *testing.T) {
 	// Seed a live trie as if a previous sync succeeded.
 	trie := domaintrie.NewTrie()
 	trie.AddRule(domaintrie.Rule{Domain: "live.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "src", Category: "ads", Action: domaintrie.RuleActionBlock})
-	service.adblockTrie.Store(trie)
-	service.adblockOKCount.Store(1)
-	service.adblockLastSyncOK.Store(true)
+	service.adblock.adblockTrie.Store(trie)
+	service.adblock.adblockOKCount.Store(1)
+	service.adblock.adblockLastSyncOK.Store(true)
 
 	// A dead source with no per-source cache must not wipe the live trie.
 	// Deterministic fixture: a missing file inside the data root fails via
@@ -378,11 +382,11 @@ func TestAdblockSyncFailureRetainsCurrentTrie(t *testing.T) {
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "missing-hosts-dead.txt")
 	service.syncAdblockLists()
 
-	current := service.adblockTrie.Load()
+	current := service.adblock.adblockTrie.Load()
 	if current == nil || !current.Match("live.example.com") {
 		t.Fatal("failed sync must retain the current trie")
 	}
-	if service.adblockLastSyncOK.Load() {
+	if service.adblock.adblockLastSyncOK.Load() {
 		t.Fatal("expected last sync to be marked failed")
 	}
 }
@@ -425,9 +429,9 @@ func TestSyncAtomicOneFailOneSuccess(t *testing.T) {
 
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, bad)+","+publicMappedSource(t, good))
 	service.syncAdblockLists()
-	service.adblockEnabled.Store(true)
+	service.adblock.adblockEnabled.Store(true)
 
-	trie := service.adblockTrie.Load()
+	trie := service.adblock.adblockTrie.Load()
 	if trie == nil {
 		t.Fatal("expected trie after partial sync")
 	}
@@ -437,7 +441,7 @@ func TestSyncAtomicOneFailOneSuccess(t *testing.T) {
 	if !trie.Match("sub.good-only.test") {
 		t.Fatal("successful source must be published")
 	}
-	if !service.adblockLastSyncOK.Load() {
+	if !service.adblock.adblockLastSyncOK.Load() {
 		t.Fatal("partial sync with one success must be marked ok")
 	}
 }
@@ -448,7 +452,7 @@ func TestSyncAtomicAllFailRetainsOldTrie(t *testing.T) {
 
 	live := domaintrie.NewTrie()
 	live.AddRule(domaintrie.Rule{Domain: "live.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "src", Category: "ads", Action: domaintrie.RuleActionBlock})
-	service.adblockTrie.Store(live)
+	service.adblock.adblockTrie.Store(live)
 
 	huge := strings.Repeat("a", 11*1024*1024)
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -459,14 +463,14 @@ func TestSyncAtomicAllFailRetainsOldTrie(t *testing.T) {
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, bad))
 	service.syncAdblockLists()
 
-	current := service.adblockTrie.Load()
+	current := service.adblock.adblockTrie.Load()
 	if current == nil || !current.Match("live.example.com") {
 		t.Fatal("all-fail sync must retain the old trie")
 	}
 	if current.Match("bad-only.test") {
 		t.Fatal("failed source must not leak into the retained trie")
 	}
-	if service.adblockLastSyncOK.Load() {
+	if service.adblock.adblockLastSyncOK.Load() {
 		t.Fatal("all-fail sync must be marked failed")
 	}
 }
@@ -557,7 +561,7 @@ func TestSourceIDRoundTripsCacheAndDecision(t *testing.T) {
 func TestPolicyNoPanicOnNilTrieOverride(t *testing.T) {
 	service := newTestServiceWithAdblock(t, []string{"ads.example.com"})
 	service.AdblockTrieOverride(nil)
-	if got := service.adblockTrie.Load(); got == nil || got.Count() != 0 {
+	if got := service.adblock.adblockTrie.Load(); got == nil || got.Count() != 0 {
 		t.Fatalf("nil override must normalize to empty trie, got %v", got)
 	}
 	pol := service.Policy(context.Background(), "ads.example.com", ClientInfo{})
@@ -624,9 +628,9 @@ func TestSyncCommitFailureThenSecondSourceSucceeds(t *testing.T) {
 
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", badURL+","+goodURL)
 	service.syncAdblockLists()
-	service.adblockEnabled.Store(true)
+	service.adblock.adblockEnabled.Store(true)
 
-	trie := service.adblockTrie.Load()
+	trie := service.adblock.adblockTrie.Load()
 	if trie == nil {
 		t.Fatal("expected trie after partial sync")
 	}

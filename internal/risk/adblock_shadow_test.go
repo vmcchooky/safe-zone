@@ -51,8 +51,8 @@ func TestShadowResolveOriginVariants(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = storeDB.Close() })
-	svc := &Service{adblockDataRoot: tempDir, store: storeDB}
-	svc.adblockMatchMode.Store(string(adblockMatchModeSuffix))
+	svc := &Service{adblock: &AdblockEngine{adblockDataRoot: tempDir}, store: storeDB}
+	svc.adblock.adblockMatchMode.Store(string(adblockMatchModeSuffix))
 	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
 		"https://exact.test/hosts": {"category":"ads","scope":"exact"},
 		"https://suffix.test/hosts": {"category":"ads","scope":"suffix"},

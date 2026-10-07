@@ -569,33 +569,33 @@ func (s *Service) reloadAdblockExceptions() {
 	if s == nil {
 		return
 	}
-	s.adblockExcMu.Lock()
-	defer s.adblockExcMu.Unlock()
-	if !s.adblockExceptionsPinned {
-		s.adblockExceptionsFile = strings.TrimSpace(config.String(envAdblockExceptionsFile, ""))
+	s.adblock.adblockExcMu.Lock()
+	defer s.adblock.adblockExcMu.Unlock()
+	if !s.adblock.adblockExceptionsPinned {
+		s.adblock.adblockExceptionsFile = strings.TrimSpace(config.String(envAdblockExceptionsFile, ""))
 	}
-	path := s.adblockExceptionsFile
+	path := s.adblock.adblockExceptionsFile
 	if path == "" {
-		if s.adblockExceptionsConfigured.Load() {
-			s.adblockExceptions.Store(newEmptyAdblockExceptionSnapshot())
-			s.adblockExceptionsConfigured.Store(false)
+		if s.adblock.adblockExceptionsConfigured.Load() {
+			s.adblock.adblockExceptions.Store(newEmptyAdblockExceptionSnapshot())
+			s.adblock.adblockExceptionsConfigured.Store(false)
 		}
 		return
 	}
 	// A set path means configured, even when the content fails to load.
-	s.adblockExceptionsConfigured.Store(true)
-	previous := s.adblockExceptions.Load()
+	s.adblock.adblockExceptionsConfigured.Store(true)
+	previous := s.adblock.adblockExceptions.Load()
 	previousRevision := ""
 	if previous != nil {
 		previousRevision = previous.revision
 	}
-	snapshot, errorClass := loadAdblockExceptionFile(s.adblockDataRoot, path)
+	snapshot, errorClass := loadAdblockExceptionFile(s.adblock.adblockDataRoot, path)
 	now := time.Now()
 	if errorClass != "" {
-		s.adblockExcLastReload.Store(now)
-		s.adblockExcLastOK.Store(false)
-		s.adblockExcLastErr.Store(errorClass)
-		s.adblockExcReloadFailures.Add(1)
+		s.adblock.adblockExcLastReload.Store(now)
+		s.adblock.adblockExcLastOK.Store(false)
+		s.adblock.adblockExcLastErr.Store(errorClass)
+		s.adblock.adblockExcReloadFailures.Add(1)
 		count := 0
 		if previous != nil {
 			count = previous.count
@@ -608,11 +608,11 @@ func (s *Service) reloadAdblockExceptions() {
 		})
 		return
 	}
-	s.adblockExceptions.Store(snapshot)
-	s.adblockExcLastReload.Store(now)
-	s.adblockExcLastOK.Store(true)
-	s.adblockExcLastErr.Store("")
-	s.adblockExcReloadSuccesses.Add(1)
+	s.adblock.adblockExceptions.Store(snapshot)
+	s.adblock.adblockExcLastReload.Store(now)
+	s.adblock.adblockExcLastOK.Store(true)
+	s.adblock.adblockExcLastErr.Store("")
+	s.adblock.adblockExcReloadSuccesses.Add(1)
 	if snapshot.revision != previousRevision {
 		logjson.Info("adblock exceptions reloaded", map[string]any{
 			"service":  "risk",
@@ -629,7 +629,7 @@ func (s *Service) matchAdblockException(query string, rule *domaintrie.Rule) (st
 	if s == nil || rule == nil {
 		return "", false
 	}
-	snapshot := s.adblockExceptions.Load()
+	snapshot := s.adblock.adblockExceptions.Load()
 	if snapshot == nil || snapshot.count == 0 {
 		return "", false
 	}
@@ -644,22 +644,22 @@ func (s *Service) matchAdblockException(query string, rule *domaintrie.Rule) (st
 // status endpoints: counts, digest revision and bounded error classes only.
 func (s *Service) AdblockExceptionStatus() AdblockExceptionStatus {
 	status := AdblockExceptionStatus{
-		Configured:      s.adblockExceptionsConfigured.Load(),
-		LastReloadOK:    s.adblockExcLastOK.Load(),
-		ReloadSuccesses: s.adblockExcReloadSuccesses.Load(),
-		ReloadFailures:  s.adblockExcReloadFailures.Load(),
-		Matches:         s.adblockExcMatches.Load(),
+		Configured:      s.adblock.adblockExceptionsConfigured.Load(),
+		LastReloadOK:    s.adblock.adblockExcLastOK.Load(),
+		ReloadSuccesses: s.adblock.adblockExcReloadSuccesses.Load(),
+		ReloadFailures:  s.adblock.adblockExcReloadFailures.Load(),
+		Matches:         s.adblock.adblockExcMatches.Load(),
 	}
-	if snapshot := s.adblockExceptions.Load(); snapshot != nil {
+	if snapshot := s.adblock.adblockExceptions.Load(); snapshot != nil {
 		status.Count = snapshot.count
 		status.Revision = snapshot.revision
 	}
-	if v := s.adblockExcLastReload.Load(); v != nil {
+	if v := s.adblock.adblockExcLastReload.Load(); v != nil {
 		if ts, ok := v.(time.Time); ok && !ts.IsZero() {
 			status.LastReloadAt = ts.UTC().Format(time.RFC3339)
 		}
 	}
-	if v := s.adblockExcLastErr.Load(); v != nil {
+	if v := s.adblock.adblockExcLastErr.Load(); v != nil {
 		if class, ok := v.(string); ok {
 			status.LastErrorClass = class
 		}

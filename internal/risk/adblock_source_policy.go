@@ -281,7 +281,7 @@ func validateAdblockSourcePoliciesJSON(raw string) error {
 func (s *Service) resolveAdblockSourcePolicy(source string) (string, domaintrie.RuleScope, domaintrie.ScopeOrigin) {
 	category := domaintrie.DefaultRuleCategory
 	scope := domaintrie.RuleScopeSuffix
-	if s.adblockMatchMode.Load() == string(adblockMatchModeExact) {
+	if s.adblock.adblockMatchMode.Load() == string(adblockMatchModeExact) {
 		scope = domaintrie.RuleScopeExact
 	}
 	origin := domaintrie.OriginGlobalDefault

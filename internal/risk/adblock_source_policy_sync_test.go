@@ -56,14 +56,14 @@ func TestSourcePolicyFingerprintIsStableAndSensitive(t *testing.T) {
 // policy that is not in force.
 func TestSetAdblockSourcePoliciesRequestsRebuildOnChange(t *testing.T) {
 	svc, _ := newAdblockControlService(t)
-	svc.adblockResync = make(chan struct{}, 1)
-	svc.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
+	svc.adblock.adblockResync = make(chan struct{}, 1)
+	svc.adblock.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
 
 	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
 		`{"https://a.test/x":{"category":"ads","scope":"suffix"}}`))
 
 	select {
-	case <-svc.adblockResync:
+	case <-svc.adblock.adblockResync:
 	default:
 		t.Fatal("a policy change must request a rule rebuild")
 	}
@@ -74,13 +74,13 @@ func TestSetAdblockSourcePoliciesRequestsRebuildOnChange(t *testing.T) {
 	// Re-applying the same policy is a no-op and must not queue another rebuild,
 	// otherwise the periodic refresh would rebuild the trie every 30 seconds.
 	select {
-	case <-svc.adblockResync:
+	case <-svc.adblock.adblockResync:
 	default:
 	}
 	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
 		`{"https://a.test/x":{"category":"ads","scope":"suffix"}}`))
 	select {
-	case <-svc.adblockResync:
+	case <-svc.adblock.adblockResync:
 		t.Fatal("an unchanged policy must not request a rebuild")
 	default:
 	}
@@ -89,7 +89,7 @@ func TestSetAdblockSourcePoliciesRequestsRebuildOnChange(t *testing.T) {
 	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
 		`{"https://a.test/x":{"category":"tracking","scope":"suffix"}}`))
 	select {
-	case <-svc.adblockResync:
+	case <-svc.adblock.adblockResync:
 	default:
 		t.Fatal("a changed policy must request a rebuild")
 	}
@@ -131,7 +131,7 @@ func TestRefreshAdblockSourcePoliciesPrefersStoreOverEnv(t *testing.T) {
 // empty configuration must still report a comparable value.
 func TestAdblockStatusExposesSourcePolicyFingerprint(t *testing.T) {
 	svc, _ := newAdblockControlService(t)
-	svc.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
+	svc.adblock.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
 
 	empty := svc.AdblockStatus()
 	if empty.SourcePoliciesFingerprint == "" {

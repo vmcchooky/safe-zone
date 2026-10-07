@@ -189,16 +189,20 @@ type Service struct {
 	enrichmentLookup  func(context.Context, string) enrichmentSignals
 	whoisCacheTTL     time.Duration
 	osint             *osint.Service
-	adblockDataRoot   string
-	adblockHTTPClient *http.Client
-	mlClassifier      analysis.DomainClassifier
-	mlMode            analysis.MLMode
-	mlCanary          MLCanaryConfig
-	mlTelemetry       mlTelemetry
-	urlMLClassifier   analysis.URLClassifier
-	urlMLMode         analysis.MLMode
-	urlMLShadow       URLMLShadowConfig
-	urlMLTelemetry    urlMLTelemetry
+
+	// adblock owns the entire adblock subsystem: rule trie, sync metadata,
+	// per-source policies, shadow observation and content exceptions. See
+	// AdblockEngine; Service methods that need adblock behavior delegate
+	// explicitly rather than reaching into its fields.
+	adblock         *AdblockEngine
+	mlClassifier    analysis.DomainClassifier
+	mlMode          analysis.MLMode
+	mlCanary        MLCanaryConfig
+	mlTelemetry     mlTelemetry
+	urlMLClassifier analysis.URLClassifier
+	urlMLMode       analysis.MLMode
+	urlMLShadow     URLMLShadowConfig
+	urlMLTelemetry  urlMLTelemetry
 	// urlMLOpsBaseline is an optional frozen operational drift reference
 	// loaded from real shadow traffic. Load failures are fail-open.
 	urlMLOpsBaseline           *URLOperationalBaseline
@@ -210,26 +214,6 @@ type Service struct {
 	urlMLFeedback urlFeedbackBackend
 
 	policySemantics PolicySemantics
-
-	// Adblock typed-rule state. adblockMatchMode mirrors
-	// SAFE_ZONE_ADBLOCK_MATCH_MODE (default suffix); adblockSourcePolicies
-	// holds the parsed per-source policies.
-	//
-	// adblockSourcePolicies is behind an atomic pointer because it is now
-	// swappable at runtime: the store-backed refresh replaces the whole set
-	// when an operator changes it, while the adblock sync goroutine may be
-	// concurrently reading it to scope an incoming rule. The set itself is
-	// treated as immutable once published; a change publishes a new set
-	// rather than mutating the existing map.
-	adblockMatchMode      atomic.Value // string (adblockMatchMode)
-	adblockSourcePolicies atomic.Pointer[adblockSourcePolicySet]
-
-	adblockTrie       atomic.Pointer[domaintrie.Trie]
-	adblockEnabled    atomic.Bool
-	adblockLastSync   atomic.Value
-	adblockLastSyncOK atomic.Bool
-	adblockSrcCount   atomic.Int32
-	adblockOKCount    atomic.Int32
 
 	// overrideLookupFailures counts admin-override reads that failed. The
 	// decision pipeline stays fail-open so a store error cannot block all
@@ -264,36 +248,6 @@ type Service struct {
 	// the state Store(nil) produces. Mirrors the counters above, which are
 	// atomic for the same family of reasons.
 	overrideLookup atomic.Pointer[overrideReader]
-
-	// adblockResync lets an operator request a rule rebuild without blocking
-	// the caller. A one-slot buffer coalesces repeated requests, so flipping
-	// match mode several times still costs at most one rebuild.
-	adblockResync chan struct{}
-
-	// Shadow exact/suffix observation (PR3B-lite). The enable flag is
-	// startup-only; the counters below are observation-only aggregates and
-	// never feed back into enforcement.
-	adblockShadowExactEnabled bool
-	adblockShadowStillBlock   atomic.Uint64
-	adblockShadowWouldAllow   atomic.Uint64
-	adblockShadowPreserved    atomic.Uint64
-	adblockShadowUnavailable  atomic.Uint64
-	adblockShadowExcOverlap   atomic.Uint64
-
-	// Scoped content exceptions (PR3A). The snapshot pointer is published
-	// atomically; reload writers are serialized by adblockExcMu. Request
-	// paths only Load plus RAM lookup.
-	adblockExceptionsFile       string
-	adblockExceptionsPinned     bool
-	adblockExceptions           atomic.Pointer[adblockExceptionSnapshot]
-	adblockExcMu                sync.Mutex
-	adblockExceptionsConfigured atomic.Bool
-	adblockExcLastReload        atomic.Value // time.Time
-	adblockExcLastOK            atomic.Bool
-	adblockExcLastErr           atomic.Value // string (bounded error class)
-	adblockExcReloadSuccesses   atomic.Uint64
-	adblockExcReloadFailures    atomic.Uint64
-	adblockExcMatches           atomic.Uint64
 }
 
 type ClientInfo struct {
@@ -539,36 +493,38 @@ func NewService(options Options) *Service {
 	}
 
 	svc := &Service{
-		lifecycleCtx:               lifecycleCtx,
-		lifecycleCancel:            lifecycleCancel,
-		redis:                      options.Redis,
-		redisTimeout:               configDuration(options.RedisTimeout, defaultRedisTimeout),
-		ttlAllowed:                 configDuration(options.TTLAllowed, defaultCacheTTLAllowed),
-		ttlSuspicious:              configDuration(options.TTLSuspicious, defaultCacheTTLSuspicious),
-		ttlBlocked:                 configDuration(options.TTLBlocked, defaultCacheTTLBlocked),
-		recentLimit:                recentLimit,
-		recentTTL:                  configDuration(options.RecentTTL, 24*time.Hour),
-		threatFeedKey:              threatFeedKey,
-		feedRevisionKey:            feed.RevisionKey(threatFeedKey),
-		ai:                         aiClient,
-		aiShared:                   aiShared,
-		whitelist:                  wl,
-		store:                      options.Store,
-		brandStore:                 brandStore,
-		configReloadChan:           configReloadChannel,
-		configReloadPoll:           configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
-		configReloadOn:             options.ConfigReloadEnabled,
-		nodeRole:                   strings.TrimSpace(options.NodeRole),
-		reloadBackoffMin:           analysisConfigReloadBackoffFloor,
-		reloadBackoffMax:           analysisConfigReloadBackoffCap,
-		enrichEnabled:              options.EnrichEnabled,
-		enrichTimeout:              options.EnrichTimeout,
-		enrichDone:                 make(chan struct{}),
-		enrichInFlight:             make(map[string]struct{}),
-		whoisCacheTTL:              configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
-		osint:                      options.OSINT,
-		adblockDataRoot:            adblockDataRoot,
-		adblockHTTPClient:          options.AdblockHTTPClient,
+		lifecycleCtx:     lifecycleCtx,
+		lifecycleCancel:  lifecycleCancel,
+		redis:            options.Redis,
+		redisTimeout:     configDuration(options.RedisTimeout, defaultRedisTimeout),
+		ttlAllowed:       configDuration(options.TTLAllowed, defaultCacheTTLAllowed),
+		ttlSuspicious:    configDuration(options.TTLSuspicious, defaultCacheTTLSuspicious),
+		ttlBlocked:       configDuration(options.TTLBlocked, defaultCacheTTLBlocked),
+		recentLimit:      recentLimit,
+		recentTTL:        configDuration(options.RecentTTL, 24*time.Hour),
+		threatFeedKey:    threatFeedKey,
+		feedRevisionKey:  feed.RevisionKey(threatFeedKey),
+		ai:               aiClient,
+		aiShared:         aiShared,
+		whitelist:        wl,
+		store:            options.Store,
+		brandStore:       brandStore,
+		configReloadChan: configReloadChannel,
+		configReloadPoll: configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
+		configReloadOn:   options.ConfigReloadEnabled,
+		nodeRole:         strings.TrimSpace(options.NodeRole),
+		reloadBackoffMin: analysisConfigReloadBackoffFloor,
+		reloadBackoffMax: analysisConfigReloadBackoffCap,
+		enrichEnabled:    options.EnrichEnabled,
+		enrichTimeout:    options.EnrichTimeout,
+		enrichDone:       make(chan struct{}),
+		enrichInFlight:   make(map[string]struct{}),
+		whoisCacheTTL:    configDuration(options.WhoisCacheTTL, 7*24*time.Hour),
+		osint:            options.OSINT,
+		adblock: &AdblockEngine{
+			adblockDataRoot:   adblockDataRoot,
+			adblockHTTPClient: options.AdblockHTTPClient,
+		},
 		mlClassifier:               options.MLClassifier,
 		mlMode:                     mlMode,
 		mlCanary:                   mlCanary,
@@ -581,18 +537,18 @@ func NewService(options Options) *Service {
 		urlMLFeedback:              urlFeedbackBackendImpl,
 		policySemantics:            NormalizePolicySemantics(string(options.PolicySemantics)),
 	}
-	svc.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
-	svc.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
-	svc.adblockTrie.Store(domaintrie.NewTrie())
-	svc.adblockResync = make(chan struct{}, 1)
-	svc.adblockShadowExactEnabled = options.AdblockShadowExactEnabled || config.Bool(envAdblockShadowExactEnabled, false)
-	svc.adblockExceptionsFile = strings.TrimSpace(options.AdblockExceptionsFile)
-	if svc.adblockExceptionsFile == "" {
-		svc.adblockExceptionsFile = strings.TrimSpace(config.String(envAdblockExceptionsFile, ""))
+	svc.adblock.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+	svc.adblock.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
+	svc.adblock.adblockTrie.Store(domaintrie.NewTrie())
+	svc.adblock.adblockResync = make(chan struct{}, 1)
+	svc.adblock.adblockShadowExactEnabled = options.AdblockShadowExactEnabled || config.Bool(envAdblockShadowExactEnabled, false)
+	svc.adblock.adblockExceptionsFile = strings.TrimSpace(options.AdblockExceptionsFile)
+	if svc.adblock.adblockExceptionsFile == "" {
+		svc.adblock.adblockExceptionsFile = strings.TrimSpace(config.String(envAdblockExceptionsFile, ""))
 	} else {
-		svc.adblockExceptionsPinned = true
+		svc.adblock.adblockExceptionsPinned = true
 	}
-	svc.adblockExceptions.Store(newEmptyAdblockExceptionSnapshot())
+	svc.adblock.adblockExceptions.Store(newEmptyAdblockExceptionSnapshot())
 	svc.reloadAdblockExceptions()
 	svc.refreshAdblockEnabled()
 	// Reconcile the persisted match mode at startup so an operator change

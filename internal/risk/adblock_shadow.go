@@ -67,13 +67,13 @@ func classifyShadowExactOutcome(rule *domaintrie.Rule, queryIsApex bool) shadowE
 // effective global match mode is still suffix (there is nothing to observe
 // once the flip it models has happened). Legacy semantics never observe.
 func (s *Service) shadowExactActive() bool {
-	if s == nil || !s.adblockShadowExactEnabled {
+	if s == nil || !s.adblock.adblockShadowExactEnabled {
 		return false
 	}
 	if s.policySemantics != PolicySemanticsSeparated {
 		return false
 	}
-	mode, _ := s.adblockMatchMode.Load().(string)
+	mode, _ := s.adblock.adblockMatchMode.Load().(string)
 	return mode == string(adblockMatchModeSuffix)
 }
 
@@ -87,16 +87,16 @@ func (s *Service) observeShadowExact(detail domaintrie.MatchDetail, exceptionMat
 	queryIsApex := detail.Query != "" && detail.Query == detail.Rule.Domain
 	switch classifyShadowExactOutcome(&detail.Rule, queryIsApex) {
 	case shadowExactStillBlock:
-		s.adblockShadowStillBlock.Add(1)
+		s.adblock.adblockShadowStillBlock.Add(1)
 	case shadowExactWouldAllow:
-		s.adblockShadowWouldAllow.Add(1)
+		s.adblock.adblockShadowWouldAllow.Add(1)
 	case shadowExactPreserved:
-		s.adblockShadowPreserved.Add(1)
+		s.adblock.adblockShadowPreserved.Add(1)
 	default:
-		s.adblockShadowUnavailable.Add(1)
+		s.adblock.adblockShadowUnavailable.Add(1)
 	}
 	if exceptionMatched {
-		s.adblockShadowExcOverlap.Add(1)
+		s.adblock.adblockShadowExcOverlap.Add(1)
 	}
 }
 
@@ -123,13 +123,13 @@ func (s *Service) AdblockShadowExactStatus() AdblockShadowExactStatus {
 	if s == nil {
 		return status
 	}
-	status.Enabled = s.adblockShadowExactEnabled
+	status.Enabled = s.adblock.adblockShadowExactEnabled
 	status.Active = s.shadowExactActive()
-	status.WouldStillBlockContent = s.adblockShadowStillBlock.Load()
-	status.WouldAllowContent = s.adblockShadowWouldAllow.Load()
-	status.ExplicitScopePreservedBlock = s.adblockShadowPreserved.Load()
-	status.UnavailableOriginUnknown = s.adblockShadowUnavailable.Load()
-	status.ExceptionOverlap = s.adblockShadowExcOverlap.Load()
+	status.WouldStillBlockContent = s.adblock.adblockShadowStillBlock.Load()
+	status.WouldAllowContent = s.adblock.adblockShadowWouldAllow.Load()
+	status.ExplicitScopePreservedBlock = s.adblock.adblockShadowPreserved.Load()
+	status.UnavailableOriginUnknown = s.adblock.adblockShadowUnavailable.Load()
+	status.ExceptionOverlap = s.adblock.adblockShadowExcOverlap.Load()
 	status.Observations = status.WouldStillBlockContent + status.WouldAllowContent +
 		status.ExplicitScopePreservedBlock + status.UnavailableOriginUnknown
 	return status

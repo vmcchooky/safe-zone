@@ -99,7 +99,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	// I/O-free after the match.
 	var adDetail domaintrie.MatchDetail
 	if s.isAdblockEnabled() {
-		if adTrie := s.adblockTrie.Load(); adTrie != nil {
+		if adTrie := s.adblock.adblockTrie.Load(); adTrie != nil {
 			adDetail = adTrie.MatchRuleDetail(normalized)
 		}
 	}
@@ -154,7 +154,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 			excRule = &adDetail.Rule
 			excID = id
 			excMatched = true
-			s.adblockExcMatches.Add(1)
+			s.adblock.adblockExcMatches.Add(1)
 		}
 		// 3.7 Shadow exact/suffix observation (PR3B-lite). Records what a
 		// prospective global suffix→exact flip would do to this hit. Pure

@@ -94,7 +94,7 @@ func (s *Service) SetAdblockEnabled(ctx context.Context, enabled bool) error {
 	if err := s.store.SetSystemConfig(ctx, systemConfigAdblockEnabled, value); err != nil {
 		return fmt.Errorf("persist adblock_enabled: %w", err)
 	}
-	s.adblockEnabled.Store(enabled)
+	s.adblock.adblockEnabled.Store(enabled)
 	logjson.Info("adblock enablement changed", map[string]any{
 		"service": "risk",
 		"enabled": enabled,
@@ -186,7 +186,7 @@ func (s *Service) SetAdblockMatchMode(ctx context.Context, mode string) error {
 			return fmt.Errorf("persist adblock_match_mode: %w", err)
 		}
 	}
-	s.adblockMatchMode.Store(normalized)
+	s.adblock.adblockMatchMode.Store(normalized)
 	s.RequestAdblockResync()
 	logjson.Info("adblock match mode changed", map[string]any{
 		"service":    "risk",
@@ -198,7 +198,7 @@ func (s *Service) SetAdblockMatchMode(ctx context.Context, mode string) error {
 // currentAdblockMatchMode reports the mode in force, defaulting to suffix when
 // nothing has been stored yet.
 func (s *Service) currentAdblockMatchMode() string {
-	if v := s.adblockMatchMode.Load(); v != nil {
+	if v := s.adblock.adblockMatchMode.Load(); v != nil {
 		if mode, ok := v.(string); ok && mode != "" {
 			return mode
 		}
@@ -212,11 +212,11 @@ func (s *Service) currentAdblockMatchMode() string {
 // already pending the request is absorbed, and if no sync goroutine is running
 // the call is a harmless no-op instead of leaking a blocked sender.
 func (s *Service) RequestAdblockResync() {
-	if s.adblockResync == nil {
+	if s.adblock.adblockResync == nil {
 		return
 	}
 	select {
-	case s.adblockResync <- struct{}{}:
+	case s.adblock.adblockResync <- struct{}{}:
 	default:
 	}
 }
@@ -257,7 +257,7 @@ func adblockSourcePoliciesFingerprint(set adblockSourcePolicySet) string {
 // the sync goroutine reads while resolving a policy per line, so a caller
 // writing to it would race.
 func (s *Service) currentAdblockSourcePolicies() adblockSourcePolicySet {
-	if set := s.adblockSourcePolicies.Load(); set != nil {
+	if set := s.adblock.adblockSourcePolicies.Load(); set != nil {
 		return *set
 	}
 	return nil
@@ -277,7 +277,7 @@ func (s *Service) SetAdblockSourcePolicies(policies adblockSourcePolicySet) {
 		return
 	}
 	published := policies
-	s.adblockSourcePolicies.Store(&published)
+	s.adblock.adblockSourcePolicies.Store(&published)
 	s.RequestAdblockResync()
 	logjson.Info("adblock source policies changed; rule rebuild requested", map[string]any{
 		"service":      "risk",

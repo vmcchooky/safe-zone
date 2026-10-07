@@ -231,7 +231,7 @@ func newShadowBenchService(b *testing.B, enabled bool) *Service {
 
 func BenchmarkShadowObserveDisabled(b *testing.B) {
 	service := newShadowBenchService(b, false)
-	detail := service.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
+	detail := service.adblock.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
 	if !detail.Matched {
 		b.Fatal("bench fixture must match")
 	}
@@ -246,7 +246,7 @@ func BenchmarkShadowObserveDisabled(b *testing.B) {
 
 func BenchmarkShadowObserveActive(b *testing.B) {
 	service := newShadowBenchService(b, true)
-	detail := service.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
+	detail := service.adblock.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
 	if !detail.Matched {
 		b.Fatal("bench fixture must match")
 	}

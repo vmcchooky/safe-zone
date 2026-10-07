@@ -36,15 +36,15 @@ func splitAdblockSources(sources string) []string {
 }
 
 func (s *Service) adblockMetaPath() string {
-	return filepath.Join(s.adblockDataRoot, "adblock_meta.json")
+	return filepath.Join(s.adblock.adblockDataRoot, "adblock_meta.json")
 }
 
 func (s *Service) adblockCachePath() string {
-	return filepath.Join(s.adblockDataRoot, "adblock_cache.txt")
+	return filepath.Join(s.adblock.adblockDataRoot, "adblock_cache.txt")
 }
 
 func (s *Service) adblockSourceCacheRoot() string {
-	return filepath.Join(s.adblockDataRoot, "adblock_sources")
+	return filepath.Join(s.adblock.adblockDataRoot, "adblock_sources")
 }
 
 // adblockSourceCachePath derives the on-disk location of a source's download
@@ -58,10 +58,10 @@ func (s *Service) adblockSourceCachePath(source string) string {
 }
 
 func (s *Service) ensureAdblockDataRoot() error {
-	if strings.TrimSpace(s.adblockDataRoot) == "" {
+	if strings.TrimSpace(s.adblock.adblockDataRoot) == "" {
 		return nil
 	}
-	return os.MkdirAll(s.adblockDataRoot, 0o750)
+	return os.MkdirAll(s.adblock.adblockDataRoot, 0o750)
 }
 
 func (s *Service) ensureAdblockSourceCacheRoot() error {

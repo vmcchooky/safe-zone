@@ -66,7 +66,7 @@ func TestSetAdblockEnabledTakesEffectWithoutResync(t *testing.T) {
 	}) {
 		t.Fatal("failed to seed the adblock trie")
 	}
-	svc.adblockTrie.Store(trie)
+	svc.adblock.adblockTrie.Store(trie)
 
 	if pol := svc.Policy(ctx, "ads.example", ClientInfo{}); pol.Decision == nil || pol.Decision.Action != "block" {
 		t.Fatalf("expected the loaded rule to block, got %+v", pol.Decision)
@@ -177,9 +177,9 @@ func TestRequestAdblockResyncCoalescesAndNeverBlocks(t *testing.T) {
 }
 
 func TestRequestAdblockResyncIsNoopWithoutChannel(t *testing.T) {
-	// A service built without NewService has no channel; the call must stay
-	// safe rather than panic or block.
-	svc := &Service{}
+	// A service whose engine has no channel (never started sync); the call
+	// must stay safe rather than panic or block.
+	svc := &Service{adblock: &AdblockEngine{}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

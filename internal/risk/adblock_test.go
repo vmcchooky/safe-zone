@@ -56,7 +56,7 @@ func newTestServiceWithAdblockSemantics(t *testing.T, semantics PolicySemantics,
 	for _, d := range domains {
 		trie.Add(d)
 	}
-	service.adblockTrie.Store(trie)
+	service.adblock.adblockTrie.Store(trie)
 
 	t.Cleanup(func() {
 		_ = service.Close()
@@ -222,7 +222,7 @@ func TestAdblockDisabled(t *testing.T) {
 	// Manually add a domain to the trie
 	trie := domaintrie.NewTrie()
 	trie.Add("ads.example.com")
-	service.adblockTrie.Store(trie)
+	service.adblock.adblockTrie.Store(trie)
 
 	// Even though the trie has the domain, adblock is disabled
 	result := service.Analyze(context.Background(), "ads.example.com", ClientInfo{})
@@ -418,11 +418,11 @@ func TestAdblockSyncReusesPerSourceCacheOn304(t *testing.T) {
 
 	service.syncAdblockLists()
 	service.syncAdblockLists()
-	service.adblockEnabled.Store(true)
+	service.adblock.adblockEnabled.Store(true)
 
 	// Assert on the trie directly so the sync contract stays independent of
 	// policy semantics (separated mode no longer surfaces "adblock" reasons).
-	trie := service.adblockTrie.Load()
+	trie := service.adblock.adblockTrie.Load()
 	if !trie.Match("ads.two.test") {
 		t.Fatal("expected changed source entry to be active after second sync")
 	}
@@ -456,11 +456,11 @@ func TestAdblockSyncFallsBackToSourceCacheWhenRemoteFails(t *testing.T) {
 	service.syncAdblockLists()
 	source.Close()
 	service.syncAdblockLists()
-	service.adblockEnabled.Store(true)
+	service.adblock.adblockEnabled.Store(true)
 
 	// Assert on the trie directly so the sync contract stays independent of
 	// policy semantics (separated mode no longer surfaces "adblock" reasons).
-	trie := service.adblockTrie.Load()
+	trie := service.adblock.adblockTrie.Load()
 	if !trie.Match("sub.resilient-cache.test") {
 		t.Fatal("expected cached source to survive remote failure")
 	}
@@ -490,8 +490,8 @@ func (r *coordinatedAdblockReader) Read(p []byte) (int, error) {
 
 func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
 	tempDir := t.TempDir()
-	serviceA := &Service{adblockDataRoot: tempDir}
-	serviceB := &Service{adblockDataRoot: tempDir}
+	serviceA := &Service{adblock: &AdblockEngine{adblockDataRoot: tempDir}}
+	serviceB := &Service{adblock: &AdblockEngine{adblockDataRoot: tempDir}}
 	source := "https://example.com/adblock.txt"
 
 	var ready sync.WaitGroup

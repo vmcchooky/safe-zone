@@ -21,7 +21,7 @@ func (s *Service) AdblockTrieOverride(trie *domaintrie.Trie) {
 	if trie == nil {
 		trie = domaintrie.NewTrie()
 	}
-	s.adblockTrie.Store(trie)
+	s.adblock.adblockTrie.Store(trie)
 }
 
 // StoreDB returns the underlying SQLite store, or nil if not configured.

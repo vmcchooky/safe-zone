@@ -156,7 +156,7 @@ type AdblockStatus struct {
 // AdblockStatus returns a snapshot of the adblock subsystem state.
 func (s *Service) AdblockStatus() AdblockStatus {
 	matchMode := "suffix"
-	if v := s.adblockMatchMode.Load(); v != nil {
+	if v := s.adblock.adblockMatchMode.Load(); v != nil {
 		if mode, ok := v.(string); ok && mode != "" {
 			matchMode = mode
 		}
@@ -164,9 +164,9 @@ func (s *Service) AdblockStatus() AdblockStatus {
 	status := AdblockStatus{
 		Enabled:      s.isAdblockEnabled(),
 		MatchMode:    matchMode,
-		LastSyncOK:   s.adblockLastSyncOK.Load(),
-		SourceCount:  int(s.adblockSrcCount.Load()),
-		SuccessCount: int(s.adblockOKCount.Load()),
+		LastSyncOK:   s.adblock.adblockLastSyncOK.Load(),
+		SourceCount:  int(s.adblock.adblockSrcCount.Load()),
+		SuccessCount: int(s.adblock.adblockOKCount.Load()),
 		Exceptions:   s.AdblockExceptionStatus(),
 		ShadowExact:  s.AdblockShadowExactStatus(),
 	}
@@ -174,12 +174,12 @@ func (s *Service) AdblockStatus() AdblockStatus {
 		status.SourcePoliciesFingerprint = adblockSourcePoliciesFingerprint(policies)
 		status.SourcePolicyCount = len(policies)
 	}
-	if t := s.adblockTrie.Load(); t != nil {
+	if t := s.adblock.adblockTrie.Load(); t != nil {
 		status.DomainCount = t.Count()
 		status.ExactRuleCount = t.ExactCount()
 		status.SuffixRuleCount = t.SuffixCount()
 	}
-	if v := s.adblockLastSync.Load(); v != nil {
+	if v := s.adblock.adblockLastSync.Load(); v != nil {
 		if ts, ok := v.(time.Time); ok {
 			status.LastSyncAt = ts.UTC().Format(time.RFC3339)
 		}

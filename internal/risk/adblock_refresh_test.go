@@ -154,11 +154,11 @@ func TestUnchangedSourcePoliciesDoNotRequestARebuild(t *testing.T) {
 // drainAdblockResync reports whether a rebuild request was pending, consuming
 // it if so.
 func (s *Service) drainAdblockResync() bool {
-	if s.adblockResync == nil {
+	if s.adblock.adblockResync == nil {
 		return false
 	}
 	select {
-	case <-s.adblockResync:
+	case <-s.adblock.adblockResync:
 		return true
 	default:
 		return false
