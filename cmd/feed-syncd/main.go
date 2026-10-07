@@ -3,54 +3,23 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"flag"
-	"fmt"
-	"net/http"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"safe-zone/internal/buildinfo"
-	"safe-zone/internal/config"
 	"safe-zone/internal/correlation"
-	"safe-zone/internal/feed"
+	"safe-zone/internal/feedsync"
 	"safe-zone/internal/logjson"
-	"safe-zone/internal/netguard"
 )
-
-var (
-	errSourceRequired       = errors.New("feed source is required")
-	errFilterEvaluationOnly = errors.New("corroborated URL-host filter is evaluation-only")
-)
-
-// syncSettings is the resolved configuration of one daemon run. It is
-// separated from flag parsing so the effective options are testable.
-type syncSettings struct {
-	Source        string
-	RedisAddr     string
-	RedisPassword string
-	RedisDB       int
-	Key           string
-	Replace       bool
-	AllowInsecure bool
-	Once          bool
-	Interval      time.Duration
-	Timeout       time.Duration
-	AdmissionMode feed.AdmissionMode
-	TTL           time.Duration
-	// ChurnTTL is the shortened window for recycled-label members. It is
-	// validated in parseSyncSettings to exceed Interval, so a still-listed
-	// member can never expire in the gap between two cycles.
-	ChurnTTL time.Duration
-}
 
 func main() {
 	buildinfo.Link()
 
-	settings, err := parseSyncSettings(flag.CommandLine, os.Args[1:])
+	flags := flag.NewFlagSet("feed-syncd", flag.ExitOnError)
+	settings, err := feedsync.ParseSettings(feedsync.ModeDaemon, flags, os.Args[1:])
 	if err != nil {
 		logjson.Error("invalid feed sync daemon configuration", map[string]any{
 			"service": "feed-syncd",
@@ -72,14 +41,8 @@ func main() {
 
 	runSync := func() {
 		runCtx := correlation.WithRunID(ctx, correlation.NewID("feed-syncd"))
-		client := netguard.NewHTTPClient(nil, settings.Timeout, false)
-		report, err := feed.Sync(runCtx, buildSyncOptions(settings, client))
+		report, err := feedsync.RunCycle(runCtx, settings, "feed-syncd")
 		if err != nil {
-			logjson.Error("feed sync failed", correlation.Fields(runCtx, map[string]any{
-				"service": "feed-syncd",
-				"source":  settings.Source,
-				"error":   err.Error(),
-			}))
 			return
 		}
 
@@ -125,103 +88,5 @@ func main() {
 		case <-ticker.C:
 			runSync()
 		}
-	}
-}
-
-// parseSyncSettings mirrors the flag surface of the one-shot feed-sync tool
-// (--ttl-days and SAFE_ZONE_FEED_TTL_DAYS included) so the two entrypoints
-// resolve identical effective options.
-func parseSyncSettings(flags *flag.FlagSet, args []string) (syncSettings, error) {
-	source := flags.String("source", config.String("SAFE_ZONE_THREAT_FEED_SOURCE", ""), "local file path or HTTP(S) feed URL")
-	redisAddr := flags.String("redis-addr", config.String("SAFE_ZONE_REDIS_ADDR", ""), "Redis address")
-	redisPassword := flags.String("redis-password", config.SecretString("SAFE_ZONE_REDIS_PASSWORD", ""), "Redis password")
-	redisDB := flags.Int("redis-db", config.Int("SAFE_ZONE_REDIS_DB", 0), "Redis database")
-	key := flags.String("key", config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey), "Redis Set key for threat feed")
-	// Replace defaults to false: whole-key staging renames would wipe other
-	// writers sharing the feed key (one daemon per source, or the one-shot
-	// loop). Single-source freshness then rests on per-member TTL expiry.
-	// Enable -replace only when this daemon owns its key exclusively.
-	replace := flags.Bool("replace", false, "delete the target set before writing parsed domains (requires exclusive key ownership)")
-	allowInsecure := flags.Bool("allow-insecure-http", config.Bool("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", false), "allow plain-HTTP feed fetch (MITM can inject mass blocks; prefer https)")
-	once := flags.Bool("once", false, "run one sync cycle and exit")
-	interval := flags.Duration("interval", config.DurationSeconds("SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS", 24*time.Hour), "time between sync cycles")
-	timeout := flags.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
-	admissionMode := flags.String("admission-mode", config.String("SAFE_ZONE_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)), "feed admission mode: legacy, corroborated-url-host-shadow, or corroborated-url-host-filter")
-	ttlDays := flags.Int("ttl-days", config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14), "number of days before threat domains expire")
-	churnTTLDays := flags.Int("churn-ttl-days", config.Int("SAFE_ZONE_FEED_CHURN_TTL_DAYS", 0), "shorter expiry in days for members on recycled-label roots (0 disables; must be at least 2 and exceed the sync interval)")
-	if err := flags.Parse(args); err != nil {
-		return syncSettings{}, err
-	}
-	// time.NewTicker panics on a non-positive duration, and
-	// CheckChurnTTLAgainstInterval below only reaches the interval when a churn
-	// window is configured — with the default churn of 0 it returns nil
-	// immediately, so an explicit --interval=0 or a
-	// SAFE_ZONE_FEED_SYNC_INTERVAL_SECONDS=0 reached the ticker and crashed the
-	// daemon instead of being refused. Validate it here, where the other inputs are
-	// refused, rather than at the point of use.
-	if *interval <= 0 {
-		return syncSettings{}, fmt.Errorf("interval must be positive, got %s", *interval)
-	}
-
-	feedTTL, ttlErr := feed.TTLFromDays(*ttlDays)
-	if ttlErr != nil {
-		return syncSettings{}, ttlErr
-	}
-	churnTTL, churnErr := feed.ChurnTTLFromDays(*churnTTLDays)
-	if churnErr != nil {
-		return syncSettings{}, churnErr
-	}
-	normalizedAdmissionMode, admissionErr := feed.NormalizeAdmissionMode(*admissionMode)
-	if err := feed.CheckChurnTTLAgainstInterval(churnTTL, *interval); err != nil {
-		return syncSettings{}, err
-	}
-	if admissionErr != nil {
-		return syncSettings{}, admissionErr
-	}
-	if normalizedAdmissionMode == feed.AdmissionFilter {
-		return syncSettings{}, errFilterEvaluationOnly
-	}
-	if strings.TrimSpace(*source) == "" {
-		return syncSettings{}, errSourceRequired
-	}
-
-	return syncSettings{
-		Source:        *source,
-		RedisAddr:     *redisAddr,
-		RedisPassword: *redisPassword,
-		RedisDB:       *redisDB,
-		Key:           *key,
-		Replace:       *replace,
-		AllowInsecure: *allowInsecure,
-		Once:          *once,
-		Interval:      *interval,
-		Timeout:       *timeout,
-		AdmissionMode: normalizedAdmissionMode,
-		TTL:           feedTTL,
-		ChurnTTL:      churnTTL,
-	}, nil
-}
-
-// buildSyncOptions assembles the feed.Sync contract from the resolved
-// settings.
-func buildSyncOptions(settings syncSettings, client *http.Client) feed.SyncOptions {
-	return feed.SyncOptions{
-		Source:                     settings.Source,
-		FileRoot:                   config.FeedFileRoot(),
-		MaxBytes:                   int64(config.Int("SAFE_ZONE_FEED_MAX_BYTES", int(feed.DefaultMaxFeedBytes))),
-		RedisAddr:                  settings.RedisAddr,
-		RedisPassword:              settings.RedisPassword,
-		RedisDB:                    settings.RedisDB,
-		Key:                        settings.Key,
-		Replace:                    settings.Replace,
-		AllowInsecureHTTP:          settings.AllowInsecure,
-		Timeout:                    settings.Timeout,
-		Client:                     client,
-		ParserDriftInvalidRatio:    config.Float64("SAFE_ZONE_FEED_DRIFT_INVALID_RATIO", 0.20),
-		ParserDriftMinInvalid:      config.Int("SAFE_ZONE_FEED_DRIFT_MIN_INVALID", 25),
-		CacheInvalidationMinWrites: int64(config.Int("SAFE_ZONE_FEED_CACHE_INVALIDATION_MIN_WRITES", 1)),
-		TTL:                        settings.TTL,
-		ChurnTTL:                   settings.ChurnTTL,
-		AdmissionMode:              settings.AdmissionMode,
 	}
 }
