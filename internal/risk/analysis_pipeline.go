@@ -443,3 +443,23 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	assess.Timings = timer.timings
 	return result, false, report.Evidence, assess
 }
+
+type AnalyzeOptions struct {
+	IncludeEvidence bool
+	ForceOSINT      bool
+	URLContext      *URLAnalysisContext
+	// MissingContextReason classifies analysis requests that carry no URL
+	// context (bounded set: get_domain_only|post_not_provided). It feeds the
+	// aggregate coverage breakdown only; it never stores caller data.
+	MissingContextReason string
+}
+
+type osintLookupMode int
+
+const (
+	osintLookupNone osintLookupMode = iota
+	osintLookupCachedOnly
+	osintLookupOnDemand
+)
+
+const negativeCacheTTL = 2 * time.Minute
