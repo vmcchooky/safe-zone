@@ -64,7 +64,7 @@ func TestCaseOnlyKeyChangeIsNotTreatedAsAChange(t *testing.T) {
 		`{"https://Example.com/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
-	if !svc.drainAdblockResync() {
+	if !svc.adblock.drainAdblockResync() {
 		t.Fatal("the first change must request a rebuild")
 	}
 
@@ -72,7 +72,7 @@ func TestCaseOnlyKeyChangeIsNotTreatedAsAChange(t *testing.T) {
 		`{"https://example.com/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
-	if svc.drainAdblockResync() {
+	if svc.adblock.drainAdblockResync() {
 		t.Fatal("a case-only change is the same policy and must not request a rebuild")
 	}
 }
@@ -86,7 +86,7 @@ func TestRealChangeAlongsideAKeyRespellIsPublished(t *testing.T) {
 		`{"https://example.com/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
-	if !svc.drainAdblockResync() {
+	if !svc.adblock.drainAdblockResync() {
 		t.Fatal("precondition: the first change must request a rebuild")
 	}
 
@@ -94,7 +94,7 @@ func TestRealChangeAlongsideAKeyRespellIsPublished(t *testing.T) {
 		`{"https://Example.com/hosts":{"category":"ads","scope":"suffix"}}`); err != nil {
 		t.Fatal(err)
 	}
-	if !svc.drainAdblockResync() {
+	if !svc.adblock.drainAdblockResync() {
 		t.Fatal("a scope change must request a rebuild even when the key is respelled")
 	}
 	_, scope, _ := svc.adblock.resolveAdblockSourcePolicy("https://example.com/hosts")

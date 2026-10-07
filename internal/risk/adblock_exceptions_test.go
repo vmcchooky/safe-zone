@@ -626,7 +626,7 @@ func TestExceptionCacheV2AndLegacyProvenance(t *testing.T) {
 
 	// Legacy v1 cache reloads as legacy-cache provenance: a digest exception
 	// must not match it, an explicit legacy-cache one must.
-	service.saveAdblockCacheRaw("legacy.example.com\n")
+	service.adblock.saveAdblockCacheRaw("legacy.example.com\n")
 	legacyTrie := domaintrie.NewTrie()
 	if !service.adblock.loadAdblockCache(legacyTrie) {
 		t.Fatal("expected legacy cache reload")
