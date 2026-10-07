@@ -11,6 +11,8 @@ import (
 	"safe-zone/internal/logjson"
 )
 
+// Domain role labels returned by ClassifyDomainRole: whether the domain
+// acts as attacker infrastructure, a victim/legitimate site, or unclear.
 const (
 	DomainRoleAttacker = "attacker"
 	DomainRoleVictim   = "victim"
@@ -61,6 +63,8 @@ func (c *Client) ClassifyDomainRole(ctx context.Context, domain string, contexts
 	return DomainRoleUnclear, errors.New("ai client disabled")
 }
 
+// ClassifyDomainRole asks Gemini for the domain's role, returning
+// DomainRoleUnclear when generation or parsing fails.
 func (g *GeminiClient) ClassifyDomainRole(ctx context.Context, domain string, contexts []string) (string, error) {
 	text, err := g.generateText(ctx, buildDomainRolePrompt(domain, contexts))
 	if err != nil {
@@ -69,6 +73,8 @@ func (g *GeminiClient) ClassifyDomainRole(ctx context.Context, domain string, co
 	return parseDomainRole(text)
 }
 
+// ClassifyDomainRole asks the local Ollama model for the domain's role,
+// returning DomainRoleUnclear when generation or parsing fails.
 func (o *OllamaClient) ClassifyDomainRole(ctx context.Context, domain string, contexts []string) (string, error) {
 	text, err := o.generateText(ctx, buildDomainRolePrompt(domain, contexts))
 	if err != nil {

@@ -25,23 +25,31 @@ var percentEscapePattern = regexp.MustCompile(`%[0-9a-fA-F]{2}`)
 var ipv4PathPattern = regexp.MustCompile(`(?:^|[^0-9a-fA-F:.])((?:\d{1,3}\.){3}\d{1,3})(?:$|[^0-9])`)
 var repeatedWhitespacePattern = regexp.MustCompile(`\s\s+`)
 
+// URLContext is one URL classification request: the requested URL, the
+// expected host, and the observed redirect chain.
 type URLContext struct {
 	RequestedURL  string
 	ExpectedHost  string
 	RedirectChain []string
 }
 
+// URLClassifier scores one URL context through a versioned model bundle.
 type URLClassifier interface {
 	Enabled() bool
 	Revision() string
 	ClassifyURL(URLContext) (MLDecision, error)
 }
 
+// URLClassifierMetadata exposes a URL classifier's model version and
+// block threshold without exposing the classifier itself.
 type URLClassifierMetadata interface {
 	ModelVersion() string
 	URLThreshold() float64
 }
 
+// URLMonitoringReference is the frozen operational drift reference: the
+// probability distribution and PSI watch/alert thresholds the live traffic
+// is compared against.
 type URLMonitoringReference struct {
 	ReferenceKind           string
 	ReferenceRows           int
@@ -53,6 +61,8 @@ type URLMonitoringReference struct {
 	PSIAlertThreshold       float64
 }
 
+// URLMonitoringReferenceProvider exposes the frozen drift reference for
+// observability without exposing the classifier itself.
 type URLMonitoringReferenceProvider interface {
 	URLMonitoringReference() URLMonitoringReference
 }
@@ -120,6 +130,9 @@ type urlModelBundle struct {
 	} `json:"monitoring"`
 }
 
+// URLBundleClassifier owns an immutable URL model bundle, vocabulary and
+// revision. It does not mutate prediction state and is safe for concurrent
+// calls.
 type URLBundleClassifier struct {
 	bundle     urlModelBundle
 	vocabulary map[string]int
@@ -139,6 +152,8 @@ type sparseURLValue struct {
 	value float64
 }
 
+// NewURLBundleClassifier loads and verifies a URL model bundle directory,
+// failing closed on missing files or checksum mismatches.
 func NewURLBundleClassifier(bundleDir string) (*URLBundleClassifier, error) {
 	bundleDir = strings.TrimSpace(bundleDir)
 	if bundleDir == "" {
@@ -284,10 +299,12 @@ func readURLChecksums(path string) (map[string]string, error) {
 	return result, scanner.Err()
 }
 
+// Enabled reports whether the classifier loaded a non-empty vocabulary.
 func (c *URLBundleClassifier) Enabled() bool {
 	return c != nil && len(c.vocabulary) > 0
 }
 
+// Revision returns the bundle revision, or empty when unloaded.
 func (c *URLBundleClassifier) Revision() string {
 	if c == nil {
 		return ""
@@ -295,6 +312,8 @@ func (c *URLBundleClassifier) Revision() string {
 	return c.revision
 }
 
+// ModelVersion returns the loaded bundle's model version, or empty when
+// unloaded.
 func (c *URLBundleClassifier) ModelVersion() string {
 	if c == nil {
 		return ""
@@ -302,6 +321,8 @@ func (c *URLBundleClassifier) ModelVersion() string {
 	return c.bundle.ModelVersion
 }
 
+// URLThreshold returns the bundle policy's block threshold, or zero when
+// unloaded.
 func (c *URLBundleClassifier) URLThreshold() float64 {
 	if c == nil {
 		return 0
@@ -309,6 +330,8 @@ func (c *URLBundleClassifier) URLThreshold() float64 {
 	return c.bundle.Policy.URLThreshold
 }
 
+// URLMonitoringReference returns a copy of the frozen drift reference so
+// callers cannot mutate the bundle through it.
 func (c *URLBundleClassifier) URLMonitoringReference() URLMonitoringReference {
 	if c == nil {
 		return URLMonitoringReference{}
@@ -325,6 +348,8 @@ func (c *URLBundleClassifier) URLMonitoringReference() URLMonitoringReference {
 	}
 }
 
+// ClassifyURL scores one URL context, abstaining with an error when the
+// classifier is disabled.
 func (c *URLBundleClassifier) ClassifyURL(context URLContext) (MLDecision, error) {
 	decision := MLDecision{Action: MLActionAbstain}
 	if !c.Enabled() {

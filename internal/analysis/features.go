@@ -49,6 +49,9 @@ type FeatureManifest struct {
 	SnapshotPolicy          SnapshotPolicy `json:"snapshot_policy,omitempty"`
 }
 
+// SnapshotPolicy describes optional manifest snapshot extensions: base
+// files, keyword, brand and shared-hosting additions, plus the TLD state
+// encoding.
 type SnapshotPolicy struct {
 	BaseFiles               map[string]string `json:"base_files,omitempty"`
 	KeywordExtensions       []string          `json:"keyword_extensions,omitempty"`
@@ -57,12 +60,16 @@ type SnapshotPolicy struct {
 	TLDStateEncoding        *TLDStateEncoding `json:"tld_state_encoding,omitempty"`
 }
 
+// TLDStateEncoding carries the TLD reputation weights for unknown,
+// known-neutral and risky states.
 type TLDStateEncoding struct {
 	Unknown      float64 `json:"unknown"`
 	KnownNeutral float64 `json:"known_neutral"`
 	Risky        float64 `json:"risky"`
 }
 
+// TFIDFConfig carries the character n-gram TF-IDF hyperparameters: range,
+// feature cap, analyzer and normalization settings.
 type TFIDFConfig struct {
 	NgramRange  []int  `json:"ngram_range"`
 	MaxFeatures int    `json:"max_features"`
@@ -126,6 +133,8 @@ type FeatureExtractor struct {
 	sharedHosting map[string]struct{}
 }
 
+// NewFeatureExtractor loads and validates a feature manifest, returning an
+// extractor bound to its contract.
 func NewFeatureExtractor(manifestPath string) (*FeatureExtractor, error) {
 	data, err := os.ReadFile(manifestPath) // #nosec G304 -- the loader supplies the validated bundle manifest path.
 	if err != nil {
@@ -304,6 +313,8 @@ func validateV4SnapshotPolicy(policy SnapshotPolicy) error {
 	return nil
 }
 
+// Manifest returns a deep copy of the extractor's manifest so callers
+// cannot mutate the extractor through it.
 func (e *FeatureExtractor) Manifest() FeatureManifest {
 	if e == nil {
 		return FeatureManifest{}
@@ -413,6 +424,8 @@ func isIPLike(value string) bool {
 	return net.ParseIP(clean) != nil || ipLikePattern.MatchString(clean)
 }
 
+// Extract canonicalizes the domain and returns its feature vector, or an
+// error for unsupported input.
 func (e *FeatureExtractor) Extract(domain string) ([]float64, error) {
 	if e == nil {
 		return nil, errors.New("feature extractor is nil")
@@ -424,6 +437,8 @@ func (e *FeatureExtractor) Extract(domain string) ([]float64, error) {
 	return e.ExtractCanonical(canonical), nil
 }
 
+// ExtractCanonical returns the feature vector for an already-canonicalized
+// domain, without re-validating it.
 func (e *FeatureExtractor) ExtractCanonical(canonical canonicalDomain) []float64 {
 	features := make([]float64, totalFeatureCount)
 	if !canonical.valid {
@@ -646,20 +661,6 @@ func containsFold(values []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func absInt(value int) int {

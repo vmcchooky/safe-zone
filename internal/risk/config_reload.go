@@ -55,8 +55,8 @@ func (s *Service) shouldRunConfigReloadReconciler() bool {
 func (s *Service) runConfigReloadSubscriber() {
 	defer s.configReloadWG.Done()
 
-	backoff := configDuration(s.reloadBackoffMin, analysisConfigReloadBackoffMin)
-	maxBackoff := configDuration(s.reloadBackoffMax, analysisConfigReloadBackoffMax)
+	backoff := configDuration(s.reloadBackoffMin, analysisConfigReloadBackoffFloor)
+	maxBackoff := configDuration(s.reloadBackoffMax, analysisConfigReloadBackoffCap)
 	if maxBackoff < backoff {
 		maxBackoff = backoff
 	}
@@ -85,7 +85,7 @@ func (s *Service) runConfigReloadSubscriber() {
 			continue
 		}
 
-		backoff = configDuration(s.reloadBackoffMin, analysisConfigReloadBackoffMin)
+		backoff = configDuration(s.reloadBackoffMin, analysisConfigReloadBackoffFloor)
 		err = s.consumeConfigReloadMessages(messages)
 		if closeSub != nil {
 			_ = closeSub()
@@ -260,13 +260,13 @@ func (s *Service) reloadAnalysisConfigFromStore(source string) (string, string, 
 	return currentRevision, appliedRevision, true, nil
 }
 
-func nextConfigReloadBackoff(current, max time.Duration) time.Duration {
+func nextConfigReloadBackoff(current, maxBackoff time.Duration) time.Duration {
 	if current <= 0 {
-		return max
+		return maxBackoff
 	}
 	next := current * 2
-	if next < current || next > max {
-		return max
+	if next < current || next > maxBackoff {
+		return maxBackoff
 	}
 	return next
 }

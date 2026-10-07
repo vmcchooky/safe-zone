@@ -18,19 +18,25 @@ import (
 	"github.com/dmitryikh/leaves"
 )
 
+// MLMode selects how model output feeds the pipeline: off, shadow
+// observation, or enforcing promotion.
 type MLMode string
 
 const (
+	// MLModeDisabled turns model scoring off entirely.
 	MLModeDisabled MLMode = "disabled"
 	MLModeShadow   MLMode = "shadow"
 	MLModeEnforce  MLMode = "enforce"
 )
 
 const (
+	// MLActionAbstain leaves the verdict to the remaining pipeline layers.
 	MLActionAbstain          = "abstain"
 	MLActionPromoteMalicious = "promote_malicious"
 )
 
+// MLDecision is one model verdict: calibrated probability, the action it
+// implies, and the model version and bundle revision it came from.
 type MLDecision struct {
 	Probability  float64 `json:"probability"`
 	Action       string  `json:"action"`
@@ -39,12 +45,15 @@ type MLDecision struct {
 	RawMargin    float64 `json:"-"`
 }
 
+// DomainClassifier scores one domain through a versioned model bundle.
 type DomainClassifier interface {
 	Enabled() bool
 	Revision() string
 	Classify(domain string) (MLDecision, error)
 }
 
+// ClassifierMetadata exposes a classifier's model version and block
+// threshold without exposing the classifier itself.
 type ClassifierMetadata interface {
 	ModelVersion() string
 	BlockThreshold() float64
@@ -85,10 +94,14 @@ type BundleClassifier struct {
 	calibrationB float64
 }
 
+// NewBundleClassifier loads and verifies a model bundle directory,
+// failing closed on missing files or checksum mismatches.
 func NewBundleClassifier(bundleDir string) (*BundleClassifier, error) {
 	return NewBundleClassifierWithThreshold(bundleDir, nil)
 }
 
+// NewBundleClassifierWithThreshold is NewBundleClassifier with an optional
+// block-threshold override for evaluation harnesses.
 func NewBundleClassifierWithThreshold(bundleDir string, thresholdOverride *float64) (*BundleClassifier, error) {
 	bundleDir = strings.TrimSpace(bundleDir)
 	if bundleDir == "" {

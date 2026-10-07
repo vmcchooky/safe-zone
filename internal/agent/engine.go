@@ -304,14 +304,14 @@ func (e *Engine) executeTask(rt *registeredTask) {
 				return
 			}
 
-			e.finishTask(rt, ctx, err, elapsed)
+			e.finishTask(ctx, rt, err, elapsed)
 		}()
 
 		err = rt.task.Run(ctx)
 	}()
 }
 
-func (e *Engine) finishTask(rt *registeredTask, ctx context.Context, err error, elapsed time.Duration) {
+func (e *Engine) finishTask(ctx context.Context, rt *registeredTask, err error, elapsed time.Duration) {
 	e.setTaskResult(rt, err)
 
 	if err != nil {

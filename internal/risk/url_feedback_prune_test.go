@@ -161,9 +161,9 @@ func TestPruneIsSkippedAfterShutdown(t *testing.T) {
 	// Built with a real lifecycle so it can be cancelled, unlike the helper
 	// the other tests use.
 	lifecycle, cancel := context.WithCancel(context.Background())
-	feedback := newDurableURLFeedbackStore(db, URLMLFeedbackConfig{
+	feedback := newDurableURLFeedbackStore(lifecycle, db, URLMLFeedbackConfig{
 		KeyVersion: 1, Secret: "secret", Retention: time.Hour, MaxRows: 1000,
-	}, lifecycle)
+	})
 	cancel()
 
 	feedback.maybePrune(context.Background(), time.Now())
@@ -240,9 +240,9 @@ func TestCloseCutsShortARunningPrune(t *testing.T) {
 	}
 
 	lifecycle, cancelLifecycle := context.WithCancel(context.Background())
-	feedback := newDurableURLFeedbackStore(db, URLMLFeedbackConfig{
+	feedback := newDurableURLFeedbackStore(lifecycle, db, URLMLFeedbackConfig{
 		KeyVersion: 1, Secret: "secret", Retention: time.Hour, MaxRows: 1_000_000,
-	}, lifecycle)
+	})
 
 	feedback.maybePrune(ctx, time.Now())
 	// Give the goroutine time to take the connection.

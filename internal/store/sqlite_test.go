@@ -948,7 +948,7 @@ func TestClientMappings(t *testing.T) {
 		t.Fatalf("failed to add CIDR mapping: %v", err)
 	}
 
-	clientIdMapID, err := db.AddMappingInt(context.Background(), "client_id", "iphone-user", grpID)
+	clientIDMapID, err := db.AddMappingInt(context.Background(), "client_id", "iphone-user", grpID)
 	if err != nil {
 		t.Fatalf("failed to add Client ID mapping: %v", err)
 	}
@@ -987,7 +987,7 @@ func TestClientMappings(t *testing.T) {
 		if m.ID == cidrMapID && m.MappingType == "cidr" && m.Value == "10.0.0.0/24" && m.GroupID == grpID && m.GroupName == "test-group" {
 			foundCIDR = true
 		}
-		if m.ID == clientIdMapID && m.MappingType == "client_id" && m.Value == "iphone-user" && m.GroupID == grpID && m.GroupName == "test-group" {
+		if m.ID == clientIDMapID && m.MappingType == "client_id" && m.Value == "iphone-user" && m.GroupID == grpID && m.GroupName == "test-group" {
 			foundClientID = true
 		}
 	}

@@ -1,3 +1,5 @@
+// Command ml-replay replays reviewed label sets against an immutable model
+// bundle to verify decision parity across clean replay rounds.
 package main
 
 import (

@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	// modernc.org/sqlite registers the "sqlite" database/sql driver as a
+	// side effect; nothing here references the package directly.
 	_ "modernc.org/sqlite"
 
 	"safe-zone/internal/analysis"
@@ -2121,11 +2123,11 @@ func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, group
 			return 0, fmt.Errorf("invalid IP address format: %s", value)
 		}
 	case "cidr":
-		if _, ipNet, err := net.ParseCIDR(value); err != nil {
+		_, ipNet, err := net.ParseCIDR(value)
+		if err != nil {
 			return 0, fmt.Errorf("invalid CIDR format %q: %w", value, err)
-		} else {
-			value = ipNet.String()
 		}
+		value = ipNet.String()
 	}
 
 	res, err := d.db.ExecContext(ctx, `
