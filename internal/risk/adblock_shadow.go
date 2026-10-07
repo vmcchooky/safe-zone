@@ -66,37 +66,37 @@ func classifyShadowExactOutcome(rule *domaintrie.Rule, queryIsApex bool) shadowE
 // observation: the startup-only flag is on, semantics are separated, and the
 // effective global match mode is still suffix (there is nothing to observe
 // once the flip it models has happened). Legacy semantics never observe.
-func (s *Service) shadowExactActive() bool {
-	if s == nil || !s.adblockShadowExactEnabled {
+func (e *AdblockEngine) shadowExactActive() bool {
+	if e == nil || !e.adblockShadowExactEnabled {
 		return false
 	}
-	if s.policySemantics != PolicySemanticsSeparated {
+	if e.policySemantics != PolicySemanticsSeparated {
 		return false
 	}
-	mode, _ := s.adblockMatchMode.Load().(string)
+	mode, _ := e.adblockMatchMode.Load().(string)
 	return mode == string(adblockMatchModeSuffix)
 }
 
 // observeShadowExact records at most one primary outcome for an adblock hit,
 // plus a separate exception-overlap counter when a scoped exception also
 // matched. It performs no I/O and never affects enforcement.
-func (s *Service) observeShadowExact(detail domaintrie.MatchDetail, exceptionMatched bool) {
-	if !s.shadowExactActive() || !detail.Matched {
+func (e *AdblockEngine) observeShadowExact(detail domaintrie.MatchDetail, exceptionMatched bool) {
+	if !e.shadowExactActive() || !detail.Matched {
 		return
 	}
 	queryIsApex := detail.Query != "" && detail.Query == detail.Rule.Domain
 	switch classifyShadowExactOutcome(&detail.Rule, queryIsApex) {
 	case shadowExactStillBlock:
-		s.adblockShadowStillBlock.Add(1)
+		e.adblockShadowStillBlock.Add(1)
 	case shadowExactWouldAllow:
-		s.adblockShadowWouldAllow.Add(1)
+		e.adblockShadowWouldAllow.Add(1)
 	case shadowExactPreserved:
-		s.adblockShadowPreserved.Add(1)
+		e.adblockShadowPreserved.Add(1)
 	default:
-		s.adblockShadowUnavailable.Add(1)
+		e.adblockShadowUnavailable.Add(1)
 	}
 	if exceptionMatched {
-		s.adblockShadowExcOverlap.Add(1)
+		e.adblockShadowExcOverlap.Add(1)
 	}
 }
 
@@ -118,18 +118,18 @@ type AdblockShadowExactStatus struct {
 
 // AdblockShadowExactStatus returns the aggregate shadow snapshot. Each
 // counter is loaded once into locals; Observations is their sum.
-func (s *Service) AdblockShadowExactStatus() AdblockShadowExactStatus {
+func (e *AdblockEngine) AdblockShadowExactStatus() AdblockShadowExactStatus {
 	status := AdblockShadowExactStatus{TargetScope: adblockShadowTargetScope}
-	if s == nil {
+	if e == nil {
 		return status
 	}
-	status.Enabled = s.adblockShadowExactEnabled
-	status.Active = s.shadowExactActive()
-	status.WouldStillBlockContent = s.adblockShadowStillBlock.Load()
-	status.WouldAllowContent = s.adblockShadowWouldAllow.Load()
-	status.ExplicitScopePreservedBlock = s.adblockShadowPreserved.Load()
-	status.UnavailableOriginUnknown = s.adblockShadowUnavailable.Load()
-	status.ExceptionOverlap = s.adblockShadowExcOverlap.Load()
+	status.Enabled = e.adblockShadowExactEnabled
+	status.Active = e.shadowExactActive()
+	status.WouldStillBlockContent = e.adblockShadowStillBlock.Load()
+	status.WouldAllowContent = e.adblockShadowWouldAllow.Load()
+	status.ExplicitScopePreservedBlock = e.adblockShadowPreserved.Load()
+	status.UnavailableOriginUnknown = e.adblockShadowUnavailable.Load()
+	status.ExceptionOverlap = e.adblockShadowExcOverlap.Load()
 	status.Observations = status.WouldStillBlockContent + status.WouldAllowContent +
 		status.ExplicitScopePreservedBlock + status.UnavailableOriginUnknown
 	return status

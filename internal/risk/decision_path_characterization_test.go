@@ -108,7 +108,7 @@ func decisionScenarios(ctx context.Context, t *testing.T) []decisionScenario {
 			build: func(t *testing.T, ctx context.Context, svc *Service, db *store.DB) {
 				trie := domaintrie.NewTrie()
 				trie.Add("tracked.example")
-				svc.AdblockTrieOverride(trie)
+				svc.adblock.AdblockTrieOverride(trie)
 			},
 			wantAction: "block",
 		},
@@ -118,7 +118,7 @@ func decisionScenarios(ctx context.Context, t *testing.T) []decisionScenario {
 			build: func(t *testing.T, ctx context.Context, svc *Service, db *store.DB) {
 				trie := domaintrie.NewTrie()
 				trie.Add("winned.example")
-				svc.AdblockTrieOverride(trie)
+				svc.adblock.AdblockTrieOverride(trie)
 				if err := db.UpsertOverride(ctx, "ads.winned.example", "allow", "operator"); err != nil {
 					t.Fatalf("seed override: %v", err)
 				}
@@ -131,7 +131,7 @@ func decisionScenarios(ctx context.Context, t *testing.T) []decisionScenario {
 			build: func(t *testing.T, ctx context.Context, svc *Service, db *store.DB) {
 				trie := domaintrie.NewTrie()
 				trie.Add("wlwin.example")
-				svc.AdblockTrieOverride(trie)
+				svc.adblock.AdblockTrieOverride(trie)
 				if err := db.UpdateWhitelist(ctx, []string{"ads.wlwin.example"}); err != nil {
 					t.Fatalf("seed whitelist: %v", err)
 				}

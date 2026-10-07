@@ -55,7 +55,7 @@ func newSemanticsTestService(t *testing.T, semantics PolicySemantics, domains []
 	for _, d := range domains {
 		trie.Add(d)
 	}
-	service.adblockTrie.Store(trie)
+	service.adblock.adblockTrie.Store(trie)
 
 	t.Cleanup(func() {
 		_ = service.Close()

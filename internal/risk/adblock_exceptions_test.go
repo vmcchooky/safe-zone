@@ -74,7 +74,7 @@ func newAdblockExceptionService(t *testing.T, base Options, rules []domaintrie.R
 			t.Fatalf("test rule rejected: %+v", rule)
 		}
 	}
-	service.AdblockTrieOverride(trie)
+	service.adblock.AdblockTrieOverride(trie)
 
 	t.Cleanup(func() { _ = service.Close() })
 	return service
@@ -137,7 +137,7 @@ func TestExceptionSuppressesExactMatchAndRunsPipeline(t *testing.T) {
 	if got := aiCalls.Load(); got == 0 {
 		t.Fatal("expected the full pipeline to reach AI refinement for a suspicious domain")
 	}
-	if got := service.AdblockExceptionStatus().Matches; got != 1 {
+	if got := service.adblock.AdblockExceptionStatus().Matches; got != 1 {
 		t.Fatalf("expected 1 exception match, got %d", got)
 	}
 }
@@ -230,7 +230,7 @@ func TestAdminOverrideWinsOverException(t *testing.T) {
 	if pol.Decision != nil && pol.Decision.Kind == "content" {
 		t.Fatalf("override path must not carry a content decision, got %+v", pol.Decision)
 	}
-	if got := service.AdblockExceptionStatus().Matches; got != 0 {
+	if got := service.adblock.AdblockExceptionStatus().Matches; got != 0 {
 		t.Fatalf("exception must not be consulted past an override, matches=%d", got)
 	}
 }
@@ -283,7 +283,7 @@ func TestExceptionSourceIsolation(t *testing.T) {
 	if err := os.WriteFile(excPath, []byte(right), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	service.reloadAdblockExceptions()
+	service.adblock.reloadAdblockExceptions()
 
 	pol = service.Policy(context.Background(), domain, ClientInfo{})
 	if pol.Policy != "allow" || pol.Decision == nil || pol.Decision.Reason != "adblock_exception" {
@@ -311,7 +311,7 @@ func TestExceptionCategoryConstraint(t *testing.T) {
 	if err := os.WriteFile(excPath, []byte(wide), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	service.reloadAdblockExceptions()
+	service.adblock.reloadAdblockExceptions()
 
 	pol = service.Policy(context.Background(), domain, ClientInfo{})
 	if pol.Policy != "allow" || pol.Decision == nil || pol.Decision.Reason != "adblock_exception" {
@@ -436,7 +436,7 @@ func TestExceptionConfigValidationFailClosed(t *testing.T) {
 				svc = newStartupService(t, body)
 			}()
 			defer func() { _ = svc.Close() }()
-			status := svc.AdblockExceptionStatus()
+			status := svc.adblock.AdblockExceptionStatus()
 			if !status.Configured {
 				t.Fatal("file path set means configured, even when invalid")
 			}
@@ -474,15 +474,15 @@ func TestExceptionConfigValidationFailClosed(t *testing.T) {
 		})
 		defer func() { _ = svc.Close() }()
 
-		before := svc.AdblockExceptionStatus()
+		before := svc.adblock.AdblockExceptionStatus()
 		if before.Count != 1 || !before.LastReloadOK || before.Revision == "" {
 			t.Fatalf("expected one loaded exception, got %+v", before)
 		}
 		if err := os.WriteFile(excPath, []byte(`{"version":1,"nope":[]}`), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		svc.reloadAdblockExceptions()
-		after := svc.AdblockExceptionStatus()
+		svc.adblock.reloadAdblockExceptions()
+		after := svc.adblock.AdblockExceptionStatus()
 		if after.Count != 1 || after.Revision != before.Revision {
 			t.Fatalf("runtime invalid must keep the old snapshot: before=%+v after=%+v", before, after)
 		}
@@ -502,15 +502,15 @@ func TestValidEmptySnapshotClears(t *testing.T) {
 	cfg := exceptionFile(exceptionEntry("fp-clear", domain, "exact", domain, srcA, "suffix", "", "INC-clear"))
 	service := newAdblockExceptionService(t, Options{}, rules, cfg)
 
-	if got := service.AdblockExceptionStatus().Count; got != 1 {
+	if got := service.adblock.AdblockExceptionStatus().Count; got != 1 {
 		t.Fatalf("expected 1 exception, got %d", got)
 	}
 	if err := os.WriteFile(os.Getenv(envAdblockExceptionsFile), []byte(`{"version":1,"exceptions":[]}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	service.reloadAdblockExceptions()
+	service.adblock.reloadAdblockExceptions()
 
-	status := service.AdblockExceptionStatus()
+	status := service.adblock.AdblockExceptionStatus()
 	if status.Count != 0 || !status.LastReloadOK {
 		t.Fatalf("empty file must publish an empty set cleanly: %+v", status)
 	}
@@ -560,12 +560,12 @@ func TestExceptionConcurrentRequestsAndReloads(t *testing.T) {
 				body = two
 			}
 			_ = os.WriteFile(excPath, []byte(body), 0o600)
-			service.reloadAdblockExceptions()
+			service.adblock.reloadAdblockExceptions()
 		}(r)
 	}
 	wg.Wait()
 
-	status := service.AdblockExceptionStatus()
+	status := service.adblock.AdblockExceptionStatus()
 	if status.Count != 1 && status.Count != 2 {
 		t.Fatalf("snapshot must converge to a valid file state, got %+v", status)
 	}
@@ -604,12 +604,12 @@ func TestExceptionCacheV2AndLegacyProvenance(t *testing.T) {
 	srcA := canonicalSourceID("https://a.test/hosts")
 	built := domaintrie.NewTrie()
 	built.AddRule(domaintrie.Rule{Domain: "cache.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: srcA, Category: "telemetry", Action: domaintrie.RuleActionBlock})
-	service.saveAdblockCache(built)
+	service.adblock.saveAdblockCache(built)
 	reloaded := domaintrie.NewTrie()
-	if !service.loadAdblockCache(reloaded) {
+	if !service.adblock.loadAdblockCache(reloaded) {
 		t.Fatal("expected cache reload")
 	}
-	service.AdblockTrieOverride(reloaded)
+	service.adblock.AdblockTrieOverride(reloaded)
 
 	digestExc := exceptionFile(exceptionEntry("fp-v2", "cache.example.com", "exact", "cache.example.com", srcA, "suffix", "", "INC-v2"))
 	excPath := filepath.Join(tempDir, "exceptions.json")
@@ -617,7 +617,7 @@ func TestExceptionCacheV2AndLegacyProvenance(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(envAdblockExceptionsFile, excPath)
-	service.reloadAdblockExceptions()
+	service.adblock.reloadAdblockExceptions()
 
 	pol := service.Policy(context.Background(), "cache.example.com", ClientInfo{})
 	if pol.Decision == nil || pol.Decision.Reason != "adblock_exception" || pol.Decision.SourceID != srcA {
@@ -628,10 +628,10 @@ func TestExceptionCacheV2AndLegacyProvenance(t *testing.T) {
 	// must not match it, an explicit legacy-cache one must.
 	service.saveAdblockCacheRaw("legacy.example.com\n")
 	legacyTrie := domaintrie.NewTrie()
-	if !service.loadAdblockCache(legacyTrie) {
+	if !service.adblock.loadAdblockCache(legacyTrie) {
 		t.Fatal("expected legacy cache reload")
 	}
-	service.AdblockTrieOverride(legacyTrie)
+	service.adblock.AdblockTrieOverride(legacyTrie)
 
 	pol = service.Policy(context.Background(), "legacy.example.com", ClientInfo{})
 	if pol.Decision == nil || pol.Decision.Reason != "adblock_match" {
@@ -641,7 +641,7 @@ func TestExceptionCacheV2AndLegacyProvenance(t *testing.T) {
 	if err := os.WriteFile(excPath, []byte(legacyExc), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	service.reloadAdblockExceptions()
+	service.adblock.reloadAdblockExceptions()
 	pol = service.Policy(context.Background(), "legacy.example.com", ClientInfo{})
 	if pol.Decision == nil || pol.Decision.Reason != "adblock_exception" {
 		t.Fatalf("explicit legacy-cache exception must match: %+v", pol.Decision)
@@ -686,7 +686,7 @@ func TestLegacySemanticsIgnoreExceptions(t *testing.T) {
 
 	trie := domaintrie.NewTrie()
 	trie.AddRule(domaintrie.Rule{Domain: domain, Scope: domaintrie.RuleScopeSuffix, SourceID: srcA, Category: "ads", Action: domaintrie.RuleActionBlock})
-	service.AdblockTrieOverride(trie)
+	service.adblock.AdblockTrieOverride(trie)
 
 	pol := service.Policy(context.Background(), domain, ClientInfo{})
 	if pol.Policy != "block" || pol.Result.Verdict != analysis.VerdictMalicious || pol.Result.Score != 100 {

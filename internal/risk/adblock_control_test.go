@@ -46,7 +46,7 @@ func TestAdblockDefaultsToEnabled(t *testing.T) {
 	t.Setenv(envAdblockEnabled, "")
 	svc, _ := newAdblockControlService(t)
 
-	if !svc.isAdblockEnabled() {
+	if !svc.adblock.isAdblockEnabled() {
 		t.Fatal("adblock must ship enabled by default")
 	}
 }
@@ -66,18 +66,18 @@ func TestSetAdblockEnabledTakesEffectWithoutResync(t *testing.T) {
 	}) {
 		t.Fatal("failed to seed the adblock trie")
 	}
-	svc.adblockTrie.Store(trie)
+	svc.adblock.adblockTrie.Store(trie)
 
 	if pol := svc.Policy(ctx, "ads.example", ClientInfo{}); pol.Decision == nil || pol.Decision.Action != "block" {
 		t.Fatalf("expected the loaded rule to block, got %+v", pol.Decision)
 	}
 
-	if err := svc.SetAdblockEnabled(ctx, false); err != nil {
+	if err := svc.adblock.SetAdblockEnabled(ctx, svc.store, false); err != nil {
 		t.Fatalf("disable: %v", err)
 	}
 
 	// The whole point of the switch: no resync, no restart, next request only.
-	if svc.isAdblockEnabled() {
+	if svc.adblock.isAdblockEnabled() {
 		t.Fatal("expected adblock to be disabled immediately")
 	}
 	if pol := svc.Policy(ctx, "ads.example", ClientInfo{}); pol.Decision != nil && pol.Decision.Action == "block" {
@@ -85,7 +85,7 @@ func TestSetAdblockEnabledTakesEffectWithoutResync(t *testing.T) {
 	}
 
 	// Turning it back on must restore the previous behaviour.
-	if err := svc.SetAdblockEnabled(ctx, true); err != nil {
+	if err := svc.adblock.SetAdblockEnabled(ctx, svc.store, true); err != nil {
 		t.Fatalf("re-enable: %v", err)
 	}
 	if pol := svc.Policy(ctx, "ads.example", ClientInfo{}); pol.Decision == nil || pol.Decision.Action != "block" {
@@ -106,14 +106,14 @@ func TestSetAdblockMatchModeRejectsUnknownValue(t *testing.T) {
 	svc, _ := newAdblockControlService(t)
 	ctx := context.Background()
 
-	before := svc.currentAdblockMatchMode()
-	err := svc.SetAdblockMatchMode(ctx, "regex")
+	before := svc.adblock.currentAdblockMatchMode()
+	err := svc.adblock.SetAdblockMatchMode(ctx, svc.store, "regex")
 	if !errors.Is(err, ErrAdblockMatchModeInvalid) {
 		t.Fatalf("expected ErrAdblockMatchModeInvalid, got %v", err)
 	}
 	// A rejected value must not silently fall back to the broader mode: that
 	// would look like the change never applied.
-	if got := svc.currentAdblockMatchMode(); got != before {
+	if got := svc.adblock.currentAdblockMatchMode(); got != before {
 		t.Fatalf("invalid mode changed state: %q -> %q", before, got)
 	}
 }
@@ -123,10 +123,10 @@ func TestSetAdblockMatchModePersistsAndSurvivesRefresh(t *testing.T) {
 	svc, storeDB := newAdblockControlService(t)
 	ctx := context.Background()
 
-	if err := svc.SetAdblockMatchMode(ctx, "exact"); err != nil {
+	if err := svc.adblock.SetAdblockMatchMode(ctx, svc.store, "exact"); err != nil {
 		t.Fatalf("set exact: %v", err)
 	}
-	if got := svc.currentAdblockMatchMode(); got != "exact" {
+	if got := svc.adblock.currentAdblockMatchMode(); got != "exact" {
 		t.Fatalf("match mode = %q; want exact", got)
 	}
 
@@ -140,8 +140,8 @@ func TestSetAdblockMatchModePersistsAndSurvivesRefresh(t *testing.T) {
 
 	// Regression guard: the periodic refresh must not revert the operator's
 	// choice back to the environment default.
-	svc.refreshAdblockMatchMode()
-	if got := svc.currentAdblockMatchMode(); got != "exact" {
+	svc.adblock.refreshAdblockMatchMode(svc.store)
+	if got := svc.adblock.currentAdblockMatchMode(); got != "exact" {
 		t.Fatalf("refresh reverted operator choice: got %q, want exact", got)
 	}
 }
@@ -151,8 +151,8 @@ func TestRefreshAdblockMatchModeFallsBackToEnvironment(t *testing.T) {
 	svc, _ := newAdblockControlService(t)
 
 	// No persisted override: the environment seeds the mode.
-	svc.refreshAdblockMatchMode()
-	if got := svc.currentAdblockMatchMode(); got != "exact" {
+	svc.adblock.refreshAdblockMatchMode(svc.store)
+	if got := svc.adblock.currentAdblockMatchMode(); got != "exact" {
 		t.Fatalf("match mode = %q; want exact from environment", got)
 	}
 }
@@ -165,7 +165,7 @@ func TestRequestAdblockResyncCoalescesAndNeverBlocks(t *testing.T) {
 		defer close(done)
 		// Far more requests than the channel can hold must not deadlock.
 		for i := 0; i < 100; i++ {
-			svc.RequestAdblockResync()
+			svc.adblock.RequestAdblockResync()
 		}
 	}()
 
@@ -177,13 +177,13 @@ func TestRequestAdblockResyncCoalescesAndNeverBlocks(t *testing.T) {
 }
 
 func TestRequestAdblockResyncIsNoopWithoutChannel(t *testing.T) {
-	// A service built without NewService has no channel; the call must stay
-	// safe rather than panic or block.
-	svc := &Service{}
+	// A service whose engine has no channel (never started sync); the call
+	// must stay safe rather than panic or block.
+	svc := &Service{adblock: &AdblockEngine{}}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		svc.RequestAdblockResync()
+		svc.adblock.RequestAdblockResync()
 	}()
 	select {
 	case <-done:

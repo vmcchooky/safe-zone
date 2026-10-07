@@ -225,33 +225,33 @@ func newShadowBenchService(b *testing.B, enabled bool) *Service {
 
 	trie := domaintrie.NewTrie()
 	trie.AddRule(domaintrie.Rule{Domain: "bench-shadow.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "s", Category: "ads", Action: domaintrie.RuleActionBlock, Origin: domaintrie.OriginGlobalDefault})
-	service.AdblockTrieOverride(trie)
+	service.adblock.AdblockTrieOverride(trie)
 	return service
 }
 
 func BenchmarkShadowObserveDisabled(b *testing.B) {
 	service := newShadowBenchService(b, false)
-	detail := service.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
+	detail := service.adblock.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
 	if !detail.Matched {
 		b.Fatal("bench fixture must match")
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		service.observeShadowExact(detail, false)
+		service.adblock.observeShadowExact(detail, false)
 	}
-	if got := service.AdblockShadowExactStatus().Observations; got != 0 {
+	if got := service.adblock.AdblockShadowExactStatus().Observations; got != 0 {
 		b.Fatalf("disabled shadow must not observe, got %d", got)
 	}
 }
 
 func BenchmarkShadowObserveActive(b *testing.B) {
 	service := newShadowBenchService(b, true)
-	detail := service.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
+	detail := service.adblock.adblockTrie.Load().MatchRuleDetail("sub.bench-shadow.example.com")
 	if !detail.Matched {
 		b.Fatal("bench fixture must match")
 	}
 	b.ReportAllocs()
 	for b.Loop() {
-		service.observeShadowExact(detail, false)
+		service.adblock.observeShadowExact(detail, false)
 	}
 }

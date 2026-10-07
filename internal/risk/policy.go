@@ -98,8 +98,8 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 	// nil trie never dereferences and the hot path stays lock/allocation/
 	// I/O-free after the match.
 	var adDetail domaintrie.MatchDetail
-	if s.isAdblockEnabled() {
-		if adTrie := s.adblockTrie.Load(); adTrie != nil {
+	if s.adblock.isAdblockEnabled() {
+		if adTrie := s.adblock.adblockTrie.Load(); adTrie != nil {
 			adDetail = adTrie.MatchRuleDetail(normalized)
 		}
 	}
@@ -150,16 +150,16 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		}
 
 		excMatched := false
-		if id, ok := s.matchAdblockException(normalized, &adDetail.Rule); ok {
+		if id, ok := s.adblock.matchAdblockException(normalized, &adDetail.Rule); ok {
 			excRule = &adDetail.Rule
 			excID = id
 			excMatched = true
-			s.adblockExcMatches.Add(1)
+			s.adblock.adblockExcMatches.Add(1)
 		}
 		// 3.7 Shadow exact/suffix observation (PR3B-lite). Records what a
 		// prospective global suffix→exact flip would do to this hit. Pure
 		// observation: it never influences Policy, Result or telemetry.
-		s.observeShadowExact(adDetail, excMatched)
+		s.adblock.observeShadowExact(adDetail, excMatched)
 		if !excMatched {
 			// Separated semantics: after the match above, adblock stays a fast
 			// content-policy block on a strict post-match local-only path — no

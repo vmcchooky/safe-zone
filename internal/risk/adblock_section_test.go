@@ -27,7 +27,7 @@ func TestParseAdblockSourceSectionCategories(t *testing.T) {
 0.0.0.0 after-end.example.com
 `
 	trie := domaintrie.NewTrie()
-	if err := service.parseAdblockSource(strings.NewReader(body), trie, "src",
+	if err := service.adblock.parseAdblockSource(strings.NewReader(body), trie, "src",
 		domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
 		t.Fatal(err)
 	}

@@ -77,8 +77,8 @@ func TestPolicyBlockOnSafeVerdictRequiresContentDecision(t *testing.T) {
 	t.Setenv("SAFE_ZONE_ADBLOCK_ENABLED", "true")
 	trie := domaintrie.NewTrie()
 	trie.Add("telemetry-fast-path.example.com")
-	svc.AdblockTrieOverride(trie)
-	svc.refreshAdblockEnabled()
+	svc.adblock.AdblockTrieOverride(trie)
+	svc.adblock.refreshAdblockEnabled(svc.store)
 
 	pol := svc.Policy(context.Background(), "telemetry-fast-path.example.com", ClientInfo{})
 	if pol.Policy != "block" {

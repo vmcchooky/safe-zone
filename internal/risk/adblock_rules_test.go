@@ -67,9 +67,11 @@ func newParseTestService(t *testing.T) *Service {
 	}
 	t.Cleanup(func() { _ = storeDB.Close() })
 	return &Service{
-		adblockDataRoot: tempDir,
-		lifecycleCtx:    context.Background(),
-		store:           storeDB,
+		adblock: &AdblockEngine{
+			adblockDataRoot: tempDir,
+		},
+		lifecycleCtx: context.Background(),
+		store:        storeDB,
 	}
 }
 
@@ -83,7 +85,7 @@ func TestParseAdblockSourceAppliesSourcePolicy(t *testing.T) {
 		"tracker.example.net\n" +
 		"*.wild.example.org\n" +
 		"0.0.0.0 localhost\n"
-	if err := svc.parseAdblockSource(strings.NewReader(body), trie, sourceID, "ads", domaintrie.RuleScopeExact, domaintrie.OriginGlobalDefault); err != nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader(body), trie, sourceID, "ads", domaintrie.RuleScopeExact, domaintrie.OriginGlobalDefault); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,7 +118,7 @@ func TestParseAdblockSourceFallsBackWithoutPolicy(t *testing.T) {
 	trie := domaintrie.NewTrie()
 	// No configured policy: scope comes from the global match mode (default
 	// suffix), category unknown.
-	if err := svc.parseAdblockSource(strings.NewReader("0.0.0.0 ads.example.com\n"), trie, canonicalSourceID("src"), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader("0.0.0.0 ads.example.com\n"), trie, canonicalSourceID("src"), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
 		t.Fatal(err)
 	}
 	rule, ok := trie.MatchRule("sub.ads.example.com")
@@ -136,30 +138,32 @@ func TestResolveAdblockSourcePolicyFallbacks(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = storeDB.Close() })
 	svc := &Service{
-		adblockDataRoot: tempDir,
-		store:           storeDB,
+		adblock: &AdblockEngine{
+			adblockDataRoot: tempDir,
+		},
+		store: storeDB,
 	}
-	svc.adblockMatchMode.Store(string(adblockMatchModeExact))
-	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
+	svc.adblock.adblockMatchMode.Store(string(adblockMatchModeExact))
+	svc.adblock.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
 		"https://good.test/hosts": {"category":"telemetry","scope":"suffix"},
 		"https://badcat.test/hosts": {"category":"spyware"},
 		"https://badscope.test/hosts": {"scope":"glob"},
 		"https://partial.test/hosts": {"category":"tracking"}
 	}`))
 
-	if cat, scope, origin := svc.resolveAdblockSourcePolicy("https://good.test/hosts"); cat != "telemetry" || scope != domaintrie.RuleScopeSuffix || origin != domaintrie.OriginSourcePolicySuffix {
+	if cat, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://good.test/hosts"); cat != "telemetry" || scope != domaintrie.RuleScopeSuffix || origin != domaintrie.OriginSourcePolicySuffix {
 		t.Fatalf("valid policy must win, got %s/%s/%v", cat, scope, origin)
 	}
-	if cat, scope, origin := svc.resolveAdblockSourcePolicy("https://badcat.test/hosts"); cat != domaintrie.DefaultRuleCategory || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
+	if cat, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://badcat.test/hosts"); cat != domaintrie.DefaultRuleCategory || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("invalid category must fall back to unknown+global, got %s/%s/%v", cat, scope, origin)
 	}
-	if cat, scope, origin := svc.resolveAdblockSourcePolicy("https://badscope.test/hosts"); cat != domaintrie.DefaultRuleCategory || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
+	if cat, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://badscope.test/hosts"); cat != domaintrie.DefaultRuleCategory || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("invalid scope must fall back to global mode, got %s/%s/%v", cat, scope, origin)
 	}
-	if cat, scope, origin := svc.resolveAdblockSourcePolicy("https://partial.test/hosts"); cat != "tracking" || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
+	if cat, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://partial.test/hosts"); cat != "tracking" || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("partial policy must keep global scope, got %s/%s/%v", cat, scope, origin)
 	}
-	if cat, scope, origin := svc.resolveAdblockSourcePolicy("https://unconfigured.test/hosts"); cat != domaintrie.DefaultRuleCategory || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
+	if cat, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://unconfigured.test/hosts"); cat != domaintrie.DefaultRuleCategory || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("unconfigured source must use global defaults, got %s/%s/%v", cat, scope, origin)
 	}
 }
@@ -182,10 +186,10 @@ func TestAdblockCacheV2RoundTripThroughService(t *testing.T) {
 	trie := domaintrie.NewTrie()
 	trie.AddRule(domaintrie.Rule{Domain: "exact.example.com", Scope: domaintrie.RuleScopeExact, SourceID: "src-a", Category: "ads", Action: domaintrie.RuleActionBlock})
 	trie.AddRule(domaintrie.Rule{Domain: "suffix.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "src-b", Category: "telemetry", Action: domaintrie.RuleActionBlock})
-	svc.saveAdblockCache(trie)
+	svc.adblock.saveAdblockCache(trie)
 
 	reloaded := domaintrie.NewTrie()
-	if !svc.loadAdblockCache(reloaded) {
+	if !svc.adblock.loadAdblockCache(reloaded) {
 		t.Fatal("expected v2 cache to load")
 	}
 	rule, ok := reloaded.MatchRule("exact.example.com")
@@ -208,7 +212,7 @@ func TestAdblockLegacyCacheLoadSemantics(t *testing.T) {
 	svc.saveAdblockCacheRaw(legacy)
 
 	reloaded := domaintrie.NewTrie()
-	if !svc.loadAdblockCache(reloaded) {
+	if !svc.adblock.loadAdblockCache(reloaded) {
 		t.Fatal("expected legacy cache to load")
 	}
 	// Legacy entries must reload as suffix/unknown/block with the
@@ -230,7 +234,7 @@ func TestAdblockCacheSkipsMalformedRecords(t *testing.T) {
 	svc.saveAdblockCacheRaw(mixed)
 
 	reloaded := domaintrie.NewTrie()
-	if !svc.loadAdblockCache(reloaded) {
+	if !svc.adblock.loadAdblockCache(reloaded) {
 		t.Fatal("expected partially-valid cache to load")
 	}
 	if reloaded.Count() != 2 {
@@ -254,10 +258,10 @@ func TestSourceOrderDeterministicProvenance(t *testing.T) {
 	idB := canonicalSourceID("https://b.test/hosts")
 	// Sources are processed in SAFE_ZONE_ADBLOCK_SOURCES order; the first
 	// rule for a (domain, scope) slot must keep its provenance.
-	if err := svc.parseAdblockSource(strings.NewReader("0.0.0.0 ads.example.com\n"), trie, idA, "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader("0.0.0.0 ads.example.com\n"), trie, idA, "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.parseAdblockSource(strings.NewReader("0.0.0.0 ads.example.com\n"), trie, idB, "tracking", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader("0.0.0.0 ads.example.com\n"), trie, idB, "tracking", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
 		t.Fatal(err)
 	}
 	rule, ok := trie.MatchRule("ads.example.com")
@@ -289,10 +293,10 @@ func TestAdblockStatusCountsAndMode(t *testing.T) {
 	trie := domaintrie.NewTrie()
 	trie.AddRule(domaintrie.Rule{Domain: "a.example.com", Scope: domaintrie.RuleScopeExact, SourceID: "s", Category: "ads", Action: domaintrie.RuleActionBlock})
 	trie.AddRule(domaintrie.Rule{Domain: "b.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "s", Category: "ads", Action: domaintrie.RuleActionBlock})
-	service.AdblockTrieOverride(trie)
-	service.adblockMatchMode.Store(string(adblockMatchModeExact))
+	service.adblock.AdblockTrieOverride(trie)
+	service.adblock.adblockMatchMode.Store(string(adblockMatchModeExact))
 
-	status := service.AdblockStatus()
+	status := service.adblock.AdblockStatus()
 	if status.MatchMode != "exact" {
 		t.Fatalf("expected match_mode exact, got %s", status.MatchMode)
 	}
@@ -326,21 +330,21 @@ func TestSyncTickReloadsMatchMode(t *testing.T) {
 
 	t.Setenv(envAdblockMatchMode, "exact")
 	t.Setenv(envAdblockSourcePoliciesJSON, `{"https://x.test/hosts":{"category":"tracking"}}`)
-	service.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+	service.adblock.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
 	policySet := parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
-	service.adblockSourcePolicies.Store(&policySet)
+	service.adblock.adblockSourcePolicies.Store(&policySet)
 
-	if v := service.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
+	if v := service.adblock.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
 		t.Fatalf("expected exact mode after reload, got %v", v)
 	}
-	if _, ok := service.currentAdblockSourcePolicies()["https://x.test/hosts"]; !ok {
+	if _, ok := service.adblock.currentAdblockSourcePolicies()["https://x.test/hosts"]; !ok {
 		t.Fatal("expected source policy to be parsed")
 	}
 
 	// syncAdblockLists with no reachable sources still refreshes the mode.
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "")
-	service.syncAdblockLists()
-	if v := service.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
+	service.adblock.syncAdblockLists(context.Background())
+	if v := service.adblock.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
 		t.Fatalf("expected mode to persist after sync, got %v", v)
 	}
 }
@@ -368,21 +372,21 @@ func TestAdblockSyncFailureRetainsCurrentTrie(t *testing.T) {
 	// Seed a live trie as if a previous sync succeeded.
 	trie := domaintrie.NewTrie()
 	trie.AddRule(domaintrie.Rule{Domain: "live.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "src", Category: "ads", Action: domaintrie.RuleActionBlock})
-	service.adblockTrie.Store(trie)
-	service.adblockOKCount.Store(1)
-	service.adblockLastSyncOK.Store(true)
+	service.adblock.adblockTrie.Store(trie)
+	service.adblock.adblockOKCount.Store(1)
+	service.adblock.adblockLastSyncOK.Store(true)
 
 	// A dead source with no per-source cache must not wipe the live trie.
 	// Deterministic fixture: a missing file inside the data root fails via
 	// safefile.OpenWithin without any external network I/O.
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "missing-hosts-dead.txt")
-	service.syncAdblockLists()
+	service.adblock.syncAdblockLists(context.Background())
 
-	current := service.adblockTrie.Load()
+	current := service.adblock.adblockTrie.Load()
 	if current == nil || !current.Match("live.example.com") {
 		t.Fatal("failed sync must retain the current trie")
 	}
-	if service.adblockLastSyncOK.Load() {
+	if service.adblock.adblockLastSyncOK.Load() {
 		t.Fatal("expected last sync to be marked failed")
 	}
 }
@@ -397,7 +401,7 @@ func TestParseAdblockSourceAtomicOnScannerError(t *testing.T) {
 	srcID := canonicalSourceID("https://example.test/atomic")
 	huge := strings.Repeat("a", 11*1024*1024)
 	body := "0.0.0.0 good.example.com\n" + huge + "\n"
-	if err := svc.parseAdblockSource(strings.NewReader(body), dest, srcID, "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err == nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader(body), dest, srcID, "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err == nil {
 		t.Fatal("expected scanner error for >10MiB token")
 	}
 	if dest.Count() != 0 {
@@ -424,10 +428,10 @@ func TestSyncAtomicOneFailOneSuccess(t *testing.T) {
 	defer good.Close()
 
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, bad)+","+publicMappedSource(t, good))
-	service.syncAdblockLists()
-	service.adblockEnabled.Store(true)
+	service.adblock.syncAdblockLists(context.Background())
+	service.adblock.adblockEnabled.Store(true)
 
-	trie := service.adblockTrie.Load()
+	trie := service.adblock.adblockTrie.Load()
 	if trie == nil {
 		t.Fatal("expected trie after partial sync")
 	}
@@ -437,7 +441,7 @@ func TestSyncAtomicOneFailOneSuccess(t *testing.T) {
 	if !trie.Match("sub.good-only.test") {
 		t.Fatal("successful source must be published")
 	}
-	if !service.adblockLastSyncOK.Load() {
+	if !service.adblock.adblockLastSyncOK.Load() {
 		t.Fatal("partial sync with one success must be marked ok")
 	}
 }
@@ -448,7 +452,7 @@ func TestSyncAtomicAllFailRetainsOldTrie(t *testing.T) {
 
 	live := domaintrie.NewTrie()
 	live.AddRule(domaintrie.Rule{Domain: "live.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "src", Category: "ads", Action: domaintrie.RuleActionBlock})
-	service.adblockTrie.Store(live)
+	service.adblock.adblockTrie.Store(live)
 
 	huge := strings.Repeat("a", 11*1024*1024)
 	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -457,16 +461,16 @@ func TestSyncAtomicAllFailRetainsOldTrie(t *testing.T) {
 	defer bad.Close()
 
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, bad))
-	service.syncAdblockLists()
+	service.adblock.syncAdblockLists(context.Background())
 
-	current := service.adblockTrie.Load()
+	current := service.adblock.adblockTrie.Load()
 	if current == nil || !current.Match("live.example.com") {
 		t.Fatal("all-fail sync must retain the old trie")
 	}
 	if current.Match("bad-only.test") {
 		t.Fatal("failed source must not leak into the retained trie")
 	}
-	if service.adblockLastSyncOK.Load() {
+	if service.adblock.adblockLastSyncOK.Load() {
 		t.Fatal("all-fail sync must be marked failed")
 	}
 }
@@ -479,7 +483,7 @@ func TestParseAdblockCacheScannerErrorFailsWholeLoad(t *testing.T) {
 	huge := strings.Repeat("b", 11*1024*1024)
 	content := domaintrie.CacheV2Header + "\n" +
 		"good.example.com\texact\tads\tblock\tsrc-a\n" + huge + "\n"
-	if svc.parseAdblockCache(strings.NewReader(content), dest) {
+	if svc.adblock.parseAdblockCache(strings.NewReader(content), dest) {
 		t.Fatal("cache Scanner error must fail the whole load")
 	}
 	if dest.Count() != 0 {
@@ -536,10 +540,10 @@ func TestSourceIDRoundTripsCacheAndDecision(t *testing.T) {
 
 	trie := domaintrie.NewTrie()
 	trie.AddRule(domaintrie.Rule{Domain: "ads.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: srcID, Category: "ads", Action: domaintrie.RuleActionBlock})
-	svc.saveAdblockCache(trie)
+	svc.adblock.saveAdblockCache(trie)
 
 	reloaded := domaintrie.NewTrie()
-	if !svc.loadAdblockCache(reloaded) {
+	if !svc.adblock.loadAdblockCache(reloaded) {
 		t.Fatal("expected cache to load")
 	}
 	rule, ok := reloaded.MatchRule("sub.ads.example.com")
@@ -556,8 +560,8 @@ func TestSourceIDRoundTripsCacheAndDecision(t *testing.T) {
 
 func TestPolicyNoPanicOnNilTrieOverride(t *testing.T) {
 	service := newTestServiceWithAdblock(t, []string{"ads.example.com"})
-	service.AdblockTrieOverride(nil)
-	if got := service.adblockTrie.Load(); got == nil || got.Count() != 0 {
+	service.adblock.AdblockTrieOverride(nil)
+	if got := service.adblock.adblockTrie.Load(); got == nil || got.Count() != 0 {
 		t.Fatalf("nil override must normalize to empty trie, got %v", got)
 	}
 	pol := service.Policy(context.Background(), "ads.example.com", ClientInfo{})
@@ -574,7 +578,7 @@ func TestPolicyNoPanicOnNilTrieOverride(t *testing.T) {
 func TestSaveAdblockSourceCacheCommitFailureMergesNothing(t *testing.T) {
 	svc := newParseTestService(t)
 	source := "https://example.com/commit-fail-cache"
-	finalPath := svc.adblockSourceCachePath(source)
+	finalPath := svc.adblock.adblockSourceCachePath(source)
 	if err := os.MkdirAll(finalPath, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -583,7 +587,7 @@ func TestSaveAdblockSourceCacheCommitFailureMergesNothing(t *testing.T) {
 	}
 
 	dest := domaintrie.NewTrie()
-	err := svc.saveAdblockSourceCache(source,
+	err := svc.adblock.saveAdblockSourceCache(source,
 		strings.NewReader("0.0.0.0 commit-fail-only.test\n"),
 		dest, canonicalSourceID(source), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault)
 	if err == nil {
@@ -614,7 +618,7 @@ func TestSyncCommitFailureThenSecondSourceSucceeds(t *testing.T) {
 	badURL := publicMappedSource(t, bad)
 	goodURL := publicMappedSource(t, good)
 	// Block only the first source's commit with a non-empty directory.
-	blockPath := service.adblockSourceCachePath(badURL)
+	blockPath := service.adblock.adblockSourceCachePath(badURL)
 	if err := os.MkdirAll(blockPath, 0o750); err != nil {
 		t.Fatal(err)
 	}
@@ -623,10 +627,10 @@ func TestSyncCommitFailureThenSecondSourceSucceeds(t *testing.T) {
 	}
 
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", badURL+","+goodURL)
-	service.syncAdblockLists()
-	service.adblockEnabled.Store(true)
+	service.adblock.syncAdblockLists(context.Background())
+	service.adblock.adblockEnabled.Store(true)
 
-	trie := service.adblockTrie.Load()
+	trie := service.adblock.adblockTrie.Load()
 	if trie == nil {
 		t.Fatal("expected trie after partial sync")
 	}
@@ -644,7 +648,7 @@ func TestSaveCommitFailureFallbackKeepsOldCacheOnly(t *testing.T) {
 	svc := newParseTestService(t)
 	source := "https://example.com/refresh-fallback"
 	srcID := canonicalSourceID(source)
-	finalPath := svc.adblockSourceCachePath(source)
+	finalPath := svc.adblock.adblockSourceCachePath(source)
 
 	// Force the refresh commit to fail after a successful parse.
 	if err := os.MkdirAll(finalPath, 0o750); err != nil {
@@ -654,7 +658,7 @@ func TestSaveCommitFailureFallbackKeepsOldCacheOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := domaintrie.NewTrie()
-	if err := svc.saveAdblockSourceCache(source,
+	if err := svc.adblock.saveAdblockSourceCache(source,
 		strings.NewReader("0.0.0.0 refreshed-new.test\n"),
 		dest, srcID, domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err == nil {
 		t.Fatal("expected refresh commit error")
@@ -673,7 +677,7 @@ func TestSaveCommitFailureFallbackKeepsOldCacheOnly(t *testing.T) {
 	if err := os.WriteFile(finalPath, []byte("0.0.0.0 cached-old.test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !svc.loadAdblockSourceCache(source, dest, srcID, domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault) {
+	if !svc.adblock.loadAdblockSourceCache(source, dest, srcID, domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault) {
 		t.Fatal("expected old cache to load")
 	}
 	if dest.Match("refreshed-new.test") {
@@ -722,10 +726,10 @@ func TestCanonicalSourceKeyUnparsableDeterministic(t *testing.T) {
 // saveAdblockCacheRaw writes raw content to the global cache path, used to
 // simulate legacy and malformed cache files.
 func (s *Service) saveAdblockCacheRaw(content string) {
-	if err := s.ensureAdblockDataRoot(); err != nil {
+	if err := s.adblock.ensureAdblockDataRoot(); err != nil {
 		panic(err)
 	}
-	f, tmpPath, err := createReplaceTempFile(s.adblockCachePath())
+	f, tmpPath, err := createReplaceTempFile(s.adblock.adblockCachePath())
 	if err != nil {
 		panic(err)
 	}
@@ -735,7 +739,7 @@ func (s *Service) saveAdblockCacheRaw(content string) {
 		panic(err)
 	}
 	_ = f.Close()
-	if err := replaceFile(tmpPath, s.adblockCachePath()); err != nil {
+	if err := replaceFile(tmpPath, s.adblock.adblockCachePath()); err != nil {
 		panic(err)
 	}
 }

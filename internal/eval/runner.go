@@ -148,7 +148,7 @@ func (r *Runner) LoadFixtures(corpus *Corpus) error {
 		for _, rule := range corpus.AdblockRules {
 			trie.Add(rule)
 		}
-		r.service.AdblockTrieOverride(trie)
+		r.service.Adblock().AdblockTrieOverride(trie)
 	}
 	return nil
 }

@@ -50,16 +50,16 @@ func TestRefreshAppliesStoredValues(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc.refreshAdblockEnabled()
-	if svc.isAdblockEnabled() {
+	svc.adblock.refreshAdblockEnabled(svc.store)
+	if svc.adblock.isAdblockEnabled() {
 		t.Fatal("the stored adblock_enabled=false must win over the environment")
 	}
-	svc.refreshAdblockMatchMode()
-	if got := svc.currentAdblockMatchMode(); got != "exact" {
+	svc.adblock.refreshAdblockMatchMode(svc.store)
+	if got := svc.adblock.currentAdblockMatchMode(); got != "exact" {
 		t.Fatalf("stored match mode = %q, want exact", got)
 	}
-	svc.refreshAdblockSourcePolicies()
-	policies := svc.currentAdblockSourcePolicies()
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
+	policies := svc.adblock.currentAdblockSourcePolicies()
 	if _, ok := policies["https://store.test/hosts"]; !ok {
 		t.Fatalf("stored source policy must win over the environment, got %v", policies)
 	}
@@ -83,16 +83,16 @@ func TestRefreshFallsBackToEnvironmentWithoutAStore(t *testing.T) {
 	})
 	t.Cleanup(func() { _ = svc.Close() })
 
-	svc.refreshAdblockEnabled()
-	if svc.isAdblockEnabled() {
+	svc.adblock.refreshAdblockEnabled(svc.store)
+	if svc.adblock.isAdblockEnabled() {
 		t.Fatal("without a store the environment value must be used")
 	}
-	svc.refreshAdblockMatchMode()
-	if got := svc.currentAdblockMatchMode(); got != "exact" {
+	svc.adblock.refreshAdblockMatchMode(svc.store)
+	if got := svc.adblock.currentAdblockMatchMode(); got != "exact" {
 		t.Fatalf("without a store the environment match mode must be used, got %q", got)
 	}
-	svc.refreshAdblockSourcePolicies()
-	if len(svc.currentAdblockSourcePolicies()) == 0 {
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
+	if len(svc.adblock.currentAdblockSourcePolicies()) == 0 {
 		t.Fatal("without a store the environment source policies must be used")
 	}
 }
@@ -107,12 +107,12 @@ func TestRefreshFallsBackToEnvironmentWhenStoreIsDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc.refreshAdblockEnabled()
-	if !svc.isAdblockEnabled() {
+	svc.adblock.refreshAdblockEnabled(svc.store)
+	if !svc.adblock.isAdblockEnabled() {
 		t.Fatal("a disabled store means no stored state, so the environment default applies")
 	}
-	svc.refreshAdblockSourcePolicies()
-	if len(svc.currentAdblockSourcePolicies()) == 0 {
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
+	if len(svc.adblock.currentAdblockSourcePolicies()) == 0 {
 		t.Fatal("a disabled store must fall back to the environment policies")
 	}
 }
@@ -127,13 +127,13 @@ func TestUnchangedSourcePoliciesDoNotRequestARebuild(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc.refreshAdblockSourcePolicies()
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
 	if !svc.drainAdblockResync() {
 		t.Fatal("the first refresh applies a new policy and must request a rebuild")
 	}
 
 	for range 3 {
-		svc.refreshAdblockSourcePolicies()
+		svc.adblock.refreshAdblockSourcePolicies(svc.store)
 	}
 	if svc.drainAdblockResync() {
 		t.Fatal("an unchanged policy must not request a rebuild")
@@ -145,7 +145,7 @@ func TestUnchangedSourcePoliciesDoNotRequestARebuild(t *testing.T) {
 		`{"https://store.test/hosts":{"category":"malware"}}`); err != nil {
 		t.Fatal(err)
 	}
-	svc.refreshAdblockSourcePolicies()
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
 	if !svc.drainAdblockResync() {
 		t.Fatal("a changed policy must request a rebuild")
 	}
@@ -154,11 +154,11 @@ func TestUnchangedSourcePoliciesDoNotRequestARebuild(t *testing.T) {
 // drainAdblockResync reports whether a rebuild request was pending, consuming
 // it if so.
 func (s *Service) drainAdblockResync() bool {
-	if s.adblockResync == nil {
+	if s.adblock.adblockResync == nil {
 		return false
 	}
 	select {
-	case <-s.adblockResync:
+	case <-s.adblock.adblockResync:
 		return true
 	default:
 		return false

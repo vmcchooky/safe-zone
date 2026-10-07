@@ -103,7 +103,7 @@ func TestAnalyzeEndpointContractUnchangedForAdblockDomain(t *testing.T) {
 	// trie entry via the exposed test seam.
 	trie := domaintrie.NewTrie()
 	trie.Add("ads.example.com")
-	ts.Handler.Risk.AdblockTrieOverride(trie)
+	ts.Handler.Risk.Adblock().AdblockTrieOverride(trie)
 
 	resp, err := ts.Client.Get(ts.Server.URL + "/v1/analyze?domain=ads.example.com")
 	if err != nil {

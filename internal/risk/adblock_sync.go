@@ -11,20 +11,21 @@ import (
 	"safe-zone/internal/feed"
 	"safe-zone/internal/logjson"
 	"safe-zone/internal/netguard"
+	"safe-zone/internal/store"
 )
 
-func (s *Service) isAdblockEnabled() bool {
-	return s.adblockEnabled.Load()
+func (e *AdblockEngine) isAdblockEnabled() bool {
+	return e.adblockEnabled.Load()
 }
 
 // refreshAdblockEnabled reads the adblock_enabled flag from store/env
 // and caches it atomically. Safe to call from any goroutine.
-func (s *Service) refreshAdblockEnabled() {
-	if s.store == nil || !s.store.Enabled() {
-		s.adblockEnabled.Store(config.Bool(envAdblockEnabled, true))
+func (e *AdblockEngine) refreshAdblockEnabled(st *store.DB) {
+	if st == nil || !st.Enabled() {
+		e.adblockEnabled.Store(config.Bool(envAdblockEnabled, true))
 		return
 	}
-	val, err := s.store.GetSystemConfig(context.Background(), "adblock_enabled")
+	val, err := st.GetSystemConfig(context.Background(), "adblock_enabled")
 	if err != nil {
 		// Keep the current value. Falling back to the environment here
 		// re-enabled adblock 30 seconds after an operator disabled it, and a
@@ -37,10 +38,10 @@ func (s *Service) refreshAdblockEnabled() {
 		return
 	}
 	if val == "" {
-		s.adblockEnabled.Store(config.Bool(envAdblockEnabled, true))
+		e.adblockEnabled.Store(config.Bool(envAdblockEnabled, true))
 		return
 	}
-	s.adblockEnabled.Store(val == "true" || val == "1")
+	e.adblockEnabled.Store(val == "true" || val == "1")
 }
 
 // refreshAdblockMatchMode reconciles the persisted match mode with the
@@ -50,12 +51,12 @@ func (s *Service) refreshAdblockEnabled() {
 // does: an operator switching the mode at runtime must not have it silently
 // reverted by the next refresh. A read error keeps the current value rather
 // than reverting to the environment.
-func (s *Service) refreshAdblockMatchMode() {
-	if s.store == nil || !s.store.Enabled() {
-		s.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+func (e *AdblockEngine) refreshAdblockMatchMode(st *store.DB) {
+	if st == nil || !st.Enabled() {
+		e.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
 		return
 	}
-	val, err := s.store.GetSystemConfig(context.Background(), systemConfigAdblockMatchMode)
+	val, err := st.GetSystemConfig(context.Background(), systemConfigAdblockMatchMode)
 	if err != nil {
 		logjson.Warn("adblock match mode refresh failed; keeping the mode in force", map[string]any{
 			"service": "risk",
@@ -64,35 +65,35 @@ func (s *Service) refreshAdblockMatchMode() {
 		return
 	}
 	if val == "" {
-		s.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+		e.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
 		return
 	}
-	s.adblockMatchMode.Store(string(parseAdblockMatchMode(val)))
+	e.adblockMatchMode.Store(string(parseAdblockMatchMode(val)))
 }
 
 // runAdblockConfigSync periodically refreshes the adblock_enabled flag and
 // the scoped content-exception snapshot. No extra goroutine is needed for
 // exception reloads.
-func (s *Service) runAdblockConfigSync() {
+func (e *AdblockEngine) runAdblockConfigSync(ctx context.Context, st *store.DB) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-s.lifecycleCtx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.refreshAdblockEnabled()
-			s.refreshAdblockMatchMode()
-			s.refreshAdblockSourcePolicies()
-			s.reloadAdblockExceptions()
+			e.refreshAdblockEnabled(st)
+			e.refreshAdblockMatchMode(st)
+			e.refreshAdblockSourcePolicies(st)
+			e.reloadAdblockExceptions()
 		}
 	}
 }
 
-func (s *Service) runAdblockSync() {
+func (e *AdblockEngine) runAdblockSync(ctx context.Context) {
 	// First initial sync immediately if enabled
-	if s.isAdblockEnabled() {
-		s.syncAdblockLists()
+	if e.isAdblockEnabled() {
+		e.syncAdblockLists(ctx)
 	}
 
 	ticker := time.NewTicker(config.DurationSeconds("SAFE_ZONE_ADBLOCK_INTERVAL_SECONDS", 12*time.Hour))
@@ -100,15 +101,15 @@ func (s *Service) runAdblockSync() {
 
 	for {
 		select {
-		case <-s.lifecycleCtx.Done():
+		case <-ctx.Done():
 			return
-		case <-s.adblockResync:
+		case <-e.adblockResync:
 			// An operator changed a switch that only takes effect on a rebuilt
 			// rule set. Rebuild now instead of making them wait out the
 			// interval, which is hours in the default configuration.
-			s.rebuildAdblockRules()
+			e.rebuildAdblockRules(ctx)
 		case <-ticker.C:
-			s.rebuildAdblockRules()
+			e.rebuildAdblockRules(ctx)
 		}
 	}
 }
@@ -123,34 +124,34 @@ func (s *Service) runAdblockSync() {
 //
 // When adblock is disabled the trie is emptied so a stale rule set cannot
 // keep matching.
-func (s *Service) rebuildAdblockRules() {
-	if !s.isAdblockEnabled() {
-		s.adblockTrie.Store(domaintrie.NewTrie())
+func (e *AdblockEngine) rebuildAdblockRules(ctx context.Context) {
+	if !e.isAdblockEnabled() {
+		e.adblockTrie.Store(domaintrie.NewTrie())
 		return
 	}
-	s.syncAdblockLists()
+	e.syncAdblockLists(ctx)
 }
 
-func (s *Service) syncAdblockLists() {
+func (e *AdblockEngine) syncAdblockLists(ctx context.Context) {
 	sources := config.String("SAFE_ZONE_ADBLOCK_SOURCES", "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts")
 	sourceList := splitAdblockSources(sources)
 	if len(sourceList) == 0 {
 		return
 	}
 	// #nosec G115 -- len(sourceList) will never exceed max int32
-	s.adblockSrcCount.Store(int32(len(sourceList)))
+	e.adblockSrcCount.Store(int32(len(sourceList)))
 
 	// Outbound fetches for adblock sources go through the shared outbound
 	// guard; feed.OpenSourceResponseWithin validates every URL and redirect
 	// hop against the same policy.
-	client := s.adblockHTTPClient
+	client := e.adblockHTTPClient
 	if client == nil {
 		client = netguard.NewHTTPClient(nil, 60*time.Second, false)
 	}
-	metaPath := s.adblockMetaPath()
+	metaPath := e.adblockMetaPath()
 	currentMeta := loadAdblockMeta(metaPath)
 
-	adTrie := s.adblockTrie.Load()
+	adTrie := e.adblockTrie.Load()
 	currentCount := 0
 	if adTrie != nil {
 		currentCount = adTrie.Count()
@@ -164,16 +165,16 @@ func (s *Service) syncAdblockLists() {
 
 	for _, source := range sourceList {
 		sourceID := canonicalSourceID(source)
-		sourceCategory, sourceScope, sourceOrigin := s.resolveAdblockSourcePolicy(source)
+		sourceCategory, sourceScope, sourceOrigin := e.resolveAdblockSourcePolicy(source)
 		func() {
 			if !isRemoteAdblockSource(source) {
-				reader, closeReader, err := feed.OpenSourceWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, false)
+				reader, closeReader, err := feed.OpenSourceWithin(ctx, source, client, e.adblockDataRoot, 100*1024*1024, false)
 				if err != nil {
 					logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
 					return
 				}
 				defer closeReader()
-				if err := s.parseAdblockSource(reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err != nil {
+				if err := e.parseAdblockSource(reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err != nil {
 					logjson.Warn("error while scanning adblock source", map[string]any{"source": source, "error": err.Error()})
 					return
 				}
@@ -190,15 +191,15 @@ func (s *Service) syncAdblockLists() {
 				requestHeaders.Set("If-Modified-Since", meta.LastModified)
 			}
 
-			response, err := feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, requestHeaders, false)
+			response, err := feed.OpenSourceResponseWithin(ctx, source, client, e.adblockDataRoot, 100*1024*1024, requestHeaders, false)
 			if err == nil && response.StatusCode == http.StatusNotModified {
-				if s.loadAdblockSourceCache(source, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin) {
+				if e.loadAdblockSourceCache(source, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin) {
 					successCount++
 					cachedCount++
 					nextMeta[source] = meta
 					return
 				}
-				response, err = feed.OpenSourceResponseWithin(s.lifecycleCtx, source, client, s.adblockDataRoot, 100*1024*1024, nil, false)
+				response, err = feed.OpenSourceResponseWithin(ctx, source, client, e.adblockDataRoot, 100*1024*1024, nil, false)
 			}
 
 			if err == nil {
@@ -206,7 +207,7 @@ func (s *Service) syncAdblockLists() {
 					defer response.Close()
 				}
 				if response.Reader != nil {
-					if err := s.saveAdblockSourceCache(source, response.Reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err != nil {
+					if err := e.saveAdblockSourceCache(source, response.Reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err != nil {
 						logjson.Warn("failed to refresh adblock source cache", map[string]any{"source": source, "error": err.Error()})
 						return
 					}
@@ -219,7 +220,7 @@ func (s *Service) syncAdblockLists() {
 				logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})
 			}
 
-			if s.loadAdblockSourceCache(source, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin) {
+			if e.loadAdblockSourceCache(source, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin) {
 				successCount++
 				cachedCount++
 				nextMeta[source] = meta
@@ -233,13 +234,13 @@ func (s *Service) syncAdblockLists() {
 	// rules through staging, and a scanner error must not publish a partial
 	// trie with sources_ok=0.
 	if successCount > 0 {
-		s.adblockTrie.Store(newTrie)
-		s.adblockOKCount.Store(int32(successCount))
-		s.adblockLastSync.Store(time.Now())
-		s.adblockLastSyncOK.Store(true)
+		e.adblockTrie.Store(newTrie)
+		e.adblockOKCount.Store(int32(successCount))
+		e.adblockLastSync.Store(time.Now())
+		e.adblockLastSyncOK.Store(true)
 
-		s.saveAdblockCache(newTrie)
-		s.saveAdblockMeta(metaPath, nextMeta)
+		e.saveAdblockCache(newTrie)
+		e.saveAdblockMeta(metaPath, nextMeta)
 
 		logjson.Info("adblock trie synchronized", map[string]any{
 			"domains":              newTrie.Count(),
@@ -248,30 +249,30 @@ func (s *Service) syncAdblockLists() {
 			"sources_cached_reuse": cachedCount,
 		})
 	} else {
-		s.adblockOKCount.Store(int32(successCount))
-		s.adblockLastSync.Store(time.Now())
+		e.adblockOKCount.Store(int32(successCount))
+		e.adblockLastSync.Store(time.Now())
 		if currentCount == 0 {
-			if s.loadAdblockCache(newTrie) {
-				s.adblockTrie.Store(newTrie)
-				s.adblockLastSyncOK.Store(true)
+			if e.loadAdblockCache(newTrie) {
+				e.adblockTrie.Store(newTrie)
+				e.adblockLastSyncOK.Store(true)
 				logjson.Info("adblock trie loaded from cache", map[string]any{"domains": newTrie.Count()})
 			} else {
-				s.adblockLastSyncOK.Store(false)
+				e.adblockLastSyncOK.Store(false)
 				logjson.Warn("adblock synchronization failed entirely", nil)
 			}
 		} else {
-			s.adblockLastSyncOK.Store(false)
+			e.adblockLastSyncOK.Store(false)
 			logjson.Warn("adblock network sync failed, retaining existing rules", map[string]any{"domains": currentCount})
 		}
 	}
 }
 
-func (s *Service) saveAdblockCache(trie *domaintrie.Trie) {
-	if err := s.ensureAdblockDataRoot(); err != nil {
+func (e *AdblockEngine) saveAdblockCache(trie *domaintrie.Trie) {
+	if err := e.ensureAdblockDataRoot(); err != nil {
 		logjson.Warn("failed to create adblock data root", map[string]any{"error": err.Error()})
 		return
 	}
-	finalPath := s.adblockCachePath()
+	finalPath := e.adblockCachePath()
 	f, tmpPath, err := createReplaceTempFile(finalPath)
 	if err != nil {
 		logjson.Warn("failed to create adblock cache temp file", map[string]any{"error": err.Error()})
@@ -297,8 +298,8 @@ func (s *Service) saveAdblockCache(trie *domaintrie.Trie) {
 	}
 }
 
-func (s *Service) loadAdblockCache(trie *domaintrie.Trie) bool {
-	f, err := os.Open(s.adblockCachePath())
+func (e *AdblockEngine) loadAdblockCache(trie *domaintrie.Trie) bool {
+	f, err := os.Open(e.adblockCachePath())
 	if err != nil {
 		return false
 	}
@@ -307,5 +308,5 @@ func (s *Service) loadAdblockCache(trie *domaintrie.Trie) bool {
 	// parseAdblockCache detects the v2 header; a legacy domains-only file
 	// reloads with suffix/unknown/block/legacy-cache semantics so a degraded
 	// network sync can never silently flip match behavior.
-	return s.parseAdblockCache(f, trie)
+	return e.parseAdblockCache(f, trie)
 }

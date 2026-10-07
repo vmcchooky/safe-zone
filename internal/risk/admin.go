@@ -132,61 +132,6 @@ func (s *Service) DecisionPipelineStatus() DecisionPipelineStatus {
 	return status
 }
 
-type AdblockStatus struct {
-	Enabled         bool   `json:"enabled"`
-	MatchMode       string `json:"match_mode"`
-	DomainCount     int    `json:"domain_count"`
-	ExactRuleCount  int    `json:"exact_rule_count"`
-	SuffixRuleCount int    `json:"suffix_rule_count"`
-	LastSyncAt      string `json:"last_sync_at,omitempty"`
-	LastSyncOK      bool   `json:"last_sync_ok"`
-	SourceCount     int    `json:"source_count"`
-	SuccessCount    int    `json:"success_count"`
-	// SourcePoliciesFingerprint digests the effective per-source policy set.
-	// core-api and dns-resolver each hold their own copy, so comparing this
-	// value across the two is how an operator confirms the nodes agree rather
-	// than assuming it. An empty set digests to a stable value, not an empty
-	// string, so "no policies" is still comparable.
-	SourcePoliciesFingerprint string                   `json:"source_policies_fingerprint"`
-	SourcePolicyCount         int                      `json:"source_policy_count"`
-	Exceptions                AdblockExceptionStatus   `json:"exceptions"`
-	ShadowExact               AdblockShadowExactStatus `json:"shadow_exact"`
-}
-
-// AdblockStatus returns a snapshot of the adblock subsystem state.
-func (s *Service) AdblockStatus() AdblockStatus {
-	matchMode := "suffix"
-	if v := s.adblockMatchMode.Load(); v != nil {
-		if mode, ok := v.(string); ok && mode != "" {
-			matchMode = mode
-		}
-	}
-	status := AdblockStatus{
-		Enabled:      s.isAdblockEnabled(),
-		MatchMode:    matchMode,
-		LastSyncOK:   s.adblockLastSyncOK.Load(),
-		SourceCount:  int(s.adblockSrcCount.Load()),
-		SuccessCount: int(s.adblockOKCount.Load()),
-		Exceptions:   s.AdblockExceptionStatus(),
-		ShadowExact:  s.AdblockShadowExactStatus(),
-	}
-	if policies := s.currentAdblockSourcePolicies(); policies != nil {
-		status.SourcePoliciesFingerprint = adblockSourcePoliciesFingerprint(policies)
-		status.SourcePolicyCount = len(policies)
-	}
-	if t := s.adblockTrie.Load(); t != nil {
-		status.DomainCount = t.Count()
-		status.ExactRuleCount = t.ExactCount()
-		status.SuffixRuleCount = t.SuffixCount()
-	}
-	if v := s.adblockLastSync.Load(); v != nil {
-		if ts, ok := v.(time.Time); ok {
-			status.LastSyncAt = ts.UTC().Format(time.RFC3339)
-		}
-	}
-	return status
-}
-
 // ListOverrides returns all local overrides, optionally filtered by action.
 // ListOverrides returns the configured overrides, optionally filtered by
 // action. ctx bounds the query so an operator who navigated away does not leave
