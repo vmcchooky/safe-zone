@@ -62,7 +62,10 @@ const scanBatch = 2000
 
 func main() {
 	buildinfo.Link()
+	os.Exit(run())
+}
 
+func run() int {
 	redisAddr := flag.String("redis-addr", config.String("SAFE_ZONE_REDIS_ADDR", ""), "Redis address")
 	redisPassword := flag.String("redis-password", config.SecretString("SAFE_ZONE_REDIS_PASSWORD", ""), "Redis password")
 	redisDB := flag.Int("redis-db", config.Int("SAFE_ZONE_REDIS_DB", 0), "Redis database")
@@ -88,7 +91,7 @@ func main() {
 	} else {
 		if strings.TrimSpace(*redisAddr) == "" {
 			fmt.Fprintln(os.Stderr, "redis address is required for a scan; use -member to classify domains offline")
-			os.Exit(2)
+			return 2
 		}
 		client := redis.NewClient(&redis.Options{Addr: *redisAddr, Password: *redisPassword, DB: *redisDB})
 		defer func() { _ = client.Close() }()
@@ -96,21 +99,21 @@ func main() {
 		revision, err := client.Get(ctx, feed.RevisionKey(*key)).Result()
 		if err != nil && err != redis.Nil {
 			fmt.Fprintf(os.Stderr, "read feed revision: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		report.FeedRevision = revision
 
 		total, err := client.ZCard(ctx, *key).Result()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read feed size: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		report.ScannedMembers = total
 
 		sample, refused, err := scanRefused(ctx, client, *key)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "scan feed: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		report.Sample = sample
 		report.RefusedMembers = refused
@@ -119,13 +122,14 @@ func main() {
 		encoded, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "encode report: %v\n", err)
-			os.Exit(1)
+			return 1
 		}
 		fmt.Println(string(encoded))
-		return
+		return 0
 	}
 
 	printHumanReport(report)
+	return 0
 }
 
 // scanRefused walks the feed with ZSCAN and returns a bounded sample plus the

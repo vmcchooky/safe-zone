@@ -33,7 +33,7 @@ func TestAnalyzeCanceledContextFailsOpen(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	result := service.Analyze(ctx, "cancel-probe.test", ClientInfo{})
-	//Canceled lookups fail open to the default group and lexical scoring.
+	// Canceled lookups fail open to the default group and lexical scoring.
 	if result.Domain == "" {
 		t.Fatal("expected fail-open result under cancellation, got empty")
 	}

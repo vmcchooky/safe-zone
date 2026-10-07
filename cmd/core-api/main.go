@@ -23,6 +23,10 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	addr := config.String("SAFE_ZONE_CORE_API_ADDR", ":8080")
 	shutdownTimeout := config.DurationMillis("SAFE_ZONE_SHUTDOWN_TIMEOUT_MS", 10*time.Second)
 
@@ -32,7 +36,7 @@ func main() {
 			"service": "core-api",
 			"error":   err.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
 
 	feedPreset := config.String("SAFE_ZONE_AGENT_FEED_PRESET", "")
@@ -42,7 +46,7 @@ func main() {
 			"service": "core-api",
 			"error":   err.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
 	feedKey := config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey)
 	feedTTL, feedTTLErr := feed.TTLFromDays(config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14))
@@ -51,7 +55,7 @@ func main() {
 			"service": "core-api",
 			"error":   feedTTLErr.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
 	feedChurnTTL, feedChurnTTLErr := feed.ChurnTTLFromDays(config.Int("SAFE_ZONE_FEED_CHURN_TTL_DAYS", 0))
 	if feedChurnTTLErr != nil {
@@ -59,7 +63,7 @@ func main() {
 			"service": "core-api",
 			"error":   feedChurnTTLErr.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
 	// The agent runs its own sync loop, so the same interval guard the daemon
 	// applies has to be enforced here too or a short churn window would quietly
@@ -72,7 +76,7 @@ func main() {
 			"service": "core-api",
 			"error":   err.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
 	feedStaleAfter := config.DurationSeconds("SAFE_ZONE_AGENT_FEED_STALE_AFTER_SECONDS", 36*time.Hour)
 	feedAdmissionMode, err := feed.NormalizeAdmissionMode(config.String("SAFE_ZONE_AGENT_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)))
@@ -84,7 +88,7 @@ func main() {
 			"service": "core-api",
 			"error":   err.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
 
 	riskService := risk.NewServiceFromEnvForRole("core-api")
@@ -309,6 +313,7 @@ func main() {
 			"service": "core-api",
 			"error":   err.Error(),
 		})
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }

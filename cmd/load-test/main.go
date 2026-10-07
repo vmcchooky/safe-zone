@@ -120,10 +120,14 @@ type domainPicker struct {
 }
 
 func main() {
+	os.Exit(realMain())
+}
+
+func realMain() int {
 	cfg, err := parseConfig()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "load-test: %v\n", err)
-		os.Exit(2)
+		return 2
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -156,8 +160,9 @@ func main() {
 		printSummary(report)
 	}
 	if !report.Pass {
-		os.Exit(1)
+		return 1
 	}
+	return 0
 }
 
 func parseConfig() (config, error) {
