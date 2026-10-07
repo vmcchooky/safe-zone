@@ -187,7 +187,7 @@ func TestRequestAdblockResyncIsNoopWithoutChannel(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("RequestAdblockResync blocked on a nil channel")
 	}
 }

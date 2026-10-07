@@ -28,13 +28,25 @@ func main() {
 	redisDB := flag.Int("redis-db", config.Int("SAFE_ZONE_REDIS_DB", 0), "Redis database")
 	key := flag.String("key", config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey), "Redis Set key for threat feed")
 	dryRun := flag.Bool("dry-run", false, "parse feed and report counts without writing Redis")
-	replace := flag.Bool("replace", false, "delete the target set before writing parsed domains")
+	replace := flag.Bool("replace", false, "delete the target set before writing parsed domains (requires exclusive key ownership)")
 	allowInsecure := flag.Bool("allow-insecure-http", config.Bool("SAFE_ZONE_FEED_ALLOW_INSECURE_HTTP", false), "allow plain-HTTP feed fetch (MITM can inject mass blocks; prefer https)")
 	timeout := flag.Duration("timeout", config.DurationMillis("SAFE_ZONE_FEED_SYNC_TIMEOUT_MS", 30*time.Second), "feed read and Redis write timeout")
 	ttlDays := flag.Int("ttl-days", config.Int("SAFE_ZONE_FEED_TTL_DAYS", 14), "number of days before threat domains expire")
 	churnTTLDays := flag.Int("churn-ttl-days", config.Int("SAFE_ZONE_FEED_CHURN_TTL_DAYS", 0), "shorter expiry in days for members on recycled-label roots (0 disables; must be at least 2 and above the sync interval)")
 	admissionMode := flag.String("admission-mode", config.String("SAFE_ZONE_FEED_ADMISSION_MODE", string(feed.AdmissionLegacy)), "feed admission mode: legacy, corroborated-url-host-shadow, or corroborated-url-host-filter")
 	flag.Parse()
+	// feed-syncd warns here; the one-shot did not, and it is the form the hourly
+	// operator loop actually uses. On the shared default key, one --replace
+	// invocation stages only its own source and then renames over the live set,
+	// deleting everything the other sources wrote. Nothing in internal/feed can
+	// know the key is shared, so the warning belongs at this layer.
+	if *replace {
+		logjson.Warn("feed-sync replace mode requires exclusive ownership of the feed key", map[string]any{
+			"service": "feed-sync",
+			"source":  *source,
+			"key":     *key,
+		})
+	}
 	feedTTL, ttlErr := feed.TTLFromDays(*ttlDays)
 	if ttlErr != nil {
 		logjson.Error("invalid feed TTL configuration", map[string]any{

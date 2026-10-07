@@ -24,6 +24,10 @@ jobs:
   quality:
     name: Repository quality checks
     runs-on: ubuntu-latest
+    # mise run ci now also builds the ML virtualenv and installs pinned wheels
+    # (scikit-learn, lightgbm, pyarrow), which is a large first-run download.
+    # The cache below absorbs it on subsequent runs.
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -32,6 +36,7 @@ jobs:
         uses: jdx/mise-action@v4
         with:
           cache: true
+          cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install UI dependencies and Playwright Chromium
@@ -39,6 +44,11 @@ jobs:
           npm ci --prefix ui
           npm --prefix ui exec -- playwright install --with-deps chromium
 
+      # Runs go lint/test/build, the decision evaluations, the UI end-to-end
+      # suite, the Go security scans, and the ML pytest suite (ml:install +
+      # ml:test). The ML tests were previously unreachable from CI: the
+      # .gitignore rule `*.py` hid ml/tests/test_*.py, so pytest collected a
+      # suite missing four of its modules.
       - name: Run CI task graph
         run: mise run ci
 

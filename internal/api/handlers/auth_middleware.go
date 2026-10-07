@@ -1,8 +1,6 @@
 package handlers
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
 	"fmt"
 	"net"
 	"net/http"
@@ -15,33 +13,16 @@ import (
 )
 
 func hasBearerPrefix(r *http.Request) bool {
-	return strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+	return auth.HasBearerPrefix(r.Header.Get("Authorization"))
 }
 
 // bearerMatches reports whether the request presents the configured admin
 // API key. Both the enforcing and the annotating auth path call this so the
-// two can never disagree about what counts as a valid bearer credential.
-//
-// An empty presented token and an empty configured key never match. Without
-// that guard the comparison degenerates to sha256("") == sha256(""), which
-// authenticates a bare "Authorization: Bearer " header as admin on every
-// route whenever AdminAPIKey is unset (e.g. an embedder that constructs
-// handlers.Config itself).
-//
-// The comparison uses ConstantTimeCompare over SHA-256 digests to keep the
-// check free of length- and byte-dependent timing.
+// two can never disagree about what counts as a valid bearer credential, and
+// both delegate to auth.MatchesBearer so dns-resolver's /metrics gate shares
+// one definition with core-api's rather than re-deriving the rule.
 func (h *Handler) bearerMatches(r *http.Request) bool {
-	if !hasBearerPrefix(r) {
-		return false
-	}
-	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	if token == "" || h.Config.AdminAPIKey == "" {
-		return false
-	}
-
-	tokenHash := sha256.Sum256([]byte(token))
-	expectedHash := sha256.Sum256([]byte(h.Config.AdminAPIKey))
-	return subtle.ConstantTimeCompare(tokenHash[:], expectedHash[:]) == 1
+	return auth.MatchesBearer(r.Header.Get("Authorization"), h.Config.AdminAPIKey)
 }
 
 func (h *Handler) RequireAuthFunc(next http.HandlerFunc) http.HandlerFunc {

@@ -12,6 +12,20 @@ linters:
     - ineffassign
     - staticcheck
     - unused
+    # misspell, unconvert and prealloc were trialled against the whole tree and
+    # came back with zero issues (prealloc needed two test-only preallocations
+    # in whitelist_context_test.go, fixed alongside). Heavier linters were tried
+    # and rejected, not forgotten: revive reports 50 mostly unused-parameter
+    # findings, gocritic flags four genuine exitAfterDefer shutdown paths plus
+    # two intentional whitespace test fixtures, and nilnil flags three
+    # deliberate (nil, nil) API contracts -- New("") meaning disabled mode,
+    # lookup-miss meaning absent, and a quiet dev-mode path documented at the
+    # call site. Each of those wants its own cleanup or redesign PR, and for
+    # nilnil the linter's advice contradicts the established convention, so it
+    # stays off until that convention itself is revisited.
+    - misspell
+    - unconvert
+    - prealloc
   exclusions:
     paths:
       - ^tmp/

@@ -304,6 +304,13 @@ func readAndVerifyBundleChecksums(paths map[string]string) (bundleChecksums, err
 }
 
 func hashFile(path string) (string, error) {
+	// Uncapped on purpose. The paths come from the fixed, validated bundle
+	// file set, and every file hashed here is loaded whole for parsing
+	// immediately afterwards (LGEnsembleFromFile below, json.Unmarshal for the
+	// URL bundle), so a cap would not bound memory -- it would only add a
+	// second failure mode. In shadow and optional ML modes a bundle-load error
+	// degrades to ML-unavailable with a warning, meaning a wrong cap would
+	// silently disable detection instead of failing loudly.
 	f, err := os.Open(path) // #nosec G304 -- paths come from the fixed, validated bundle file set.
 	if err != nil {
 		return "", err

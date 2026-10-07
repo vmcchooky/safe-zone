@@ -39,33 +39,64 @@ playwright-report/
 test-results/
 blob-report/
 
-# Scripts and IDEs
-*.py
-*.pyc
+# Python sources are TRACKED, not ignored. ml/ and scripts/ hold the model
+# training pipeline and the dataset builders that produce data/whitelist and
+# data/blacklist; ignoring them by extension made those files invisible to git
+# while the docs still referenced them by path. Only interpreter, build and
+# test-runner artifacts belong in this section.
 __pycache__/
+*.py[cod]
+*$py.class
 *.egg-info/
+.eggs/
+build/
+.venv/
+venv/
 .pytest_cache/
-!scripts/build_domain_dataset.py
-!ml/src/replay_labels.py
-!ml/src/regenerate_labels.py
-!ml/src/validate_labels.py
-!ml/src/report_fp.py
-!ml/src/canary_scope.py
-!ml/src/canary_override.py
-!ml/src/canary_snapshot_delta.py
-!ml/src/canary_failure_injection.py
-!ml/src/canary_rollback_drill.py
-!ml/src/freeze_url_canary_baseline.py
-!ml/src/run_external_pilot.py
-!ml/tests/test_replay_tools.py
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Editors, merge leftovers and OS junk
 *.bak
+*.orig
+*.rej
+*~
+*.swp
+*.swo
 .idea/
 .vscode/
-coverage.txt
+Thumbs.db
+desktop.ini
+.direnv/
+.envrc
+
+# Node / UI
 node_modules/
 ui/.vite/
 ui/coverage/
 *.tsbuildinfo
+coverage.txt
+
+# Domain-enumeration and state-actor research scripts, kept out of this PUBLIC
+# repository on purpose. These build candidate domains from a Vietnamese
+# syllable wordlist and mass-resolve them (scripts/generators/expansion_1_dns_bruteforce.py
+# is the clearest case), and one compiles a full map of Vietnamese state and
+# party organs. The same technique that makes a whitelist also maps a country's
+# domain space, so shipping it here hands a third party a working tool.
+#
+# The legitimate outputs still belong in the repo: the model pipeline under ml/
+# and the merge/validate/verify scripts under scripts/ stay tracked. Copies live
+# outside version control for whoever needs to regenerate the datasets.
+scripts/generators/expansion_*.py
+scripts/generators/*massive*.py
+scripts/generators/hardcoded_seeds.py
+scripts/scrapers/scraper_massive.py
+scripts/scrapers/*political*.py
 
 # Runtime adblock cache/meta
 **/adblock_cache.txt

@@ -136,9 +136,17 @@ func main() {
 // generic ScanCmd, so the caller must walk the result in pairs; an odd length
 // would mean a truncated page and is reported instead of silently misread.
 func scanRefused(ctx context.Context, client *redis.Client, key string) ([]memberVerdict, int, error) {
+	return scanRefusedCapped(ctx, client, key, sampleCap)
+}
+
+// scanRefusedCapped takes the retention cap as an argument so the bound is
+// testable without needing more refused members than the production cap. Only
+// scanRefused is called outside tests.
+func scanRefusedCapped(ctx context.Context, client *redis.Client, key string, cap int) ([]memberVerdict, int, error) {
 	var (
 		cursor   uint64
 		refused  []memberVerdict
+		total    int
 		complete bool
 	)
 	for !complete {
@@ -157,7 +165,16 @@ func scanRefused(ctx context.Context, client *redis.Client, key string) ([]membe
 			if feed.IsAdmissibleDomain(page[i]) {
 				continue
 			}
-			refused = append(refused, classify(page[i], score))
+			// Count every refused member but retain only the first sampleCap of
+			// them. Retaining all of them made peak memory scale with the whole
+			// backlog, which is exactly the condition that makes an operator run
+			// this tool: a policy just tightened and refused counts spiked. The
+			// count is what sizes a purge, so it must stay exact; the retained
+			// sample is only for review.
+			total++
+			if len(refused) < cap {
+				refused = append(refused, classify(page[i], score))
+			}
 		}
 		cursor = next
 		complete = cursor == 0
@@ -166,11 +183,8 @@ func scanRefused(ctx context.Context, client *redis.Client, key string) ([]membe
 		}
 	}
 
-	refusedCount := len(refused)
-	if len(refused) > sampleCap {
-		refused = refused[:sampleCap]
-	}
-	return refused, refusedCount, nil
+	// The sample is already bounded by the walk above; total is the full count.
+	return refused, total, nil
 }
 
 func classifyMembers(domains []string) []memberVerdict {

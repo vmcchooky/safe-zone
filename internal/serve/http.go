@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"safe-zone/internal/auth"
 	"safe-zone/internal/logjson"
 )
 
@@ -119,4 +120,26 @@ func htmlEscape(s string) string {
 	s = strings.ReplaceAll(s, "\"", "&quot;")
 	s = strings.ReplaceAll(s, "'", "&#39;")
 	return s
+}
+
+// RequireBearer gates a handler behind the admin API key presented as a bearer
+// token. It exists for services that have no login form and therefore no
+// session middleware to reuse: dns-resolver has no accounts, so this is the
+// only credential it can check.
+//
+// It fails closed. An unset configured key denies every request rather than
+// allowing them, because the alternative -- treating "no key configured" as
+// "no authentication required" -- is exactly the state in which an operator
+// believes /metrics is protected while it is public. Callers are expected to
+// log that state at startup so a missing key is visible before a scraper
+// starts returning 401.
+func RequireBearer(configuredKey string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if auth.MatchesBearer(r.Header.Get("Authorization"), configuredKey) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		w.Header().Set("WWW-Authenticate", `Bearer realm="safe-zone"`)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	})
 }

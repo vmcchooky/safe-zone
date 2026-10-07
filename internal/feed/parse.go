@@ -85,7 +85,7 @@ func ParseEach(r io.Reader, onDomain func(domain string) error, stats *ParseStat
 // indicator, so no IOC is lost. The overflow is reported through
 // ParseStats.TruncatedDomains rather than being invisible.
 func ParseEachIndicator(r io.Reader, onIndicator func(indicator Indicator, duplicate bool) error, stats *ParseStats) error {
-	return parseIndicatorsWithLimit(r, newBoundedSeenSet(maxDistinctFeedDomains()), stats, onIndicator)
+	return parseIndicatorsWithLimit(r, newBoundedSeenSet(resolvedFeedDomainLimit()), stats, onIndicator)
 }
 
 // parseIndicatorsWithLimit is ParseEachIndicator with an explicit dedup-set
@@ -133,8 +133,33 @@ func parseIndicatorsWithLimit(r io.Reader, seen *boundedSeenSet, stats *ParseSta
 // less. Set it to 0 to restore the previous unbounded behaviour.
 const defaultMaxDistinctFeedDomains = 2_000_000
 
+// unboundedFeedDomains is the resolved cap when an operator asks for no cap.
+//
+// The documented meaning of SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS=0 is "restore the
+// previous unbounded behaviour", and a literal 0 cannot express that to a
+// `len(m) >= limit` capacity check, because zero is both "no room left" and "no
+// limit". Both ingestion call sites therefore treated an explicit 0 as a full set:
+// the dedup set reported every unseen domain as already seen, and the admission
+// planner marked every domain unclassifiable. The result was a sync that exited 0,
+// reported success, and ingested nothing at all.
+//
+// The cap is stored separately from the set so the two readings cannot collide.
+const unboundedFeedDomains = -1
+
+// envMaxDistinctFeedDomains names the cap override.
+const envMaxDistinctFeedDomains = "SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS"
+
+// resolvedFeedDomainLimit returns the effective cap for this run, or
+// unboundedFeedDomains when the operator asked for no cap.
+func resolvedFeedDomainLimit() int {
+	if limit := maxDistinctFeedDomains(); limit > 0 {
+		return limit
+	}
+	return unboundedFeedDomains
+}
+
 func maxDistinctFeedDomains() int {
-	value := config.Int("SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS", defaultMaxDistinctFeedDomains)
+	value := config.Int(envMaxDistinctFeedDomains, defaultMaxDistinctFeedDomains)
 	if value < 0 {
 		return 0
 	}
@@ -148,9 +173,16 @@ type boundedSeenSet struct {
 	overflowed int
 }
 
+// newBoundedSeenSet returns a deduplication set with the given cap. Any
+// non-positive cap means unbounded, which is the documented meaning of
+// SAFE_ZONE_FEED_MAX_DISTINCT_DOMAINS=0. Normalising here rather than only at the
+// environment reader keeps every caller correct, including the ones that pass a
+// resolved value straight through: a raw 0 previously re-read the environment,
+// resolved to 0 again, and reported every unseen domain as a duplicate, so a sync
+// exited 0, reported success, and ingested nothing.
 func newBoundedSeenSet(limit int) *boundedSeenSet {
 	if limit <= 0 {
-		limit = maxDistinctFeedDomains()
+		limit = unboundedFeedDomains
 	}
 	return &boundedSeenSet{entries: make(map[string]struct{}, 1024), limit: limit}
 }
@@ -158,11 +190,13 @@ func newBoundedSeenSet(limit int) *boundedSeenSet {
 // mark reports whether the domain was already recorded, recording it otherwise.
 // Once the limit is reached, an unseen domain is reported as already seen: the
 // indicator still reaches the caller, only the duplicate flag differs.
+//
+// An unbounded set never reports a duplicate for capacity reasons.
 func (s *boundedSeenSet) mark(domain string) (duplicate bool) {
 	if _, ok := s.entries[domain]; ok {
 		return true
 	}
-	if len(s.entries) >= s.limit {
+	if s.limit >= 0 && len(s.entries) >= s.limit {
 		s.overflowed++
 		return true
 	}

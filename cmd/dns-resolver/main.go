@@ -35,8 +35,31 @@ import (
 )
 
 func main() {
-	addr := config.String("SAFE_ZONE_DNS_RESOLVER_ADDR", ":8081")
+	// Loopback by default. Caddy fronts /dns-query over 443 (see Caddyfile) and
+	// docker-compose.production.yml publishes 8081 on 127.0.0.1, so nothing
+	// legitimate needs this listener on a public interface. Binding 0.0.0.0 by
+	// default turned any host that ran the binary directly into an open
+	// resolver reachable by anyone, which is a reflection and amplification
+	// vector. An operator exposing DoH to the network sets
+	// SAFE_ZONE_DNS_RESOLVER_ADDR explicitly.
+	addr := config.String("SAFE_ZONE_DNS_RESOLVER_ADDR", "127.0.0.1:8081")
 	shutdownTimeout := config.DurationMillis("SAFE_ZONE_SHUTDOWN_TIMEOUT_MS", 10*time.Second)
+
+	adminAPIKey, err := config.SecretStringE("SAFE_ZONE_ADMIN_API_KEY")
+	if err != nil {
+		logjson.Error("failed to load the admin API key", map[string]any{
+			"service": "dns-resolver",
+			"error":   err.Error(),
+		})
+		os.Exit(1)
+	}
+	if adminAPIKey == "" {
+		logjson.Warn("SAFE_ZONE_ADMIN_API_KEY is not set; /metrics will reject every request", map[string]any{
+			"service": "dns-resolver",
+			"env":     "SAFE_ZONE_ADMIN_API_KEY",
+			"impact":  "monitoring scrapes of /metrics receive 401 until a key is configured",
+		})
+	}
 
 	ttlVal := config.Int("SAFE_ZONE_DNS_BLOCK_TTL_SECONDS", 60)
 	if ttlVal < 0 || ttlVal > 86400 {
@@ -125,7 +148,7 @@ func main() {
 		DeploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 	}, dotLimiter)
 
-	mux := server.NewRouter(res)
+	mux := server.NewRouter(res, adminAPIKey)
 
 	var handler http.Handler = mux
 	if tiered != nil {
@@ -149,6 +172,14 @@ func main() {
 	var dotServer *dns.Server
 
 	if dotEnabled {
+		// DoT keeps an all-interface default, unlike the DoH listener above.
+		// DoT has no reverse-proxy path in this stack: Caddy terminates 443
+		// for the operator UI and DoH, and DoT clients connect straight to
+		// :8533 (docker-compose.production.yml publishes it as :853). Binding
+		// it to loopback would make the feature unreachable rather than safer.
+		// The exposure is bounded by the per-client-IP DoT rate limiter
+		// configured above; an operator who does not need DoT should set
+		// SAFE_ZONE_DNS_DOT_ENABLED=false.
 		dotAddr := config.String("SAFE_ZONE_DNS_DOT_ADDR", ":8533")
 		certFile := config.String("SAFE_ZONE_DNS_DOT_CERT_FILE", "")
 		keyFile := config.String("SAFE_ZONE_DNS_DOT_KEY_FILE", "")

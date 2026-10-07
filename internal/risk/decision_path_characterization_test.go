@@ -274,21 +274,19 @@ func TestDecisionPathsAgreeOnTheActionTheyEnforce(t *testing.T) {
 	}
 }
 
-// TestPolicyDecisionIsPopulatedAsymmetrically pins the one place the two paths
-// are known to disagree, because it is invisible to every existing check and it
-// constrains the refactor in a way that is easy to trip over.
+// TestBothPathsExplainTheirAdministrativeDecision pins the contract that
+// replaced the asymmetry this file originally documented.
 //
-// Measured current behaviour:
+// Until now Policy left Decision nil for administrative admissions while Analyze
+// populated it, so the same logical event arrived with an explanation at core-api
+// and without one at dns-resolver. Policy now attaches it too.
 //
-//	an administrative override or a whitelist match populates Decision on
-//	Analyze and leaves it nil on Policy;
-//	an adblock match populates Decision on Policy and leaves it nil on Analyze;
-//	a domain that fails normalisation populates neither.
+// The asymmetry that remains is deliberate and narrower: an adblock content
+// decision is explained by Policy alone, because Analyze's separated semantics
+// treat a content match as evidence and deliberately carry on into the security
+// pipeline rather than resolving a policy.
 //
-// Policy's own field comment acknowledges the first half: "Nil on paths that have
-// not adopted the separated decision model yet."
-//
-// Why this matters more than it looks. internal/eval/runner.go Observe() reduces
+// A note on what this changed and did not disturb. internal/eval/runner.go reduces
 // an observation by reading Decision from Policy only:
 //
 //	decision := ""
@@ -296,20 +294,17 @@ func TestDecisionPathsAgreeOnTheActionTheyEnforce(t *testing.T) {
 //	    decision = pol.Decision.Action + "|" + pol.Decision.Kind + "|" + pol.Decision.Category
 //	}
 //
-// So every admin-override and whitelist decision is recorded in the frozen
-// decision corpora as the empty string. That is the contract the `eval:decision`
-// gate checks against, and it currently passes.
+// So populating it changes what Observe records, and the frozen corpora would have
+// needed re-baselining. They did not, because that harness has no store and cannot
+// express an override or a whitelist match at all; it only injects adblock rules.
+// Verified by comparing eval output for all four corpora before and after: byte
+// identical.
 //
-// Unifying the paths in the obvious way — letting Policy populate Decision for
-// administrative decisions too — changes what Observe records. The corpora would
-// have to be regenerated to match, and regenerating them is how a gate quietly
-// stops meaning anything.
-//
-// A refactor must therefore choose deliberately: preserve the asymmetry, or adopt
-// the decision model on Policy and re-baseline the corpora as a separate, visible
-// step. Doing it as a side effect of a "pure" deduplication would be the worst of
-// both.
-func TestPolicyDecisionIsPopulatedAsymmetrically(t *testing.T) {
+// That is a relief and a warning at once. The relief is that no corpus contract
+// moved. The warning is that eval:decision provides no coverage of this path, so
+// this test and the matrix around it are the only thing standing between this
+// decision and an unnoticed regression.
+func TestBothPathsExplainTheirAdministrativeDecision(t *testing.T) {
 	ctx := context.Background()
 
 	for _, sc := range decisionScenarios(t, ctx) {
@@ -324,24 +319,39 @@ func TestPolicyDecisionIsPopulatedAsymmetrically(t *testing.T) {
 
 			switch {
 			case api.Decision != nil && api.Decision.Kind != "content":
-				// Administrative or allowlist admission: Analyze explains it,
-				// Policy does not.
-				if pol.Decision != nil {
-					t.Fatalf("Policy.Decision is now populated with kind %q for %q; "+
-						"internal/eval/runner.go reads Decision from Policy only, so the "+
-						"frozen corpora's recorded decision string changes and "+
-						"`eval:decision` must be re-baselined deliberately",
-						pol.Decision.Kind, sc.dom)
+				// Administrative or allowlist admission: both paths now explain it,
+				// and they must explain it identically.
+				if pol.Decision == nil {
+					t.Fatalf("Policy must explain an administrative decision for %q the "+
+						"same way Analyze does; core-api and dns-resolver must not "+
+						"disagree about why a domain was resolved", sc.dom)
 				}
+				assertSameDecision(t, sc.dom, api.Decision, pol.Decision)
 			case pol.Decision != nil && pol.Decision.Kind == "content":
-				// Adblock content policy: Policy explains it, Analyze does not.
+				// Adblock content policy stays Policy-only by design: Analyze keeps
+				// content matches out of the security decision.
 				if api.Decision != nil {
-					t.Fatalf("Analyze.Decision is now populated with kind %q for %q; "+
-						"this path never carried content decisions",
+					t.Fatalf("Analyze.Decision is populated with kind %q for %q; separated "+
+						"semantics deliberately do not resolve a policy on a content match",
 						api.Decision.Kind, sc.dom)
+				}
+			default:
+				// No policy resolved: an unparseable domain, or a plain security
+				// assessment. Neither path may invent an explanation.
+				if api.Decision != nil || pol.Decision != nil {
+					t.Fatalf("no policy resolved for %q, so neither path should carry a "+
+						"decision: api=%v pol=%v", sc.dom, api.Decision, pol.Decision)
 				}
 			}
 		})
+	}
+}
+
+// assertSameDecision compares the fields an operator or a corpus actually reads.
+func assertSameDecision(t *testing.T, domain string, a, b *PolicyDecision) {
+	t.Helper()
+	if a.Action != b.Action || a.Kind != b.Kind || a.Category != b.Category || a.Reason != b.Reason {
+		t.Fatalf("the two paths explain %q differently:\n  Analyze: %+v\n  Policy:  %+v", domain, a, b)
 	}
 }
 

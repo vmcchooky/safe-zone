@@ -3,6 +3,12 @@ go = "1.26.7"
 node = "24"
 python = "3.13.14"
 golangci-lint = "2.12.2"
+# Security scanners live here next to the linter instead of being fetched by
+# `go run pkg@version` on every CI run. The go: backend builds them with the
+# Go toolchain above, so versions resolve once, install into the mise shims,
+# and stay on PATH for every task below. Pin with the full module version.
+"go:github.com/securego/gosec/v2/cmd/gosec" = "v2.28.0"
+"go:golang.org/x/vuln/cmd/govulncheck" = "v1.4.0"
 
 [tasks.default]
 description = "Run the default repository verification suite"
@@ -16,7 +22,7 @@ run = "echo Safe Zone checks passed."
 
 [tasks.ci]
 description = "Run the CI verification suite"
-depends = ["check", "ui:e2e", "go:security"]
+depends = ["check", "ui:e2e", "go:security", "ml:test"]
 run = "echo Safe Zone CI checks passed."
 
 [tasks."ui:install"]
@@ -76,12 +82,27 @@ run_windows = "cmd.exe /c \"cd ui && npm run test:e2e\""
 [tasks."go:test"]
 description = "Run the Go test suite with the embedded UI bundle refreshed first"
 depends = ["ui:bundle"]
-run = "go test ./..."
+# -race is non-negotiable here. This is a concurrent DNS resolver with a
+# Redis-backed pub/sub config channel, so a data race is a correctness bug with
+# a security consequence, not a flaky-test nuisance. The five most concurrent
+# packages (risk, resolver, store, cache, ratelimit) were measured race-clean
+# before this flag was added; the cost is CI time, roughly 33s to 185s on the
+# risk suite, absorbed by the timeout on the quality job in ci.yml.
+#
+# The package list is explicit so the gitignored scratch code under tmp/ is
+# not compiled. tmp/ holds throwaway replay harnesses, and lint deliberately
+# excludes it (^tmp/ in .golangci.yml); building it anyway meant CI compiled
+# code no linter ever saw. Anyone working in tmp/ still runs it directly with
+# go run or go test ./tmp/... -- this only stops the shared gates from
+# depending on scratch.
+run = "go test -race ./cmd/... ./internal/... ./ml/..."
 
 [tasks."go:build"]
 description = "Build all Go packages with the embedded UI bundle refreshed first"
 depends = ["ui:bundle"]
-run = "go build ./..."
+# Explicit package list for the same reason as go:test: tmp/ is gitignored
+# scratch and must not be part of what the shared gates compile.
+run = "go build ./cmd/... ./internal/... ./ml/..."
 
 [tasks."go:lint"]
 description = "Run the Go linter"
@@ -99,9 +120,20 @@ run = [
 [tasks."go:security"]
 description = "Run the Go security scans used in CI"
 run = [
-  "go run github.com/securego/gosec/v2/cmd/gosec@v2.28.0 ./...",
-  "go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...",
+  "gosec ./...",
+  "govulncheck ./...",
 ]
+
+[tasks."ml:install"]
+description = "Create the ML virtualenv and install the pinned dependencies from ml/pyproject.toml"
+run = "python -m venv ml/.venv && ml/.venv/bin/python -m pip install --quiet --upgrade pip && ml/.venv/bin/python -m pip install --quiet './ml[dev]'"
+run_windows = 'python -m venv ml\.venv; if not exist ml\.venv\Scripts\python.exe exit /b 1; ml\.venv\Scripts\python.exe -m pip install --quiet --upgrade pip; ml\.venv\Scripts\python.exe -m pip install --quiet "ml[dev]"'
+
+[tasks."ml:test"]
+description = "Run the ML test suite (pytest over ml/tests)"
+depends = ["ml:install"]
+run = "cd ml && .venv/bin/python -m pytest -q"
+run_windows = 'cmd.exe /c "cd ml && .venv\Scripts\python.exe -m pytest -q"'
 
 [tasks."ops:deploy"]
 description = "Deploy the production compose stack through the standardized ops entrypoint"

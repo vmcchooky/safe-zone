@@ -151,14 +151,25 @@ func TestOverrideAllowlistPolicyAttribution(t *testing.T) {
 	}
 
 	blocked := service.Policy(ctx, "operator-blocked.test", ClientInfo{})
-	// Pinned rollback contract: override/whitelist Policy paths carry no
-	// content Decision. Attribution flows to telemetry columns instead.
-	if blocked.Decision != nil {
-		t.Fatalf("override policy path must not carry a decision, got %+v", blocked.Decision)
+	// Pinned rollback contract: the override/whitelist Policy paths must not carry a
+	// *content* Decision. Attribution of a matched adblock rule flows to telemetry
+	// columns instead.
+	//
+	// Both paths do now carry the administrative decision itself — that is the
+	// change this test had to move with. What stays pinned is that neither an
+	// override nor a whitelist match is ever reported as adblock content.
+	if blocked.Decision != nil && blocked.Decision.Kind == "content" {
+		t.Fatalf("override policy path must not carry a content decision, got %+v", blocked.Decision)
+	}
+	if blocked.Decision == nil || blocked.Decision.Kind != "admin" {
+		t.Fatalf("override policy path must explain itself as an admin decision, got %+v", blocked.Decision)
 	}
 	allowed := service.Policy(ctx, "operator-allowed.test", ClientInfo{})
-	if allowed.Decision != nil {
-		t.Fatalf("allowlist policy path must not carry a decision, got %+v", allowed.Decision)
+	if allowed.Decision != nil && allowed.Decision.Kind == "content" {
+		t.Fatalf("allowlist policy path must not carry a content decision, got %+v", allowed.Decision)
+	}
+	if allowed.Decision == nil || allowed.Decision.Kind != "admin" {
+		t.Fatalf("allowlist policy path must explain itself as an admin decision, got %+v", allowed.Decision)
 	}
 	api := service.Analyze(ctx, "operator-blocked.test", ClientInfo{})
 	if api.Decision == nil || api.Decision.Action != "block" {
