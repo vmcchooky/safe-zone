@@ -11,15 +11,20 @@ import (
 	"safe-zone/internal/config"
 )
 
+// Verdict is the closed set of analysis outcomes, from INVALID input
+// through SAFE and SUSPICIOUS to MALICIOUS.
 type Verdict string
 
 const (
+	// VerdictInvalid marks input that cannot be analyzed at all.
 	VerdictInvalid    Verdict = "INVALID"
 	VerdictSafe       Verdict = "SAFE"
 	VerdictSuspicious Verdict = "SUSPICIOUS"
 	VerdictMalicious  Verdict = "MALICIOUS"
 )
 
+// Result is one analyzed domain: the verdict with score, confidence,
+// human-readable reasons and an optional content category.
 type Result struct {
 	Domain     string   `json:"domain"`
 	Verdict    Verdict  `json:"verdict"`
@@ -34,11 +39,16 @@ const (
 	highEntropyDGAReason         = "high_entropy_dga_suspected"
 )
 
+// Analyzer is the deterministic lexical analysis engine. Brand-aware
+// checks consult its BrandStore; a nil store falls back to the built-in
+// trusted-brand seed.
 type Analyzer struct {
 	config     config.AnalysisConfig
 	brandStore BrandStore
 }
 
+// NewAnalyzerWithBrandStore builds an Analyzer over cfg, substituting the
+// built-in trusted-brand seed when brandStore is nil.
 func NewAnalyzerWithBrandStore(cfg config.AnalysisConfig, brandStore BrandStore) *Analyzer {
 	if brandStore == nil {
 		brandStore = NewMemoryBrandStore(DefaultTrustedBrands())
@@ -49,6 +59,9 @@ func NewAnalyzerWithBrandStore(cfg config.AnalysisConfig, brandStore BrandStore)
 	}
 }
 
+// ClassifyCategory assigns a content category (social_media, adult,
+// gambling, phishing, malware, uncategorized and others) from the domain
+// itself. It never performs I/O.
 func ClassifyCategory(domain string) string {
 	domain = strings.ToLower(strings.TrimSpace(domain))
 	if domain == "" {
@@ -317,6 +330,9 @@ const (
 	maxDomainLabelLength = 63
 )
 
+// NormalizeDomain lowercases, trims and validates a domain or URL into its
+// canonical bare-domain form, enforcing the RFC 1035 wire length limits
+// (253/63). Full IDNA canonicalization is a separate follow-up.
 func NormalizeDomain(input string) (string, error) {
 	value := strings.TrimSpace(strings.ToLower(input))
 	if value == "" {

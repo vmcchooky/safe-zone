@@ -522,20 +522,20 @@ func (r *Redis) ZScores(ctx context.Context, key string, members []string) ([]fl
 	return scores, ok, nil
 }
 
-func (r *Redis) ZCount(ctx context.Context, key, min, max string) (int64, error) {
+func (r *Redis) ZCount(ctx context.Context, key, minScore, maxScore string) (int64, error) {
 	if !r.Enabled() {
 		return 0, ErrDisabled
 	}
 
-	return r.client.ZCount(ctx, key, min, max).Result()
+	return r.client.ZCount(ctx, key, minScore, maxScore).Result()
 }
 
-func (r *Redis) ZRemRangeByScore(ctx context.Context, key string, min, max string) (int64, error) {
+func (r *Redis) ZRemRangeByScore(ctx context.Context, key string, minScore, maxScore string) (int64, error) {
 	if !r.Enabled() {
 		return 0, ErrDisabled
 	}
 
-	return r.client.ZRemRangeByScore(ctx, key, min, max).Result()
+	return r.client.ZRemRangeByScore(ctx, key, minScore, maxScore).Result()
 }
 
 func (r *Redis) PushJSON(ctx context.Context, key string, value any, maxLen int64) error {

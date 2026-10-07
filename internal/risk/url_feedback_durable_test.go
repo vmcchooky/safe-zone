@@ -348,5 +348,5 @@ func TestCoverageRecordsMissingContextReasons(t *testing.T) {
 // newTestDurableFeedbackStore wraps the constructor for tests that do not care
 // about lifecycle cancellation.
 func newTestDurableFeedbackStore(db *store.DB, cfg URLMLFeedbackConfig) *durableURLFeedbackStore {
-	return newDurableURLFeedbackStore(db, cfg, context.Background())
+	return newDurableURLFeedbackStore(context.Background(), db, cfg)
 }

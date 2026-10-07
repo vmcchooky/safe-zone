@@ -123,13 +123,13 @@ type durableURLFeedbackStore struct {
 	pruneWG sync.WaitGroup
 }
 
-func newDurableURLFeedbackStore(db *store.DB, cfg URLMLFeedbackConfig, lifecycle context.Context) *durableURLFeedbackStore {
-	if lifecycle == nil {
-		lifecycle = context.Background()
+func newDurableURLFeedbackStore(ctx context.Context, db *store.DB, cfg URLMLFeedbackConfig) *durableURLFeedbackStore {
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	s := &durableURLFeedbackStore{
 		db:        db,
-		lifecycle: lifecycle,
+		lifecycle: ctx,
 		currentKey: feedbackHMACKey{
 			version: cfg.KeyVersion,
 			secret:  []byte(cfg.Secret),

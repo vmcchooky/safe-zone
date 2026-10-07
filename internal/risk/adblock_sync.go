@@ -206,14 +206,14 @@ func (s *Service) syncAdblockLists() {
 					defer response.Close()
 				}
 				if response.Reader != nil {
-					if err := s.saveAdblockSourceCache(source, response.Reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err == nil {
-						successCount++
-						networkCount++
-						nextMeta[source] = adblockSourceMetaFromHeader(response.Header)
-						return
-					} else {
+					if err := s.saveAdblockSourceCache(source, response.Reader, newTrie, sourceID, sourceCategory, sourceScope, sourceOrigin); err != nil {
 						logjson.Warn("failed to refresh adblock source cache", map[string]any{"source": source, "error": err.Error()})
+						return
 					}
+					successCount++
+					networkCount++
+					nextMeta[source] = adblockSourceMetaFromHeader(response.Header)
+					return
 				}
 			} else {
 				logjson.Warn("failed to fetch adblock source", map[string]any{"source": source, "error": err.Error()})

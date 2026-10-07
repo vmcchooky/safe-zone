@@ -307,13 +307,6 @@ func tldOf(domain string) string {
 	return parts[len(parts)-1]
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // ParseAndScoreForTest exposes parseAndScore for white-box unit testing.
 func ParseAndScoreForTest(raw string) Result {
 	return parseAndScore(raw)

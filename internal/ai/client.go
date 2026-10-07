@@ -1,3 +1,5 @@
+// Package ai provides the unified AI refinement client for domain analysis,
+// with Gemini, Ollama, and hybrid providers behind one interface.
 package ai
 
 import (
@@ -53,6 +55,8 @@ type GeminiClient struct {
 	http    *http.Client
 }
 
+// Result is the AI classification outcome for one domain: verdict,
+// confidence, reason and category.
 type Result struct {
 	Verdict    string  `json:"verdict"`
 	Confidence float64 `json:"confidence"`

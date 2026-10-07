@@ -142,7 +142,7 @@ func scanRefused(ctx context.Context, client *redis.Client, key string) ([]membe
 // scanRefusedCapped takes the retention cap as an argument so the bound is
 // testable without needing more refused members than the production cap. Only
 // scanRefused is called outside tests.
-func scanRefusedCapped(ctx context.Context, client *redis.Client, key string, cap int) ([]memberVerdict, int, error) {
+func scanRefusedCapped(ctx context.Context, client *redis.Client, key string, sampleCap int) ([]memberVerdict, int, error) {
 	var (
 		cursor   uint64
 		refused  []memberVerdict
@@ -172,7 +172,7 @@ func scanRefusedCapped(ctx context.Context, client *redis.Client, key string, ca
 			// count is what sizes a purge, so it must stay exact; the retained
 			// sample is only for review.
 			total++
-			if len(refused) < cap {
+			if len(refused) < sampleCap {
 				refused = append(refused, classify(page[i], score))
 			}
 		}

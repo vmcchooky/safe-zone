@@ -13,7 +13,7 @@ import (
 
 func TestHybridOllamaSuccessNoGeminiCall(t *testing.T) {
 	// 1. Mock Ollama Server
-	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		resp := ollamaGenerateResponse{
 			Model:    "gemma2:2b",
 			Response: `{"verdict": "MALICIOUS", "confidence": 0.88, "category": "malware", "reason": "offline match"}`,
@@ -25,7 +25,7 @@ func TestHybridOllamaSuccessNoGeminiCall(t *testing.T) {
 	defer ollamaServer.Close()
 
 	// 2. Mock Gemini Server - should NOT be called
-	geminiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	geminiServer := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {
 		t.Fatal("Gemini API should not be called when Ollama succeeds")
 	}))
 	defer geminiServer.Close()
@@ -72,13 +72,13 @@ func TestHybridOllamaSuccessNoGeminiCall(t *testing.T) {
 
 func TestHybridOllamaFailsFallbackToGemini(t *testing.T) {
 	// 1. Mock Ollama Server - returns HTTP 500
-	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ollamaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer ollamaServer.Close()
 
 	// 2. Mock Gemini Server - should succeed
-	geminiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	geminiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		resp := generateResponse{}
 		resp.Candidates = append(resp.Candidates, struct {
 			Content struct {

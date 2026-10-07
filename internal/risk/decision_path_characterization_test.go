@@ -62,7 +62,7 @@ type decisionScenario struct {
 	wantAction string
 }
 
-func decisionScenarios(t *testing.T, ctx context.Context) []decisionScenario {
+func decisionScenarios(ctx context.Context, t *testing.T) []decisionScenario {
 	t.Helper()
 	return []decisionScenario{
 		{
@@ -225,7 +225,7 @@ func effectiveAction(a Analysis, p Policy) string {
 func TestDecisionPathsAgreeOnVerdictAndScore(t *testing.T) {
 	ctx := context.Background()
 
-	for _, sc := range decisionScenarios(t, ctx) {
+	for _, sc := range decisionScenarios(ctx, t) {
 		t.Run(sc.name, func(t *testing.T) {
 			svc, db := newDecisionPathService(t)
 			if sc.build != nil {
@@ -253,7 +253,7 @@ func TestDecisionPathsAgreeOnVerdictAndScore(t *testing.T) {
 func TestDecisionPathsAgreeOnTheActionTheyEnforce(t *testing.T) {
 	ctx := context.Background()
 
-	for _, sc := range decisionScenarios(t, ctx) {
+	for _, sc := range decisionScenarios(ctx, t) {
 		t.Run(sc.name, func(t *testing.T) {
 			svc, db := newDecisionPathService(t)
 			if sc.build != nil {
@@ -307,7 +307,7 @@ func TestDecisionPathsAgreeOnTheActionTheyEnforce(t *testing.T) {
 func TestBothPathsExplainTheirAdministrativeDecision(t *testing.T) {
 	ctx := context.Background()
 
-	for _, sc := range decisionScenarios(t, ctx) {
+	for _, sc := range decisionScenarios(ctx, t) {
 		t.Run(sc.name, func(t *testing.T) {
 			svc, db := newDecisionPathService(t)
 			if sc.build != nil {
@@ -459,7 +459,7 @@ func TestDecisionPathsDeclareTheirOwnAssessmentShape(t *testing.T) {
 		},
 	}
 
-	for _, sc := range decisionScenarios(t, ctx) {
+	for _, sc := range decisionScenarios(ctx, t) {
 		t.Run(sc.name, func(t *testing.T) {
 			want, ok := cases[sc.name]
 			if !ok {

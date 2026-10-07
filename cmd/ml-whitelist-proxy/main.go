@@ -1,3 +1,5 @@
+// Command ml-whitelist-proxy validates a whitelist snapshot against a
+// verified model bundle through the Core API before it is provisioned.
 package main
 
 import (

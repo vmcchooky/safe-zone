@@ -65,16 +65,16 @@ func testRedis(t *testing.T) (*miniredis.Miniredis, *redis.Client) {
 func TestScanRefusedBoundsTheSampleButCountsEveryRefusal(t *testing.T) {
 	server, client := testRedis(t)
 
-	const cap = 7
+	const sampleCap = 7
 	const refused = 50
 	seedFeed(t, server, refused, 30)
 
-	sample, total, err := scanRefusedCapped(context.Background(), client, "test:threat:feed", cap)
+	sample, total, err := scanRefusedCapped(context.Background(), client, "test:threat:feed", sampleCap)
 	if err != nil {
 		t.Fatalf("scanRefusedCapped: %v", err)
 	}
-	if len(sample) != cap {
-		t.Fatalf("retained %d members, want exactly the cap of %d", len(sample), cap)
+	if len(sample) != sampleCap {
+		t.Fatalf("retained %d members, want exactly the cap of %d", len(sample), sampleCap)
 	}
 	if total != refused {
 		t.Fatalf("counted %d refused members, want %d", total, refused)

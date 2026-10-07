@@ -33,8 +33,8 @@ const sharedFeedApexReason = "shared infrastructure host in threat feed (context
 const analysisAlgorithmRevision = "2026-09-cdn-fp-guard-v2"
 const geminiKeySyncCooldown = 10 * time.Second
 const defaultAnalysisConfigReloadPollInterval = 30 * time.Second
-const analysisConfigReloadBackoffMin = 250 * time.Millisecond
-const analysisConfigReloadBackoffMax = 5 * time.Second
+const analysisConfigReloadBackoffFloor = 250 * time.Millisecond
+const analysisConfigReloadBackoffCap = 5 * time.Second
 
 // Fallbacks for the durations a caller can supply through Options without also
 // supplying a default.
@@ -503,15 +503,15 @@ func NewService(options Options) *Service {
 				"service": "risk",
 				"error":   err.Error(),
 			})
-			urlFeedbackBackendImpl = newDurableURLFeedbackStore(nil, URLMLFeedbackConfig{
+			urlFeedbackBackendImpl = newDurableURLFeedbackStore(lifecycleCtx, nil, URLMLFeedbackConfig{
 				KeyVersion: 1,
 				Retention:  defaultURLFeedbackRetentionHours * time.Hour,
 				MaxRows:    defaultURLFeedbackMaxRows,
-			}, lifecycleCtx)
+			})
 		} else {
 			// Durable mode. A nil/disabled store keeps failing closed for
 			// labels while analysis stays unaffected.
-			urlFeedbackBackendImpl = newDurableURLFeedbackStore(options.Store, urlFeedback, lifecycleCtx)
+			urlFeedbackBackendImpl = newDurableURLFeedbackStore(lifecycleCtx, options.Store, urlFeedback)
 		}
 	}
 
@@ -559,8 +559,8 @@ func NewService(options Options) *Service {
 		configReloadPoll:           configDuration(options.ConfigReloadPollInterval, defaultAnalysisConfigReloadPollInterval),
 		configReloadOn:             options.ConfigReloadEnabled,
 		nodeRole:                   strings.TrimSpace(options.NodeRole),
-		reloadBackoffMin:           analysisConfigReloadBackoffMin,
-		reloadBackoffMax:           analysisConfigReloadBackoffMax,
+		reloadBackoffMin:           analysisConfigReloadBackoffFloor,
+		reloadBackoffMax:           analysisConfigReloadBackoffCap,
 		enrichEnabled:              options.EnrichEnabled,
 		enrichTimeout:              options.EnrichTimeout,
 		enrichDone:                 make(chan struct{}),

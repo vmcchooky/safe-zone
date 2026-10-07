@@ -47,7 +47,7 @@ func TestGeminiClassifyDomainRole(t *testing.T) {
 	}
 }
 
-func TestConcurrentGeminiKeyRotationAndContextClassification(t *testing.T) {
+func TestConcurrentGeminiKeyRotationAndContextClassification(_ *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		resp := generateResponse{}
 		resp.Candidates = append(resp.Candidates, struct {
@@ -70,10 +70,10 @@ func TestConcurrentGeminiKeyRotationAndContextClassification(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
 		wg.Add(2)
-		go func(index int) {
+		go func() {
 			defer wg.Done()
 			client.SetGeminiAPIKey("rotated-key")
-		}(i)
+		}()
 		go func() {
 			defer wg.Done()
 			_, _ = client.ClassifyDomainRole(context.Background(), "evil.example", []string{"evil.example là website giả mạo"})
