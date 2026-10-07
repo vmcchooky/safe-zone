@@ -278,14 +278,14 @@ func validateAdblockSourcePoliciesJSON(raw string) error {
 // back to the global mode with OriginGlobalDefault, as does a category-only
 // policy. These warnings log only the canonical source digest; fetch/scan
 // error paths elsewhere may still log the raw source string.
-func (s *Service) resolveAdblockSourcePolicy(source string) (string, domaintrie.RuleScope, domaintrie.ScopeOrigin) {
+func (e *AdblockEngine) resolveAdblockSourcePolicy(source string) (string, domaintrie.RuleScope, domaintrie.ScopeOrigin) {
 	category := domaintrie.DefaultRuleCategory
 	scope := domaintrie.RuleScopeSuffix
-	if s.adblock.adblockMatchMode.Load() == string(adblockMatchModeExact) {
+	if e.adblockMatchMode.Load() == string(adblockMatchModeExact) {
 		scope = domaintrie.RuleScopeExact
 	}
 	origin := domaintrie.OriginGlobalDefault
-	policies := s.currentAdblockSourcePolicies()
+	policies := e.currentAdblockSourcePolicies()
 	if policies == nil {
 		return category, scope, origin
 	}

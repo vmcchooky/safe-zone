@@ -75,7 +75,7 @@ func (h *Handler) loadSettingsResponse(ctx context.Context) (settingsResponse, e
 		return settingsResponse{}, fmt.Errorf("failed to get agent_webhook_url: %w", err)
 	}
 
-	adblock := h.Risk.AdblockControl()
+	adblock := h.Risk.Adblock().AdblockControl()
 	// Read the persisted value, not the in-memory one: the operator is editing
 	// a document, and on a second process the persisted copy is what this one
 	// is reconciling against every 30 seconds.

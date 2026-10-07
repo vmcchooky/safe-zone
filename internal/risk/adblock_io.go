@@ -35,16 +35,16 @@ func splitAdblockSources(sources string) []string {
 	return result
 }
 
-func (s *Service) adblockMetaPath() string {
-	return filepath.Join(s.adblock.adblockDataRoot, "adblock_meta.json")
+func (e *AdblockEngine) adblockMetaPath() string {
+	return filepath.Join(e.adblockDataRoot, "adblock_meta.json")
 }
 
-func (s *Service) adblockCachePath() string {
-	return filepath.Join(s.adblock.adblockDataRoot, "adblock_cache.txt")
+func (e *AdblockEngine) adblockCachePath() string {
+	return filepath.Join(e.adblockDataRoot, "adblock_cache.txt")
 }
 
-func (s *Service) adblockSourceCacheRoot() string {
-	return filepath.Join(s.adblock.adblockDataRoot, "adblock_sources")
+func (e *AdblockEngine) adblockSourceCacheRoot() string {
+	return filepath.Join(e.adblockDataRoot, "adblock_sources")
 }
 
 // adblockSourceCachePath derives the on-disk location of a source's download
@@ -52,23 +52,23 @@ func (s *Service) adblockSourceCacheRoot() string {
 // which stamps the same identity into rule provenance: hashing the raw string
 // here while provenance used the canonical form gave one source two
 // identities, and two cache files for a case change that meant the same source.
-func (s *Service) adblockSourceCachePath(source string) string {
+func (e *AdblockEngine) adblockSourceCachePath(source string) string {
 	sum := sha256.Sum256([]byte(canonicalSourceKey(strings.TrimSpace(source))))
-	return filepath.Join(s.adblockSourceCacheRoot(), fmt.Sprintf("%x.txt", sum[:]))
+	return filepath.Join(e.adblockSourceCacheRoot(), fmt.Sprintf("%x.txt", sum[:]))
 }
 
-func (s *Service) ensureAdblockDataRoot() error {
-	if strings.TrimSpace(s.adblock.adblockDataRoot) == "" {
+func (e *AdblockEngine) ensureAdblockDataRoot() error {
+	if strings.TrimSpace(e.adblockDataRoot) == "" {
 		return nil
 	}
-	return os.MkdirAll(s.adblock.adblockDataRoot, 0o750)
+	return os.MkdirAll(e.adblockDataRoot, 0o750)
 }
 
-func (s *Service) ensureAdblockSourceCacheRoot() error {
-	if err := s.ensureAdblockDataRoot(); err != nil {
+func (e *AdblockEngine) ensureAdblockSourceCacheRoot() error {
+	if err := e.ensureAdblockDataRoot(); err != nil {
 		return err
 	}
-	return os.MkdirAll(s.adblockSourceCacheRoot(), 0o750)
+	return os.MkdirAll(e.adblockSourceCacheRoot(), 0o750)
 }
 
 func replaceFile(tmpPath, finalPath string) error {
@@ -118,12 +118,12 @@ func adblockSourceMetaFromHeader(header http.Header) adblockSourceMeta {
 	}
 }
 
-func (s *Service) saveAdblockMeta(metaPath string, meta map[string]adblockSourceMeta) {
+func (e *AdblockEngine) saveAdblockMeta(metaPath string, meta map[string]adblockSourceMeta) {
 	metaData, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return
 	}
-	if err := s.ensureAdblockDataRoot(); err != nil {
+	if err := e.ensureAdblockDataRoot(); err != nil {
 		logjson.Warn("failed to create adblock data root", map[string]any{"error": err.Error()})
 		return
 	}
@@ -196,7 +196,7 @@ func parseAdblockSectionMarker(raw string) (name string, end bool) {
 	}
 }
 
-func (s *Service) parseAdblockSourceInto(reader io.Reader, staging *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
+func (e *AdblockEngine) parseAdblockSourceInto(reader io.Reader, staging *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
 	if staging == nil {
 		return errors.New("adblock staging trie is nil")
 	}
@@ -262,12 +262,12 @@ func (s *Service) parseAdblockSourceInto(reader io.Reader, staging *domaintrie.T
 // preserves first-wins per (domain, scope). Remote fetches must not use this
 // helper directly: saveAdblockSourceCache parses into staging and merges only
 // after the cache commit (Close, Sync, replace) succeeds.
-func (s *Service) parseAdblockSource(reader io.Reader, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
+func (e *AdblockEngine) parseAdblockSource(reader io.Reader, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
 	if trie == nil {
 		return errors.New("adblock destination trie is nil")
 	}
 	staging := domaintrie.NewTrie()
-	if err := s.parseAdblockSourceInto(reader, staging, sourceID, category, scope, origin); err != nil {
+	if err := e.parseAdblockSourceInto(reader, staging, sourceID, category, scope, origin); err != nil {
 		return err
 	}
 	trie.MergeFrom(staging)
@@ -282,7 +282,7 @@ func (s *Service) parseAdblockSource(reader io.Reader, trie *domaintrie.Trie, so
 // Legacy v1 domain-only content is lossy (exact/suffix provenance is dropped
 // on write) and reloads as suffix/unknown/block for degraded-mode continuity,
 // never as a lossless typed restore.
-func (s *Service) parseAdblockCache(reader io.Reader, trie *domaintrie.Trie) bool {
+func (e *AdblockEngine) parseAdblockCache(reader io.Reader, trie *domaintrie.Trie) bool {
 	if trie == nil {
 		return false
 	}
@@ -354,14 +354,14 @@ func (s *Service) parseAdblockCache(reader io.Reader, trie *domaintrie.Trie) boo
 // replace all succeed. A cache persistence failure therefore contributes
 // exactly zero rules; the sync loop's fallback to the old cache file then
 // merges only old data, never a mix of uncommitted refresh plus old cache.
-func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
+func (e *AdblockEngine) saveAdblockSourceCache(source string, reader io.Reader, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) error {
 	if trie == nil {
 		return errors.New("adblock destination trie is nil")
 	}
-	if err := s.ensureAdblockSourceCacheRoot(); err != nil {
+	if err := e.ensureAdblockSourceCacheRoot(); err != nil {
 		return err
 	}
-	finalPath := s.adblockSourceCachePath(source)
+	finalPath := e.adblockSourceCachePath(source)
 	f, tmpPath, err := createReplaceTempFile(finalPath)
 	if err != nil {
 		return err
@@ -369,7 +369,7 @@ func (s *Service) saveAdblockSourceCache(source string, reader io.Reader, trie *
 
 	staging := domaintrie.NewTrie()
 	tee := io.TeeReader(reader, f)
-	parseErr := s.parseAdblockSourceInto(tee, staging, sourceID, category, scope, origin)
+	parseErr := e.parseAdblockSourceInto(tee, staging, sourceID, category, scope, origin)
 	closeErr := f.Close()
 	if parseErr != nil {
 		_ = os.Remove(tmpPath)
@@ -411,14 +411,14 @@ func syncPath(path string) error {
 	return f.Sync()
 }
 
-func (s *Service) loadAdblockSourceCache(source string, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) bool {
-	f, err := os.Open(s.adblockSourceCachePath(source))
+func (e *AdblockEngine) loadAdblockSourceCache(source string, trie *domaintrie.Trie, sourceID string, category string, scope domaintrie.RuleScope, origin domaintrie.ScopeOrigin) bool {
+	f, err := os.Open(e.adblockSourceCachePath(source))
 	if err != nil {
 		return false
 	}
 	defer func() { _ = f.Close() }()
 
-	if err := s.parseAdblockSource(f, trie, sourceID, category, scope, origin); err != nil {
+	if err := e.parseAdblockSource(f, trie, sourceID, category, scope, origin); err != nil {
 		logjson.Warn("error reading adblock source cache", map[string]any{"source": source, "error": err.Error()})
 		return false
 	}

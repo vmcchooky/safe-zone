@@ -38,7 +38,7 @@ func shadowRule(domain string, scope domaintrie.RuleScope, origin domaintrie.Sco
 
 func mustShadowStatus(t *testing.T, svc *Service) AdblockShadowExactStatus {
 	t.Helper()
-	return svc.AdblockShadowExactStatus()
+	return svc.adblock.AdblockShadowExactStatus()
 }
 
 // Origin producers: resolve assigns GlobalDefault unless an explicit valid
@@ -53,26 +53,26 @@ func TestShadowResolveOriginVariants(t *testing.T) {
 	t.Cleanup(func() { _ = storeDB.Close() })
 	svc := &Service{adblock: &AdblockEngine{adblockDataRoot: tempDir}, store: storeDB}
 	svc.adblock.adblockMatchMode.Store(string(adblockMatchModeSuffix))
-	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
+	svc.adblock.SetAdblockSourcePolicies(parseAdblockSourcePolicies(`{
 		"https://exact.test/hosts": {"category":"ads","scope":"exact"},
 		"https://suffix.test/hosts": {"category":"ads","scope":"suffix"},
 		"https://catonly.test/hosts": {"category":"tracking"},
 		"https://bad.test/hosts": {"scope":"glob"}
 	}`))
 
-	if _, _, origin := svc.resolveAdblockSourcePolicy("https://missing.test/hosts"); origin != domaintrie.OriginGlobalDefault {
+	if _, _, origin := svc.adblock.resolveAdblockSourcePolicy("https://missing.test/hosts"); origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("unconfigured source must be GlobalDefault, got %v", origin)
 	}
-	if _, _, origin := svc.resolveAdblockSourcePolicy("https://catonly.test/hosts"); origin != domaintrie.OriginGlobalDefault {
+	if _, _, origin := svc.adblock.resolveAdblockSourcePolicy("https://catonly.test/hosts"); origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("category-only policy must stay GlobalDefault, got %v", origin)
 	}
-	if _, _, origin := svc.resolveAdblockSourcePolicy("https://bad.test/hosts"); origin != domaintrie.OriginGlobalDefault {
+	if _, _, origin := svc.adblock.resolveAdblockSourcePolicy("https://bad.test/hosts"); origin != domaintrie.OriginGlobalDefault {
 		t.Fatalf("invalid scope fallback must stay GlobalDefault, got %v", origin)
 	}
-	if cat, scope, origin := svc.resolveAdblockSourcePolicy("https://exact.test/hosts"); cat != "ads" || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginSourcePolicyExact {
+	if cat, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://exact.test/hosts"); cat != "ads" || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginSourcePolicyExact {
 		t.Fatalf("explicit exact must pin origin, got %s/%s/%v", cat, scope, origin)
 	}
-	if _, scope, origin := svc.resolveAdblockSourcePolicy("https://suffix.test/hosts"); scope != domaintrie.RuleScopeSuffix || origin != domaintrie.OriginSourcePolicySuffix {
+	if _, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://suffix.test/hosts"); scope != domaintrie.RuleScopeSuffix || origin != domaintrie.OriginSourcePolicySuffix {
 		t.Fatalf("explicit suffix must pin origin, got %s/%v", scope, origin)
 	}
 }
@@ -82,7 +82,7 @@ func TestShadowParseThreadsOrigin(t *testing.T) {
 	svc := newParseTestService(t)
 	trie := domaintrie.NewTrie()
 	body := "0.0.0.0 plain.example.com\n*.wild.example.com\n"
-	if err := svc.parseAdblockSource(strings.NewReader(body), trie, "src", "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginSourcePolicySuffix); err != nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader(body), trie, "src", "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginSourcePolicySuffix); err != nil {
 		t.Fatal(err)
 	}
 	plain, ok := trie.MatchRule("plain.example.com")
@@ -100,10 +100,10 @@ func TestShadowMergePreservesOrigin(t *testing.T) {
 	svc := newParseTestService(t)
 	trie := domaintrie.NewTrie()
 	body := "0.0.0.0 dup.example.com\n"
-	if err := svc.parseAdblockSource(strings.NewReader(body), trie, "a", "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader(body), trie, "a", "ads", domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.parseAdblockSource(strings.NewReader(body), trie, "b", "tracking", domaintrie.RuleScopeSuffix, domaintrie.OriginSourcePolicySuffix); err != nil {
+	if err := svc.adblock.parseAdblockSource(strings.NewReader(body), trie, "b", "tracking", domaintrie.RuleScopeSuffix, domaintrie.OriginSourcePolicySuffix); err != nil {
 		t.Fatal(err)
 	}
 	rule, ok := trie.MatchRule("dup.example.com")
@@ -118,13 +118,13 @@ func TestShadowPerSourceCacheReparseOrigin(t *testing.T) {
 	source := "https://example.com/reparse-origin"
 	srcID := canonicalSourceID(source)
 	dest := domaintrie.NewTrie()
-	if err := svc.saveAdblockSourceCache(source,
+	if err := svc.adblock.saveAdblockSourceCache(source,
 		strings.NewReader("0.0.0.0 reparse.example.com\n"),
 		dest, srcID, "ads", domaintrie.RuleScopeExact, domaintrie.OriginSourcePolicyExact); err != nil {
 		t.Fatal(err)
 	}
 	loaded := domaintrie.NewTrie()
-	if !svc.loadAdblockSourceCache(source, loaded, srcID, "ads", domaintrie.RuleScopeExact, domaintrie.OriginSourcePolicyExact) {
+	if !svc.adblock.loadAdblockSourceCache(source, loaded, srcID, "ads", domaintrie.RuleScopeExact, domaintrie.OriginSourcePolicyExact) {
 		t.Fatal("expected per-source cache to reload")
 	}
 	rule, ok := loaded.MatchRule("reparse.example.com")
@@ -138,7 +138,7 @@ func TestShadowLegacyCacheOrigin(t *testing.T) {
 	svc := newParseTestService(t)
 	svc.saveAdblockCacheRaw("legacy-origin.example.com\n")
 	loaded := domaintrie.NewTrie()
-	if !svc.loadAdblockCache(loaded) {
+	if !svc.adblock.loadAdblockCache(loaded) {
 		t.Fatal("expected legacy cache to load")
 	}
 	rule, ok := loaded.MatchRule("sub.legacy-origin.example.com")
@@ -153,9 +153,9 @@ func TestShadowGlobalCacheRoundTripUnknown(t *testing.T) {
 	svc := newParseTestService(t)
 	built := domaintrie.NewTrie()
 	built.AddRule(domaintrie.Rule{Domain: "rt.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "src", Category: "ads", Action: domaintrie.RuleActionBlock, Origin: domaintrie.OriginGlobalDefault})
-	svc.saveAdblockCache(built)
+	svc.adblock.saveAdblockCache(built)
 	loaded := domaintrie.NewTrie()
-	if !svc.loadAdblockCache(loaded) {
+	if !svc.adblock.loadAdblockCache(loaded) {
 		t.Fatal("expected cache reload")
 	}
 	rule, ok := loaded.MatchRule("sub.rt.example.com")
@@ -174,9 +174,9 @@ func TestShadowCacheV2GoldenBytes(t *testing.T) {
 	built := domaintrie.NewTrie()
 	built.AddRule(domaintrie.Rule{Domain: "b.example.com", Scope: domaintrie.RuleScopeExact, SourceID: "src-a", Category: "ads", Action: domaintrie.RuleActionBlock, Origin: domaintrie.OriginSourcePolicyExact})
 	built.AddRule(domaintrie.Rule{Domain: "a.example.com", Scope: domaintrie.RuleScopeSuffix, SourceID: "src-b", Category: "tracking", Action: domaintrie.RuleActionBlock, Origin: domaintrie.OriginWildcard})
-	svc.saveAdblockCache(built)
+	svc.adblock.saveAdblockCache(built)
 
-	raw, err := os.ReadFile(svc.adblockCachePath())
+	raw, err := os.ReadFile(svc.adblock.adblockCachePath())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +201,7 @@ func TestShadowOldFixtureAndSixFieldRejected(t *testing.T) {
 	svc.saveAdblockCacheRaw(domaintrie.CacheV2Header + "\n" +
 		"old.example.com\tsuffix\tads\tblock\tsrc-old\n")
 	loaded := domaintrie.NewTrie()
-	if !svc.loadAdblockCache(loaded) {
+	if !svc.adblock.loadAdblockCache(loaded) {
 		t.Fatal("expected old fixture to load")
 	}
 	rule, ok := loaded.MatchRule("sub.old.example.com")
@@ -231,20 +231,20 @@ func TestShadowFlagConfigContract(t *testing.T) {
 		return svc
 	}
 
-	if got := build(t, "false", false).AdblockShadowExactStatus(); got.Enabled || got.Active {
+	if got := build(t, "false", false).adblock.AdblockShadowExactStatus(); got.Enabled || got.Active {
 		t.Fatalf("env=false + option=false must be disabled, got %+v", got)
 	}
-	if got := build(t, "true", false).AdblockShadowExactStatus(); !got.Enabled {
+	if got := build(t, "true", false).adblock.AdblockShadowExactStatus(); !got.Enabled {
 		t.Fatalf("env=true + option=false must be enabled, got %+v", got)
 	}
-	if got := build(t, "false", true).AdblockShadowExactStatus(); !got.Enabled {
+	if got := build(t, "false", true).adblock.AdblockShadowExactStatus(); !got.Enabled {
 		t.Fatalf("env=false + option=true must be enabled, got %+v", got)
 	}
 
 	// Startup-only: flipping env after construction changes nothing.
 	svc := build(t, "false", false)
 	t.Setenv("SAFE_ZONE_ADBLOCK_SHADOW_EXACT_ENABLED", "true")
-	if got := svc.AdblockShadowExactStatus(); got.Enabled || got.Active {
+	if got := svc.adblock.AdblockShadowExactStatus(); got.Enabled || got.Active {
 		t.Fatalf("post-construction env change must not enable, got %+v", got)
 	}
 }
@@ -338,7 +338,7 @@ func TestShadowActiveConditions(t *testing.T) {
 		for _, r := range rules {
 			trie.AddRule(r)
 		}
-		svc.AdblockTrieOverride(trie)
+		svc.adblock.AdblockTrieOverride(trie)
 
 		if got := mustShadowStatus(t, svc); !got.Enabled || got.Active {
 			t.Fatalf("expected enabled+inactive under legacy, got %+v", got)
@@ -560,7 +560,7 @@ func TestShadowConcurrentRaceFree(t *testing.T) {
 			defer wg.Done()
 			for i := 0; i < 25; i++ {
 				_ = svc.Policy(context.Background(), "sub.race-sh.example.com", ClientInfo{})
-				_ = svc.AdblockStatus()
+				_ = svc.adblock.AdblockStatus()
 			}
 		}()
 	}
@@ -586,7 +586,7 @@ func TestShadowStatusNoLeak(t *testing.T) {
 	svc := newAdblockExceptionService(t, Options{AdblockShadowExactEnabled: true}, rules, cfg)
 
 	_ = svc.Policy(context.Background(), domain, ClientInfo{})
-	status := svc.AdblockStatus()
+	status := svc.adblock.AdblockStatus()
 	raw, err := json.Marshal(status.ShadowExact)
 	if err != nil {
 		t.Fatal(err)

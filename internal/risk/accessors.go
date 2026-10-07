@@ -7,21 +7,20 @@ import (
 	"safe-zone/internal/ai"
 	"safe-zone/internal/analysis"
 	"safe-zone/internal/cache"
-	"safe-zone/internal/domaintrie"
 	"safe-zone/internal/osint"
 	"safe-zone/internal/store"
 )
 
-// AdblockTrieOverride replaces the in-memory adblock trie. Production flows
-// must go through syncAdblockLists; this seam exists so transport-level
-// tests (e.g. the dns-resolver /v1/policy endpoint) can pin trie contents
-// without a network sync. A nil trie is normalized to an empty trie so
-// Policy never observes a nil pointer.
-func (s *Service) AdblockTrieOverride(trie *domaintrie.Trie) {
-	if trie == nil {
-		trie = domaintrie.NewTrie()
+// Adblock exposes the adblock subsystem engine. All adblock behavior
+// lives on AdblockEngine; callers outside this package (API handlers,
+// DNS status, eval) reach it through here instead of through Service
+// methods. NewService always constructs the engine, so a nil return only
+// arises from a nil Service.
+func (s *Service) Adblock() *AdblockEngine {
+	if s == nil {
+		return nil
 	}
-	s.adblock.adblockTrie.Store(trie)
+	return s.adblock
 }
 
 // StoreDB returns the underlying SQLite store, or nil if not configured.

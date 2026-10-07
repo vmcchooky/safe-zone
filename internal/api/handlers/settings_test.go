@@ -186,14 +186,14 @@ func TestSettingsAdblockToggleRoundTrip(t *testing.T) {
 	if code, body := postSettings(t, ts, `{"adblock_enabled":false}`); code != http.StatusOK {
 		t.Fatalf("disable adblock: got %d %v", code, body)
 	}
-	if control := ts.Handler.Risk.AdblockControl(); control.Enabled {
+	if control := ts.Handler.Risk.Adblock().AdblockControl(); control.Enabled {
 		t.Fatal("adblock must be disabled after the API call")
 	}
 
 	if code, body := postSettings(t, ts, `{"adblock_enabled":true}`); code != http.StatusOK {
 		t.Fatalf("re-enable adblock: got %d %v", code, body)
 	}
-	if control := ts.Handler.Risk.AdblockControl(); !control.Enabled {
+	if control := ts.Handler.Risk.Adblock().AdblockControl(); !control.Enabled {
 		t.Fatal("adblock must be enabled again after the API call")
 	}
 }
@@ -206,14 +206,14 @@ func TestSettingsAdblockMatchModeRejectsUnknownValue(t *testing.T) {
 		t.Fatalf("expected 400 for an unsupported match mode, got %d", code)
 	}
 	// A rejected request must not have changed anything.
-	if got := ts.Handler.Risk.AdblockControl().MatchMode; got == "regex" {
+	if got := ts.Handler.Risk.Adblock().AdblockControl().MatchMode; got == "regex" {
 		t.Fatal("invalid match mode must not be applied")
 	}
 
 	if code, body := postSettings(t, ts, `{"adblock_match_mode":"exact"}`); code != http.StatusOK {
 		t.Fatalf("set exact: got %d %v", code, body)
 	}
-	if got := ts.Handler.Risk.AdblockControl().MatchMode; got != "exact" {
+	if got := ts.Handler.Risk.Adblock().AdblockControl().MatchMode; got != "exact" {
 		t.Fatalf("match mode = %q; want exact", got)
 	}
 }
@@ -230,7 +230,7 @@ func TestSettingsOmittedAdblockFieldsAreNotMutated(t *testing.T) {
 	if code, body := postSettings(t, ts, `{"telemetry_retention_days":45}`); code != http.StatusOK {
 		t.Fatalf("save retention: got %d %v", code, body)
 	}
-	if ts.Handler.Risk.AdblockControl().Enabled {
+	if ts.Handler.Risk.Adblock().AdblockControl().Enabled {
 		t.Fatal("an unrelated settings save must not change the adblock switch")
 	}
 }

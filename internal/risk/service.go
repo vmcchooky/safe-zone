@@ -191,9 +191,10 @@ type Service struct {
 	osint             *osint.Service
 
 	// adblock owns the entire adblock subsystem: rule trie, sync metadata,
-	// per-source policies, shadow observation and content exceptions. See
-	// AdblockEngine; Service methods that need adblock behavior delegate
-	// explicitly rather than reaching into its fields.
+	// per-source policies, shadow observation and content exceptions. All
+	// adblock behavior lives on AdblockEngine; Service only constructs it
+	// in NewService and hands it a lifecycle context plus the store for
+	// the goroutines that need them.
 	adblock         *AdblockEngine
 	mlClassifier    analysis.DomainClassifier
 	mlMode          analysis.MLMode
@@ -549,15 +550,16 @@ func NewService(options Options) *Service {
 		svc.adblock.adblockExceptionsPinned = true
 	}
 	svc.adblock.adblockExceptions.Store(newEmptyAdblockExceptionSnapshot())
-	svc.reloadAdblockExceptions()
-	svc.refreshAdblockEnabled()
+	svc.adblock.policySemantics = svc.policySemantics
+	svc.adblock.reloadAdblockExceptions()
+	svc.adblock.refreshAdblockEnabled(svc.store)
 	// Reconcile the persisted match mode at startup so an operator change
 	// survives a restart instead of reverting to the environment default.
-	svc.refreshAdblockMatchMode()
+	svc.adblock.refreshAdblockMatchMode(svc.store)
 	// Same reconciliation for per-source policies: a persisted change must
 	// survive a restart, and the periodic refresh keeps both processes in step
 	// afterwards so the policy no longer needs a two-service restart to apply.
-	svc.refreshAdblockSourcePolicies()
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
 	if svc.redis != nil {
 		svc.subscribeReload = svc.redis.Subscribe
 	}
@@ -580,8 +582,8 @@ func NewService(options Options) *Service {
 	}
 
 	if !options.DisableAdblockSync {
-		go svc.runAdblockSync()
-		go svc.runAdblockConfigSync()
+		go svc.adblock.runAdblockSync(svc.lifecycleCtx)
+		go svc.adblock.runAdblockConfigSync(svc.lifecycleCtx, svc.store)
 	}
 
 	return svc

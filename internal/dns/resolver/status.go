@@ -49,7 +49,7 @@ func (r *Resolver) StatusHandler(w http.ResponseWriter, req *http.Request) {
 		// from the store on the same 30s cycle as core-api. Publishing the
 		// fingerprint here is what makes a split configuration detectable
 		// instead of something an operator has to infer.
-		"adblock": r.Risk.AdblockStatus(),
+		"adblock": r.Risk.Adblock().AdblockStatus(),
 		"endpoints": []string{
 			"/",
 			"/healthz",

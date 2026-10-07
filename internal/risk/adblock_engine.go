@@ -16,6 +16,12 @@ type AdblockEngine struct {
 	adblockDataRoot   string
 	adblockHTTPClient *http.Client
 
+	// policySemantics is snapshotted from Service at construction.
+	// Service.policySemantics is write-once in NewService, so the copy
+	// cannot drift; the engine needs it for shadow-observation gating
+	// without reaching back into the Service.
+	policySemantics PolicySemantics
+
 	// Adblock typed-rule state. adblockMatchMode mirrors
 	// SAFE_ZONE_ADBLOCK_MATCH_MODE (default suffix); adblockSourcePolicies
 	// holds the parsed per-source policies.

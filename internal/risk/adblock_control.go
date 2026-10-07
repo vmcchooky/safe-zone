@@ -10,8 +10,10 @@ import (
 	"io"
 	"sort"
 	"strings"
+	"time"
 
 	"safe-zone/internal/config"
+	"safe-zone/internal/domaintrie"
 	"safe-zone/internal/logjson"
 	"safe-zone/internal/store"
 )
@@ -49,8 +51,8 @@ const (
 // SystemConfigAdblockSourcePolicies is the store key holding the persisted
 // per-source policy document. Exported because the API layer reads it to render
 // the current value for the operator UI; writes go through
-// Service.SetAdblockSourcePoliciesJSON so validation and ordering live in one
-// place.
+// AdblockEngine.SetAdblockSourcePoliciesJSON so validation and ordering live
+// in one place.
 const SystemConfigAdblockSourcePolicies = systemConfigAdblockSourcePolicies
 
 // ErrAdblockMatchModeInvalid is returned for an unsupported match mode. The
@@ -65,10 +67,10 @@ type AdblockControl struct {
 }
 
 // AdblockControl returns the effective adblock switches.
-func (s *Service) AdblockControl() AdblockControl {
+func (e *AdblockEngine) AdblockControl() AdblockControl {
 	return AdblockControl{
-		Enabled:   s.isAdblockEnabled(),
-		MatchMode: s.currentAdblockMatchMode(),
+		Enabled:   e.isAdblockEnabled(),
+		MatchMode: e.currentAdblockMatchMode(),
 	}
 }
 
@@ -78,23 +80,23 @@ func (s *Service) AdblockControl() AdblockControl {
 // the in-memory update cannot leave a node disagreeing with the persisted
 // decision. The atomic is updated immediately afterwards, which is what makes
 // the change visible to the very next request.
-func (s *Service) SetAdblockEnabled(ctx context.Context, enabled bool) error {
+func (e *AdblockEngine) SetAdblockEnabled(ctx context.Context, st *store.DB, enabled bool) error {
 	// Fail when the store is gone rather than applying to memory only. The
 	// caller checked Enabled() before it started, so reaching this point with a
 	// dead store means it failed between the check and the write. Applying
 	// anyway returned success for a change that would silently revert on the
 	// next restart, which is the exact failure this path exists to prevent.
-	if s.store == nil || !s.store.Enabled() {
+	if st == nil || !st.Enabled() {
 		return store.ErrDisabled
 	}
 	value := "false"
 	if enabled {
 		value = "true"
 	}
-	if err := s.store.SetSystemConfig(ctx, systemConfigAdblockEnabled, value); err != nil {
+	if err := st.SetSystemConfig(ctx, systemConfigAdblockEnabled, value); err != nil {
 		return fmt.Errorf("persist adblock_enabled: %w", err)
 	}
-	s.adblock.adblockEnabled.Store(enabled)
+	e.adblockEnabled.Store(enabled)
 	logjson.Info("adblock enablement changed", map[string]any{
 		"service": "risk",
 		"enabled": enabled,
@@ -130,7 +132,7 @@ func ValidateAdblockSourcePoliciesJSON(raw string) error {
 // through refreshAdblockSourcePolicies within the reconcile interval, and
 // AdblockStatus().SourcePoliciesFingerprint is how an operator confirms both
 // nodes agree.
-func (s *Service) SetAdblockSourcePoliciesJSON(ctx context.Context, raw string) error {
+func (e *AdblockEngine) SetAdblockSourcePoliciesJSON(ctx context.Context, st *store.DB, raw string) error {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed != "" {
 		if err := validateAdblockSourcePoliciesJSON(trimmed); err != nil {
@@ -140,25 +142,25 @@ func (s *Service) SetAdblockSourcePoliciesJSON(ctx context.Context, raw string) 
 	// Same reasoning as SetAdblockEnabled: a store that failed between the
 	// caller's check and this write must surface as a failure, not as a
 	// success that a restart will undo.
-	if s.store == nil || !s.store.Enabled() {
+	if st == nil || !st.Enabled() {
 		return store.ErrDisabled
 	}
-	if err := s.store.SetSystemConfig(ctx, systemConfigAdblockSourcePolicies, trimmed); err != nil {
+	if err := st.SetSystemConfig(ctx, systemConfigAdblockSourcePolicies, trimmed); err != nil {
 		return fmt.Errorf("persist adblock_source_policies: %w", err)
 	}
 	if trimmed == "" {
-		s.SetAdblockSourcePolicies(parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, "")))
+		e.SetAdblockSourcePolicies(parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, "")))
 		return nil
 	}
-	s.SetAdblockSourcePolicies(parseAdblockSourcePolicies(trimmed))
+	e.SetAdblockSourcePolicies(parseAdblockSourcePolicies(trimmed))
 	return nil
 }
 
 // AdblockSourcePoliciesJSON returns the currently effective per-source policy
 // document, rendered from the in-memory set so it reflects what is actually in
 // force rather than what was last written.
-func (s *Service) AdblockSourcePoliciesJSON() string {
-	policies := s.currentAdblockSourcePolicies()
+func (e *AdblockEngine) AdblockSourcePoliciesJSON() string {
+	policies := e.currentAdblockSourcePolicies()
 	if len(policies) == 0 {
 		return ""
 	}
@@ -176,18 +178,18 @@ func (s *Service) AdblockSourcePoliciesJSON() string {
 // is allowed to fall back to the on-disk cache, which is too slow to run
 // inside an API request. The request is instead handed to the sync goroutine
 // through a coalescing channel: repeated calls collapse into one rebuild.
-func (s *Service) SetAdblockMatchMode(ctx context.Context, mode string) error {
+func (e *AdblockEngine) SetAdblockMatchMode(ctx context.Context, st *store.DB, mode string) error {
 	normalized := strings.ToLower(strings.TrimSpace(mode))
 	if normalized != string(adblockMatchModeSuffix) && normalized != string(adblockMatchModeExact) {
 		return fmt.Errorf("%w: got %q", ErrAdblockMatchModeInvalid, mode)
 	}
-	if s.store != nil && s.store.Enabled() {
-		if err := s.store.SetSystemConfig(ctx, systemConfigAdblockMatchMode, normalized); err != nil {
+	if st != nil && st.Enabled() {
+		if err := st.SetSystemConfig(ctx, systemConfigAdblockMatchMode, normalized); err != nil {
 			return fmt.Errorf("persist adblock_match_mode: %w", err)
 		}
 	}
-	s.adblock.adblockMatchMode.Store(normalized)
-	s.RequestAdblockResync()
+	e.adblockMatchMode.Store(normalized)
+	e.RequestAdblockResync()
 	logjson.Info("adblock match mode changed", map[string]any{
 		"service":    "risk",
 		"match_mode": normalized,
@@ -197,8 +199,8 @@ func (s *Service) SetAdblockMatchMode(ctx context.Context, mode string) error {
 
 // currentAdblockMatchMode reports the mode in force, defaulting to suffix when
 // nothing has been stored yet.
-func (s *Service) currentAdblockMatchMode() string {
-	if v := s.adblock.adblockMatchMode.Load(); v != nil {
+func (e *AdblockEngine) currentAdblockMatchMode() string {
+	if v := e.adblockMatchMode.Load(); v != nil {
 		if mode, ok := v.(string); ok && mode != "" {
 			return mode
 		}
@@ -211,12 +213,12 @@ func (s *Service) currentAdblockMatchMode() string {
 // The send is non-blocking on a one-slot buffered channel: if a rebuild is
 // already pending the request is absorbed, and if no sync goroutine is running
 // the call is a harmless no-op instead of leaking a blocked sender.
-func (s *Service) RequestAdblockResync() {
-	if s.adblock.adblockResync == nil {
+func (e *AdblockEngine) RequestAdblockResync() {
+	if e.adblockResync == nil {
 		return
 	}
 	select {
-	case s.adblock.adblockResync <- struct{}{}:
+	case e.adblockResync <- struct{}{}:
 	default:
 	}
 }
@@ -256,8 +258,8 @@ func adblockSourcePoliciesFingerprint(set adblockSourcePolicySet) string {
 // none has been set. The returned set must not be mutated: it is the same map
 // the sync goroutine reads while resolving a policy per line, so a caller
 // writing to it would race.
-func (s *Service) currentAdblockSourcePolicies() adblockSourcePolicySet {
-	if set := s.adblock.adblockSourcePolicies.Load(); set != nil {
+func (e *AdblockEngine) currentAdblockSourcePolicies() adblockSourcePolicySet {
+	if set := e.adblockSourcePolicies.Load(); set != nil {
 		return *set
 	}
 	return nil
@@ -271,14 +273,14 @@ func (s *Service) currentAdblockSourcePolicies() adblockSourcePolicySet {
 // until the rules are read again. This mirrors SetAdblockMatchMode, which has
 // the same constraint, and it is the difference between a policy that is stored
 // and one that is actually in force.
-func (s *Service) SetAdblockSourcePolicies(policies adblockSourcePolicySet) {
+func (e *AdblockEngine) SetAdblockSourcePolicies(policies adblockSourcePolicySet) {
 	fingerprint := adblockSourcePoliciesFingerprint(policies)
-	if adblockSourcePoliciesFingerprint(s.currentAdblockSourcePolicies()) == fingerprint {
+	if adblockSourcePoliciesFingerprint(e.currentAdblockSourcePolicies()) == fingerprint {
 		return
 	}
 	published := policies
-	s.adblock.adblockSourcePolicies.Store(&published)
-	s.RequestAdblockResync()
+	e.adblockSourcePolicies.Store(&published)
+	e.RequestAdblockResync()
 	logjson.Info("adblock source policies changed; rule rebuild requested", map[string]any{
 		"service":      "risk",
 		"source_count": len(policies),
@@ -299,14 +301,14 @@ func (s *Service) SetAdblockSourcePolicies(policies adblockSourcePolicySet) {
 // A read error keeps the policy in force rather than falling back to the
 // environment: the fallback would revert the operator's change, and it would
 // also request a rebuild on every tick while the store stayed unhealthy.
-func (s *Service) refreshAdblockSourcePolicies() {
+func (e *AdblockEngine) refreshAdblockSourcePolicies(st *store.DB) {
 	envPolicies := parseAdblockSourcePolicies(config.String(envAdblockSourcePoliciesJSON, ""))
-	if s.store == nil || !s.store.Enabled() {
-		s.SetAdblockSourcePolicies(envPolicies)
+	if st == nil || !st.Enabled() {
+		e.SetAdblockSourcePolicies(envPolicies)
 		return
 	}
 
-	raw, err := s.store.GetSystemConfig(context.Background(), systemConfigAdblockSourcePolicies)
+	raw, err := st.GetSystemConfig(context.Background(), systemConfigAdblockSourcePolicies)
 	if err != nil {
 		// Keep whatever is in force. Falling back to the environment here
 		// silently reverted an operator's runtime change, and because
@@ -320,8 +322,75 @@ func (s *Service) refreshAdblockSourcePolicies() {
 		return
 	}
 	if strings.TrimSpace(raw) == "" {
-		s.SetAdblockSourcePolicies(envPolicies)
+		e.SetAdblockSourcePolicies(envPolicies)
 		return
 	}
-	s.SetAdblockSourcePolicies(parseAdblockSourcePolicies(raw))
+	e.SetAdblockSourcePolicies(parseAdblockSourcePolicies(raw))
+}
+
+type AdblockStatus struct {
+	Enabled         bool   `json:"enabled"`
+	MatchMode       string `json:"match_mode"`
+	DomainCount     int    `json:"domain_count"`
+	ExactRuleCount  int    `json:"exact_rule_count"`
+	SuffixRuleCount int    `json:"suffix_rule_count"`
+	LastSyncAt      string `json:"last_sync_at,omitempty"`
+	LastSyncOK      bool   `json:"last_sync_ok"`
+	SourceCount     int    `json:"source_count"`
+	SuccessCount    int    `json:"success_count"`
+	// SourcePoliciesFingerprint digests the effective per-source policy set.
+	// core-api and dns-resolver each hold their own copy, so comparing this
+	// value across the two is how an operator confirms the nodes agree rather
+	// than assuming it. An empty set digests to a stable value, not an empty
+	// string, so "no policies" is still comparable.
+	SourcePoliciesFingerprint string                   `json:"source_policies_fingerprint"`
+	SourcePolicyCount         int                      `json:"source_policy_count"`
+	Exceptions                AdblockExceptionStatus   `json:"exceptions"`
+	ShadowExact               AdblockShadowExactStatus `json:"shadow_exact"`
+}
+
+// AdblockStatus returns a snapshot of the adblock subsystem state.
+func (e *AdblockEngine) AdblockStatus() AdblockStatus {
+	matchMode := "suffix"
+	if v := e.adblockMatchMode.Load(); v != nil {
+		if mode, ok := v.(string); ok && mode != "" {
+			matchMode = mode
+		}
+	}
+	status := AdblockStatus{
+		Enabled:      e.isAdblockEnabled(),
+		MatchMode:    matchMode,
+		LastSyncOK:   e.adblockLastSyncOK.Load(),
+		SourceCount:  int(e.adblockSrcCount.Load()),
+		SuccessCount: int(e.adblockOKCount.Load()),
+		Exceptions:   e.AdblockExceptionStatus(),
+		ShadowExact:  e.AdblockShadowExactStatus(),
+	}
+	if policies := e.currentAdblockSourcePolicies(); policies != nil {
+		status.SourcePoliciesFingerprint = adblockSourcePoliciesFingerprint(policies)
+		status.SourcePolicyCount = len(policies)
+	}
+	if t := e.adblockTrie.Load(); t != nil {
+		status.DomainCount = t.Count()
+		status.ExactRuleCount = t.ExactCount()
+		status.SuffixRuleCount = t.SuffixCount()
+	}
+	if v := e.adblockLastSync.Load(); v != nil {
+		if ts, ok := v.(time.Time); ok {
+			status.LastSyncAt = ts.UTC().Format(time.RFC3339)
+		}
+	}
+	return status
+}
+
+// AdblockTrieOverride replaces the in-memory adblock trie. Production flows
+// must go through syncAdblockLists; this seam exists so transport-level
+// tests (e.g. the dns-resolver /v1/policy endpoint) can pin trie contents
+// without a network sync. A nil trie is normalized to an empty trie so
+// Policy never observes a nil pointer.
+func (e *AdblockEngine) AdblockTrieOverride(trie *domaintrie.Trie) {
+	if trie == nil {
+		trie = domaintrie.NewTrie()
+	}
+	e.adblockTrie.Store(trie)
 }

@@ -53,7 +53,7 @@ func newPolicyEndpointTestServer(t *testing.T, semantics risk.PolicySemantics, b
 
 	trie := domaintrie.NewTrie()
 	trie.Add(blockedDomain)
-	riskService.AdblockTrieOverride(trie)
+	riskService.Adblock().AdblockTrieOverride(trie)
 
 	t.Cleanup(func() { _ = riskService.Close() })
 
@@ -193,7 +193,7 @@ func TestPolicyEndpointReportsExceptionDecision(t *testing.T) {
 
 	trie := domaintrie.NewTrie()
 	trie.Add(domain)
-	riskService.AdblockTrieOverride(trie)
+	riskService.Adblock().AdblockTrieOverride(trie)
 
 	t.Cleanup(func() { _ = riskService.Close() })
 

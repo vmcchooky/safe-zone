@@ -178,7 +178,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 			// 2.5 Check Adblock Trie
 			adTrie := s.adblock.adblockTrie.Load()
 			assess.Evaluated = append(assess.Evaluated, LayerWhitelist, LayerAdblock)
-			if s.isAdblockEnabled() && adTrie != nil && adTrie.Match(normalized) {
+			if s.adblock.isAdblockEnabled() && adTrie != nil && adTrie.Match(normalized) {
 				if s.policySemantics == PolicySemanticsLegacy {
 					result = analysis.Result{
 						Domain:     normalized,

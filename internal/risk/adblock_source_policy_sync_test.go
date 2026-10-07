@@ -59,7 +59,7 @@ func TestSetAdblockSourcePoliciesRequestsRebuildOnChange(t *testing.T) {
 	svc.adblock.adblockResync = make(chan struct{}, 1)
 	svc.adblock.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
 
-	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
+	svc.adblock.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
 		`{"https://a.test/x":{"category":"ads","scope":"suffix"}}`))
 
 	select {
@@ -67,7 +67,7 @@ func TestSetAdblockSourcePoliciesRequestsRebuildOnChange(t *testing.T) {
 	default:
 		t.Fatal("a policy change must request a rule rebuild")
 	}
-	if got := svc.currentAdblockSourcePolicies()["https://a.test/x"]; got.Category != "ads" {
+	if got := svc.adblock.currentAdblockSourcePolicies()["https://a.test/x"]; got.Category != "ads" {
 		t.Fatalf("policy not published: %+v", got)
 	}
 
@@ -77,7 +77,7 @@ func TestSetAdblockSourcePoliciesRequestsRebuildOnChange(t *testing.T) {
 	case <-svc.adblock.adblockResync:
 	default:
 	}
-	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
+	svc.adblock.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
 		`{"https://a.test/x":{"category":"ads","scope":"suffix"}}`))
 	select {
 	case <-svc.adblock.adblockResync:
@@ -86,7 +86,7 @@ func TestSetAdblockSourcePoliciesRequestsRebuildOnChange(t *testing.T) {
 	}
 
 	// A real change does rebuild.
-	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
+	svc.adblock.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
 		`{"https://a.test/x":{"category":"tracking","scope":"suffix"}}`))
 	select {
 	case <-svc.adblock.adblockResync:
@@ -104,8 +104,8 @@ func TestRefreshAdblockSourcePoliciesPrefersStoreOverEnv(t *testing.T) {
 		`{"https://a.test/x":{"category":"ads","scope":"suffix"}}`)
 
 	// Environment alone.
-	svc.refreshAdblockSourcePolicies()
-	if got := svc.currentAdblockSourcePolicies()["https://a.test/x"]; got.Category != "ads" {
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
+	if got := svc.adblock.currentAdblockSourcePolicies()["https://a.test/x"]; got.Category != "ads" {
 		t.Fatalf("expected the environment policy to apply, got %+v", got)
 	}
 
@@ -114,14 +114,14 @@ func TestRefreshAdblockSourcePoliciesPrefersStoreOverEnv(t *testing.T) {
 		`{"https://a.test/x":{"category":"telemetry","scope":"exact"}}`); err != nil {
 		t.Fatalf("persist policy: %v", err)
 	}
-	svc.refreshAdblockSourcePolicies()
-	got := svc.currentAdblockSourcePolicies()["https://a.test/x"]
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
+	got := svc.adblock.currentAdblockSourcePolicies()["https://a.test/x"]
 	if got.Category != "telemetry" || got.Scope != "exact" {
 		t.Fatalf("store must win over the environment, got %+v", got)
 	}
 
 	// The resolved rule must reflect it, not just the cached set.
-	category, scope, _ := svc.resolveAdblockSourcePolicy("https://a.test/x")
+	category, scope, _ := svc.adblock.resolveAdblockSourcePolicy("https://a.test/x")
 	if category != "telemetry" || scope != domaintrie.RuleScopeExact {
 		t.Fatalf("rule resolution must use the store policy, got category=%q scope=%q", category, scope)
 	}
@@ -133,7 +133,7 @@ func TestAdblockStatusExposesSourcePolicyFingerprint(t *testing.T) {
 	svc, _ := newAdblockControlService(t)
 	svc.adblock.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
 
-	empty := svc.AdblockStatus()
+	empty := svc.adblock.AdblockStatus()
 	if empty.SourcePoliciesFingerprint == "" {
 		t.Fatal("an empty policy set must still report a comparable fingerprint")
 	}
@@ -141,9 +141,9 @@ func TestAdblockStatusExposesSourcePolicyFingerprint(t *testing.T) {
 		t.Fatalf("expected zero policies, got %d", empty.SourcePolicyCount)
 	}
 
-	svc.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
+	svc.adblock.SetAdblockSourcePolicies(parseAdblockSourcePolicies(
 		`{"https://a.test/x":{"category":"ads","scope":"suffix"}}`))
-	populated := svc.AdblockStatus()
+	populated := svc.adblock.AdblockStatus()
 	if populated.SourcePoliciesFingerprint == empty.SourcePoliciesFingerprint {
 		t.Fatal("the fingerprint must change when policies change")
 	}

@@ -29,10 +29,10 @@ func TestSourceIdentityIsCanonicalEverywhere(t *testing.T) {
 	}
 
 	// One identity: the same cache path and the same provenance digest.
-	first := svc.adblockSourceCachePath(spellings[0])
+	first := svc.adblock.adblockSourceCachePath(spellings[0])
 	firstID := canonicalSourceID(spellings[0])
 	for _, spelling := range spellings[1:] {
-		if got := svc.adblockSourceCachePath(spelling); got != first {
+		if got := svc.adblock.adblockSourceCachePath(spelling); got != first {
 			t.Fatalf("cache path for %q = %q, want the same identity as %q (%q)", spelling, got, spellings[0], first)
 		}
 		if got := canonicalSourceID(spelling); got != firstID {
@@ -41,12 +41,12 @@ func TestSourceIdentityIsCanonicalEverywhere(t *testing.T) {
 	}
 
 	// A policy written under one spelling must be found under another.
-	if err := svc.SetAdblockSourcePoliciesJSON(t.Context(),
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(t.Context(), svc.store,
 		`{"https://Example.com/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
 	for _, spelling := range spellings {
-		category, scope, origin := svc.resolveAdblockSourcePolicy(spelling)
+		category, scope, origin := svc.adblock.resolveAdblockSourcePolicy(spelling)
 		if category != "ads" || scope != domaintrie.RuleScopeExact || origin != domaintrie.OriginSourcePolicyExact {
 			t.Fatalf("lookup for %q = category %q scope %q origin %q, want the policy", spelling, category, scope, origin)
 		}
@@ -60,7 +60,7 @@ func TestSourceIdentityIsCanonicalEverywhere(t *testing.T) {
 func TestCaseOnlyKeyChangeIsNotTreatedAsAChange(t *testing.T) {
 	svc, _ := newPolicyService(t)
 
-	if err := svc.SetAdblockSourcePoliciesJSON(t.Context(),
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(t.Context(), svc.store,
 		`{"https://Example.com/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestCaseOnlyKeyChangeIsNotTreatedAsAChange(t *testing.T) {
 		t.Fatal("the first change must request a rebuild")
 	}
 
-	if err := svc.SetAdblockSourcePoliciesJSON(t.Context(),
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(t.Context(), svc.store,
 		`{"https://example.com/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +82,7 @@ func TestCaseOnlyKeyChangeIsNotTreatedAsAChange(t *testing.T) {
 func TestRealChangeAlongsideAKeyRespellIsPublished(t *testing.T) {
 	svc, _ := newPolicyService(t)
 
-	if err := svc.SetAdblockSourcePoliciesJSON(t.Context(),
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(t.Context(), svc.store,
 		`{"https://example.com/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
@@ -90,14 +90,14 @@ func TestRealChangeAlongsideAKeyRespellIsPublished(t *testing.T) {
 		t.Fatal("precondition: the first change must request a rebuild")
 	}
 
-	if err := svc.SetAdblockSourcePoliciesJSON(t.Context(),
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(t.Context(), svc.store,
 		`{"https://Example.com/hosts":{"category":"ads","scope":"suffix"}}`); err != nil {
 		t.Fatal(err)
 	}
 	if !svc.drainAdblockResync() {
 		t.Fatal("a scope change must request a rebuild even when the key is respelled")
 	}
-	_, scope, _ := svc.resolveAdblockSourcePolicy("https://example.com/hosts")
+	_, scope, _ := svc.adblock.resolveAdblockSourcePolicy("https://example.com/hosts")
 	if scope != domaintrie.RuleScopeSuffix {
 		t.Fatalf("scope = %v, want suffix", scope)
 	}
@@ -196,7 +196,7 @@ func TestSetAdblockSourcePoliciesJSONPersistsAndApplies(t *testing.T) {
 	ctx := t.Context()
 
 	raw := `{"https://a.test/hosts":{"category":"tracking","scope":"suffix"}}`
-	if err := svc.SetAdblockSourcePoliciesJSON(ctx, raw); err != nil {
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(ctx, svc.store, raw); err != nil {
 		t.Fatalf("SetAdblockSourcePoliciesJSON: %v", err)
 	}
 
@@ -208,7 +208,7 @@ func TestSetAdblockSourcePoliciesJSONPersistsAndApplies(t *testing.T) {
 		t.Fatalf("stored document = %q, want %q", stored, raw)
 	}
 
-	category, scope, origin := svc.resolveAdblockSourcePolicy("https://a.test/hosts")
+	category, scope, origin := svc.adblock.resolveAdblockSourcePolicy("https://a.test/hosts")
 	if category != "tracking" || scope != domaintrie.RuleScopeSuffix || origin != domaintrie.OriginSourcePolicySuffix {
 		t.Fatalf("policy not applied: category=%q scope=%q origin=%q", category, scope, origin)
 	}
@@ -233,22 +233,22 @@ func TestRefreshConvergesOnAChangeMadeByAnotherProcess(t *testing.T) {
 	t.Cleanup(func() { _ = reader.Close() })
 
 	emptyFingerprint := adblockSourcePoliciesFingerprint(nil)
-	if got := adblockSourcePoliciesFingerprint(reader.currentAdblockSourcePolicies()); got != emptyFingerprint {
+	if got := adblockSourcePoliciesFingerprint(reader.adblock.currentAdblockSourcePolicies()); got != emptyFingerprint {
 		t.Fatal("precondition: the reader must start with no policy")
 	}
 
 	// Another process applies a change.
-	if err := writer.SetAdblockSourcePoliciesJSON(t.Context(),
+	if err := writer.adblock.SetAdblockSourcePoliciesJSON(t.Context(), writer.store,
 		`{"https://remote.test/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
 
 	// The running reader reconciles and must agree.
-	reader.refreshAdblockSourcePolicies()
-	if got := adblockSourcePoliciesFingerprint(reader.currentAdblockSourcePolicies()); got != adblockSourcePoliciesFingerprint(writer.currentAdblockSourcePolicies()) {
+	reader.adblock.refreshAdblockSourcePolicies(reader.store)
+	if got := adblockSourcePoliciesFingerprint(reader.adblock.currentAdblockSourcePolicies()); got != adblockSourcePoliciesFingerprint(writer.adblock.currentAdblockSourcePolicies()) {
 		t.Fatal("the two processes must agree on the policy fingerprint after a reconcile")
 	}
-	category, scope, _ := reader.resolveAdblockSourcePolicy("https://remote.test/hosts")
+	category, scope, _ := reader.adblock.resolveAdblockSourcePolicy("https://remote.test/hosts")
 	if category != "ads" || scope != domaintrie.RuleScopeExact {
 		t.Fatalf("reconciled policy not applied: category=%q scope=%q", category, scope)
 	}
@@ -259,14 +259,14 @@ func TestSetAdblockSourcePoliciesJSONEmptyFallsBackToEnvironment(t *testing.T) {
 	svc, db := newPolicyTestServiceWithEnv(t, `{"https://env.test/hosts":{"category":"malware"}}`)
 	ctx := t.Context()
 
-	if err := svc.SetAdblockSourcePoliciesJSON(ctx, `{"https://set.test/hosts":{"category":"ads"}}`); err != nil {
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(ctx, svc.store, `{"https://set.test/hosts":{"category":"ads"}}`); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := svc.currentAdblockSourcePolicies()[canonicalSourceKey("https://set.test/hosts")]; !ok {
+	if _, ok := svc.adblock.currentAdblockSourcePolicies()[canonicalSourceKey("https://set.test/hosts")]; !ok {
 		t.Fatal("precondition: the set policy should be in force")
 	}
 
-	if err := svc.SetAdblockSourcePoliciesJSON(ctx, ""); err != nil {
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(ctx, svc.store, ""); err != nil {
 		t.Fatal(err)
 	}
 	stored, err := db.GetSystemConfig(ctx, systemConfigAdblockSourcePolicies)
@@ -276,7 +276,7 @@ func TestSetAdblockSourcePoliciesJSONEmptyFallsBackToEnvironment(t *testing.T) {
 	if stored != "" {
 		t.Fatalf("stored document = %q, want empty", stored)
 	}
-	if _, ok := svc.currentAdblockSourcePolicies()[canonicalSourceKey("https://env.test/hosts")]; !ok {
+	if _, ok := svc.adblock.currentAdblockSourcePolicies()[canonicalSourceKey("https://env.test/hosts")]; !ok {
 		t.Fatal("clearing the override must fall back to the environment policy")
 	}
 }
@@ -300,7 +300,7 @@ func newPolicyTestServiceWithEnv(t *testing.T, envPolicies string) (*Service, *s
 		DisableAdblockSync: true,
 	})
 	t.Cleanup(func() { _ = svc.Close() })
-	svc.refreshAdblockSourcePolicies()
+	svc.adblock.refreshAdblockSourcePolicies(svc.store)
 	return svc, db
 }
 
@@ -324,7 +324,7 @@ func TestSetAdblockSourcePoliciesJSONRejectsUnusableDocuments(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := svc.SetAdblockSourcePoliciesJSON(ctx, tc.raw)
+			err := svc.adblock.SetAdblockSourcePoliciesJSON(ctx, svc.store, tc.raw)
 			if err == nil {
 				t.Fatalf("expected %q to be rejected", tc.raw)
 			}
@@ -339,7 +339,7 @@ func TestSetAdblockSourcePoliciesJSONRejectsUnusableDocuments(t *testing.T) {
 			if stored != "" {
 				t.Fatalf("a rejected document was persisted: %q", stored)
 			}
-			if len(svc.currentAdblockSourcePolicies()) != 0 {
+			if len(svc.adblock.currentAdblockSourcePolicies()) != 0 {
 				t.Fatal("a rejected document was applied")
 			}
 		})
@@ -371,17 +371,17 @@ func TestStrictValidationAcceptsEveryDocumentTheRuntimeAccepts(t *testing.T) {
 // round-trip it.
 func TestAdblockSourcePoliciesJSONRendersTheEffectiveSet(t *testing.T) {
 	svc, _ := newPolicyService(t)
-	if got := svc.AdblockSourcePoliciesJSON(); got != "" {
+	if got := svc.adblock.AdblockSourcePoliciesJSON(); got != "" {
 		t.Fatalf("an empty set should render empty, got %q", got)
 	}
 
-	if err := svc.SetAdblockSourcePoliciesJSON(t.Context(),
+	if err := svc.adblock.SetAdblockSourcePoliciesJSON(t.Context(), svc.store,
 		`{"https://a.test/hosts":{"category":"ads","scope":"exact"}}`); err != nil {
 		t.Fatal(err)
 	}
 
 	var decoded map[string]map[string]string
-	if err := json.Unmarshal([]byte(svc.AdblockSourcePoliciesJSON()), &decoded); err != nil {
+	if err := json.Unmarshal([]byte(svc.adblock.AdblockSourcePoliciesJSON()), &decoded); err != nil {
 		t.Fatalf("rendered document is not valid JSON: %v", err)
 	}
 	if decoded["https://a.test/hosts"]["category"] != "ads" {

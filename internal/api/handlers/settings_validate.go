@@ -122,7 +122,7 @@ func (req settingsRequest) validate(ctx context.Context, db *store.DB, svc *risk
 			return nil, invalidSettings("adblock_match_mode must be %q or %q, got %q", "suffix", "exact", *req.AdblockMatchMode)
 		}
 		steps = append(steps, settingStep{field: "adblock_match_mode", apply: func() error {
-			return svc.SetAdblockMatchMode(ctx, mode)
+			return svc.Adblock().SetAdblockMatchMode(ctx, svc.StoreDB(), mode)
 		}})
 	}
 
@@ -139,7 +139,7 @@ func (req settingsRequest) validate(ctx context.Context, db *store.DB, svc *risk
 	if req.AdblockEnabled != nil {
 		enabled := *req.AdblockEnabled
 		enableStep = &settingStep{field: "adblock_enabled", apply: func() error {
-			return svc.SetAdblockEnabled(ctx, enabled)
+			return svc.Adblock().SetAdblockEnabled(ctx, svc.StoreDB(), enabled)
 		}}
 	}
 
@@ -154,7 +154,7 @@ func (req settingsRequest) validate(ctx context.Context, db *store.DB, svc *risk
 			return nil, err
 		}
 		steps = append(steps, settingStep{field: "adblock_source_policies_json", apply: func() error {
-			return svc.SetAdblockSourcePoliciesJSON(ctx, document)
+			return svc.Adblock().SetAdblockSourcePoliciesJSON(ctx, svc.StoreDB(), document)
 		}})
 	}
 

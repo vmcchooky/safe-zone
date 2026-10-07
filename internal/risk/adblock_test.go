@@ -416,8 +416,8 @@ func TestAdblockSyncReusesPerSourceCacheOn304(t *testing.T) {
 
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, sourceA)+","+publicMappedSource(t, sourceB))
 
-	service.syncAdblockLists()
-	service.syncAdblockLists()
+	service.adblock.syncAdblockLists(context.Background())
+	service.adblock.syncAdblockLists(context.Background())
 	service.adblock.adblockEnabled.Store(true)
 
 	// Assert on the trie directly so the sync contract stays independent of
@@ -453,9 +453,9 @@ func TestAdblockSyncFallsBackToSourceCacheWhenRemoteFails(t *testing.T) {
 
 	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", publicMappedSource(t, source))
 
-	service.syncAdblockLists()
+	service.adblock.syncAdblockLists(context.Background())
 	source.Close()
-	service.syncAdblockLists()
+	service.adblock.syncAdblockLists(context.Background())
 	service.adblock.adblockEnabled.Store(true)
 
 	// Assert on the trie directly so the sync contract stays independent of
@@ -506,7 +506,7 @@ func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
 			ready:   &ready,
 			release: release,
 		}
-		errCh <- service.saveAdblockSourceCache(source, reader, trie, canonicalSourceID(source), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault)
+		errCh <- service.adblock.saveAdblockSourceCache(source, reader, trie, canonicalSourceID(source), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault)
 	}
 
 	go runSave(serviceA)
@@ -522,7 +522,7 @@ func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
 	}
 
 	loadedTrie := domaintrie.NewTrie()
-	if !serviceA.loadAdblockSourceCache(source, loadedTrie, canonicalSourceID(source), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault) {
+	if !serviceA.adblock.loadAdblockSourceCache(source, loadedTrie, canonicalSourceID(source), domaintrie.DefaultRuleCategory, domaintrie.RuleScopeSuffix, domaintrie.OriginGlobalDefault) {
 		t.Fatal("expected source cache to be readable after concurrent writes")
 	}
 	if !loadedTrie.Match("ads.concurrent.test") {
