@@ -1,4 +1,4 @@
-package main
+package feedsync
 
 import (
 	"context"
@@ -26,11 +26,11 @@ func TestWarnIfFeedOversized(t *testing.T) {
 	}
 
 	t.Setenv("SAFE_ZONE_FEED_MAX_MEMBERS_WARN", "2")
-	if !warnIfFeedOversized(context.Background(), server.Addr(), "", 0, "warn-key") {
+	if !WarnIfFeedOversized(context.Background(), server.Addr(), "", 0, "warn-key") {
 		t.Fatal("expected oversize warning above threshold")
 	}
 	t.Setenv("SAFE_ZONE_FEED_MAX_MEMBERS_WARN", "100")
-	if warnIfFeedOversized(context.Background(), server.Addr(), "", 0, "warn-key") {
+	if WarnIfFeedOversized(context.Background(), server.Addr(), "", 0, "warn-key") {
 		t.Fatal("no warning expected under threshold")
 	}
 }
