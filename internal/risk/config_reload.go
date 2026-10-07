@@ -437,3 +437,10 @@ func (s *Service) ResetAnalysisConfig(ctx context.Context) (config.AnalysisConfi
 	}
 	return defaults.Clone(), nil
 }
+
+type analysisConfigReloadEvent struct {
+	Type      string `json:"type"`
+	Revision  string `json:"revision"`
+	UpdatedAt string `json:"updated_at"`
+	Source    string `json:"source"`
+}

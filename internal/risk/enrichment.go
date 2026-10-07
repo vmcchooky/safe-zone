@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -276,4 +277,83 @@ func minDuration(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+type enrichmentSignals struct {
+	// DNS classifies the apex NS lookup performed during background
+	// enrichment. DNS metadata is availability evidence only: no outcome
+	// may promote the security score or verdict on its own (PR-01/H1).
+	// The zero value means the lookup succeeded with usable NS records.
+	DNS   DNSOutcome
+	TLS   tlsinspect.Result
+	WHOIS whois.Result
+}
+
+// DNSOutcome is the closed set of apex nameserver lookup results observed
+// by background enrichment. Reason prose is derived from String, so the
+// telemetry vocabulary stays bounded.
+type DNSOutcome int
+
+const (
+	// DNSOutcomeOK means the apex returned usable NS records.
+	DNSOutcomeOK DNSOutcome = iota
+	// DNSOutcomeNXDOMAIN means the apex authoritatively does not exist.
+	DNSOutcomeNXDOMAIN
+	// DNSOutcomeNoData means the apex answered without usable NS records.
+	DNSOutcomeNoData
+	// DNSOutcomeTimeout means the lookup exceeded its deadline.
+	DNSOutcomeTimeout
+	// DNSOutcomeServerFailure covers SERVFAIL, refused and other
+	// server-side lookup errors.
+	DNSOutcomeServerFailure
+	// DNSOutcomeCanceled means the lookup context was canceled.
+	DNSOutcomeCanceled
+	// DNSOutcomeUnknownError is the catch-all for unclassified errors.
+	DNSOutcomeUnknownError
+)
+
+// String returns the bounded availability note for a non-OK outcome.
+func (o DNSOutcome) String() string {
+	switch o {
+	case DNSOutcomeNXDOMAIN:
+		return "dns: apex has no NS records (authoritative NXDOMAIN)"
+	case DNSOutcomeNoData:
+		return "dns: apex answered without usable NS records"
+	case DNSOutcomeTimeout:
+		return "dns: apex NS lookup timed out"
+	case DNSOutcomeServerFailure:
+		return "dns: apex NS lookup failed (server error)"
+	case DNSOutcomeCanceled:
+		return "dns: apex NS lookup canceled"
+	case DNSOutcomeUnknownError:
+		return "dns: apex NS lookup failed"
+	default:
+		return "dns: apex NS lookup unavailable"
+	}
+}
+
+// classifyDNSLookupErr maps a LookupNS error to a DNSOutcome. A nil error
+// with an empty answer set is classified by the caller as NoData.
+func classifyDNSLookupErr(err error) DNSOutcome {
+	if err == nil {
+		return DNSOutcomeOK
+	}
+	if errors.Is(err, context.Canceled) {
+		return DNSOutcomeCanceled
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		switch {
+		case dnsErr.IsNotFound:
+			return DNSOutcomeNXDOMAIN
+		case dnsErr.IsTimeout:
+			return DNSOutcomeTimeout
+		default:
+			return DNSOutcomeServerFailure
+		}
+	}
+	if os.IsTimeout(err) {
+		return DNSOutcomeTimeout
+	}
+	return DNSOutcomeUnknownError
 }
