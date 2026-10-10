@@ -177,7 +177,7 @@ func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates
 	// would multiply Redis RTT by attacker-controlled input length
 	// (PR-02/H4). Nearest-first and expiry semantics are unchanged.
 	err := s.withRedis(parent, func(ctx context.Context) error {
-		scores, ok, err := s.redis.ZScores(ctx, s.threatFeedKey, candidates)
+		scores, ok, err := s.redis.ZScores(ctx, s.feed.threatFeedKey, candidates)
 		if err != nil {
 			return err
 		}
