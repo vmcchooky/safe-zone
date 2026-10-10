@@ -13,11 +13,24 @@ import (
 )
 
 func (s *Service) withRedis(parent context.Context, fn func(context.Context) error) error {
-	if s == nil || s.redis == nil || !s.redis.Enabled() {
+	if s == nil {
+		return cache.ErrDisabled
+	}
+	return withRedisTimeout(parent, s.redis, s.redisTimeout, fn)
+}
+
+// withRedisTimeout runs fn with a timeout-bounded context when the given
+// Redis handle is usable, or reports cache.ErrDisabled otherwise. It is a
+// free function (not a method) so both Service behavior and the FeedEngine
+// share the single guard-and-timeout semantics instead of duplicating
+// them; the two pass their own handle and timeout, both written once at
+// construction and never reassigned.
+func withRedisTimeout(parent context.Context, r *cache.Redis, timeout time.Duration, fn func(context.Context) error) error {
+	if r == nil || !r.Enabled() {
 		return cache.ErrDisabled
 	}
 
-	ctx, cancel := context.WithTimeout(parent, s.redisTimeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	return fn(ctx)
 }

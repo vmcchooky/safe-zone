@@ -146,16 +146,19 @@ type Options struct {
 }
 
 type Service struct {
-	lifecycleCtx      context.Context
-	lifecycleCancel   context.CancelFunc
-	redis             *cache.Redis
-	redisTimeout      time.Duration
-	ttlAllowed        time.Duration
-	ttlSuspicious     time.Duration
-	ttlBlocked        time.Duration
-	recentLimit       int64
-	recentTTL         time.Duration
-	threatFeedKey     string
+	lifecycleCtx    context.Context
+	lifecycleCancel context.CancelFunc
+	redis           *cache.Redis
+	redisTimeout    time.Duration
+	ttlAllowed      time.Duration
+	ttlSuspicious   time.Duration
+	ttlBlocked      time.Duration
+	recentLimit     int64
+	recentTTL       time.Duration
+	// feed owns threat-feed matching: the live-feed Redis key plus the
+	// platform handles to read it. See FeedEngine; all feed matching
+	// behavior lives there, constructed once in NewService.
+	feed              *FeedEngine
 	feedRevisionKey   string
 	aiMu              sync.Mutex
 	ai                *ai.Client
@@ -483,16 +486,20 @@ func NewService(options Options) *Service {
 	}
 
 	svc := &Service{
-		lifecycleCtx:     lifecycleCtx,
-		lifecycleCancel:  lifecycleCancel,
-		redis:            options.Redis,
-		redisTimeout:     configDuration(options.RedisTimeout, defaultRedisTimeout),
-		ttlAllowed:       configDuration(options.TTLAllowed, defaultCacheTTLAllowed),
-		ttlSuspicious:    configDuration(options.TTLSuspicious, defaultCacheTTLSuspicious),
-		ttlBlocked:       configDuration(options.TTLBlocked, defaultCacheTTLBlocked),
-		recentLimit:      recentLimit,
-		recentTTL:        configDuration(options.RecentTTL, 24*time.Hour),
-		threatFeedKey:    threatFeedKey,
+		lifecycleCtx:    lifecycleCtx,
+		lifecycleCancel: lifecycleCancel,
+		redis:           options.Redis,
+		redisTimeout:    configDuration(options.RedisTimeout, defaultRedisTimeout),
+		ttlAllowed:      configDuration(options.TTLAllowed, defaultCacheTTLAllowed),
+		ttlSuspicious:   configDuration(options.TTLSuspicious, defaultCacheTTLSuspicious),
+		ttlBlocked:      configDuration(options.TTLBlocked, defaultCacheTTLBlocked),
+		recentLimit:     recentLimit,
+		recentTTL:       configDuration(options.RecentTTL, 24*time.Hour),
+		feed: &FeedEngine{
+			threatFeedKey: threatFeedKey,
+			redis:         options.Redis,
+			redisTimeout:  configDuration(options.RedisTimeout, defaultRedisTimeout),
+		},
 		feedRevisionKey:  feed.RevisionKey(threatFeedKey),
 		ai:               aiClient,
 		aiShared:         aiShared,

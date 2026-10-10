@@ -22,7 +22,10 @@ func assessedLayer(layers []string, layer string) bool {
 	return false
 }
 
-func (s *Service) feedResult(ctx context.Context, domain string) (analysis.Result, FeedScope) {
+func (e *FeedEngine) feedResult(ctx context.Context, domain string, brands []analysis.Brand) (analysis.Result, FeedScope) {
+	if e == nil {
+		return analysis.Result{}, FeedScope{}
+	}
 	// PR-08a/H2 scope authority: a live *exact* IOC is scoped evidence for
 	// this host and wins over the trusted-brand suffix bypass (a compromised
 	// tenant host stays blockable). A *parent-only* match under a trusted
@@ -30,7 +33,7 @@ func (s *Service) feedResult(ctx context.Context, domain string) (analysis.Resul
 	// root. Redis errors stay fail-open, as before.
 	// PR-08b/M7 shadow: the returned scope is observability only and never
 	// gates the verdict.
-	exactHit, err := s.matchExactThreatFeed(ctx, domain)
+	exactHit, err := e.matchExactThreatFeed(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
 			logjson.Warn("threat feed lookup failed", correlation.Fields(ctx, map[string]any{
@@ -53,11 +56,11 @@ func (s *Service) feedResult(ctx context.Context, domain string) (analysis.Resul
 		return threatFeedHit(domain), FeedScope{ExactMatch: true, Candidate: domain}
 	}
 
-	if analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) || analysis.IsTrustedInfraSuffix(domain) {
+	if analysis.IsTrustedBrandSuffix(domain, brands) || analysis.IsTrustedInfraSuffix(domain) {
 		return analysis.Result{}, FeedScope{TrustBypassed: true}
 	}
 
-	candidate, err := s.matchParentCandidate(ctx, domain)
+	candidate, err := e.matchParentCandidate(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
 			logjson.Warn("threat feed lookup failed", correlation.Fields(ctx, map[string]any{
@@ -135,12 +138,15 @@ func isSharedFeedApex(host string) bool {
 // matchExactThreatFeed reports whether the exact domain itself is a live
 // (unexpired) threat-feed member. Used by feedResult before the
 // trusted-suffix bypass so scoped IOC evidence wins (PR-08a/H2).
-func (s *Service) matchExactThreatFeed(parent context.Context, domain string) (bool, error) {
+func (e *FeedEngine) matchExactThreatFeed(parent context.Context, domain string) (bool, error) {
+	if e == nil {
+		return false, cache.ErrDisabled
+	}
 	candidates := ThreatFeedCandidates(domain)
 	if len(candidates) == 0 {
 		return false, nil
 	}
-	matched, err := s.matchAnyThreatFeedCandidate(parent, candidates[:1])
+	matched, err := e.matchAnyThreatFeedCandidate(parent, candidates[:1])
 	return matched != "", err
 }
 
@@ -150,7 +156,10 @@ func (s *Service) matchExactThreatFeed(parent context.Context, domain string) (b
 // (PR-08a/H2). Shared-infrastructure apexes are skipped as candidates so a
 // noisy apex IOC cannot block its tenants (FP-guard 2026-09, M7). The
 // returned candidate feeds the shadow scope trace (PR-08b/M7).
-func (s *Service) matchParentCandidate(parent context.Context, domain string) (string, error) {
+func (e *FeedEngine) matchParentCandidate(parent context.Context, domain string) (string, error) {
+	if e == nil {
+		return "", cache.ErrDisabled
+	}
 	candidates := ThreatFeedCandidates(domain)
 	if len(candidates) <= 1 {
 		return "", nil
@@ -166,18 +175,21 @@ func (s *Service) matchParentCandidate(parent context.Context, domain string) (s
 	if len(kept) == 0 {
 		return "", nil
 	}
-	return s.matchAnyThreatFeedCandidate(parent, kept)
+	return e.matchAnyThreatFeedCandidate(parent, kept)
 }
 
-func (s *Service) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (string, error) {
+func (e *FeedEngine) matchAnyThreatFeedCandidate(parent context.Context, candidates []string) (string, error) {
+	if e == nil {
+		return "", cache.ErrDisabled
+	}
 	var matched string
 	currentTime := float64(time.Now().Unix())
 	// Single round trip for the whole suffix walk: a 253-octet normalized
 	// input fans out to at most ~127 candidates, and sequential ZSCOREs
 	// would multiply Redis RTT by attacker-controlled input length
 	// (PR-02/H4). Nearest-first and expiry semantics are unchanged.
-	err := s.withRedis(parent, func(ctx context.Context) error {
-		scores, ok, err := s.redis.ZScores(ctx, s.threatFeedKey, candidates)
+	err := withRedisTimeout(parent, e.redis, e.redisTimeout, func(ctx context.Context) error {
+		scores, ok, err := e.redis.ZScores(ctx, e.threatFeedKey, candidates)
 		if err != nil {
 			return err
 		}
