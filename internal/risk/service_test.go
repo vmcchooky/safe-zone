@@ -747,7 +747,7 @@ func TestCacheStatusDisabled(t *testing.T) {
 	service := NewService(Options{
 		AnalysisConfig: config.DefaultAnalysisConfig(), RedisTimeout: 10 * time.Millisecond})
 
-	status := service.CacheStatus(context.Background())
+	status := service.telemetry.CacheStatus(context.Background())
 	if status.Configured {
 		t.Fatal("expected cache to be unconfigured")
 	}

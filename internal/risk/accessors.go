@@ -36,6 +36,18 @@ func (s *Service) ML() *MLEngine {
 	return s.ml
 }
 
+// Telemetry exposes the telemetry subsystem engine. All telemetry
+// behavior (recent-analysis ring plus persisted entries and stats) lives
+// on TelemetryEngine; callers outside this package reach it through here
+// instead of through Service methods. NewService always constructs the
+// engine, so a nil return only arises from a nil Service.
+func (s *Service) Telemetry() *TelemetryEngine {
+	if s == nil {
+		return nil
+	}
+	return s.telemetry
+}
+
 // StoreDB returns the underlying SQLite store, or nil if not configured.
 func (s *Service) StoreDB() *store.DB {
 	if s == nil {

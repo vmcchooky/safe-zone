@@ -52,7 +52,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
 		policyResult.Assessment.Timings = preTimer.timings
 		policyResult.DecisionID = decisionID
-		s.recordTelemetry(Analysis{
+		s.telemetry.recordTelemetry(Analysis{
 			Result:     policyResult.Result,
 			CacheHit:   policyResult.CacheHit,
 			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -81,7 +81,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
 		policyResult.Assessment.Timings = preTimer.timings
 		policyResult.DecisionID = decisionID
-		s.recordTelemetry(Analysis{
+		s.telemetry.recordTelemetry(Analysis{
 			Result:     policyResult.Result,
 			CacheHit:   policyResult.CacheHit,
 			AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -138,7 +138,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 				skippedLayer("security_assessment", SkipLegacyFused))
 			policyResult.Assessment.Timings = preTimer.timings
 			policyResult.DecisionID = decisionID
-			s.recordTelemetry(Analysis{
+			s.telemetry.recordTelemetry(Analysis{
 				Result:     policyResult.Result,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -187,7 +187,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 			policyResult.Assessment.Skipped = append(policyResult.Assessment.Skipped, engineSkippedLayers()...)
 			policyResult.Assessment.Timings = preTimer.timings
 			policyResult.DecisionID = decisionID
-			s.recordTelemetryWithSource(Analysis{
+			s.telemetry.recordTelemetryWithSource(Analysis{
 				Result:     lexicalResult,
 				CacheHit:   false,
 				AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),
@@ -254,7 +254,7 @@ func (s *Service) Policy(ctx context.Context, domain string, client ClientInfo) 
 		policyResult.Decision = &decision
 	}
 
-	s.recordTelemetry(Analysis{
+	s.telemetry.recordTelemetry(Analysis{
 		Result:     result,
 		CacheHit:   cacheHit,
 		AnalyzedAt: time.Now().UTC().Format(time.RFC3339Nano),

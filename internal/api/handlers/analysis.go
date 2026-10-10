@@ -113,7 +113,7 @@ func (h *Handler) AnalyzeHandler(w http.ResponseWriter, r *http.Request) {
 		URLContext:           urlContext,
 		MissingContextReason: missingContextReason,
 	})
-	h.Risk.RecordRecent(r.Context(), response)
+	h.Risk.Telemetry().RecordRecent(r.Context(), response)
 	httputil.WriteJSON(w, http.StatusOK, response)
 }
 
@@ -145,7 +145,7 @@ func (h *Handler) RecentAnalysisHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"items": h.Risk.Recent(r.Context()),
+		"items": h.Risk.Telemetry().Recent(r.Context()),
 	})
 }
 

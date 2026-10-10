@@ -229,7 +229,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 	} else {
 		a.Assessment.Skipped = append(a.Assessment.Skipped, skippedLayer(LayerURLML, SkipNoURLContext))
 	}
-	s.recordTelemetry(a, client)
+	s.telemetry.recordTelemetry(a, client)
 	return a
 }
 

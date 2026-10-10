@@ -41,7 +41,7 @@ func (h *Handler) TelemetryRecentHandler(w http.ResponseWriter, r *http.Request)
 		filter.Since = telemetryPeriodSince(period)
 	}
 
-	entries, err := h.Risk.TelemetryRecentFiltered(filter, limit, offset)
+	entries, err := h.Risk.Telemetry().TelemetryRecentFiltered(filter, limit, offset)
 	if err != nil {
 		httputil.WriteStoreError(w, r, err, "failed to list telemetry")
 		return
@@ -100,7 +100,7 @@ func (h *Handler) TelemetryStatsHandler(w http.ResponseWriter, r *http.Request) 
 		period = "24h"
 	}
 
-	stats, err := h.Risk.TelemetryStats(period)
+	stats, err := h.Risk.Telemetry().TelemetryStats(period)
 	if err != nil {
 		httputil.WriteStoreError(w, r, err, "failed to compute telemetry stats")
 		return
