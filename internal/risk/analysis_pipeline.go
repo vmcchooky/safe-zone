@@ -128,9 +128,9 @@ func (s *Service) Analyze(ctx context.Context, domain string, client ClientInfo)
 }
 
 func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client ClientInfo, options AnalyzeOptions) Analysis {
-	s.urlMLTelemetry.analyzeRequests.Add(1)
+	s.ml.urlMLTelemetry.analyzeRequests.Add(1)
 	if options.URLContext == nil {
-		s.urlMLTelemetry.noteMissingContext(options.MissingContextReason)
+		s.ml.urlMLTelemetry.noteMissingContext(options.MissingContextReason)
 	}
 	normalized, err := analysis.NormalizeDomain(domain)
 	var result analysis.Result
@@ -368,8 +368,8 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 				aiContributed = true
 			}
 			result = refined
-			if s.mlMode != analysis.MLModeDisabled && s.mlClassifier != nil && s.mlClassifier.Enabled() {
-				s.mlTelemetry.fallbacks.Add(1)
+			if s.ml.mlMode != analysis.MLModeDisabled && s.ml.mlClassifier != nil && s.ml.mlClassifier.Enabled() {
+				s.ml.mlTelemetry.fallbacks.Add(1)
 			}
 		}
 	}

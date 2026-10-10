@@ -118,9 +118,9 @@ func TestURLMLFailuresFailOpenAndRemainCorrelatable(t *testing.T) {
 				t.Fatalf("error response exposed unexpected model fields: %+v", result.URLML)
 			}
 
-			feedback, ok := service.urlMLFeedback.(*urlFeedbackStore)
+			feedback, ok := service.ml.urlMLFeedback.(*urlFeedbackStore)
 			if !ok {
-				t.Fatalf("expected in-memory feedback store, got %T", service.urlMLFeedback)
+				t.Fatalf("expected in-memory feedback store, got %T", service.ml.urlMLFeedback)
 			}
 			key := feedback.fingerprint(test.eventID)
 			feedback.mu.Lock()

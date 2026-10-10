@@ -20,7 +20,7 @@ func TestDriftPSISStaysFiniteWithAnEmptyReferenceBucket(t *testing.T) {
 	distribution[0] = 1.0 // every other reference bucket stays at zero
 
 	s := newDriftTestService(t, distribution, 100)
-	s.urlMLTelemetry.probabilityBuckets[0].Add(10)
+	s.ml.urlMLTelemetry.probabilityBuckets[0].Add(10)
 
 	status := s.urlMLDriftStatus()
 	psi := status.PopulationStabilityIndex
@@ -56,7 +56,7 @@ func TestDriftPSIScoresZeroForIdenticalDistributions(t *testing.T) {
 
 	s := newDriftTestService(t, distribution, int(total))
 	for index, count := range raw {
-		s.urlMLTelemetry.probabilityBuckets[index].Add(count)
+		s.ml.urlMLTelemetry.probabilityBuckets[index].Add(count)
 	}
 
 	status := s.urlMLDriftStatus()
@@ -91,7 +91,7 @@ func TestDriftPSISeparatesNoiseFromRealShift(t *testing.T) {
 	}
 	noiseService := newDriftTestService(t, distribution, int(total))
 	for index, count := range noisy {
-		noiseService.urlMLTelemetry.probabilityBuckets[index].Add(count)
+		noiseService.ml.urlMLTelemetry.probabilityBuckets[index].Add(count)
 	}
 	noise := noiseService.urlMLDriftStatus()
 	if noise.PopulationStabilityIndex >= noise.WatchThreshold {
@@ -105,8 +105,8 @@ func TestDriftPSISeparatesNoiseFromRealShift(t *testing.T) {
 
 	// A genuinely different distribution must alert.
 	shiftService := newDriftTestService(t, distribution, int(total))
-	shiftService.urlMLTelemetry.probabilityBuckets[0].Add(100)
-	shiftService.urlMLTelemetry.probabilityBuckets[9].Add(900)
+	shiftService.ml.urlMLTelemetry.probabilityBuckets[0].Add(100)
+	shiftService.ml.urlMLTelemetry.probabilityBuckets[9].Add(900)
 	shift := shiftService.urlMLDriftStatus()
 	if shift.PopulationStabilityIndex <= shift.AlertThreshold {
 		t.Fatalf("a real shift scored %v, want above the alert threshold %v",
@@ -124,7 +124,7 @@ func TestDriftPSIIsSkippedWithoutAReferenceRowCount(t *testing.T) {
 	distribution[0] = 1.0
 
 	s := newDriftTestService(t, distribution, 0)
-	s.urlMLTelemetry.probabilityBuckets[0].Add(10)
+	s.ml.urlMLTelemetry.probabilityBuckets[0].Add(10)
 
 	status := s.urlMLDriftStatus()
 	if status.PopulationStabilityIndex != 0 {
@@ -140,14 +140,16 @@ func newDriftTestService(t *testing.T, distribution []float64, referenceRows int
 	bucketNames := make([]string, len(mlProbabilityBuckets))
 	copy(bucketNames, mlProbabilityBuckets[:])
 	return &Service{
-		urlMLOpsBaseline: &URLOperationalBaseline{
-			ReferenceKind:      "frozen_operational_shadow_traffic",
-			ReferenceRows:      referenceRows,
-			BucketNames:        bucketNames,
-			Distribution:       distribution,
-			MinimumLiveSamples: 1,
-			WatchThreshold:     0.1,
-			AlertThreshold:     0.25,
+		ml: &MLEngine{
+			urlMLOpsBaseline: &URLOperationalBaseline{
+				ReferenceKind:      "frozen_operational_shadow_traffic",
+				ReferenceRows:      referenceRows,
+				BucketNames:        bucketNames,
+				Distribution:       distribution,
+				MinimumLiveSamples: 1,
+				WatchThreshold:     0.1,
+				AlertThreshold:     0.25,
+			},
 		},
 	}
 }
@@ -161,7 +163,7 @@ func TestURLMLStatusIsAlwaysJSONEncodable(t *testing.T) {
 
 	// Drive the p95 into the overflow bucket, which used to yield -1.
 	for range 10 {
-		s.urlMLTelemetry.observeLatency(200 * time.Millisecond)
+		s.ml.urlMLTelemetry.observeLatency(200 * time.Millisecond)
 	}
 	if _, err := json.Marshal(s.URLMLStatus(t.Context())); err != nil {
 		t.Fatalf("URLMLStatus must encode: %v", err)
