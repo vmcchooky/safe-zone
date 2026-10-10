@@ -160,7 +160,7 @@ func (s *Service) applyOSINT(ctx context.Context, domain string, result analysis
 		return updated
 	}
 
-	modelRevision := s.currentMLPolicyRevision()
+	modelRevision := s.ml.currentMLPolicyRevision()
 	cacheKey := analysisCacheKey(domain, modelRevision)
 	brandRevision, _ := s.currentBrandRevision(ctx)
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {

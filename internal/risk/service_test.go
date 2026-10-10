@@ -957,7 +957,7 @@ func TestSuspiciousDomainEnrichmentRunsInBackgroundAndUpdatesCache(t *testing.T)
 	// EnrichTimeout is one second and this enrichment performs two lookups, so
 	// the round trip cannot finish in less than the enrichment's own budget. The
 	// previous two second deadline left almost no headroom above that.
-	key := analysisCacheKey("secure-login-example.com", service.currentMLPolicyRevision())
+	key := analysisCacheKey("secure-login-example.com", service.ml.currentMLPolicyRevision())
 	deadline := time.Now().Add(2 * asyncPollBudget)
 	for time.Now().Before(deadline) {
 		var entry analysisCacheEntry

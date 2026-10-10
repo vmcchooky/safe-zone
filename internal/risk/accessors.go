@@ -23,6 +23,19 @@ func (s *Service) Adblock() *AdblockEngine {
 	return s.adblock
 }
 
+// ML exposes the machine-learning subsystem engine. All ML behavior
+// (domain classifier plus URL classifier with shadow sampling, telemetry,
+// operational baseline and feedback) lives on MLEngine; callers outside
+// this package reach it through here instead of through Service methods.
+// NewService always constructs the engine, so a nil return only arises
+// from a nil Service.
+func (s *Service) ML() *MLEngine {
+	if s == nil {
+		return nil
+	}
+	return s.ml
+}
+
 // StoreDB returns the underlying SQLite store, or nil if not configured.
 func (s *Service) StoreDB() *store.DB {
 	if s == nil {

@@ -268,22 +268,25 @@ func urlMLVerdictIndex(verdict analysis.Verdict) int {
 	}
 }
 
-func (s *Service) urlMLDriftStatus() URLMLDriftStatus {
+func (e *MLEngine) urlMLDriftStatus() URLMLDriftStatus {
 	status := URLMLDriftStatus{State: "unavailable"}
+	if e == nil {
+		return status
+	}
 	var reference analysis.URLMonitoringReference
-	if s.ml.urlMLOpsBaseline != nil {
+	if e.urlMLOpsBaseline != nil {
 		reference = analysis.URLMonitoringReference{
-			ReferenceKind:           s.ml.urlMLOpsBaseline.ReferenceKind,
-			ReferenceRows:           s.ml.urlMLOpsBaseline.ReferenceRows,
+			ReferenceKind:           e.urlMLOpsBaseline.ReferenceKind,
+			ReferenceRows:           e.urlMLOpsBaseline.ReferenceRows,
 			Operational:             true,
-			ProbabilityBuckets:      s.ml.urlMLOpsBaseline.BucketNames,
-			ProbabilityDistribution: s.ml.urlMLOpsBaseline.Distribution,
-			MinimumLiveSamples:      s.ml.urlMLOpsBaseline.MinimumLiveSamples,
-			PSIWatchThreshold:       s.ml.urlMLOpsBaseline.WatchThreshold,
-			PSIAlertThreshold:       s.ml.urlMLOpsBaseline.AlertThreshold,
+			ProbabilityBuckets:      e.urlMLOpsBaseline.BucketNames,
+			ProbabilityDistribution: e.urlMLOpsBaseline.Distribution,
+			MinimumLiveSamples:      e.urlMLOpsBaseline.MinimumLiveSamples,
+			PSIWatchThreshold:       e.urlMLOpsBaseline.WatchThreshold,
+			PSIAlertThreshold:       e.urlMLOpsBaseline.AlertThreshold,
 		}
 	} else {
-		provider, ok := s.ml.urlMLClassifier.(analysis.URLMonitoringReferenceProvider)
+		provider, ok := e.urlMLClassifier.(analysis.URLMonitoringReferenceProvider)
 		if !ok {
 			return status
 		}
@@ -307,7 +310,7 @@ func (s *Service) urlMLDriftStatus() URLMLDriftStatus {
 	live := make([]float64, len(mlProbabilityBuckets))
 	var total int64
 	for index := range live {
-		count := s.ml.urlMLTelemetry.probabilityBuckets[index].Load()
+		count := e.urlMLTelemetry.probabilityBuckets[index].Load()
 		live[index] = float64(count)
 		total += count
 	}
@@ -395,152 +398,152 @@ func (t *urlMLTelemetry) latencyP95() int64 {
 
 // URLMLStatus reports the URL-ML subsystem state.
 //
-// ctx bounds the durable feedback read inside the snapshot. This is an
-// observability call rather than a request-scoped one, so callers on the service
-// side pass the service lifecycle context: the read should stop when the service
-// shuts down rather than outliving it.
-func (s *Service) URLMLStatus(ctx context.Context) URLMLStatus {
-	if s == nil {
+// ctx bounds the durable feedback read inside the snapshot. Callers pass
+// their own context (the pipeline passes the request context, status
+// endpoints the lifecycle context); a nil ctx falls back to
+// context.Background so an observability read never blocks shutdown.
+func (e *MLEngine) URLMLStatus(ctx context.Context) URLMLStatus {
+	if e == nil {
 		return URLMLStatus{Mode: analysis.MLModeDisabled, State: "disabled"}
 	}
 	if ctx == nil {
-		ctx = s.lifecycleCtx
+		ctx = context.Background()
 	}
-	enabled := s.ml.urlMLClassifier != nil && s.ml.urlMLClassifier.Enabled()
+	enabled := e.urlMLClassifier != nil && e.urlMLClassifier.Enabled()
 	status := URLMLStatus{
-		Mode:                 s.ml.urlMLMode,
+		Mode:                 e.urlMLMode,
 		Enabled:              enabled,
-		State:                mlState(s.ml.urlMLMode, enabled),
-		PolicyRevision:       s.currentURLMLPolicyRevision(),
-		ContextRequests:      s.ml.urlMLTelemetry.contextRequests.Load(),
-		PredictionAttempts:   s.ml.urlMLTelemetry.predictionAttempts.Load(),
-		WouldPromote:         s.ml.urlMLTelemetry.wouldPromote.Load(),
-		WouldPromoteHeld:     s.ml.urlMLTelemetry.heldPromote.Load(),
-		WouldPass:            s.ml.urlMLTelemetry.wouldPass.Load(),
-		Errors:               s.ml.urlMLTelemetry.errors.Load(),
-		Skips:                s.ml.urlMLTelemetry.skips.Load(),
-		LatencyP95Micros:     s.ml.urlMLTelemetry.latencyP95(),
-		LatencyCount:         s.ml.urlMLTelemetry.latencyCount.Load(),
+		State:                mlState(e.urlMLMode, enabled),
+		PolicyRevision:       e.currentURLMLPolicyRevision(),
+		ContextRequests:      e.urlMLTelemetry.contextRequests.Load(),
+		PredictionAttempts:   e.urlMLTelemetry.predictionAttempts.Load(),
+		WouldPromote:         e.urlMLTelemetry.wouldPromote.Load(),
+		WouldPromoteHeld:     e.urlMLTelemetry.heldPromote.Load(),
+		WouldPass:            e.urlMLTelemetry.wouldPass.Load(),
+		Errors:               e.urlMLTelemetry.errors.Load(),
+		Skips:                e.urlMLTelemetry.skips.Load(),
+		LatencyP95Micros:     e.urlMLTelemetry.latencyP95(),
+		LatencyCount:         e.urlMLTelemetry.latencyCount.Load(),
 		LatencyHistogram:     make(map[string]int64, len(mlLatencyBuckets)+1),
 		ProbabilityHistogram: make(map[string]int64, len(mlProbabilityBuckets)),
 		ErrorHistogram: map[string]int64{
-			"invalid_url_context": s.ml.urlMLTelemetry.invalidContext.Load(),
-			"prediction_error":    s.ml.urlMLTelemetry.predictionErrors.Load(),
+			"invalid_url_context": e.urlMLTelemetry.invalidContext.Load(),
+			"prediction_error":    e.urlMLTelemetry.predictionErrors.Load(),
 		},
 		InputHistogram: map[string]int64{
-			"query_present":    s.ml.urlMLTelemetry.queryPresent.Load(),
-			"query_absent":     s.ml.urlMLTelemetry.queryAbsent.Load(),
-			"redirects_0":      s.ml.urlMLTelemetry.redirectBuckets[0].Load(),
-			"redirects_1":      s.ml.urlMLTelemetry.redirectBuckets[1].Load(),
-			"redirects_2_to_5": s.ml.urlMLTelemetry.redirectBuckets[2].Load(),
+			"query_present":    e.urlMLTelemetry.queryPresent.Load(),
+			"query_absent":     e.urlMLTelemetry.queryAbsent.Load(),
+			"redirects_0":      e.urlMLTelemetry.redirectBuckets[0].Load(),
+			"redirects_1":      e.urlMLTelemetry.redirectBuckets[1].Load(),
+			"redirects_2_to_5": e.urlMLTelemetry.redirectBuckets[2].Load(),
 		},
 		VerdictHistogram: map[string]int64{
-			"safe":       s.ml.urlMLTelemetry.verdictBuckets[0].Load(),
-			"suspicious": s.ml.urlMLTelemetry.verdictBuckets[1].Load(),
-			"malicious":  s.ml.urlMLTelemetry.verdictBuckets[2].Load(),
+			"safe":       e.urlMLTelemetry.verdictBuckets[0].Load(),
+			"suspicious": e.urlMLTelemetry.verdictBuckets[1].Load(),
+			"malicious":  e.urlMLTelemetry.verdictBuckets[2].Load(),
 		},
 		WouldPromoteByVerdict: map[string]int64{
-			"safe":       s.ml.urlMLTelemetry.promoteVerdictBuckets[0].Load(),
-			"suspicious": s.ml.urlMLTelemetry.promoteVerdictBuckets[1].Load(),
-			"malicious":  s.ml.urlMLTelemetry.promoteVerdictBuckets[2].Load(),
+			"safe":       e.urlMLTelemetry.promoteVerdictBuckets[0].Load(),
+			"suspicious": e.urlMLTelemetry.promoteVerdictBuckets[1].Load(),
+			"malicious":  e.urlMLTelemetry.promoteVerdictBuckets[2].Load(),
 		},
 		Sampling: URLMLSamplingStatus{
-			Percent:          s.ml.urlMLShadow.Percent,
+			Percent:          e.urlMLShadow.Percent,
 			Algorithm:        urlMLSelectorAlgorithm,
-			SelectorRevision: s.ml.urlMLShadow.revision(),
-			Selected:         s.ml.urlMLTelemetry.selected.Load(),
-			Excluded:         s.ml.urlMLTelemetry.excluded.Load(),
+			SelectorRevision: e.urlMLShadow.revision(),
+			Selected:         e.urlMLTelemetry.selected.Load(),
+			Excluded:         e.urlMLTelemetry.excluded.Load(),
 		},
-		Drift: s.urlMLDriftStatus(),
+		Drift: e.urlMLDriftStatus(),
 	}
-	status.Coverage = s.urlMLCoverageStatus()
-	status.Feedback = s.ml.urlMLFeedback.status(ctx)
-	status.Baseline = s.urlMLOpsBaselineStatus()
+	status.Coverage = e.urlMLCoverageStatus()
+	status.Feedback = e.urlMLFeedback.status(ctx)
+	status.Baseline = e.urlMLOpsBaselineStatus()
 	if status.LatencyCount > 0 {
-		status.LatencyAverageMicros = s.ml.urlMLTelemetry.latencyTotalMicros.Load() / status.LatencyCount
+		status.LatencyAverageMicros = e.urlMLTelemetry.latencyTotalMicros.Load() / status.LatencyCount
 	}
 	if enabled {
-		status.Revision = s.ml.urlMLClassifier.Revision()
+		status.Revision = e.urlMLClassifier.Revision()
 	}
-	if metadata, ok := s.ml.urlMLClassifier.(analysis.URLClassifierMetadata); ok {
+	if metadata, ok := e.urlMLClassifier.(analysis.URLClassifierMetadata); ok {
 		status.ModelVersion = metadata.ModelVersion()
 		status.URLThreshold = metadata.URLThreshold()
 	}
 	for index, upper := range mlLatencyBuckets {
-		status.LatencyHistogram[fmt.Sprintf("le_%dus", upper)] = s.ml.urlMLTelemetry.latencyBuckets[index].Load()
+		status.LatencyHistogram[fmt.Sprintf("le_%dus", upper)] = e.urlMLTelemetry.latencyBuckets[index].Load()
 	}
-	status.LatencyHistogram["gt_50000us"] = s.ml.urlMLTelemetry.latencyBuckets[len(mlLatencyBuckets)].Load()
+	status.LatencyHistogram["gt_50000us"] = e.urlMLTelemetry.latencyBuckets[len(mlLatencyBuckets)].Load()
 	for index, name := range mlProbabilityBuckets {
-		status.ProbabilityHistogram[name] = s.ml.urlMLTelemetry.probabilityBuckets[index].Load()
+		status.ProbabilityHistogram[name] = e.urlMLTelemetry.probabilityBuckets[index].Load()
 	}
 	return status
 }
 
-func (s *Service) currentURLMLPolicyRevision() string {
-	if s == nil || s.ml.urlMLClassifier == nil || !s.ml.urlMLClassifier.Enabled() {
+func (e *MLEngine) currentURLMLPolicyRevision() string {
+	if e == nil || e.urlMLClassifier == nil || !e.urlMLClassifier.Enabled() {
 		return ""
 	}
-	material := "model=" + s.ml.urlMLClassifier.Revision() + "\nmode=" + string(s.ml.urlMLMode) + "\nsampling=" + s.ml.urlMLShadow.revision() + "\n"
+	material := "model=" + e.urlMLClassifier.Revision() + "\nmode=" + string(e.urlMLMode) + "\nsampling=" + e.urlMLShadow.revision() + "\n"
 	sum := sha256.Sum256([]byte(material))
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Service) observeURLML(ctx context.Context, domain string, primaryVerdict analysis.Verdict, context URLAnalysisContext) *URLMLObservation {
-	if s == nil {
+func (e *MLEngine) observeURLML(ctx context.Context, domain string, primaryVerdict analysis.Verdict, context URLAnalysisContext, brands []analysis.Brand, matchFeed func(context.Context, string) (bool, error)) *URLMLObservation {
+	if e == nil {
 		return &URLMLObservation{Mode: analysis.MLModeDisabled}
 	}
-	observation := &URLMLObservation{Mode: s.ml.urlMLMode}
-	s.ml.urlMLTelemetry.contextRequests.Add(1)
-	s.ml.urlMLTelemetry.urlContextRequests.Add(1)
-	s.ml.urlMLTelemetry.callerBuckets[urlMLCallerIndex(context.CallerClass)].Add(1)
+	observation := &URLMLObservation{Mode: e.urlMLMode}
+	e.urlMLTelemetry.contextRequests.Add(1)
+	e.urlMLTelemetry.urlContextRequests.Add(1)
+	e.urlMLTelemetry.callerBuckets[urlMLCallerIndex(context.CallerClass)].Add(1)
 	if len(context.RedirectChain) > 0 {
-		s.ml.urlMLTelemetry.redirectPresent.Add(1)
+		e.urlMLTelemetry.redirectPresent.Add(1)
 	}
-	if s.ml.urlMLMode != analysis.MLModeShadow || s.ml.urlMLClassifier == nil || !s.ml.urlMLClassifier.Enabled() {
-		s.ml.urlMLTelemetry.skips.Add(1)
+	if e.urlMLMode != analysis.MLModeShadow || e.urlMLClassifier == nil || !e.urlMLClassifier.Enabled() {
+		e.urlMLTelemetry.skips.Add(1)
 		return observation
 	}
-	if !s.ml.urlMLShadow.eligible(domain) {
-		s.ml.urlMLTelemetry.excluded.Add(1)
+	if !e.urlMLShadow.eligible(domain) {
+		e.urlMLTelemetry.excluded.Add(1)
 		return observation
 	}
 	observation.Sampled = true
-	s.ml.urlMLTelemetry.selected.Add(1)
-	s.ml.urlMLTelemetry.predictionAttempts.Add(1)
+	e.urlMLTelemetry.selected.Add(1)
+	e.urlMLTelemetry.predictionAttempts.Add(1)
 	if strings.Contains(context.RequestedURL, "?") {
-		s.ml.urlMLTelemetry.queryPresent.Add(1)
+		e.urlMLTelemetry.queryPresent.Add(1)
 	} else {
-		s.ml.urlMLTelemetry.queryAbsent.Add(1)
+		e.urlMLTelemetry.queryAbsent.Add(1)
 	}
 	redirectIndex := len(context.RedirectChain)
 	if redirectIndex > 2 {
 		redirectIndex = 2
 	}
-	s.ml.urlMLTelemetry.redirectBuckets[redirectIndex].Add(1)
+	e.urlMLTelemetry.redirectBuckets[redirectIndex].Add(1)
 	verdictIndex := urlMLVerdictIndex(primaryVerdict)
-	s.ml.urlMLTelemetry.verdictBuckets[verdictIndex].Add(1)
+	e.urlMLTelemetry.verdictBuckets[verdictIndex].Add(1)
 	started := time.Now()
-	decision, err := s.ml.urlMLClassifier.ClassifyURL(analysis.URLContext{
+	decision, err := e.urlMLClassifier.ClassifyURL(analysis.URLContext{
 		RequestedURL:  context.RequestedURL,
 		ExpectedHost:  domain,
 		RedirectChain: append([]string(nil), context.RedirectChain...),
 	})
 	latency := time.Since(started)
-	s.ml.urlMLTelemetry.observeLatency(latency)
+	e.urlMLTelemetry.observeLatency(latency)
 	observation.LatencyMicros = latency.Microseconds()
 	if err != nil {
-		s.ml.urlMLTelemetry.errors.Add(1)
+		e.urlMLTelemetry.errors.Add(1)
 		observation.ErrorClass = classifyURLMLError(err)
 		if observation.ErrorClass == "invalid_url_context" {
-			s.ml.urlMLTelemetry.invalidContext.Add(1)
+			e.urlMLTelemetry.invalidContext.Add(1)
 		} else {
-			s.ml.urlMLTelemetry.predictionErrors.Add(1)
+			e.urlMLTelemetry.predictionErrors.Add(1)
 		}
 		// Record the fingerprint even when classification failed so a caller who
 		// observed sampled=true can label it without a spurious unknown_event.
 		// The caller opted into feedback via event_id; without this the label
 		// would be rejected even though the event was legitimately observed.
-		s.ml.urlMLFeedback.record(ctx, context.EventID, -1, false)
+		e.urlMLFeedback.record(ctx, context.EventID, -1, false)
 		return observation
 	}
 	observation.Evaluated = true
@@ -548,28 +551,31 @@ func (s *Service) observeURLML(ctx context.Context, domain string, primaryVerdic
 	observation.Action = decision.Action
 	observation.ModelVersion = decision.ModelVersion
 	observation.Revision = decision.Revision
-	s.ml.urlMLTelemetry.observeProbability(decision.Probability)
+	e.urlMLTelemetry.observeProbability(decision.Probability)
 	if decision.Action == analysis.MLActionPromoteMalicious {
-		if reason := s.urlPromoteHoldReason(ctx, domain); reason != "" {
+		if reason := urlPromoteHoldReason(ctx, domain, brands, matchFeed); reason != "" {
 			observation.Held = true
 			observation.HoldReason = reason
-			s.ml.urlMLTelemetry.heldPromote.Add(1)
-			s.ml.urlMLTelemetry.wouldPass.Add(1)
-			s.ml.urlMLFeedback.record(ctx, context.EventID, decision.Probability, false)
+			e.urlMLTelemetry.heldPromote.Add(1)
+			e.urlMLTelemetry.wouldPass.Add(1)
+			e.urlMLFeedback.record(ctx, context.EventID, decision.Probability, false)
 			return observation
 		}
 		observation.WouldPromote = true
-		s.ml.urlMLTelemetry.wouldPromote.Add(1)
-		s.ml.urlMLTelemetry.promoteVerdictBuckets[verdictIndex].Add(1)
+		e.urlMLTelemetry.wouldPromote.Add(1)
+		e.urlMLTelemetry.promoteVerdictBuckets[verdictIndex].Add(1)
 	} else {
-		s.ml.urlMLTelemetry.wouldPass.Add(1)
+		e.urlMLTelemetry.wouldPass.Add(1)
 	}
-	s.ml.urlMLFeedback.record(ctx, context.EventID, decision.Probability, observation.WouldPromote)
+	e.urlMLFeedback.record(ctx, context.EventID, decision.Probability, observation.WouldPromote)
 	return observation
 }
 
 // urlPromoteHoldReason reports why a model promote is held, or "" to let it
-// stand.
+// stand. It is a free function (not an engine method) because it uses no ML
+// state: the brand list and the feed lookup are supplied by the caller, which
+// keeps the ML engine decoupled from the feed and brand subsystems until
+// those are extracted in turn.
 //
 // The rule: on a host belonging to a trusted brand, do not promote on the
 // model's say-so alone. A live exact feed IOC naming the host overrides it —
@@ -596,11 +602,11 @@ func (s *Service) observeURLML(ctx context.Context, domain string, primaryVerdic
 // the quality of the shadow data, not a live block.
 //
 // Lookup errors fail open (no hold): a blind guard must never suppress.
-func (s *Service) urlPromoteHoldReason(ctx context.Context, domain string) string {
-	if !analysis.IsTrustedBrandSuffix(domain, s.trustedBrands(ctx)) {
+func urlPromoteHoldReason(ctx context.Context, domain string, brands []analysis.Brand, matchFeed func(context.Context, string) (bool, error)) string {
+	if !analysis.IsTrustedBrandSuffix(domain, brands) {
 		return ""
 	}
-	hit, err := s.matchExactThreatFeed(ctx, domain)
+	hit, err := matchFeed(ctx, domain)
 	if err != nil {
 		return ""
 	}
@@ -615,14 +621,14 @@ func (s *Service) urlPromoteHoldReason(ctx context.Context, domain string) strin
 //
 // ctx bounds the durable lookup, so a caller that has gone away does not leave
 // a query queued on the single SQLite connection.
-func (s *Service) RecordURLFeedback(ctx context.Context, eventID, label string) (bool, string) {
-	if s == nil || s.ml.urlMLFeedback == nil {
+func (e *MLEngine) RecordURLFeedback(ctx context.Context, eventID, label string) (bool, string) {
+	if e == nil || e.urlMLFeedback == nil {
 		return false, "unsupported"
 	}
 	if ctx == nil {
-		ctx = s.lifecycleCtx
+		ctx = context.Background()
 	}
-	return s.ml.urlMLFeedback.apply(ctx, eventID, label)
+	return e.urlMLFeedback.apply(ctx, eventID, label)
 }
 
 func urlMLCallerIndex(raw string) int {
@@ -648,8 +654,8 @@ func classifyURLMLError(err error) string {
 // urlMLCoverageStatus aggregates URL-context coverage over all analysis
 // traffic, plus a bounded caller-class breakdown and the structural reasons
 // for missing context.
-func (s *Service) urlMLCoverageStatus() URLMLCoverageStatus {
-	if s == nil {
+func (e *MLEngine) urlMLCoverageStatus() URLMLCoverageStatus {
+	if e == nil {
 		return URLMLCoverageStatus{
 			CallerBreakdown:         map[string]int64{},
 			MissingContextBreakdown: map[string]int64{},
@@ -658,18 +664,18 @@ func (s *Service) urlMLCoverageStatus() URLMLCoverageStatus {
 	breakdown := make(map[string]int64, len(urlMLCallerClasses))
 	var total int64
 	for index, name := range urlMLCallerClasses {
-		count := s.ml.urlMLTelemetry.callerBuckets[index].Load()
+		count := e.urlMLTelemetry.callerBuckets[index].Load()
 		breakdown[name] = count
 		total += count
 	}
 	missing := make(map[string]int64, len(urlMLMissingContextReasons))
 	for index, name := range urlMLMissingContextReasons {
-		missing[name] = s.ml.urlMLTelemetry.missingContextBuckets[index].Load()
+		missing[name] = e.urlMLTelemetry.missingContextBuckets[index].Load()
 	}
 	status := URLMLCoverageStatus{
-		AnalyzeRequests:         s.ml.urlMLTelemetry.analyzeRequests.Load(),
+		AnalyzeRequests:         e.urlMLTelemetry.analyzeRequests.Load(),
 		URLContextRequests:      total,
-		RedirectChainPresent:    s.ml.urlMLTelemetry.redirectPresent.Load(),
+		RedirectChainPresent:    e.urlMLTelemetry.redirectPresent.Load(),
 		CallerBreakdown:         breakdown,
 		MissingContextBreakdown: missing,
 	}
@@ -682,17 +688,17 @@ func (s *Service) urlMLCoverageStatus() URLMLCoverageStatus {
 // urlMLOpsBaselineStatus reports the frozen operational baseline state. A
 // load failure is surfaced as fail_open with an error class; it never blocks
 // the classifier.
-func (s *Service) urlMLOpsBaselineStatus() URLMLOpsBaselineStatus {
-	if s == nil {
+func (e *MLEngine) urlMLOpsBaselineStatus() URLMLOpsBaselineStatus {
+	if e == nil {
 		return URLMLOpsBaselineStatus{}
 	}
-	if s.ml.urlMLOpsBaseline != nil {
-		return s.ml.urlMLOpsBaseline.status()
+	if e.urlMLOpsBaseline != nil {
+		return e.urlMLOpsBaseline.status()
 	}
 	return URLMLOpsBaselineStatus{
 		Loaded:      false,
 		Operational: false,
-		FailOpen:    s.ml.urlMLOpsBaselineFailed,
-		ErrorClass:  s.ml.urlMLOpsBaselineErrorClass,
+		FailOpen:    e.urlMLOpsBaselineFailed,
+		ErrorClass:  e.urlMLOpsBaselineErrorClass,
 	}
 }

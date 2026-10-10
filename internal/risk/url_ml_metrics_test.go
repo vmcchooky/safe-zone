@@ -22,7 +22,7 @@ func TestDriftPSISStaysFiniteWithAnEmptyReferenceBucket(t *testing.T) {
 	s := newDriftTestService(t, distribution, 100)
 	s.ml.urlMLTelemetry.probabilityBuckets[0].Add(10)
 
-	status := s.urlMLDriftStatus()
+	status := s.ml.urlMLDriftStatus()
 	psi := status.PopulationStabilityIndex
 	if math.IsNaN(psi) || math.IsInf(psi, 0) {
 		t.Fatalf("psi = %v, want a finite value", psi)
@@ -59,7 +59,7 @@ func TestDriftPSIScoresZeroForIdenticalDistributions(t *testing.T) {
 		s.ml.urlMLTelemetry.probabilityBuckets[index].Add(count)
 	}
 
-	status := s.urlMLDriftStatus()
+	status := s.ml.urlMLDriftStatus()
 	if got := status.PopulationStabilityIndex; got != 0 {
 		t.Fatalf("psi = %v for an identical distribution, want 0", got)
 	}
@@ -93,7 +93,7 @@ func TestDriftPSISeparatesNoiseFromRealShift(t *testing.T) {
 	for index, count := range noisy {
 		noiseService.ml.urlMLTelemetry.probabilityBuckets[index].Add(count)
 	}
-	noise := noiseService.urlMLDriftStatus()
+	noise := noiseService.ml.urlMLDriftStatus()
 	if noise.PopulationStabilityIndex >= noise.WatchThreshold {
 		t.Fatalf("sampling noise scored %v, which is at or above the watch threshold %v",
 			noise.PopulationStabilityIndex, noise.WatchThreshold)
@@ -107,7 +107,7 @@ func TestDriftPSISeparatesNoiseFromRealShift(t *testing.T) {
 	shiftService := newDriftTestService(t, distribution, int(total))
 	shiftService.ml.urlMLTelemetry.probabilityBuckets[0].Add(100)
 	shiftService.ml.urlMLTelemetry.probabilityBuckets[9].Add(900)
-	shift := shiftService.urlMLDriftStatus()
+	shift := shiftService.ml.urlMLDriftStatus()
 	if shift.PopulationStabilityIndex <= shift.AlertThreshold {
 		t.Fatalf("a real shift scored %v, want above the alert threshold %v",
 			shift.PopulationStabilityIndex, shift.AlertThreshold)
@@ -126,7 +126,7 @@ func TestDriftPSIIsSkippedWithoutAReferenceRowCount(t *testing.T) {
 	s := newDriftTestService(t, distribution, 0)
 	s.ml.urlMLTelemetry.probabilityBuckets[0].Add(10)
 
-	status := s.urlMLDriftStatus()
+	status := s.ml.urlMLDriftStatus()
 	if status.PopulationStabilityIndex != 0 {
 		t.Fatalf("psi = %v without a reference row count, want 0", status.PopulationStabilityIndex)
 	}
@@ -165,7 +165,7 @@ func TestURLMLStatusIsAlwaysJSONEncodable(t *testing.T) {
 	for range 10 {
 		s.ml.urlMLTelemetry.observeLatency(200 * time.Millisecond)
 	}
-	if _, err := json.Marshal(s.URLMLStatus(t.Context())); err != nil {
+	if _, err := json.Marshal(s.ml.URLMLStatus(t.Context())); err != nil {
 		t.Fatalf("URLMLStatus must encode: %v", err)
 	}
 }

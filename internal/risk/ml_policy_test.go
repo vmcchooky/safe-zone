@@ -70,7 +70,7 @@ func TestMLEnforcePromotesSuspiciousAndSkipsAI(t *testing.T) {
 	if fake.calls != 1 {
 		t.Fatalf("expected one ML call, got %d", fake.calls)
 	}
-	if status := service.MLStatus(); status.EnforcePromotions != 1 || status.LLMFallbacks != 0 {
+	if status := service.ml.MLStatus(t.Context()); status.EnforcePromotions != 1 || status.LLMFallbacks != 0 {
 		t.Fatalf("unexpected ML telemetry: %+v", status)
 	}
 }
@@ -87,7 +87,7 @@ func TestMLShadowDoesNotChangeVerdict(t *testing.T) {
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("shadow mode changed verdict to %s", result.Verdict)
 	}
-	if status := service.MLStatus(); status.ShadowWouldBlock != 1 || status.EnforcePromotions != 0 {
+	if status := service.ml.MLStatus(t.Context()); status.ShadowWouldBlock != 1 || status.EnforcePromotions != 0 {
 		t.Fatalf("unexpected shadow telemetry: %+v", status)
 	}
 }
@@ -104,7 +104,7 @@ func TestMLShadowRecordsWouldPassAndProbabilityBucket(t *testing.T) {
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("shadow mode changed verdict to %s", result.Verdict)
 	}
-	status := service.MLStatus()
+	status := service.ml.MLStatus(t.Context())
 	if status.State != "ready" || status.ShadowWouldPass != 1 || status.ShadowWouldBlock != 0 {
 		t.Fatalf("unexpected shadow status: %+v", status)
 	}
