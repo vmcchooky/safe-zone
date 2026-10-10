@@ -224,7 +224,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		a.Evidence = evidence
 	}
 	if options.URLContext != nil {
-		a.URLML = s.ml.observeURLML(ctx, normalized, result.Verdict, *options.URLContext, s.trustedBrands(ctx), s.matchExactThreatFeed)
+		a.URLML = s.ml.observeURLML(ctx, normalized, result.Verdict, *options.URLContext, s.trustedBrands(ctx), s.feed.matchExactThreatFeed)
 		a.Assessment.Evaluated = append(a.Assessment.Evaluated, LayerURLML)
 	} else {
 		a.Assessment.Skipped = append(a.Assessment.Skipped, skippedLayer(LayerURLML, SkipNoURLContext))
@@ -332,7 +332,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	var result analysis.Result
 	var feedScope FeedScope
 	timer.measure(LayerThreatFeed, func() {
-		result, feedScope = s.feedResult(ctx, normalized)
+		result, feedScope = s.feed.feedResult(ctx, normalized, s.trustedBrands(ctx))
 	})
 	// Shadow scope trace (PR-08b/M7): record hits and trust bypasses in
 	// telemetry. Misses stay nil (miss-vs-skip already in the layer lists).

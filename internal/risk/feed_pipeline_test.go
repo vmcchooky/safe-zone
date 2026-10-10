@@ -29,7 +29,7 @@ func TestThreatFeedPipelineNearestAndExpiry(t *testing.T) {
 	}
 
 	// Exact is stale, parent live, grandparent live: nearest live wins.
-	matched, err := service.matchParentCandidate(context.Background(), "x.y.parent.test")
+	matched, err := service.feed.matchParentCandidate(context.Background(), "x.y.parent.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,7 +44,7 @@ func TestThreatFeedPipelineNearestAndExpiry(t *testing.T) {
 	if _, err := service.redis.ZAdd(context.Background(), defaultThreatFeedKey, redis.Z{Score: stale, Member: "lonely.test"}); err != nil {
 		t.Fatal(err)
 	}
-	exactHit, err := service.matchExactThreatFeed(context.Background(), "lonely.test")
+	exactHit, err := service.feed.matchExactThreatFeed(context.Background(), "lonely.test")
 	if err != nil {
 		t.Fatal(err)
 	}
