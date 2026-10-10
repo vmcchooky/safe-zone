@@ -128,9 +128,9 @@ func (s *Service) Analyze(ctx context.Context, domain string, client ClientInfo)
 }
 
 func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client ClientInfo, options AnalyzeOptions) Analysis {
-	s.urlMLTelemetry.analyzeRequests.Add(1)
+	s.ml.urlMLTelemetry.analyzeRequests.Add(1)
 	if options.URLContext == nil {
-		s.urlMLTelemetry.noteMissingContext(options.MissingContextReason)
+		s.ml.urlMLTelemetry.noteMissingContext(options.MissingContextReason)
 	}
 	normalized, err := analysis.NormalizeDomain(domain)
 	var result analysis.Result
@@ -224,7 +224,7 @@ func (s *Service) AnalyzeWithOptions(ctx context.Context, domain string, client 
 		a.Evidence = evidence
 	}
 	if options.URLContext != nil {
-		a.URLML = s.observeURLML(ctx, normalized, result.Verdict, *options.URLContext)
+		a.URLML = s.ml.observeURLML(ctx, normalized, result.Verdict, *options.URLContext, s.trustedBrands(ctx), s.matchExactThreatFeed)
 		a.Assessment.Evaluated = append(a.Assessment.Evaluated, LayerURLML)
 	} else {
 		a.Assessment.Skipped = append(a.Assessment.Skipped, skippedLayer(LayerURLML, SkipNoURLContext))
@@ -249,7 +249,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 
 	// 1. Check Cache
 	var timer layerTimer
-	modelRevision := s.currentMLPolicyRevision()
+	modelRevision := s.ml.currentMLPolicyRevision()
 	cacheKey := analysisCacheKey(normalized, modelRevision)
 	currentRevision, feedKnown := s.currentFeedRevision(ctx)
 	currentBrandRevision, brandKnown := s.currentBrandRevision(ctx)
@@ -356,7 +356,7 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 	if result.Verdict == analysis.VerdictSuspicious {
 		assess.Evaluated = append(assess.Evaluated, LayerDomainML)
 		timer.measure(LayerDomainML, func() {
-			result, mlPromoted = s.classifyML(ctx, result)
+			result, mlPromoted = s.ml.classifyML(ctx, result)
 		})
 		if !mlPromoted {
 			assess.Evaluated = append(assess.Evaluated, LayerAIRefine)
@@ -368,8 +368,8 @@ func (s *Service) analyze(ctx context.Context, domain string, lookupMode osintLo
 				aiContributed = true
 			}
 			result = refined
-			if s.mlMode != analysis.MLModeDisabled && s.mlClassifier != nil && s.mlClassifier.Enabled() {
-				s.mlTelemetry.fallbacks.Add(1)
+			if s.ml.mlMode != analysis.MLModeDisabled && s.ml.mlClassifier != nil && s.ml.mlClassifier.Enabled() {
+				s.ml.mlTelemetry.fallbacks.Add(1)
 			}
 		}
 	}

@@ -136,55 +136,55 @@ func (t *mlTelemetry) latencyP95() int64 {
 	return latencyP95Micros(t.latencyBuckets[:], t.latencyCount.Load())
 }
 
-func (s *Service) MLStatus() MLStatus {
-	if s == nil {
+func (e *MLEngine) MLStatus(ctx context.Context) MLStatus {
+	if e == nil {
 		return MLStatus{Mode: analysis.MLModeDisabled}
 	}
 	status := MLStatus{
-		Mode:                 s.mlMode,
-		Enabled:              s.mlClassifier != nil && s.mlClassifier.Enabled(),
-		State:                mlState(s.mlMode, s.mlClassifier != nil && s.mlClassifier.Enabled()),
-		PolicyRevision:       s.currentMLPolicyRevision(),
-		PredictionAttempts:   s.mlTelemetry.predictionAttempts.Load(),
-		ShadowWouldBlock:     s.mlTelemetry.shadowWouldBlock.Load(),
-		ShadowWouldPass:      s.mlTelemetry.shadowWouldPass.Load(),
-		EnforcePromotions:    s.mlTelemetry.enforcePromotions.Load(),
-		Abstains:             s.mlTelemetry.abstains.Load(),
-		Errors:               s.mlTelemetry.errors.Load(),
-		Skips:                s.mlTelemetry.skips.Load(),
-		LLMFallbacks:         s.mlTelemetry.fallbacks.Load(),
-		LatencyP95Micros:     s.mlTelemetry.latencyP95(),
-		LatencyCount:         s.mlTelemetry.latencyCount.Load(),
+		Mode:                 e.mlMode,
+		Enabled:              e.mlClassifier != nil && e.mlClassifier.Enabled(),
+		State:                mlState(e.mlMode, e.mlClassifier != nil && e.mlClassifier.Enabled()),
+		PolicyRevision:       e.currentMLPolicyRevision(),
+		PredictionAttempts:   e.mlTelemetry.predictionAttempts.Load(),
+		ShadowWouldBlock:     e.mlTelemetry.shadowWouldBlock.Load(),
+		ShadowWouldPass:      e.mlTelemetry.shadowWouldPass.Load(),
+		EnforcePromotions:    e.mlTelemetry.enforcePromotions.Load(),
+		Abstains:             e.mlTelemetry.abstains.Load(),
+		Errors:               e.mlTelemetry.errors.Load(),
+		Skips:                e.mlTelemetry.skips.Load(),
+		LLMFallbacks:         e.mlTelemetry.fallbacks.Load(),
+		LatencyP95Micros:     e.mlTelemetry.latencyP95(),
+		LatencyCount:         e.mlTelemetry.latencyCount.Load(),
 		LatencyHistogram:     make(map[string]int64, len(mlLatencyBuckets)+1),
 		ProbabilityHistogram: make(map[string]int64, len(mlProbabilityBuckets)),
 		Canary: MLCanaryStatus{
-			Configured:          s.mlCanary.enabled(),
-			Percent:             s.mlCanary.Percent,
-			SelectedPredictions: s.mlTelemetry.canarySelected.Load(),
-			ExcludedPredictions: s.mlTelemetry.canaryExcluded.Load(),
-			SelectedWouldBlock:  s.mlTelemetry.canaryWouldBlock.Load(),
-			SelectedWouldPass:   s.mlTelemetry.canaryWouldPass.Load(),
-			EnforceSuppressed:   s.mlTelemetry.canarySuppressed.Load(),
+			Configured:          e.mlCanary.enabled(),
+			Percent:             e.mlCanary.Percent,
+			SelectedPredictions: e.mlTelemetry.canarySelected.Load(),
+			ExcludedPredictions: e.mlTelemetry.canaryExcluded.Load(),
+			SelectedWouldBlock:  e.mlTelemetry.canaryWouldBlock.Load(),
+			SelectedWouldPass:   e.mlTelemetry.canaryWouldPass.Load(),
+			EnforceSuppressed:   e.mlTelemetry.canarySuppressed.Load(),
 		},
-		URL: s.URLMLStatus(s.lifecycleCtx),
+		URL: e.URLMLStatus(ctx),
 	}
 	if status.Canary.Configured {
 		status.Canary.Algorithm = mlCanarySelectorAlgorithm
-		status.Canary.SelectorRevision = s.mlCanary.revision()
+		status.Canary.SelectorRevision = e.mlCanary.revision()
 	}
-	if metadata, ok := s.mlClassifier.(analysis.ClassifierMetadata); ok {
+	if metadata, ok := e.mlClassifier.(analysis.ClassifierMetadata); ok {
 		status.ModelVersion = metadata.ModelVersion()
 		status.BlockThreshold = metadata.BlockThreshold()
 	}
-	if s.mlClassifier != nil {
-		status.Revision = s.mlClassifier.Revision()
+	if e.mlClassifier != nil {
+		status.Revision = e.mlClassifier.Revision()
 	}
 	for i, upper := range mlLatencyBuckets {
-		status.LatencyHistogram[fmt.Sprintf("le_%dus", upper)] = s.mlTelemetry.latencyBuckets[i].Load()
+		status.LatencyHistogram[fmt.Sprintf("le_%dus", upper)] = e.mlTelemetry.latencyBuckets[i].Load()
 	}
-	status.LatencyHistogram["gt_50000us"] = s.mlTelemetry.latencyBuckets[len(mlLatencyBuckets)].Load()
+	status.LatencyHistogram["gt_50000us"] = e.mlTelemetry.latencyBuckets[len(mlLatencyBuckets)].Load()
 	for i, name := range mlProbabilityBuckets {
-		status.ProbabilityHistogram[name] = s.mlTelemetry.probabilityBuckets[i].Load()
+		status.ProbabilityHistogram[name] = e.mlTelemetry.probabilityBuckets[i].Load()
 	}
 	return status
 }
@@ -199,59 +199,59 @@ func mlState(mode analysis.MLMode, enabled bool) string {
 	return "degraded"
 }
 
-func (s *Service) currentMLPolicyRevision() string {
-	if s == nil || s.mlClassifier == nil || !s.mlClassifier.Enabled() {
+func (e *MLEngine) currentMLPolicyRevision() string {
+	if e == nil || e.mlClassifier == nil || !e.mlClassifier.Enabled() {
 		return ""
 	}
-	material := fmt.Sprintf("model=%s\nmode=%s\ncanary=%s\n", s.mlClassifier.Revision(), s.mlMode, s.mlCanary.revision())
+	material := fmt.Sprintf("model=%s\nmode=%s\ncanary=%s\n", e.mlClassifier.Revision(), e.mlMode, e.mlCanary.revision())
 	sum := sha256.Sum256([]byte(material))
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Service) classifyML(ctx context.Context, current analysis.Result) (analysis.Result, bool) {
-	if s == nil || s.mlMode == analysis.MLModeDisabled || s.mlClassifier == nil || !s.mlClassifier.Enabled() {
-		if s != nil {
-			s.mlTelemetry.skips.Add(1)
+func (e *MLEngine) classifyML(ctx context.Context, current analysis.Result) (analysis.Result, bool) {
+	if e == nil || e.mlMode == analysis.MLModeDisabled || e.mlClassifier == nil || !e.mlClassifier.Enabled() {
+		if e != nil {
+			e.mlTelemetry.skips.Add(1)
 		}
 		return current, false
 	}
 	if current.Verdict != analysis.VerdictSuspicious {
-		s.mlTelemetry.skips.Add(1)
+		e.mlTelemetry.skips.Add(1)
 		return current, false
 	}
 
-	s.mlTelemetry.predictionAttempts.Add(1)
+	e.mlTelemetry.predictionAttempts.Add(1)
 	started := time.Now()
-	decision, err := classifyWithRecovery(s.mlClassifier, current.Domain)
-	s.mlTelemetry.observeLatency(time.Since(started))
+	decision, err := classifyWithRecovery(e.mlClassifier, current.Domain)
+	e.mlTelemetry.observeLatency(time.Since(started))
 	if err != nil {
-		s.mlTelemetry.errors.Add(1)
+		e.mlTelemetry.errors.Add(1)
 		return current, false
 	}
-	s.mlTelemetry.observeProbability(decision.Probability)
-	canaryConfigured := s.mlCanary.enabled()
-	canarySelected := canaryConfigured && s.mlCanary.Eligible(current.Domain)
+	e.mlTelemetry.observeProbability(decision.Probability)
+	canaryConfigured := e.mlCanary.enabled()
+	canarySelected := canaryConfigured && e.mlCanary.Eligible(current.Domain)
 	if canaryConfigured {
 		if canarySelected {
-			s.mlTelemetry.canarySelected.Add(1)
+			e.mlTelemetry.canarySelected.Add(1)
 		} else {
-			s.mlTelemetry.canaryExcluded.Add(1)
+			e.mlTelemetry.canaryExcluded.Add(1)
 		}
 	}
 	switch decision.Action {
 	case analysis.MLActionPromoteMalicious:
 		if canarySelected {
-			s.mlTelemetry.canaryWouldBlock.Add(1)
+			e.mlTelemetry.canaryWouldBlock.Add(1)
 		}
-		if s.mlMode == analysis.MLModeShadow {
-			s.mlTelemetry.shadowWouldBlock.Add(1)
+		if e.mlMode == analysis.MLModeShadow {
+			e.mlTelemetry.shadowWouldBlock.Add(1)
 			return current, false
 		}
 		if !canarySelected {
-			s.mlTelemetry.canarySuppressed.Add(1)
+			e.mlTelemetry.canarySuppressed.Add(1)
 			return current, false
 		}
-		s.mlTelemetry.enforcePromotions.Add(1)
+		e.mlTelemetry.enforcePromotions.Add(1)
 		current.Verdict = analysis.VerdictMalicious
 		current.Confidence = decision.Probability
 		current.Score = int(math.Round(decision.Probability * 100))
@@ -271,15 +271,15 @@ func (s *Service) classifyML(ctx context.Context, current analysis.Result) (anal
 		return current, true
 	case analysis.MLActionAbstain:
 		if canarySelected {
-			s.mlTelemetry.canaryWouldPass.Add(1)
+			e.mlTelemetry.canaryWouldPass.Add(1)
 		}
-		if s.mlMode == analysis.MLModeShadow {
-			s.mlTelemetry.shadowWouldPass.Add(1)
+		if e.mlMode == analysis.MLModeShadow {
+			e.mlTelemetry.shadowWouldPass.Add(1)
 		}
-		s.mlTelemetry.abstains.Add(1)
+		e.mlTelemetry.abstains.Add(1)
 		return current, false
 	default:
-		s.mlTelemetry.errors.Add(1)
+		e.mlTelemetry.errors.Add(1)
 		return current, false
 	}
 }

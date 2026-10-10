@@ -36,7 +36,7 @@ func TestEnrichmentWorkerSkipsNewerCachedEvaluation(t *testing.T) {
 		Domain: "meadowharbor.net", Verdict: analysis.VerdictMalicious,
 		Confidence: 0.92, Score: 90, Reasons: []string{"osint: strong public warning"},
 	}
-	key := analysisCacheKey(domain, svc.currentMLPolicyRevision())
+	key := analysisCacheKey(domain, svc.ml.currentMLPolicyRevision())
 	before := now.Add(-time.Minute).UTC().Format(time.RFC3339Nano)
 	if err := svc.redis.SetJSON(context.Background(), key, analysisCacheEntry{
 		Result:           strong,
@@ -92,7 +92,7 @@ func TestEnrichmentWorkerSkipsFreshRecompute(t *testing.T) {
 	domain := "fresh-recompute.test"
 	now := time.Now().UTC()
 	fresh := analysis.Result{Domain: domain, Verdict: analysis.VerdictSafe, Confidence: 0.6, Score: 20}
-	key := analysisCacheKey(domain, svc.currentMLPolicyRevision())
+	key := analysisCacheKey(domain, svc.ml.currentMLPolicyRevision())
 	if err := svc.redis.SetJSON(context.Background(), key, analysisCacheEntry{
 		Result:           fresh,
 		AnalysisRevision: analysisAlgorithmRevision,

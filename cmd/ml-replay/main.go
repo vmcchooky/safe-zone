@@ -231,8 +231,8 @@ func run(labelsPath, bundleDir, outputPath, sourceCommit string, canaryPercent i
 	runtimeParity := compareDecisions(cases, runtimeCore.decisions, runtimeDNS.decisions, tolerance)
 	offlineFP := calculateFalsePositives(cases, offlineCore.decisions)
 	runtimeFP := calculateFalsePositives(cases, runtimeCore.decisions)
-	coreStatus := coreService.MLStatus()
-	dnsStatus := dnsService.MLStatus()
+	coreStatus := coreService.ML().MLStatus(context.Background())
+	dnsStatus := dnsService.ML().MLStatus(context.Background())
 	if coreStatus.EnforcePromotions != 0 || dnsStatus.EnforcePromotions != 0 {
 		return errors.New("shadow replay observed an enforce promotion")
 	}

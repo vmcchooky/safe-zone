@@ -68,7 +68,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	analysisConfigStatus := h.Risk.AnalysisConfigReloadStatus()
 	feedStatus := h.FeedStatus(r.Context())
 	adblockStatus := h.Risk.Adblock().AdblockStatus()
-	mlStatus := h.Risk.MLStatus()
+	mlStatus := h.Risk.ML().MLStatus(r.Context())
 	osintStatus := &OSINTStatus{
 		Enabled: h.Risk.OSINT().Enabled(),
 		Mode:    h.Risk.OSINT().Mode(),

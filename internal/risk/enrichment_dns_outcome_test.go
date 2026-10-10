@@ -160,7 +160,7 @@ func TestEnrichmentTimeoutOutcomePreservesCachedVerdict(t *testing.T) {
 	}
 	svc.processEnrichmentJob(job)
 
-	key := analysisCacheKey(domain, svc.currentMLPolicyRevision())
+	key := analysisCacheKey(domain, svc.ml.currentMLPolicyRevision())
 	var after analysisCacheEntry
 	found, err := svc.redis.GetJSON(context.Background(), key, &after)
 	if err != nil || !found {

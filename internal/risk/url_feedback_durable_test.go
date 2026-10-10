@@ -202,11 +202,11 @@ func TestDurableURLFeedbackFailsClosedWithoutStoreButDoesNotPanic(t *testing.T) 
 func TestServiceUsesMemoryFeedbackWithoutSecret(t *testing.T) {
 	service := NewService(Options{AnalysisConfig: config.DefaultAnalysisConfig()})
 	defer func() { _ = service.Close() }()
-	status := service.URLMLStatus(t.Context()).Feedback
+	status := service.ml.URLMLStatus(t.Context()).Feedback
 	if !status.Supported || status.Persistence != "memory" {
 		t.Fatalf("expected memory persistence by default: %+v", status)
 	}
-	if _, reason := service.RecordURLFeedback(t.Context(), "missing-event", "benign"); reason != "unknown_event" {
+	if _, reason := service.ml.RecordURLFeedback(t.Context(), "missing-event", "benign"); reason != "unknown_event" {
 		t.Fatalf("unexpected memory apply result: %q", reason)
 	}
 }
@@ -241,7 +241,7 @@ func TestServiceDurableFeedbackEndToEndPrivacy(t *testing.T) {
 		_ = service.Close()
 		t.Fatalf("shadow evaluation missing: %+v", result.URLML)
 	}
-	if _, reason := service.RecordURLFeedback(t.Context(), "plain-event-id-"+marker, "benign"); reason != "" {
+	if _, reason := service.ml.RecordURLFeedback(t.Context(), "plain-event-id-"+marker, "benign"); reason != "" {
 		_ = service.Close()
 		t.Fatalf("durable label rejected in-process: %q", reason)
 	}
@@ -265,12 +265,12 @@ func TestServiceDurableFeedbackEndToEndPrivacy(t *testing.T) {
 		Store:          reopened,
 		URLMLFeedback:  durableTestConfig("e2e-secret"),
 	})
-	status := restored.URLMLStatus(t.Context()).Feedback
+	status := restored.ml.URLMLStatus(t.Context()).Feedback
 	if status.LabelledEvents != 1 || status.ReportedBenignFalsePositive != 1 {
 		_ = restored.Close()
 		t.Fatalf("label not durable across restart: %+v", status)
 	}
-	if ok, reason := restored.RecordURLFeedback(t.Context(), "plain-event-id-"+marker, "benign"); ok || reason != "already_labeled" {
+	if ok, reason := restored.ml.RecordURLFeedback(t.Context(), "plain-event-id-"+marker, "benign"); ok || reason != "already_labeled" {
 		t.Fatalf("expected anti-replay across restart, got %v/%q", ok, reason)
 	}
 	if err := restored.Close(); err != nil {
@@ -335,7 +335,7 @@ func TestCoverageRecordsMissingContextReasons(t *testing.T) {
 		MissingContextReason: "post_not_provided",
 	})
 
-	coverage := service.URLMLStatus(t.Context()).Coverage
+	coverage := service.ml.URLMLStatus(t.Context()).Coverage
 	if coverage.AnalyzeRequests != 3 || coverage.URLContextRequests != 0 {
 		t.Fatalf("unexpected coverage totals: %+v", coverage)
 	}

@@ -35,7 +35,7 @@ func TestDNSResolverIgnoresCoreOnlyURLMLConfiguration(t *testing.T) {
 	}
 	defer func() { _ = service.Close() }()
 
-	status := service.URLMLStatus(t.Context())
+	status := service.ml.URLMLStatus(t.Context())
 	if status.Mode != "disabled" || status.Enabled || status.State != "disabled" {
 		t.Fatalf("expected URL ML to stay disabled in DNS resolver, got %+v", status)
 	}
@@ -84,7 +84,7 @@ func TestURLMLOpsBaselineStatusReflectsFailure(t *testing.T) {
 	})
 	defer func() { _ = failed.Close() }()
 
-	status := failed.urlMLOpsBaselineStatus()
+	status := failed.ml.urlMLOpsBaselineStatus()
 	if status.Loaded || !status.FailOpen || status.ErrorClass != "baseline_load" {
 		t.Fatalf("expected fail-open status, got %+v", status)
 	}
@@ -92,7 +92,7 @@ func TestURLMLOpsBaselineStatusReflectsFailure(t *testing.T) {
 	notConfigured := NewService(Options{AnalysisConfig: config.DefaultAnalysisConfig()})
 	defer func() { _ = notConfigured.Close() }()
 
-	status = notConfigured.urlMLOpsBaselineStatus()
+	status = notConfigured.ml.urlMLOpsBaselineStatus()
 	if status.FailOpen || status.ErrorClass != "" {
 		t.Fatalf("expected clean status when no baseline is configured, got %+v", status)
 	}
@@ -103,7 +103,7 @@ func TestURLMLOpsBaselineStatusReflectsFailure(t *testing.T) {
 	})
 	defer func() { _ = loaded.Close() }()
 
-	status = loaded.urlMLOpsBaselineStatus()
+	status = loaded.ml.urlMLOpsBaselineStatus()
 	if !status.Loaded || status.FailOpen {
 		t.Fatalf("expected loaded baseline status, got %+v", status)
 	}

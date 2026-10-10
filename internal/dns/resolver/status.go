@@ -44,7 +44,7 @@ func (r *Resolver) StatusHandler(w http.ResponseWriter, req *http.Request) {
 		"upstream_doh_resolvers": r.Upstreams.Status(),
 		"redis":                  r.Risk.CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
-		"ml":                     r.Risk.MLStatus(),
+		"ml":                     r.Risk.ML().MLStatus(req.Context()),
 		// This service holds its own adblock configuration copy, reconciled
 		// from the store on the same 30s cycle as core-api. Publishing the
 		// fingerprint here is what makes a split configuration detectable
@@ -78,7 +78,7 @@ func (r *Resolver) MetricsHandler(w http.ResponseWriter, req *http.Request) {
 		"metrics":                r.Metrics.Snapshot(),
 		"redis":                  r.Risk.CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
-		"ml":                     r.Risk.MLStatus(),
+		"ml":                     r.Risk.ML().MLStatus(req.Context()),
 		"upstream_doh": map[string]any{
 			"failures_total": upstreamFailures,
 		},

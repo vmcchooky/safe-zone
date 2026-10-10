@@ -40,7 +40,7 @@ func TestWorkerStaleSnapshotNeverOverwritesFresherEntry(t *testing.T) {
 		t.Fatalf("fixture must start safe, got %+v", base)
 	}
 	cfgRev := svc.currentConfigRevision()
-	modelRev := svc.currentMLPolicyRevision()
+	modelRev := svc.ml.currentMLPolicyRevision()
 
 	freshAt := time.Now().UTC()
 	staleAt := freshAt.Add(-time.Hour)

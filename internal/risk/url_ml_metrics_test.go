@@ -20,9 +20,9 @@ func TestDriftPSISStaysFiniteWithAnEmptyReferenceBucket(t *testing.T) {
 	distribution[0] = 1.0 // every other reference bucket stays at zero
 
 	s := newDriftTestService(t, distribution, 100)
-	s.urlMLTelemetry.probabilityBuckets[0].Add(10)
+	s.ml.urlMLTelemetry.probabilityBuckets[0].Add(10)
 
-	status := s.urlMLDriftStatus()
+	status := s.ml.urlMLDriftStatus()
 	psi := status.PopulationStabilityIndex
 	if math.IsNaN(psi) || math.IsInf(psi, 0) {
 		t.Fatalf("psi = %v, want a finite value", psi)
@@ -56,10 +56,10 @@ func TestDriftPSIScoresZeroForIdenticalDistributions(t *testing.T) {
 
 	s := newDriftTestService(t, distribution, int(total))
 	for index, count := range raw {
-		s.urlMLTelemetry.probabilityBuckets[index].Add(count)
+		s.ml.urlMLTelemetry.probabilityBuckets[index].Add(count)
 	}
 
-	status := s.urlMLDriftStatus()
+	status := s.ml.urlMLDriftStatus()
 	if got := status.PopulationStabilityIndex; got != 0 {
 		t.Fatalf("psi = %v for an identical distribution, want 0", got)
 	}
@@ -91,9 +91,9 @@ func TestDriftPSISeparatesNoiseFromRealShift(t *testing.T) {
 	}
 	noiseService := newDriftTestService(t, distribution, int(total))
 	for index, count := range noisy {
-		noiseService.urlMLTelemetry.probabilityBuckets[index].Add(count)
+		noiseService.ml.urlMLTelemetry.probabilityBuckets[index].Add(count)
 	}
-	noise := noiseService.urlMLDriftStatus()
+	noise := noiseService.ml.urlMLDriftStatus()
 	if noise.PopulationStabilityIndex >= noise.WatchThreshold {
 		t.Fatalf("sampling noise scored %v, which is at or above the watch threshold %v",
 			noise.PopulationStabilityIndex, noise.WatchThreshold)
@@ -105,9 +105,9 @@ func TestDriftPSISeparatesNoiseFromRealShift(t *testing.T) {
 
 	// A genuinely different distribution must alert.
 	shiftService := newDriftTestService(t, distribution, int(total))
-	shiftService.urlMLTelemetry.probabilityBuckets[0].Add(100)
-	shiftService.urlMLTelemetry.probabilityBuckets[9].Add(900)
-	shift := shiftService.urlMLDriftStatus()
+	shiftService.ml.urlMLTelemetry.probabilityBuckets[0].Add(100)
+	shiftService.ml.urlMLTelemetry.probabilityBuckets[9].Add(900)
+	shift := shiftService.ml.urlMLDriftStatus()
 	if shift.PopulationStabilityIndex <= shift.AlertThreshold {
 		t.Fatalf("a real shift scored %v, want above the alert threshold %v",
 			shift.PopulationStabilityIndex, shift.AlertThreshold)
@@ -124,9 +124,9 @@ func TestDriftPSIIsSkippedWithoutAReferenceRowCount(t *testing.T) {
 	distribution[0] = 1.0
 
 	s := newDriftTestService(t, distribution, 0)
-	s.urlMLTelemetry.probabilityBuckets[0].Add(10)
+	s.ml.urlMLTelemetry.probabilityBuckets[0].Add(10)
 
-	status := s.urlMLDriftStatus()
+	status := s.ml.urlMLDriftStatus()
 	if status.PopulationStabilityIndex != 0 {
 		t.Fatalf("psi = %v without a reference row count, want 0", status.PopulationStabilityIndex)
 	}
@@ -140,14 +140,16 @@ func newDriftTestService(t *testing.T, distribution []float64, referenceRows int
 	bucketNames := make([]string, len(mlProbabilityBuckets))
 	copy(bucketNames, mlProbabilityBuckets[:])
 	return &Service{
-		urlMLOpsBaseline: &URLOperationalBaseline{
-			ReferenceKind:      "frozen_operational_shadow_traffic",
-			ReferenceRows:      referenceRows,
-			BucketNames:        bucketNames,
-			Distribution:       distribution,
-			MinimumLiveSamples: 1,
-			WatchThreshold:     0.1,
-			AlertThreshold:     0.25,
+		ml: &MLEngine{
+			urlMLOpsBaseline: &URLOperationalBaseline{
+				ReferenceKind:      "frozen_operational_shadow_traffic",
+				ReferenceRows:      referenceRows,
+				BucketNames:        bucketNames,
+				Distribution:       distribution,
+				MinimumLiveSamples: 1,
+				WatchThreshold:     0.1,
+				AlertThreshold:     0.25,
+			},
 		},
 	}
 }
@@ -161,9 +163,9 @@ func TestURLMLStatusIsAlwaysJSONEncodable(t *testing.T) {
 
 	// Drive the p95 into the overflow bucket, which used to yield -1.
 	for range 10 {
-		s.urlMLTelemetry.observeLatency(200 * time.Millisecond)
+		s.ml.urlMLTelemetry.observeLatency(200 * time.Millisecond)
 	}
-	if _, err := json.Marshal(s.URLMLStatus(t.Context())); err != nil {
+	if _, err := json.Marshal(s.ml.URLMLStatus(t.Context())); err != nil {
 		t.Fatalf("URLMLStatus must encode: %v", err)
 	}
 }

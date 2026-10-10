@@ -94,7 +94,7 @@ func (s *Service) processEnrichmentJob(job enrichmentJob) {
 	if current := s.currentConfigRevision(); current != job.ConfigRevision {
 		return
 	}
-	if current := s.currentMLPolicyRevision(); current != job.ModelRevision {
+	if current := s.ml.currentMLPolicyRevision(); current != job.ModelRevision {
 		return
 	}
 

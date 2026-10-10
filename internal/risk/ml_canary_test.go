@@ -83,7 +83,7 @@ func TestMLShadowObservesCanaryWithoutChangingVerdict(t *testing.T) {
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("shadow canary changed verdict to %s", result.Verdict)
 	}
-	status := service.MLStatus()
+	status := service.ml.MLStatus(t.Context())
 	if !status.Canary.Configured || status.Canary.SelectedPredictions != 1 || status.Canary.SelectedWouldBlock != 1 {
 		t.Fatalf("unexpected canary observation: %+v", status.Canary)
 	}
@@ -116,7 +116,7 @@ func TestMLEnforceSuppressesPredictionOutsideCanary(t *testing.T) {
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("excluded canary domain changed verdict to %s", result.Verdict)
 	}
-	status := service.MLStatus()
+	status := service.ml.MLStatus(t.Context())
 	if status.EnforcePromotions != 0 || status.Canary.EnforceSuppressed != 1 || status.Canary.ExcludedPredictions != 1 {
 		t.Fatalf("unexpected bounded enforce telemetry: %+v", status)
 	}
@@ -160,7 +160,7 @@ func TestMLPolicyRevisionSeparatesShadowAndEnforceCache(t *testing.T) {
 	if second.CacheHit {
 		t.Fatal("enforce reused a shadow cache entry")
 	}
-	if shadow.MLStatus().PolicyRevision == enforce.MLStatus().PolicyRevision {
+	if shadow.ml.MLStatus(t.Context()).PolicyRevision == enforce.ml.MLStatus(t.Context()).PolicyRevision {
 		t.Fatal("shadow and enforce must have different ML policy revisions")
 	}
 }

@@ -195,24 +195,13 @@ type Service struct {
 	// adblock behavior lives on AdblockEngine; Service only constructs it
 	// in NewService and hands it a lifecycle context plus the store for
 	// the goroutines that need them.
-	adblock         *AdblockEngine
-	mlClassifier    analysis.DomainClassifier
-	mlMode          analysis.MLMode
-	mlCanary        MLCanaryConfig
-	mlTelemetry     mlTelemetry
-	urlMLClassifier analysis.URLClassifier
-	urlMLMode       analysis.MLMode
-	urlMLShadow     URLMLShadowConfig
-	urlMLTelemetry  urlMLTelemetry
-	// urlMLOpsBaseline is an optional frozen operational drift reference
-	// loaded from real shadow traffic. Load failures are fail-open.
-	urlMLOpsBaseline           *URLOperationalBaseline
-	urlMLOpsBaselineFailed     bool
-	urlMLOpsBaselineErrorClass string
-	// urlMLFeedback correlates opaque event fingerprints with caller labels.
-	// Backed by memory (ephemeral) or SQLite (durable, bounded) depending on
-	// URLMLFeedbackConfig.
-	urlMLFeedback urlFeedbackBackend
+	adblock *AdblockEngine
+
+	// ml owns the entire machine-learning subsystem: domain classifier
+	// plus URL classifier with shadow sampling, telemetry, operational
+	// baseline and feedback. See MLEngine; all ML behavior lives there,
+	// constructed once in NewService.
+	ml *MLEngine
 
 	policySemantics PolicySemantics
 
@@ -526,17 +515,19 @@ func NewService(options Options) *Service {
 			adblockDataRoot:   adblockDataRoot,
 			adblockHTTPClient: options.AdblockHTTPClient,
 		},
-		mlClassifier:               options.MLClassifier,
-		mlMode:                     mlMode,
-		mlCanary:                   mlCanary,
-		urlMLClassifier:            options.URLMLClassifier,
-		urlMLMode:                  urlMLMode,
-		urlMLShadow:                urlMLShadow,
-		urlMLOpsBaseline:           options.URLOpsBaseline,
-		urlMLOpsBaselineFailed:     options.URLOpsBaselineFailed,
-		urlMLOpsBaselineErrorClass: options.URLOpsBaselineErrorClass,
-		urlMLFeedback:              urlFeedbackBackendImpl,
-		policySemantics:            NormalizePolicySemantics(string(options.PolicySemantics)),
+		ml: &MLEngine{
+			mlClassifier:               options.MLClassifier,
+			mlMode:                     mlMode,
+			mlCanary:                   mlCanary,
+			urlMLClassifier:            options.URLMLClassifier,
+			urlMLMode:                  urlMLMode,
+			urlMLShadow:                urlMLShadow,
+			urlMLOpsBaseline:           options.URLOpsBaseline,
+			urlMLOpsBaselineFailed:     options.URLOpsBaselineFailed,
+			urlMLOpsBaselineErrorClass: options.URLOpsBaselineErrorClass,
+			urlMLFeedback:              urlFeedbackBackendImpl,
+		},
+		policySemantics: NormalizePolicySemantics(string(options.PolicySemantics)),
 	}
 	svc.adblock.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
 	svc.adblock.adblockSourcePolicies.Store(&adblockSourcePolicySet{})
@@ -617,7 +608,7 @@ func (s *Service) Close() error {
 	// The durable URL-feedback prune runs on its own goroutine and holds the
 	// SQLite connection; wait for it before closing the store, or it observes
 	// a closed database and records a spurious persistence error.
-	s.urlMLFeedback.waitForPrune()
+	s.ml.urlMLFeedback.waitForPrune()
 	var err error
 	if s.redis != nil {
 		err = s.redis.Close()
