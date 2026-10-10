@@ -153,8 +153,11 @@ type Service struct {
 	ttlAllowed      time.Duration
 	ttlSuspicious   time.Duration
 	ttlBlocked      time.Duration
-	recentLimit     int64
-	recentTTL       time.Duration
+	// telemetry owns the recent-analysis ring and persisted telemetry:
+	// ring bounds plus the platform handles to serve them. See
+	// TelemetryEngine; all telemetry behavior lives there, constructed
+	// once in NewService.
+	telemetry *TelemetryEngine
 	// feed owns threat-feed matching: the live-feed Redis key plus the
 	// platform handles to read it. See FeedEngine; all feed matching
 	// behavior lives there, constructed once in NewService.
@@ -493,8 +496,13 @@ func NewService(options Options) *Service {
 		ttlAllowed:      configDuration(options.TTLAllowed, defaultCacheTTLAllowed),
 		ttlSuspicious:   configDuration(options.TTLSuspicious, defaultCacheTTLSuspicious),
 		ttlBlocked:      configDuration(options.TTLBlocked, defaultCacheTTLBlocked),
-		recentLimit:     recentLimit,
-		recentTTL:       configDuration(options.RecentTTL, 24*time.Hour),
+		telemetry: &TelemetryEngine{
+			recentLimit:  recentLimit,
+			recentTTL:    configDuration(options.RecentTTL, 24*time.Hour),
+			redis:        options.Redis,
+			redisTimeout: configDuration(options.RedisTimeout, defaultRedisTimeout),
+			store:        options.Store,
+		},
 		feed: &FeedEngine{
 			threatFeedKey: threatFeedKey,
 			redis:         options.Redis,

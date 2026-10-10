@@ -42,7 +42,7 @@ func (r *Resolver) StatusHandler(w http.ResponseWriter, req *http.Request) {
 		"deployment_tier":        r.Config.DeploymentTier,
 		"upstream_doh":           r.Upstreams.PrimaryURL(),
 		"upstream_doh_resolvers": r.Upstreams.Status(),
-		"redis":                  r.Risk.CacheStatus(req.Context()),
+		"redis":                  r.Risk.Telemetry().CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
 		"ml":                     r.Risk.ML().MLStatus(req.Context()),
 		// This service holds its own adblock configuration copy, reconciled
@@ -76,7 +76,7 @@ func (r *Resolver) MetricsHandler(w http.ResponseWriter, req *http.Request) {
 		"service":                "dns-resolver",
 		"status":                 "ok",
 		"metrics":                r.Metrics.Snapshot(),
-		"redis":                  r.Risk.CacheStatus(req.Context()),
+		"redis":                  r.Risk.Telemetry().CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
 		"ml":                     r.Risk.ML().MLStatus(req.Context()),
 		"upstream_doh": map[string]any{

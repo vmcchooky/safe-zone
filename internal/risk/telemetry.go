@@ -12,13 +12,13 @@ import (
 	"safe-zone/internal/store"
 )
 
-func (s *Service) RecordRecent(ctx context.Context, item Analysis) {
-	err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		if err := s.redis.PushJSON(redisCtx, recentAnalysisKey, item, s.recentLimit); err != nil {
+func (e *TelemetryEngine) RecordRecent(ctx context.Context, item Analysis) {
+	err := withRedisTimeout(ctx, e.redis, e.redisTimeout, func(redisCtx context.Context) error {
+		if err := e.redis.PushJSON(redisCtx, recentAnalysisKey, item, e.recentLimit); err != nil {
 			return err
 		}
-		if s.recentTTL > 0 {
-			return s.redis.Expire(redisCtx, recentAnalysisKey, s.recentTTL)
+		if e.recentTTL > 0 {
+			return e.redis.Expire(redisCtx, recentAnalysisKey, e.recentTTL)
 		}
 		return nil
 	})
@@ -30,10 +30,10 @@ func (s *Service) RecordRecent(ctx context.Context, item Analysis) {
 	}
 }
 
-func (s *Service) Recent(ctx context.Context) []Analysis {
-	recent := make([]Analysis, 0, s.recentLimit)
-	err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		return s.redis.ListJSON(redisCtx, recentAnalysisKey, 0, s.recentLimit-1, func(data []byte) error {
+func (e *TelemetryEngine) Recent(ctx context.Context) []Analysis {
+	recent := make([]Analysis, 0, e.recentLimit)
+	err := withRedisTimeout(ctx, e.redis, e.redisTimeout, func(redisCtx context.Context) error {
+		return e.redis.ListJSON(redisCtx, recentAnalysisKey, 0, e.recentLimit-1, func(data []byte) error {
 			var item Analysis
 			if err := json.Unmarshal(data, &item); err != nil {
 				return err
@@ -52,16 +52,16 @@ func (s *Service) Recent(ctx context.Context) []Analysis {
 	return recent
 }
 
-func (s *Service) CacheStatus(ctx context.Context) CacheStatus {
-	if s == nil || s.redis == nil || !s.redis.Enabled() {
+func (e *TelemetryEngine) CacheStatus(ctx context.Context) CacheStatus {
+	if e == nil || e.redis == nil || !e.redis.Enabled() {
 		return CacheStatus{
 			Configured: false,
 			Status:     "disabled",
 		}
 	}
 
-	err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		return s.redis.Ping(redisCtx)
+	err := withRedisTimeout(ctx, e.redis, e.redisTimeout, func(redisCtx context.Context) error {
+		return e.redis.Ping(redisCtx)
 	})
 	if err != nil {
 		return CacheStatus{
@@ -76,9 +76,9 @@ func (s *Service) CacheStatus(ctx context.Context) CacheStatus {
 		Status:     "ok",
 	}
 	var runtimeStats cache.RedisRuntimeStats
-	statsErr := s.withRedis(ctx, func(redisCtx context.Context) error {
+	statsErr := withRedisTimeout(ctx, e.redis, e.redisTimeout, func(redisCtx context.Context) error {
 		var err error
-		runtimeStats, err = s.redis.RuntimeStats(redisCtx)
+		runtimeStats, err = e.redis.RuntimeStats(redisCtx)
 		return err
 	})
 	if statsErr != nil {
@@ -96,8 +96,11 @@ func (s *Service) CacheStatus(ctx context.Context) CacheStatus {
 	return status
 }
 
-func (s *Service) recordTelemetry(a Analysis, client ClientInfo) {
-	s.recordTelemetryWithSource(a, client, "")
+func (e *TelemetryEngine) recordTelemetry(a Analysis, client ClientInfo) {
+	if e == nil {
+		return
+	}
+	e.recordTelemetryWithSource(a, client, "")
 }
 
 // recordTelemetryWithSource records telemetry with an explicit source,
@@ -110,8 +113,8 @@ func (s *Service) recordTelemetry(a Analysis, client ClientInfo) {
 // reasons) and the source label only. The policy action, category and
 // assessment_mode carried by PolicyDecision are not persisted yet; adding
 // columns would be a schema migration, deferred to a later PR.
-func (s *Service) recordTelemetryWithSource(a Analysis, client ClientInfo, source string) {
-	if s.store == nil {
+func (e *TelemetryEngine) recordTelemetryWithSource(a Analysis, client ClientInfo, source string) {
+	if e == nil || e.store == nil {
 		return
 	}
 	if source == "" {
@@ -121,7 +124,7 @@ func (s *Service) recordTelemetryWithSource(a Analysis, client ClientInfo, sourc
 	if a.Decision != nil {
 		policyAction, policyCategory = a.Decision.Action, a.Decision.Category
 	}
-	s.store.RecordAnalysis(store.TelemetryEntry{
+	e.store.RecordAnalysis(store.TelemetryEntry{
 		Domain:         a.Domain,
 		Verdict:        string(a.Verdict),
 		Score:          a.Score,
@@ -161,17 +164,17 @@ func inferSource(a Analysis) string {
 }
 
 // TelemetryRecentFiltered returns recent telemetry entries constrained at the store layer.
-func (s *Service) TelemetryRecentFiltered(filter store.TelemetryFilter, limit, offset int) ([]store.TelemetryEntry, error) {
-	if s.store == nil {
+func (e *TelemetryEngine) TelemetryRecentFiltered(filter store.TelemetryFilter, limit, offset int) ([]store.TelemetryEntry, error) {
+	if e == nil || e.store == nil {
 		return nil, nil
 	}
-	return s.store.QueryRecentFiltered(context.Background(), filter, limit, offset)
+	return e.store.QueryRecentFiltered(context.Background(), filter, limit, offset)
 }
 
 // TelemetryStats returns aggregate telemetry statistics.
-func (s *Service) TelemetryStats(period string) (store.Stats, error) {
-	if s.store == nil {
+func (e *TelemetryEngine) TelemetryStats(period string) (store.Stats, error) {
+	if e == nil || e.store == nil {
 		return store.Stats{}, nil
 	}
-	return s.store.QueryStats(context.Background(), period)
+	return e.store.QueryStats(context.Background(), period)
 }

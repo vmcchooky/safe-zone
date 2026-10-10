@@ -64,7 +64,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cacheStatus := h.Risk.CacheStatus(r.Context())
+	cacheStatus := h.Risk.Telemetry().CacheStatus(r.Context())
 	analysisConfigStatus := h.Risk.AnalysisConfigReloadStatus()
 	feedStatus := h.FeedStatus(r.Context())
 	adblockStatus := h.Risk.Adblock().AdblockStatus()
