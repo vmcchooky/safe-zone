@@ -14,11 +14,11 @@ import (
 
 func (s *Service) RecordRecent(ctx context.Context, item Analysis) {
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		if err := s.redis.PushJSON(redisCtx, recentAnalysisKey, item, s.recentLimit); err != nil {
+		if err := s.redis.PushJSON(redisCtx, recentAnalysisKey, item, s.telemetry.recentLimit); err != nil {
 			return err
 		}
-		if s.recentTTL > 0 {
-			return s.redis.Expire(redisCtx, recentAnalysisKey, s.recentTTL)
+		if s.telemetry.recentTTL > 0 {
+			return s.redis.Expire(redisCtx, recentAnalysisKey, s.telemetry.recentTTL)
 		}
 		return nil
 	})
@@ -31,9 +31,9 @@ func (s *Service) RecordRecent(ctx context.Context, item Analysis) {
 }
 
 func (s *Service) Recent(ctx context.Context) []Analysis {
-	recent := make([]Analysis, 0, s.recentLimit)
+	recent := make([]Analysis, 0, s.telemetry.recentLimit)
 	err := s.withRedis(ctx, func(redisCtx context.Context) error {
-		return s.redis.ListJSON(redisCtx, recentAnalysisKey, 0, s.recentLimit-1, func(data []byte) error {
+		return s.redis.ListJSON(redisCtx, recentAnalysisKey, 0, s.telemetry.recentLimit-1, func(data []byte) error {
 			var item Analysis
 			if err := json.Unmarshal(data, &item); err != nil {
 				return err
