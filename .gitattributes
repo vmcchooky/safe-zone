@@ -12,3 +12,12 @@
 # Windows they otherwise show up as a phantom whole-tree diff after any edit,
 # and a CRLF shebang would break on Linux. Found 2026-09-27.
 *.py text eol=lf
+# Ensure .gitignore always uses LF so Windows line endings do not break pattern parsing.
+.gitignore text eol=lf
+
+# Exclude CI, internal agent metadata, and local scanners from GitHub Release archive downloads
+.github export-ignore
+.agents export-ignore
+.gitleaks.toml export-ignore
+.golangci.yml export-ignore
+
