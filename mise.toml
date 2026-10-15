@@ -1,4 +1,6 @@
 [tools]
+# Single source of truth for the Go toolchain. go.mod (go + toolchain
+# directives) and Dockerfile (golang: image) must state this same version.
 go = "1.26.9"
 node = "24"
 python = "3.13.14"
@@ -22,7 +24,7 @@ run = "echo Safe Zone checks passed."
 
 [tasks.ci]
 description = "Run the CI verification suite"
-depends = ["check", "ui:e2e", "go:security", "ml:test"]
+depends = ["check", "ui:e2e", "go:security", "ml:test", "go:cover", "research:test"]
 run = "echo Safe Zone CI checks passed."
 
 [tasks."ui:install"]
@@ -95,7 +97,7 @@ depends = ["ui:bundle"]
 # code no linter ever saw. Anyone working in tmp/ still runs it directly with
 # go run or go test ./tmp/... -- this only stops the shared gates from
 # depending on scratch.
-run = "go test -race ./cmd/... ./internal/... ./ml/..."
+run = "go test -race -coverprofile=coverage.out ./cmd/... ./internal/... ./ml/..."
 
 [tasks."go:build"]
 description = "Build all Go packages with the embedded UI bundle refreshed first"
@@ -103,6 +105,24 @@ depends = ["ui:bundle"]
 # Explicit package list for the same reason as go:test: tmp/ is gitignored
 # scratch and must not be part of what the shared gates compile.
 run = "go build ./cmd/... ./internal/... ./ml/..."
+
+[tasks."go:cover"]
+description = "Fail when total Go coverage drops below the gate (SAFE_ZONE_COVER_THRESHOLD, default 50)"
+# Depends on go:test (which writes coverage.out) instead of re-running the
+# suite: the CI graph runs tasks in parallel, and a second full -race suite
+# starves golangci-lint of CPU until its 5m timeout trips.
+depends = ["go:test"]
+env = { SAFE_ZONE_COVER_RUN_TESTS = "0" }
+run = "sh ./scripts/ops/coverage.sh"
+run_windows = "pwsh -NoProfile -File scripts/ops/coverage.ps1"
+
+[tasks."research:build"]
+description = "Build the ML research CLIs under tools/ (kept out of the production ./cmd/... gate)"
+run = "go build ./tools/..."
+
+[tasks."research:test"]
+description = "Test the ML research CLIs under tools/"
+run = "go test -race ./tools/..."
 
 [tasks."go:lint"]
 description = "Run the Go linter"
