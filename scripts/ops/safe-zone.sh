@@ -435,6 +435,19 @@ prune_logs() {
   fi
 }
 
+prune_adblock_tmp() {
+  # Orphaned *.tmp-* files under data/adblock_sources/ are left behind when a
+  # feed sync is interrupted mid-rename. They are gitignored, never read back
+  # (the sync only consumes the final names), and safe to delete.
+  for dir in "${project_dir}/data/adblock_sources" "${project_dir}/data"; do
+    [ -d "$dir" ] || continue
+    find "$dir" -maxdepth 1 -type f -name '*.tmp-*' -print -delete | while IFS= read -r entry; do
+      [ -n "$entry" ] || continue
+      log_info "Removed orphaned adblock tmp $(basename -- "$entry")"
+    done
+  done
+}
+
 latest_backup_dir() {
   if [ ! -d "$backup_dir" ]; then
     return 1
@@ -696,6 +709,7 @@ case "$cmd" in
   prune)
     prune_backups "$keep_count"
     prune_logs "$log_retention_days"
+    prune_adblock_tmp
     ;;
   feed-sync)
     sources="$(resolve_feed_sources || true)"
@@ -724,7 +738,7 @@ Commands:
   logs         Follow compose logs for SAFE_ZONE_STACK (default: production).
   backup       Save Redis, SQLite, env, and Caddy snapshots under backups/<timestamp>/.
   restore      Restore the latest backup directory, or a provided backup directory.
-  prune        Keep the newest backup directories and delete stale tmp/*.log files.
+  prune        Keep the newest backup directories; delete stale tmp/*.log and orphaned adblock *.tmp-* files.
   feed-sync    Sync configured free threat feeds once.
   duckdns      Update DuckDNS record.
 

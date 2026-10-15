@@ -50,7 +50,7 @@ SAFE_ZONE_ML_CANARY_SEED=phase5-local-shadow-v1
 Clean replay có thể tái lập bằng lệnh sau. Output phải nằm trong private working store, không ghi đè archive đã ký:
 
 ```powershell
-go run ./cmd/ml-replay `
+go run ./tools/ml-replay `
   --labels ml/evidence/representative-replay/run-20260823-owner-approved-addendum/labels.csv `
   --bundle <private-bundle> `
   --source-commit <exact-40-character-git-sha> `
@@ -111,8 +111,8 @@ Ba false positive đều là tên miền tổ chức tiếng Việt dài; lexica
 - `internal/risk/ml_canary.go`
 - `internal/risk/ml.go`
 - `internal/risk/ml_canary_test.go`
-- `cmd/ml-replay/main.go`
-- `cmd/ml-replay/main_test.go`
+- `tools/ml-replay/main.go`
+- `tools/ml-replay/main_test.go`
 - `docs/runbooks/ml-canary-rollout.md`
 - `docs/runbooks/ml-shadow-representative-replay.md`
 - Private report: `<private-run>/replay-report.json` — không thuộc Git và không phải signed evidence.

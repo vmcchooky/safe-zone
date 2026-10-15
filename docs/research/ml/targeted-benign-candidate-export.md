@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-Replay bounded-canary đầu tiên không có benign case nào đi qua runtime ML-candidate path, nên `runtime_candidate_false_positive.fpr` không có mẫu số. Công cụ `cmd/ml-fp-candidates` tạo tập bổ sung từ các quyết định `resolved + allow` đã được người vận hành ghi trong false-positive queue. Công cụ lấy analysis config và trusted-brand snapshot đang chạy, bỏ qua override trong bước mô phỏng phản thực tế, rồi chỉ giữ domain có lexical verdict `SUSPICIOUS` — điều kiện để Custom ML được gọi trong runtime. Model bundle local phải khớp revision, version và threshold của `core-api`; runtime phải giữ `shadow/ready`. Contact, report note và review reason không được ghi vào dataset. Snapshot local ngày 2026-08-23 có 0 report, vì vậy công cụ phát hành manifest `empty_queue` và không tạo `labels.csv`; không có nhãn tổng hợp hoặc backfill được dùng thay cho quyết định người vận hành.
+Replay bounded-canary đầu tiên không có benign case nào đi qua runtime ML-candidate path, nên `runtime_candidate_false_positive.fpr` không có mẫu số. Công cụ `tools/ml-fp-candidates` tạo tập bổ sung từ các quyết định `resolved + allow` đã được người vận hành ghi trong false-positive queue. Công cụ lấy analysis config và trusted-brand snapshot đang chạy, bỏ qua override trong bước mô phỏng phản thực tế, rồi chỉ giữ domain có lexical verdict `SUSPICIOUS` — điều kiện để Custom ML được gọi trong runtime. Model bundle local phải khớp revision, version và threshold của `core-api`; runtime phải giữ `shadow/ready`. Contact, report note và review reason không được ghi vào dataset. Snapshot local ngày 2026-08-23 có 0 report, vì vậy công cụ phát hành manifest `empty_queue` và không tạo `labels.csv`; không có nhãn tổng hợp hoặc backfill được dùng thay cho quyết định người vận hành.
 
 ## Xuất targeted benign candidate trước staging canary
 
@@ -32,9 +32,9 @@ Phép đo là counterfactual: domain đã được allow override sẽ không đ
 
 ### Cách thức Thực hiện (Implementation Details)
 
-`cmd/ml-fp-candidates` dùng admin API read-only để lấy hai snapshot status, analysis config, trusted brands và toàn bộ trang `status=resolved`. API key được đọc từ file private; biến tiến trình `SAFE_ZONE_ADMIN_API_KEY` chỉ là fallback khi môi trường local chưa provision secret file. Hai status phải giữ nguyên config revision, mode, model revision, version và threshold trong suốt lần chạy. Pagination thất bại nếu total/count thay đổi, report ID bị lặp hoặc số record vượt giới hạn cấu hình.
+`tools/ml-fp-candidates` dùng admin API read-only để lấy hai snapshot status, analysis config, trusted brands và toàn bộ trang `status=resolved`. API key được đọc từ file private; biến tiến trình `SAFE_ZONE_ADMIN_API_KEY` chỉ là fallback khi môi trường local chưa provision secret file. Hai status phải giữ nguyên config revision, mode, model revision, version và threshold trong suốt lần chạy. Pagination thất bại nếu total/count thay đổi, report ID bị lặp hoặc số record vượt giới hạn cấu hình.
 
-Mỗi queue record phải có `status=resolved`, `resolution_action=allow`, `review_reason` tối thiểu 8 ký tự, `reviewed_by`, `reviewed_at` và domain hợp lệ. Các report cùng normalized domain được gộp; case ID ổn định là tiền tố `fpq-` cộng 64 bit đầu của SHA-256 domain. CSV tương thích `cmd/ml-replay` qua ba cột bắt buộc `case_id`, `domain`, `human_label`, đồng thời ghi model probability và provenance tối thiểu. Manifest khóa source commit, SHA-256 của config/brand snapshot, hash `SHA256SUMS`, model contract, queue counters và selection statistics.
+Mỗi queue record phải có `status=resolved`, `resolution_action=allow`, `review_reason` tối thiểu 8 ký tự, `reviewed_by`, `reviewed_at` và domain hợp lệ. Các report cùng normalized domain được gộp; case ID ổn định là tiền tố `fpq-` cộng 64 bit đầu của SHA-256 domain. CSV tương thích `tools/ml-replay` qua ba cột bắt buộc `case_id`, `domain`, `human_label`, đồng thời ghi model probability và provenance tối thiểu. Manifest khóa source commit, SHA-256 của config/brand snapshot, hash `SHA256SUMS`, model contract, queue counters và selection statistics.
 
 Output directory phải chưa tồn tại. Công cụ tạo một staging directory cùng filesystem, ghi file với permission `0600`, sau đó rename sang target. Khi không có candidate, manifest vẫn được phát hành nhưng binary trả exit code `2`; `go run` thông báo `exit status 2` nhưng có thể trả wrapper code `1` cho shell. `labels.csv` không tồn tại để tránh replay nhầm tập rỗng hoặc stale file.
 
@@ -55,9 +55,9 @@ FPR quan sát được chỉ được tính khi candidate count lớn hơn 0. V�
 
 ### Liên kết Artifacts
 
-- Exporter: `cmd/ml-fp-candidates/main.go`
-- Focused tests: `cmd/ml-fp-candidates/main_test.go`
-- Replay evaluator: `cmd/ml-replay/main.go`
+- Exporter: `tools/ml-fp-candidates/main.go`
+- Focused tests: `tools/ml-fp-candidates/main_test.go`
+- Replay evaluator: `tools/ml-replay/main.go`
 - False-positive workflow: `docs/runbooks/false-positive-workflow.md`
 - Representative replay runbook: `docs/runbooks/ml-shadow-representative-replay.md`
 - Bounded-canary design: `docs/research/ml/bounded-canary-routing-replay.md`
@@ -68,7 +68,7 @@ FPR quan sát được chỉ được tính khi candidate count lớn hơn 0. V�
 - Allow decision có thể là business exception. Operator phải chỉ dùng false-positive action khi evidence xác nhận domain benign; exporter không diễn giải free-text reason.
 - Brand snapshot được hash nhưng API hiện không cung cấp atomic revision cho brand list. Hai status snapshot khóa config/model, còn thay đổi brand đồng thời vẫn cần operator tránh trong cửa sổ export ngắn.
 - Dataset phản thực tế không thay thế fresh production-like telemetry, canary observation window hoặc owner approval.
-- Khi queue trống, `cmd/ml-whitelist-proxy` có thể tạo phép đo sàng lọc từ snapshot whitelist Việt Nam. Kết quả chỉ là benign proxy và không thay thế quyết định `Allow` có reviewer provenance.
+- Khi queue trống, `tools/ml-whitelist-proxy` có thể tạo phép đo sàng lọc từ snapshot whitelist Việt Nam. Kết quả chỉ là benign proxy và không thay thế quyết định `Allow` có reviewer provenance.
 
 ## Lịch sử Thay đổi (Version History)
 

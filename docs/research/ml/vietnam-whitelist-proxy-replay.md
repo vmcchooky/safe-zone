@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-False-positive queue local chưa có report thật nên không thể tạo tập benign ML-candidate có nhãn người vận hành. `cmd/ml-whitelist-proxy` cung cấp phép đo bổ sung bằng cách chạy offline snapshot whitelist Việt Nam như thể runtime whitelist không tồn tại. Công cụ không tắt hoặc sửa whitelist, không gửi DNS/HTTP request tới domain, không tạo report hay quyết định `Allow`, và chỉ chạy ML cho domain có lexical verdict `SUSPICIOUS` giống candidate gate của runtime. Kết quả được gọi là `whitelist-proxy FPR`: đây là chỉ báo sàng lọc để tìm case cần review, không phải FPR đã xác nhận bằng human label.
+False-positive queue local chưa có report thật nên không thể tạo tập benign ML-candidate có nhãn người vận hành. `tools/ml-whitelist-proxy` cung cấp phép đo bổ sung bằng cách chạy offline snapshot whitelist Việt Nam như thể runtime whitelist không tồn tại. Công cụ không tắt hoặc sửa whitelist, không gửi DNS/HTTP request tới domain, không tạo report hay quyết định `Allow`, và chỉ chạy ML cho domain có lexical verdict `SUSPICIOUS` giống candidate gate của runtime. Kết quả được gọi là `whitelist-proxy FPR`: đây là chỉ báo sàng lọc để tìm case cần review, không phải FPR đã xác nhận bằng human label.
 
 ## Mục tiêu (Objectives)
 
@@ -30,7 +30,7 @@ False-positive queue local chưa có report thật nên không thể tạo tập
 
 ## Cách thức Thực hiện (Implementation Details)
 
-`cmd/ml-whitelist-proxy` đọc file newline-delimited một lần qua `io.TeeReader`: cùng luồng dữ liệu được đếm byte, băm SHA-256, chuẩn hóa, loại trùng và đánh giá. Công cụ dừng nếu logical source không tồn tại trong manifest, đường dẫn không khớp, SHA/byte size lệch hoặc số domain vượt giới hạn. Invalid/blank/duplicate được ghi riêng để không làm mờ mẫu số.
+`tools/ml-whitelist-proxy` đọc file newline-delimited một lần qua `io.TeeReader`: cùng luồng dữ liệu được đếm byte, băm SHA-256, chuẩn hóa, loại trùng và đánh giá. Công cụ dừng nếu logical source không tồn tại trong manifest, đường dẫn không khớp, SHA/byte size lệch hoặc số domain vượt giới hạn. Invalid/blank/duplicate được ghi riêng để không làm mờ mẫu số.
 
 Trước đánh giá, công cụ lấy `/v1/status`, `/v1/config/analysis` và `/v1/brands` bằng admin API read-only. Model bundle local phải tự vượt checksum verification và khớp runtime model revision, version, threshold. Sau đánh giá, status được đọc lại; thay đổi config revision, mode, state hoặc model contract làm lần chạy thất bại. Ba CSV private được phát hành:
 
@@ -46,7 +46,7 @@ Codex (GPT-5) thực hiện thiết kế, triển khai, unit test và local repl
 
 ```powershell
 $env:SAFE_ZONE_ADMIN_API_KEY = <process-scoped-key>
-go run ./cmd/ml-whitelist-proxy `
+go run ./tools/ml-whitelist-proxy `
   --api-url http://127.0.0.1:8080 `
   --bundle <immutable-bundle> `
   --source data\whitelist\vietnam\vietnam_domains.txt `
@@ -90,12 +90,12 @@ Run dùng source commit `216a02458f8d4e5aba68f9f740a79c29053255f8`; manifest SHA
 - `terms_review_id=pending-review` là provenance gap. Report phù hợp cho R&D local, chưa phù hợp để làm signed production approval evidence.
 - Domain có thể đổi chủ hoặc bị compromise sau ngày retrieval. `would-block` là queue ưu tiên review, không phải lỗi model đã xác nhận.
 - Giải pháp tối ưu trước staging canary là review có mục tiêu: ưu tiên toàn bộ `would-block`, sau đó near-threshold critical strata; không review lại hàng trăm nghìn domain và không review lại 79 case cũ nếu không có evidence mới.
-- Khi có report thật, tập `cmd/ml-fp-candidates` vẫn là nguồn mạnh hơn vì có operator decision. Whitelist proxy bổ sung coverage, không thay thế feedback loop thật.
+- Khi có report thật, tập `tools/ml-fp-candidates` vẫn là nguồn mạnh hơn vì có operator decision. Whitelist proxy bổ sung coverage, không thay thế feedback loop thật.
 
 ## Liên kết Artifacts
 
-- Evaluator: `cmd/ml-whitelist-proxy/main.go`
-- Unit tests: `cmd/ml-whitelist-proxy/main_test.go`
+- Evaluator: `tools/ml-whitelist-proxy/main.go`
+- Unit tests: `tools/ml-whitelist-proxy/main_test.go`
 - Data manifest: `ml/data/data_manifest.json`
 - Source provenance: `docs/research/ml/resource.md`
 - Targeted queue exporter: `docs/research/ml/targeted-benign-candidate-export.md`
@@ -127,7 +127,7 @@ CSV mode được bật bằng `--source-format=csv`, với domain/evidence colu
 Codex (GPT-5) thực hiện thay đổi theo chiến lược contract-first và adversarial test cho URL host confusion, missing evidence, unknown suffix, duplicate domain. Số lượng subagent là 0; không áp dụng bỏ phiếu. Quality control gồm unit test, full Go suite, race detector, gofmt, vet, golangci-lint, gosec, govulncheck, source/output checksum và runtime status đầu/cuối. Human-in-the-loop chỉ xác nhận candidate sau khi local filtering hoàn tất.
 
 ```powershell
-go run ./cmd/ml-whitelist-proxy `
+go run ./tools/ml-whitelist-proxy `
   --api-url http://127.0.0.1:8080 `
   --bundle <immutable-bundle> `
   --source data\whitelist\vietnam\vietnam_websites.csv `

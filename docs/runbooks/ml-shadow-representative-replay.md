@@ -116,14 +116,14 @@ proceed to a small `enforce` canary with the documented kill switch back to
 
 ## Clean bounded-canary replay
 
-Use `cmd/ml-replay` to compare two independent classifier/service paths without
+Use `tools/ml-replay` to compare two independent classifier/service paths without
 Redis, LLM, enrichment or OSINT. The command remains in `shadow`, checks model
 probability parity and service response parity, and records the bounded selector
 observation. Write the report to a private working directory; do not overwrite
 the signed packet.
 
 ```powershell
-go run ./cmd/ml-replay `
+go run ./tools/ml-replay `
   --labels <reviewed-run>\labels.csv `
   --bundle <immutable-bundle> `
   --source-commit <exact-40-character-git-sha> `
@@ -143,14 +143,14 @@ offline reviewed-set FPR is zero.
 ### Targeted benign supplement from the operator queue
 
 When `runtime_candidate_false_positive.benign_cases` is zero, use
-`cmd/ml-fp-candidates` to build a private supplemental set from false-positive
+`tools/ml-fp-candidates` to build a private supplemental set from false-positive
 reports already confirmed with the `Allow` action. The exporter fetches the
 active analysis config and trusted-brand list, verifies that the local bundle
 matches the runtime model contract, and retains only counterfactual lexical
 `SUSPICIOUS` domains.
 
 ```powershell
-go run ./cmd/ml-fp-candidates `
+go run ./tools/ml-fp-candidates `
   --api-url http://127.0.0.1:8080 `
   --admin-api-key-file <private-admin-key-file> `
   --bundle <immutable-bundle> `
@@ -159,7 +159,7 @@ go run ./cmd/ml-fp-candidates `
   --output <new-private-targeted-run>
 ```
 
-Run `cmd/ml-replay` against the resulting `labels.csv` as a separate report;
+Run `tools/ml-replay` against the resulting `labels.csv` as a separate report;
 do not merge it into or overwrite the signed representative packet. Treat
 `empty_queue` and `insufficient_candidates` as evidence gaps, not as passing
 FPR results. This workflow consumes only new operator decisions and does not
@@ -167,13 +167,13 @@ ask the reviewer to repeat the archived 78 unclassifiable reviews.
 
 ### Vietnam whitelist proxy fallback
 
-When the local false-positive queue is empty, use `cmd/ml-whitelist-proxy` as
+When the local false-positive queue is empty, use `tools/ml-whitelist-proxy` as
 an offline screening supplement. It evaluates the checksum-pinned Vietnam
 whitelist snapshot counterfactually without changing the runtime whitelist or
 requesting any source domain. The runtime must remain `shadow/ready/enabled`.
 
 ```powershell
-go run ./cmd/ml-whitelist-proxy `
+go run ./tools/ml-whitelist-proxy `
   --api-url http://127.0.0.1:8080 `
   --admin-api-key-file <private-admin-key-file> `
   --bundle <immutable-bundle> `
@@ -197,7 +197,7 @@ rows without an approved evidence reference and rejects unknown public
 suffixes without making outbound requests:
 
 ```powershell
-go run ./cmd/ml-whitelist-proxy `
+go run ./tools/ml-whitelist-proxy `
   --api-url http://127.0.0.1:8080 `
   --admin-api-key-file <private-admin-key-file> `
   --bundle <immutable-bundle> `
@@ -216,12 +216,12 @@ go run ./cmd/ml-whitelist-proxy `
 
 ### Bounded Firecrawl evidence verification
 
-After curated replay, use `cmd/ml-evidence-firecrawl` to prepare a dry-run of
+After curated replay, use `tools/ml-evidence-firecrawl` to prepare a dry-run of
 the would-block and near-threshold review union. Dry-run performs no network
 request and does not require an API key:
 
 ```powershell
-go run ./cmd/ml-evidence-firecrawl `
+go run ./tools/ml-evidence-firecrawl `
   --replay-manifest <curated-run>\manifest.json `
   --candidates <curated-run>\candidates.csv `
   --data-manifest ml\data\data_manifest.json `
@@ -249,7 +249,7 @@ key or make Firecrawl requests, and it verifies every stored response hash
 before parsing:
 
 ```powershell
-go run ./cmd/ml-evidence-firecrawl `
+go run ./tools/ml-evidence-firecrawl `
   --replay-manifest <curated-run>\manifest.json `
   --candidates <curated-run>\candidates.csv `
   --data-manifest ml\data\data_manifest.json `

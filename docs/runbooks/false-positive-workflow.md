@@ -109,7 +109,7 @@ domains whose counterfactual lexical verdict is `SUSPICIOUS`. It never exports
 report contact, note, or review reason.
 
 ```powershell
-go run ./cmd/ml-fp-candidates `
+go run ./tools/ml-fp-candidates `
   --api-url http://127.0.0.1:8080 `
   --admin-api-key-file <private-admin-key-file> `
   --bundle <immutable-bundle> `
@@ -119,7 +119,7 @@ go run ./cmd/ml-fp-candidates `
 ```
 
 The output directory must not exist. A ready run contains `manifest.json` and
-`labels.csv`; feed the CSV into `cmd/ml-replay`. If the queue is empty, the tool
+`labels.csv`; feed the CSV into `tools/ml-replay`. If the queue is empty, the tool
 writes only a manifest with `status=empty_queue` and exits non-zero (`2` for the
 compiled binary; `go run` may surface it as wrapper code `1`). Do not seed the
 operator queue with synthetic reports and do not copy previously signed review
