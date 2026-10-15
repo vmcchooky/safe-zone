@@ -1,6 +1,6 @@
 param (
     [string]$TargetHost = "safe-zone",
-    [string]$RemoteDir = "/home/safe-zone-henry/safe-zone",
+    [string]$RemoteDir = "/home/safe-zone/safe-zone",
     [string]$BuildVersion = "",
     [string]$BuildCommit = ""
 )

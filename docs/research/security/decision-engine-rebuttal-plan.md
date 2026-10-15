@@ -291,7 +291,7 @@ Mục tiêu là chia công việc thành PR nhỏ, độc lập phạm vi, rollb
 | 03 | Agent proposal thay auto-override (H3) | `internal/agent/audit.go`, `internal/store` (bảng proposal), review API | `agent_auto_enforce=false`; kiểm kê override Agent cũ chỉ-review-không-xóa-hàng-loạt |
 | 04 | Contract tách trục + telemetry (M6, L1) | `internal/risk` types, handlers, `internal/store` migration, UI projection | Schema v2 song song; dual-write/read; rollback projection |
 | 05 | Cache generation/CAS + brand seed preservation (M1, M2) | `internal/risk` cache entry/workers, `internal/store/brand.go` | Namespace v2; canary writes; test restart-preservation cho brand |
-| 06 | Eval framework + corpus provenance (A2) | `cmd/ml-replay`, `cmd/threat-context-eval`, `ml/evidence` tooling | Manifest/hash dataset; thay replay-0101 bằng capture đúng thời điểm hoặc loại khỏi gate |
+| 06 | Eval framework + corpus provenance (A2) | `tools/ml-replay`, `cmd/threat-context-eval`, `ml/evidence` tooling | Manifest/hash dataset; thay replay-0101 bằng capture đúng thời điểm hoặc loại khỏi gate |
 | 07 | Mở cohort ML shadow hai chiều + disagreement telemetry (A1 một phần) | `internal/risk/ml.go`, `internal/risk/url_ml.go` | `ML_MODE=shadow`; bao gồm benign-host+phishy-path negatives cho URL |
 | 08 | Shared reducer + scope authority (H2, M7) | package `internal/decision` mới + adapters | `decision_engine_v2` shadow cùng snapshot, không double-fetch; canary theo host+group |
 | 09 | Fetch worker an toàn + LLM claims advisory (M4-excerpt, inspection) | package `internal/inspection` mới, `internal/ai` | `website_fetch_mode=disabled/shadow`; budget egress/ngày; rollback dừng worker + revoke evidence suy ra |
@@ -336,7 +336,7 @@ Cohort bắt buộc: benign đại diện (top + long tail, IDN, API/CDN/DNS-onl
 
 ### Liên kết Artifacts
 
-- Eval hiện có: `ml/models/v1/model_report.json`, `ml/evidence/representative-replay/`, `ml/experiments/v10-url-aware-final-evaluation.json`, `cmd/ml-replay`, `cmd/threat-context-eval`
+- Eval hiện có: `ml/models/v1/model_report.json`, `ml/evidence/representative-replay/`, `ml/experiments/v10-url-aware-final-evaluation.json`, `tools/ml-replay`, `cmd/threat-context-eval`
 
 ---
 

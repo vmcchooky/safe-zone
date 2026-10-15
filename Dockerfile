@@ -13,7 +13,8 @@ RUN npm ci \
 COPY ui/ ./
 RUN npm run check
 
-FROM golang:1.27.2-alpine AS build
+# Go toolchain version is owned by mise.toml [tools] go (single source of truth).
+FROM golang:1.26.9-alpine AS build
 
 ARG SERVICE=core-api
 ARG VERSION=dev

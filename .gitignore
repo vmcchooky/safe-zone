@@ -91,6 +91,7 @@ ui/.vite/
 ui/coverage/
 *.tsbuildinfo
 coverage.txt
+coverage.out
 
 # Domain-enumeration and state-actor research scripts, kept out of this PUBLIC
 # repository on purpose. These build candidate domains from a Vietnamese

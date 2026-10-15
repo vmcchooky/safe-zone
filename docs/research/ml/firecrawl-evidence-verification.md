@@ -5,7 +5,7 @@
 
 ## Tóm tắt (Abstract)
 
-Curated whitelist replay tạo 14 review group cần đối chiếu evidence hiện tại trước khi xem chúng là false positive đã xác nhận. `cmd/ml-evidence-firecrawl` chuẩn bị và thực thi tối đa một Firecrawl `/scrape` JSON request cho mỗi group, chỉ tới hai evidence host đã phê duyệt trong selection policy. Runner không gọi candidate domain, không follow link, không dùng crawl/agent discovery và mặc định chạy dry-run. API key chỉ được đọc từ secret file local khi có `--execute`; key không được chấp nhận qua flag trực tiếp, source code hoặc output. Mọi input được khóa SHA-256 theo curated replay/data manifest, còn output được ghi vào private directory mới bằng staging + rename. Raw response đã lưu có thể được tái kiểm định offline bằng `--revalidate-results`, gồm kiểm tra response SHA-256, nên sửa local validator không cần gọi lại Firecrawl. Human reviewer sau đó xác nhận ba would-block domain là benign; bounded replay đo FPR `3/3 = 100%` trên supplement hard-case và chặn canary cho tới khi có remediation.
+Curated whitelist replay tạo 14 review group cần đối chiếu evidence hiện tại trước khi xem chúng là false positive đã xác nhận. `tools/ml-evidence-firecrawl` chuẩn bị và thực thi tối đa một Firecrawl `/scrape` JSON request cho mỗi group, chỉ tới hai evidence host đã phê duyệt trong selection policy. Runner không gọi candidate domain, không follow link, không dùng crawl/agent discovery và mặc định chạy dry-run. API key chỉ được đọc từ secret file local khi có `--execute`; key không được chấp nhận qua flag trực tiếp, source code hoặc output. Mọi input được khóa SHA-256 theo curated replay/data manifest, còn output được ghi vào private directory mới bằng staging + rename. Raw response đã lưu có thể được tái kiểm định offline bằng `--revalidate-results`, gồm kiểm tra response SHA-256, nên sửa local validator không cần gọi lại Firecrawl. Human reviewer sau đó xác nhận ba would-block domain là benign; bounded replay đo FPR `3/3 = 100%` trên supplement hard-case và chặn canary cho tới khi có remediation.
 
 ## Bounded Firecrawl evidence verification
 
@@ -84,8 +84,8 @@ Reviewer `reviewer.vmc` xác nhận ba would-block domain là website hợp phá
 
 ### Liên kết Artifacts
 
-- Runner: `cmd/ml-evidence-firecrawl/main.go`
-- Unit tests: `cmd/ml-evidence-firecrawl/main_test.go`
+- Runner: `tools/ml-evidence-firecrawl/main.go`
+- Unit tests: `tools/ml-evidence-firecrawl/main_test.go`
 - Curated replay research: `docs/research/ml/vietnam-whitelist-proxy-replay.md`
 - Shadow replay runbook: `docs/runbooks/ml-shadow-representative-replay.md`
 - Secret handling: `ops/secrets/README.md`

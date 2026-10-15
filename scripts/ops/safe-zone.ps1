@@ -757,6 +757,24 @@ function Prune-Logs {
   }
 }
 
+function Prune-AdblockTmp {
+  # Orphaned *.tmp-* files under data/adblock_sources/ are left behind when a
+  # feed sync is interrupted mid-rename. They are gitignored, never read back
+  # (the sync only consumes the final names), and safe to delete.
+  $removed = 0
+  foreach ($dir in @((Join-Path $RepoRoot 'data\adblock_sources'), (Join-Path $RepoRoot 'data'))) {
+    if (-not (Test-Path $dir -PathType Container)) { continue }
+    foreach ($entry in (Get-ChildItem -Path $dir -File -Filter '*.tmp-*')) {
+      Remove-Item -Force $entry.FullName
+      Write-Host "Removed orphaned adblock tmp $($entry.Name)"
+      $removed++
+    }
+  }
+  if ($removed -eq 0) {
+    Write-Host 'No orphaned adblock tmp files'
+  }
+}
+
 function Show-Help {
   @'
 Safe Zone ops helper
@@ -884,9 +902,10 @@ switch ($Command) {
     Restore-Backup -Path $BackupPath
   }
   'prune' {
-    Write-Section 'Pruning backups and logs'
+    Write-Section 'Pruning backups, logs and orphaned adblock tmp files'
     Prune-Backups -KeepCount $Keep
     Prune-Logs -RetentionDays $LogRetentionDays
+    Prune-AdblockTmp
   }
   'feed-sync' {
     $sources = Resolve-FeedSources | ForEach-Object { $_.Trim() } | Where-Object { $_ }
