@@ -5,6 +5,9 @@ tmp/
 .env.*
 !.env.example
 *.exe
+*.dll
+*.so
+*.dylib
 *.test
 *.out
 *.log
@@ -17,6 +20,8 @@ ops/secrets/*
 *.db
 *.db-shm
 *.db-wal
+**/data/*.db*
+**/data/*.sqlite*
 
 # Temp and deploy artifacts
 deploy.tar.gz
@@ -70,6 +75,11 @@ htmlcov/
 *.swo
 .idea/
 .vscode/
+.opencode/
+.gemini/
+.claude/
+.cursor/
+.windsurf/
 Thumbs.db
 desktop.ini
 .direnv/
@@ -105,6 +115,8 @@ scripts/scrapers/*political*.py
 **/adblock_meta.json.tmp*
 **/adblock_sources/
 **/adblock_sources/*.tmp*
+**/data/*.txt*
+**/data/adblock_*
 
 # Keep the embedded React bundle directory present for go:embed on fresh clones.
 !internal/api/app/
@@ -130,6 +142,5 @@ ml/data/derived/
 /TOOLS.md
 /memory/
 
-# Agent session/request metadata is local-only. Project agent tooling
-# under .agents/ (AGENTS.md, skills) stays tracked.
-.agents/ORIGINAL_REQUEST.md
+# Agent tooling, skills, and session metadata are local-only
+.agents/
