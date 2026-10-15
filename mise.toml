@@ -97,7 +97,7 @@ depends = ["ui:bundle"]
 # code no linter ever saw. Anyone working in tmp/ still runs it directly with
 # go run or go test ./tmp/... -- this only stops the shared gates from
 # depending on scratch.
-run = "go test -race ./cmd/... ./internal/... ./ml/..."
+run = "go test -race -coverprofile=coverage.out ./cmd/... ./internal/... ./ml/..."
 
 [tasks."go:build"]
 description = "Build all Go packages with the embedded UI bundle refreshed first"
@@ -107,7 +107,12 @@ depends = ["ui:bundle"]
 run = "go build ./cmd/... ./internal/... ./ml/..."
 
 [tasks."go:cover"]
-description = "Run Go tests with -race and fail when total coverage drops below the gate (SAFE_ZONE_COVER_THRESHOLD, default 50)"
+description = "Fail when total Go coverage drops below the gate (SAFE_ZONE_COVER_THRESHOLD, default 50)"
+# Depends on go:test (which writes coverage.out) instead of re-running the
+# suite: the CI graph runs tasks in parallel, and a second full -race suite
+# starves golangci-lint of CPU until its 5m timeout trips.
+depends = ["go:test"]
+env = { SAFE_ZONE_COVER_RUN_TESTS = "0" }
 run = "sh ./scripts/ops/coverage.sh"
 run_windows = "pwsh -NoProfile -File scripts/ops/coverage.ps1"
 

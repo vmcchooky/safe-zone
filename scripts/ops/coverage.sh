@@ -11,13 +11,15 @@ threshold="${SAFE_ZONE_COVER_THRESHOLD:-50}"
 profile="${SAFE_ZONE_COVER_PROFILE:-coverage.out}"
 pkgs="${SAFE_ZONE_COVER_PKGS:-./cmd/... ./internal/... ./ml/... ./tools/...}"
 
-# Intentional word splitting: pkgs is a space-separated package list.
-# shellcheck disable=SC2086
-go test -race -coverprofile="$profile" $pkgs
+if [ "${SAFE_ZONE_COVER_RUN_TESTS:-1}" = "1" ]; then
+  # Intentional word splitting: pkgs is a space-separated package list.
+  # shellcheck disable=SC2086
+  go test -race -coverprofile="$profile" $pkgs
+fi
 
 total="$(go tool cover -func="$profile" | awk '/^total:/ {gsub(/%/, "", $3); print $3}')"
 if [ -z "$total" ]; then
-  printf 'coverage gate FAILED: could not parse total coverage from %s\n' "$profile" >&2
+  printf 'coverage gate FAILED: could not parse total coverage from %s (run the test suite with -coverprofile first)\n' "$profile" >&2
   exit 1
 fi
 if awk -v total="$total" -v threshold="$threshold" 'BEGIN { exit !((total + 0) < (threshold + 0)) }'; then

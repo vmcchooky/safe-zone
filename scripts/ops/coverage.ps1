@@ -17,14 +17,16 @@ if ($env:SAFE_ZONE_COVER_PKGS) {
   $pkgs = @('./cmd/...', './internal/...', './ml/...', './tools/...')
 }
 
-& go test -race "-coverprofile=$coverProfile" @pkgs
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if ($env:SAFE_ZONE_COVER_RUN_TESTS -ne '0') {
+  & go test -race "-coverprofile=$coverProfile" @pkgs
+  if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 $total = $null
 foreach ($line in (& go tool cover "-func=$coverProfile")) {
   if ($line -match '^total:\s+\S+\s+([\d.]+)%$') { $total = [double]$Matches[1] }
 }
-if ($null -eq $total) { throw "coverage gate FAILED: could not parse total coverage from $coverProfile" }
+if ($null -eq $total) { throw "coverage gate FAILED: could not parse total coverage from $coverProfile (run the test suite with -coverprofile first)" }
 if ($total -lt $threshold) {
   Write-Host ("coverage gate FAILED: total {0:N1}% < threshold {1:N1}% ({2})" -f $total, $threshold, $coverProfile) -ForegroundColor Red
   exit 1
