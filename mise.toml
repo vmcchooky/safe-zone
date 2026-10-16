@@ -195,6 +195,11 @@ description = "Prune retained backups and log files through the standardized ops
 run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/ops/safe-zone.sh prune"
 run_windows = "$env:SAFE_ZONE_SKIP_MISE='1'; pwsh -NoProfile -File scripts/ops/safe-zone.ps1 prune"
 
+[tasks."ops:rotate-secrets"]
+description = "Rotate core-api admin password and API key in the compose .env (backup, verify, rollback)"
+run = "sh ./scripts/ops/rotate-admin-secrets.sh"
+run_windows = "pwsh -NoProfile -File scripts/ops/rotate-admin-secrets.ps1"
+
 [tasks."ops:feed-sync"]
 description = "Run the feed sync helper through the standardized ops entrypoint"
 run = "SAFE_ZONE_SKIP_MISE=1 sh ./scripts/ops/safe-zone.sh feed-sync"
