@@ -75,7 +75,7 @@ echo Resolver:   http://127.0.0.1:8081/healthz
 echo.
 echo Login:
 echo   username: admin
-echo   password: SafeRoadLocalAdmin123!
+echo   password: (printed above when .env was prepared; stored in local .env only)
 echo.
 echo Quick test:
 echo   http://127.0.0.1:8080/v1/analyze?domain=dichvucong-vn.com
@@ -107,8 +107,6 @@ if not exist ".env" (
   "  'SAFE_ZONE_CORE_API_ADDR'=':8080';" ^
   "  'SAFE_ZONE_DNS_RESOLVER_ADDR'=':8081';" ^
   "  'SAFE_ZONE_REDIS_ADDR'='redis:6379';" ^
-  "  'SAFE_ZONE_ADMIN_PASSWORD'='SafeRoadLocalAdmin123!';" ^
-  "  'SAFE_ZONE_ADMIN_API_KEY'='SafeRoadLocalApiKey1234567890';" ^
   "  'SAFE_ZONE_OSINT_ENABLED'='true';" ^
   "  'SAFE_ZONE_OSINT_MODE'='background_on_demand';" ^
   "  'SAFE_ZONE_OSINT_TIMEOUT_MS'='2000';" ^
@@ -124,7 +122,32 @@ if not exist ".env" (
   "    $text += $key + '=' + $pairs[$key] + [Environment]::NewLine;" ^
   "  }" ^
   "}" ^
-  "Set-Content -Path $path -Value $text -NoNewline;"
+  "function New-DevSecret([int]$len) {" ^
+  "  $alphabet = 'abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789'.ToCharArray();" ^
+  "  $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::new();" ^
+  "  try {" ^
+  "    $bytes = New-Object byte[] $len;" ^
+  "    $rng.GetBytes($bytes);" ^
+  "    -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] });" ^
+  "  } finally { $rng.Dispose(); }" ^
+  "};" ^
+  "$secrets = [ordered]@{'SAFE_ZONE_ADMIN_PASSWORD'=24; 'SAFE_ZONE_ADMIN_API_KEY'=32};" ^
+  "$shown = @{};" ^
+  "foreach ($key in $secrets.Keys) {" ^
+  "  $m = [regex]::Match($text, '(?m)^\s*' + [regex]::Escape($key) + '\s*=\s*(.*?)\s*$');" ^
+  "  if ($m.Success -and $m.Groups[1].Value -ne '') { $shown[$key] = $m.Groups[1].Value; }" ^
+  "  else {" ^
+  "    $v = New-DevSecret $secrets[$key];" ^
+  "    if (-not $text.EndsWith([Environment]::NewLine)) { $text += [Environment]::NewLine }" ^
+  "    $text += $key + '=' + $v + [Environment]::NewLine;" ^
+  "    $shown[$key] = $v;" ^
+  "    Write-Host ('[Safe Zone] Generated dev-only ' + $key + ' (local .env only; set a real secret for production).');" ^
+  "  }" ^
+  "};" ^
+  "Set-Content -Path $path -Value $text -NoNewline;" ^
+  "Write-Host 'Login:';" ^
+  "Write-Host '  username: admin';" ^
+  "Write-Host ('  password: ' + $shown['SAFE_ZONE_ADMIN_PASSWORD']);"
 if errorlevel 1 (
   echo [ERROR] Could not prepare local .env.
   exit /b 1
