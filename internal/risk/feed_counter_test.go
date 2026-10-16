@@ -1,7 +1,14 @@
 package risk
 
 import (
+	"context"
 	"testing"
+	"time"
+
+	"github.com/alicebob/miniredis/v2"
+
+	"safe-zone/internal/cache"
+	"safe-zone/internal/config"
 )
 
 // The feed IOC layer fails open by design; these counters are the only
@@ -33,6 +40,43 @@ func TestFeedLookupFailureCounters(t *testing.T) {
 	var nilEngine *FeedEngine
 	nilEngine.noteFeedLookupErr()
 	nilEngine.noteFeedLookupSuccess()
+}
+
+// A dead Redis must surface in DecisionPipelineStatus: the /v1/status
+// endpoint builds its decision_pipeline block from this constructor, so a
+// field the constructor forgets stays zero on the dashboard forever.
+func TestDecisionPipelineStatusReportsFeedFailures(t *testing.T) {
+	server, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(Options{
+		AnalysisConfig:     config.DefaultAnalysisConfig(),
+		Redis:              cache.NewRedis(server.Addr(), "", 0),
+		DisableAdblockSync: true,
+		RedisTimeout:       2 * time.Second,
+	})
+	t.Cleanup(func() {
+		_ = service.Close()
+	})
+	// Kill Redis: every subsequent feed read fails fast with connection
+	// refused instead of hanging to the timeout.
+	server.Close()
+
+	service.feed.feedResult(context.Background(), "unreachable.test", nil)
+	service.feed.feedResult(context.Background(), "unreachable.test", nil)
+
+	status := service.DecisionPipelineStatus()
+	if status.FeedLookupFailures < 2 {
+		t.Fatalf("FeedLookupFailures = %d, want >= 2", status.FeedLookupFailures)
+	}
+	if status.FeedConsecutiveFailures != status.FeedLookupFailures {
+		t.Fatalf("consecutive = %d, total = %d: no success happened, they must match",
+			status.FeedConsecutiveFailures, status.FeedLookupFailures)
+	}
+	if status.FeedLastFailureAt == "" {
+		t.Fatal("FeedLastFailureAt must be stamped after failures")
+	}
 }
 
 func TestFeedLookupFailureAccessorsNilSafe(t *testing.T) {
