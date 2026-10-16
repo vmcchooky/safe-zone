@@ -3,7 +3,7 @@
 Notable changes to Safe Zone. Dates are UTC. Entries land here when their
 PR merges to `main`, oldest batch first.
 
-## Unreleased
+## [1.10.16] - 2026-10-16
 
 ### Security
 - Production startup now rejects `saferoad`-prefixed admin secrets: the dev
