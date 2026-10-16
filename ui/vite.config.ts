@@ -56,7 +56,10 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       outDir: 'dist',
-      sourcemap: true,
+      // Source maps ship the original TypeScript inside the production
+      // binary (embedded via internal/api/app) and are served publicly, so
+      // they stay off unless explicitly requested for debugging a release.
+      sourcemap: process.env.SAFE_ZONE_UI_SOURCEMAPS === 'true' ? 'hidden' : false,
       target: 'es2022',
       // Split heavy vendor libraries out of page chunks: recharts dominates
       // TelemetryPage and framer-motion is shared by the shell and most
