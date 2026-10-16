@@ -134,8 +134,9 @@ if not exist ".env" (
   "$secrets = [ordered]@{'SAFE_ZONE_ADMIN_PASSWORD'=24; 'SAFE_ZONE_ADMIN_API_KEY'=32};" ^
   "$shown = @{};" ^
   "foreach ($key in $secrets.Keys) {" ^
-  "  $m = [regex]::Match($text, '(?m)^\s*' + [regex]::Escape($key) + '\s*=\s*(.*?)\s*$');" ^
-  "  if ($m.Success -and $m.Groups[1].Value -ne '') { $shown[$key] = $m.Groups[1].Value; }" ^
+  "  $m = [regex]::Match($text, '(?m)^[ \t]*' + [regex]::Escape($key) + '[ \t]*=[ \t]*(.*?)[ \t]*$');" ^
+  "  $existing = $m.Groups[1].Value.Trim();" ^
+  "  if ($m.Success -and $existing -ne '') { $shown[$key] = $existing; }" ^
   "  else {" ^
   "    $v = New-DevSecret $secrets[$key];" ^
   "    if (-not $text.EndsWith([Environment]::NewLine)) { $text += [Environment]::NewLine }" ^
