@@ -7,7 +7,7 @@
 #   SAFE_ZONE_COVER_PKGS="./internal/store/..." sh ./scripts/ops/coverage.sh
 set -eu
 
-threshold="${SAFE_ZONE_COVER_THRESHOLD:-50}"
+threshold="${SAFE_ZONE_COVER_THRESHOLD:-65}"
 profile="${SAFE_ZONE_COVER_PROFILE:-coverage.out}"
 pkgs="${SAFE_ZONE_COVER_PKGS:-./cmd/... ./internal/... ./ml/... ./tools/...}"
 
