@@ -409,6 +409,7 @@ func New(path string, retentionDays int) (*DB, error) {
 	// a world-readable database must be a startup error, not a silent
 	// misconfiguration. In-memory databases skip file handling entirely.
 	if path != ":memory:" {
+		// #nosec G304 -- operator-configured database path from startup config, not request input.
 		if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600); err != nil {
 			return nil, fmt.Errorf("create sqlite file %s: %w", path, err)
 		} else if err := f.Close(); err != nil {
