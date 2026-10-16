@@ -994,7 +994,7 @@ block, cả 5 exception vẫn allow.
 - `block-audit` từ giờ phân tầng được lớp ads thật, thay vì gộp vào `unknown`.
 - Không đổi quyết định chặn nào. Toàn bộ 67.080 rule trước đây vẫn chặn y như
   cũ; chỉ nhãn telemetry thay đổi.
-- Backup cấu hình: `/home/safe-zone/backups/config/env.pre-source-policy-20260927-031054`.
+- Backup cấu hình: `/home/safe-zone-henry/backups/config/env.pre-source-policy-20260927-031054`.
 
 **Revisit when:**
 

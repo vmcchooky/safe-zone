@@ -50,6 +50,12 @@ Complete this checklist before every Safe Zone production release.
 - [ ] If public DoT is enabled, certificate readiness and handshake evidence are attached.
 - [ ] If SQLite remains fail-open in production, the release record explicitly notes the approved degraded-mode decision.
 
+## Upgrade
+
+- [ ] SQLite database file is backed up before the new binary first opens it (schema migrations run at startup and now fail closed instead of warning).
+- [ ] Migration notes for this release are reviewed with the operator.
+- [ ] The production `.env` does not pin `SAFE_ZONE_TRUSTED_PROXIES` to loopback-only: an explicitly set variable overrides the Compose bridge-inclusive default entirely, silently collapsing every Internet client into one rate-limit bucket and disabling all exact-IP/CIDR policy mappings. Leave it unset to receive the default.
+
 ## Go/no-go
 
 - [ ] Rollback commands and rollback inputs are ready before production deploy.

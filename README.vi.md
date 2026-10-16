@@ -156,7 +156,7 @@ của mọi DNS filter không MITM, không phải bug.
 | `SAFE_ZONE_ML_MODE` | `disabled` | `disabled` / `shadow` / canary / `enforce` (có cổng) |
 | `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` local, `5` prod | Sample telemetry ([cách tính](docs/runbooks/production-edge.md)) |
 | `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS` | `7` | TTL cache WHOIS trong SQLite |
-| `SAFE_ZONE_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128` | Các peer được phép gửi `X-Forwarded-For`/`X-Real-IP` (danh sách CIDR). Mặc định chỉ loopback; Compose thêm bridge Docker. Chỉ liệt kê địa chỉ proxy |
+| `SAFE_ZONE_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128` | Các peer được phép gửi `X-Forwarded-For`/`X-Real-IP` (danh sách CIDR). Mặc định chỉ loopback; Compose thêm bridge Docker. Chỉ liệt kê địa chỉ proxy. Nếu biến này đã được set (ví dụ copy từ `.env.example` cũ), nó override toàn bộ default của Compose — để unset để nhận default gồm bridge |
 | `SAFE_ZONE_FORCE_SECURE_COOKIES` | bật ở production | Ép thuộc tính `Secure` cho cookie phiên |
 | `SAFE_ZONE_RATELIMIT_MAX_KEYS` | `50000` | Trần số key rate-limit khác nhau cho mỗi limiter (giới hạn bộ nhớ) |
 

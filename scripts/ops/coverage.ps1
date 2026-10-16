@@ -14,7 +14,9 @@ $coverProfile = if ($env:SAFE_ZONE_COVER_PROFILE) { $env:SAFE_ZONE_COVER_PROFILE
 if ($env:SAFE_ZONE_COVER_PKGS) {
   $pkgs = @($env:SAFE_ZONE_COVER_PKGS.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries))
 } else {
-  $pkgs = @('./cmd/...', './internal/...', './ml/...', './tools/...')
+  # Mirrors the go:test package list in mise.toml (research CLIs under tools/
+  # are covered separately by research:test, without a coverage gate).
+  $pkgs = @('./cmd/...', './internal/...', './ml/...')
 }
 
 if ($env:SAFE_ZONE_COVER_RUN_TESTS -ne '0') {

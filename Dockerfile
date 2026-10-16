@@ -11,6 +11,11 @@ RUN npm ci \
     --fetch-retry-mintimeout=1000 \
     --fetch-retry-maxtimeout=60000
 COPY ui/ ./
+# Source maps ship original TypeScript on a public route, so they stay off
+# unless explicitly requested for debugging a release (hidden: emitted but
+# unreferenced). No ARG means no maps, matching local `npm run check`.
+ARG SAFE_ZONE_UI_SOURCEMAPS=false
+ENV SAFE_ZONE_UI_SOURCEMAPS=${SAFE_ZONE_UI_SOURCEMAPS}
 RUN npm run check
 
 # Go toolchain version is owned by mise.toml [tools] go (single source of truth).
