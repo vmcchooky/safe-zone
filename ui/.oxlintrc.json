@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "unicorn", "import", "oxc"],
+  "rules": {
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "fetch",
+        "message": "Use apiFetch/apiJSON from src/lib/api instead of raw fetch."
+      }
+    ],
+    "exhaustive-deps": "error",
+    "no-explicit-any": "warn"
+  },
+  "overrides": [
+    {
+      "files": ["src/lib/api.ts"],
+      "rules": { "no-restricted-globals": "off" }
+    },
+    {
+      "files": ["tests/**", "playwright.config.ts"],
+      "rules": { "no-restricted-globals": "off" }
+    }
+  ],
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    "coverage/**",
+    "playwright-report/**",
+    "test-results/**",
+    "blob-report/**"
+  ]
+}
