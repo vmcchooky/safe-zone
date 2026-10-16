@@ -402,6 +402,23 @@ func New(path string, retentionDays int) (*DB, error) {
 		}
 	}
 
+	// The database holds session fingerprints, client IPs and operator policy.
+	// The default umask would leave it world-readable, so claim owner-only
+	// mode up front (creation) and repair it (pre-existing file created
+	// before this guard) on every startup. Fail closed: serving policy from
+	// a world-readable database must be a startup error, not a silent
+	// misconfiguration. In-memory databases skip file handling entirely.
+	if path != ":memory:" {
+		if f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600); err != nil {
+			return nil, fmt.Errorf("create sqlite file %s: %w", path, err)
+		} else if err := f.Close(); err != nil {
+			return nil, fmt.Errorf("close sqlite file %s: %w", path, err)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			return nil, fmt.Errorf("restrict sqlite file %s: %w", path, err)
+		}
+	}
+
 	// _txlock=immediate makes every explicit transaction take the write lock up
 	// front instead of upgrading later. A deferred transaction that has already
 	// read cannot wait for a writer, so it fails immediately with SQLITE_BUSY
@@ -484,11 +501,20 @@ func New(path string, retentionDays int) (*DB, error) {
 		}
 		_ = rows.Close() // #nosec G104 -- rows read successfully; close error is non-critical
 	}
+	// Unlike the prefix above, these two must fail closed, not warn: every
+	// telemetry insert names both columns, so a silently skipped ALTER
+	// turns into permanently failing writes with a healthy-looking startup.
 	if !hasClientIP {
-		_, _ = sqlDB.Exec("ALTER TABLE analysis_log ADD COLUMN client_ip TEXT DEFAULT ''")
+		if _, err := sqlDB.Exec("ALTER TABLE analysis_log ADD COLUMN client_ip TEXT DEFAULT ''"); err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("migrate analysis_log.client_ip: %w", err)
+		}
 	}
 	if !hasClientID {
-		_, _ = sqlDB.Exec("ALTER TABLE analysis_log ADD COLUMN client_id TEXT DEFAULT ''")
+		if _, err := sqlDB.Exec("ALTER TABLE analysis_log ADD COLUMN client_id TEXT DEFAULT ''"); err != nil {
+			_ = sqlDB.Close()
+			return nil, fmt.Errorf("migrate analysis_log.client_id: %w", err)
+		}
 	}
 
 	// Extend databases created before policy decisions were persisted
