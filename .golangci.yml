@@ -1,7 +1,11 @@
 version: "2"
 
 run:
-  timeout: 5m
+  # Raised from 5m: with the suite over 68k LOC plus -race tests, e2e and the
+  # coverage run sharing the CI runner, lint intermittently trips 5m under
+  # parallel load (2 timeouts in 4 runs) while reporting 0 issues locally.
+  # The quality job timeout in ci.yml (45m) still bounds total CI time.
+  timeout: 10m
   tests: true
 
 linters:
