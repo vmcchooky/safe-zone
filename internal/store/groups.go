@@ -631,6 +631,18 @@ func (d *DB) loadCIDRCache() error {
 		if err := rows.Scan(&groupID, &cidrVal); err == nil {
 			_, ipNet, err := net.ParseCIDR(cidrVal)
 			if err == nil {
+				// A persisted match-all (typically a v4-mapped typo stored
+				// before ingest normalization existed) shadows every client
+				// in its family. It is kept — an explicit allow-all may be
+				// intentional — but it must be loud, or the shadowing that
+				// motivated the sort fix stays invisible.
+				if ones, bits := ipNet.Mask.Size(); ones == 0 && (bits == 32 || bits == 128) {
+					logjson.Warn("client CIDR mapping covers the entire address space; every client in that family resolves to one group", map[string]any{
+						"service":  "store",
+						"group_id": groupID,
+						"value":    cidrVal,
+					})
+				}
 				cache = append(cache, cidrMapping{
 					groupID: groupID,
 					ipNet:   ipNet,

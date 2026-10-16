@@ -156,7 +156,7 @@ by every non-MITM DNS filter, not a bug.
 | `SAFE_ZONE_ML_MODE` | `disabled` | `disabled` / `shadow` / canary / `enforce` (gated) |
 | `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` locally, `5` in prod | Telemetry sampling ([sizing](docs/runbooks/production-edge.md)) |
 | `SAFE_ZONE_WHOIS_CACHE_TTL_DAYS` | `7` | WHOIS cache TTL in SQLite |
-| `SAFE_ZONE_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128` | Peers allowed to set `X-Forwarded-For`/`X-Real-IP` (CIDR list). Loopback-only by default; Compose adds the Docker bridge. List proxy addresses only |
+| `SAFE_ZONE_TRUSTED_PROXIES` | `127.0.0.0/8,::1/128` | Peers allowed to set `X-Forwarded-For`/`X-Real-IP` (CIDR list). Loopback-only by default; Compose adds the Docker bridge. List proxy addresses only. If this variable is already set (e.g. copied from an older `.env.example`), it overrides the Compose default entirely — leave it unset to receive the bridge-inclusive default |
 | `SAFE_ZONE_FORCE_SECURE_COOKIES` | on in production | Force the `Secure` attribute on the session cookie |
 | `SAFE_ZONE_RATELIMIT_MAX_KEYS` | `50000` | Per-limiter cap on distinct rate-limit keys (memory ceiling) |
 

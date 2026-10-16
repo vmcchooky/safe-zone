@@ -53,6 +53,9 @@ sources = [
   "ui/src/**/*",
   "ui/tsconfig*.json",
   "ui/vite.config.ts",
+  "ui/.oxlintrc.json",
+  "ui/.prettierrc",
+  "ui/.prettierignore",
   "scripts/ops/ui.ps1",
   "scripts/ops/ui.sh",
 ]

@@ -9,7 +9,9 @@ set -eu
 
 threshold="${SAFE_ZONE_COVER_THRESHOLD:-65}"
 profile="${SAFE_ZONE_COVER_PROFILE:-coverage.out}"
-pkgs="${SAFE_ZONE_COVER_PKGS:-./cmd/... ./internal/... ./ml/... ./tools/...}"
+# Mirrors the go:test package list in mise.toml (research CLIs under tools/
+# are covered separately by research:test, without a coverage gate).
+pkgs="${SAFE_ZONE_COVER_PKGS:-./cmd/... ./internal/... ./ml/...}"
 
 if [ "${SAFE_ZONE_COVER_RUN_TESTS:-1}" = "1" ]; then
   # Intentional word splitting: pkgs is a space-separated package list.
