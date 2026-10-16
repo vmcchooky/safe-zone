@@ -5,19 +5,19 @@ import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 
-import { 
-  Key, 
-  Bell, 
-  Sliders, 
-  Users, 
-  Eye, 
-  EyeOff, 
-  Play, 
-  RotateCcw, 
-  Save, 
-  Plus, 
-  X, 
-  Check, 
+import {
+  Key,
+  Bell,
+  Sliders,
+  Users,
+  Eye,
+  EyeOff,
+  Play,
+  RotateCcw,
+  Save,
+  Plus,
+  X,
+  Check,
   AlertCircle,
   Loader2,
   Info,
@@ -27,10 +27,11 @@ import {
   Globe,
   Activity,
   Shield,
-  Settings
+  Settings,
 } from 'lucide-react';
 import { useDialog } from '../../components/DialogContext';
 import { InfoTooltip } from '../../components/InfoTooltip';
+import { ApiError, apiFetch, apiJSON } from '../../lib/api';
 
 interface AnalysisConfig {
   punycode_score: number;
@@ -67,15 +68,17 @@ interface Toast {
   type: 'ok' | 'err';
 }
 
-
 const coreSchema = z.object({
   geminiKey: z.string(),
   webhookUrl: z.string().url('Must be a valid URL').or(z.literal('')),
-  retentionDays: z.number().min(1, 'Min 1 day').max(90, 'Max 90 days')
+  retentionDays: z.number().min(1, 'Min 1 day').max(90, 'Max 90 days'),
 });
 
 const guestSchema = z.object({
-  guestPassword: z.string().optional().refine(val => !val || val.length >= 6, 'Password must be at least 6 characters')
+  guestPassword: z
+    .string()
+    .optional()
+    .refine((val) => !val || val.length >= 6, 'Password must be at least 6 characters'),
 });
 
 const scoringSchema = z.object({
@@ -91,7 +94,7 @@ const scoringSchema = z.object({
   keyword_match_score: z.number().min(0).max(100),
   brand_spoofing_score: z.number().min(0).max(100),
   entropy_threshold: z.number().min(0).max(10),
-  entropy_score: z.number().min(0).max(100)
+  entropy_score: z.number().min(0).max(100),
 });
 
 const DEFAULT_ANALYSIS_CONFIG: AnalysisConfig = {
@@ -109,7 +112,7 @@ const DEFAULT_ANALYSIS_CONFIG: AnalysisConfig = {
   keyword_multiple_bonus: 10,
   brand_spoofing_score: 50,
   entropy_threshold: 3.0,
-  entropy_score: 35
+  entropy_score: 35,
 };
 
 /**
@@ -143,12 +146,27 @@ export function SettingsPage() {
   const [savingScoring, setSavingScoring] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const { confirm } = useDialog();
-  const { register: registerCore, handleSubmit: handleSubmitCore, formState: { errors: coreErrors, dirtyFields: coreDirtyFields }, reset: resetCore, watch: watchCore } = useForm<z.infer<typeof coreSchema>>({ resolver: zodResolver(coreSchema) });
-  const { register: registerGuest, handleSubmit: handleSubmitGuest, formState: { errors: guestErrors }, reset: resetGuest } = useForm<z.infer<typeof guestSchema>>({ resolver: zodResolver(guestSchema) });
-  const { register: registerScoring, handleSubmit: handleSubmitScoring, formState: { errors: scoringErrors }, reset: resetScoring } = useForm<z.infer<typeof scoringSchema>>({ resolver: zodResolver(scoringSchema) });
+  const {
+    register: registerCore,
+    handleSubmit: handleSubmitCore,
+    formState: { errors: coreErrors, dirtyFields: coreDirtyFields },
+    reset: resetCore,
+    watch: watchCore,
+  } = useForm<z.infer<typeof coreSchema>>({ resolver: zodResolver(coreSchema) });
+  const {
+    register: registerGuest,
+    handleSubmit: handleSubmitGuest,
+    formState: { errors: guestErrors },
+    reset: resetGuest,
+  } = useForm<z.infer<typeof guestSchema>>({ resolver: zodResolver(guestSchema) });
+  const {
+    register: registerScoring,
+    handleSubmit: handleSubmitScoring,
+    formState: { errors: scoringErrors },
+    reset: resetScoring,
+  } = useForm<z.infer<typeof scoringSchema>>({ resolver: zodResolver(scoringSchema) });
   const geminiKeyValue = watchCore('geminiKey', '');
   const webhookUrlValue = watchCore('webhookUrl', '');
-
 
   // Core settings states
   const [geminiKey, setGeminiKey] = useState('');
@@ -171,7 +189,7 @@ export function SettingsPage() {
   const [guest, setGuest] = useState<GuestAccess>({
     username: 'guest',
     exists: false,
-    enabled: false
+    enabled: false,
   });
 
   // Adblock switches. They are saved through /v1/settings independently of
@@ -199,9 +217,9 @@ export function SettingsPage() {
 
   const showToast = (message: string, type: 'ok' | 'err') => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== id));
+      setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 4000);
   };
 
@@ -212,15 +230,14 @@ export function SettingsPage() {
     const seq = ++loadSeqRef.current;
     setLoadError(null);
     try {
-      const res = await fetch('/v1/settings/bundle');
-      if (!res.ok) throw new Error(`Failed to load settings (HTTP ${res.status})`);
-      const data = await res.json();
+      const data = await apiFetch<any>('/v1/settings/bundle');
       if (seq !== loadSeqRef.current) return;
 
       // The bundle is assembled from several server-side stores; a partial or
       // legacy payload must degrade to field defaults instead of white-
       // screening the route (no error boundary wraps it).
-      const settings = data && typeof data.settings === 'object' && data.settings !== null ? data.settings : {};
+      const settings =
+        data && typeof data.settings === 'object' && data.settings !== null ? data.settings : {};
       const rawRetention = settings.telemetry_retention_days;
       const retention = typeof rawRetention === 'number' && Number.isFinite(rawRetention) ? rawRetention : 30;
 
@@ -237,7 +254,9 @@ export function SettingsPage() {
         setAdblock({ enabled: true, match_mode: 'suffix' });
       }
       const policiesJson =
-        typeof settings.adblock_source_policies_json === 'string' ? settings.adblock_source_policies_json : '';
+        typeof settings.adblock_source_policies_json === 'string'
+          ? settings.adblock_source_policies_json
+          : '';
       setAdblockPoliciesJson(policiesJson);
       setAdblockPoliciesSaved(policiesJson);
       resetCore({
@@ -264,7 +283,15 @@ export function SettingsPage() {
       // The loading gate MUST clear on failure too, or /app/settings spins
       // forever whenever /v1/settings/bundle errors (500, offline, ...).
       setLoading(false);
-      setLoadError(err instanceof Error ? err.message : 'Error loading settings from server');
+      // Keep the operation context operators (and e2e) rely on; apiFetch
+      // already normalized transport + payload extraction into err.message.
+      setLoadError(
+        err instanceof ApiError
+          ? `Failed to load settings (HTTP ${err.status}): ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : 'Error loading settings from server',
+      );
     }
   };
 
@@ -278,21 +305,13 @@ export function SettingsPage() {
     setSavingCore(true);
     try {
       const payload: Record<string, string | number> = {
-        telemetry_retention_days: data.retentionDays
+        telemetry_retention_days: data.retentionDays,
       };
       if (coreDirtyFields.geminiKey) payload.gemini_api_key = data.geminiKey.trim();
       if (coreDirtyFields.webhookUrl) payload.agent_webhook_url = data.webhookUrl.trim();
-      const res = await fetch('/v1/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to save settings');
-      }
+      await apiJSON('/v1/settings', payload, { method: 'POST' });
       showToast('Core integrations updated successfully', 'ok');
-      loadSettings(); 
+      loadSettings();
     } catch (err: any) {
       showToast(err.message, 'err');
     } finally {
@@ -314,20 +333,14 @@ export function SettingsPage() {
     try {
       const payload: Record<string, boolean | string> =
         field === 'enabled' ? { adblock_enabled: Boolean(value) } : { adblock_match_mode: String(value) };
-      const res = await fetch('/v1/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        throw new Error(error.error || 'Failed to update adblock');
-      }
+      await apiJSON('/v1/settings', payload, { method: 'POST' });
       showToast(
         field === 'enabled'
-          ? (value ? 'Ad blocking enabled' : 'Ad blocking disabled — service interruptions stopped')
+          ? value
+            ? 'Ad blocking enabled'
+            : 'Ad blocking disabled — service interruptions stopped'
           : `Adblock match mode set to ${value}`,
-        'ok'
+        'ok',
       );
       loadSettings();
     } catch (err: any) {
@@ -357,15 +370,11 @@ export function SettingsPage() {
     setSavingAdblock(true);
     setAdblockBusy('policies');
     try {
-      const res = await fetch('/v1/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ adblock_source_policies_json: adblockPoliciesJson.trim() })
-      });
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-        throw new Error(error.error || 'Failed to save source policies');
-      }
+      await apiJSON(
+        '/v1/settings',
+        { adblock_source_policies_json: adblockPoliciesJson.trim() },
+        { method: 'POST' },
+      );
       setAdblockPoliciesSaved(adblockPoliciesJson.trim());
       showToast('Source policies saved — applied on every node within 30 seconds', 'ok');
       loadSettings();
@@ -377,19 +386,12 @@ export function SettingsPage() {
     }
   };
 
-  const handleSaveScoring = async (data: z.infer<typeof scoringSchema>) => { const fullScoring = { ...scoring, ...data };
+  const handleSaveScoring = async (data: z.infer<typeof scoringSchema>) => {
+    const fullScoring = { ...scoring, ...data };
     if (mutationLocked) return;
     setSavingScoring(true);
     try {
-      const res = await fetch('/v1/config/analysis', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(fullScoring)
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to update scoring thresholds');
-      }
+      await apiJSON('/v1/config/analysis', fullScoring, { method: 'PUT' });
       showToast('Scoring engine thresholds updated', 'ok');
     } catch (err: any) {
       showToast(err.message, 'err');
@@ -403,12 +405,7 @@ export function SettingsPage() {
     if (!(await confirm('Are you sure you want to reset all scoring thresholds to default?'))) return;
     setSavingScoring(true);
     try {
-      const res = await fetch('/v1/config/analysis/reset', { method: 'POST' });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to reset settings');
-      }
-      const defaultData = await res.json();
+      const defaultData = await apiFetch<any>('/v1/config/analysis/reset', { method: 'POST' });
       // Same contract as loadSettings: one normalization pass, and BOTH the
       // keyword chips (component state) and the numeric inputs (RHF) must
       // reflect the server response.
@@ -423,7 +420,9 @@ export function SettingsPage() {
     }
   };
 
-  const handleSaveGuest = async (data: z.infer<typeof guestSchema>) => { if (mutationLocked) return; if (!data.guestPassword && !guest.exists) {
+  const handleSaveGuest = async (data: z.infer<typeof guestSchema>) => {
+    if (mutationLocked) return;
+    if (!data.guestPassword && !guest.exists) {
       showToast('Password is required to initialize guest access', 'err');
       return;
     }
@@ -432,15 +431,7 @@ export function SettingsPage() {
       const payload: Record<string, any> = { enabled: guest.enabled };
       if (data.guestPassword) payload.password = data.guestPassword;
 
-      const res = await fetch('/v1/settings/guest-access', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || 'Failed to update guest access');
-      }
+      await apiJSON('/v1/settings/guest-access', payload, { method: 'POST' });
       showToast('Guest access configurations saved', 'ok');
       resetGuest({ guestPassword: '' });
       loadSettings();
@@ -455,13 +446,11 @@ export function SettingsPage() {
     if (mutationLocked) return;
     setTestingAi(true);
     try {
-      const res = await fetch('/v1/settings/test-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ gemini_api_key: geminiKeyValue.trim() })
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Connection failed');
+      const data = await apiJSON<{ status?: string; error?: string; message?: string }>(
+        '/v1/settings/test-ai',
+        { gemini_api_key: geminiKeyValue.trim() },
+        { method: 'POST' },
+      );
       if (data.status === 'ok') {
         showToast('AI Client connected successfully', 'ok');
       } else {
@@ -478,13 +467,12 @@ export function SettingsPage() {
     if (mutationLocked) return;
     setTestingAlert(true);
     try {
-      const res = await fetch('/v1/settings/test-alert', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agent_webhook_url: webhookUrlValue.trim() })
-      });
-      const data = await res.json();
-      if (!res.ok || data.status !== 'ok') {
+      const data = await apiJSON<{ status?: string; error?: string; message?: string }>(
+        '/v1/settings/test-alert',
+        { agent_webhook_url: webhookUrlValue.trim() },
+        { method: 'POST' },
+      );
+      if (data.status !== 'ok') {
         throw new Error(data.error || data.message || 'Delivery failed');
       }
       showToast('Test alert delivered successfully', 'ok');
@@ -501,7 +489,7 @@ export function SettingsPage() {
       if (mutationLocked) return;
       const kw = newKeyword.trim().toLowerCase();
       if (kw && !scoring.keywords.includes(kw)) {
-        setScoring(prev => ({ ...prev, keywords: [...prev.keywords, kw] }));
+        setScoring((prev) => ({ ...prev, keywords: [...prev.keywords, kw] }));
         setNewKeyword('');
       }
     }
@@ -509,11 +497,11 @@ export function SettingsPage() {
 
   const handleRemoveKeyword = (kw: string) => {
     if (mutationLocked) return;
-    setScoring(prev => ({ ...prev, keywords: prev.keywords.filter(k => k !== kw) }));
+    setScoring((prev) => ({ ...prev, keywords: prev.keywords.filter((k) => k !== kw) }));
   };
 
   const updateScoringField = (field: keyof AnalysisConfig, val: any) => {
-    setScoring(prev => ({ ...prev, [field]: val }));
+    setScoring((prev) => ({ ...prev, [field]: val }));
   };
 
   if (loading) {
@@ -525,12 +513,11 @@ export function SettingsPage() {
   }
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }} 
-      animate={{ opacity: 1 }} 
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       className="space-y-8 max-w-7xl mx-auto p-4 lg:p-8 pb-32"
     >
-      
       {/* Adblock control.
 
           This is the emergency stop for the layer that causes most false
@@ -551,7 +538,8 @@ export function SettingsPage() {
               <InfoTooltip content="Adblock is a content-policy layer, separate from security verdicts. Turn it off to stop service interruptions instantly; threat-feed, phishing and brand detection keep working either way." />
             </h2>
             <p className="text-sm text-slate-500 mt-1">
-              Switches apply within 30 seconds without a restart. Turning it off never weakens malware or phishing detection.
+              Switches apply within 30 seconds without a restart. Turning it off never weakens malware or
+              phishing detection.
             </p>
           </div>
           <button
@@ -613,7 +601,9 @@ export function SettingsPage() {
             rows={6}
             disabled={mutationLocked || savingAdblock}
             onChange={(e) => setAdblockPoliciesJson(e.target.value)}
-            placeholder={'{\n  "https://raw.githubusercontent.com/example/hosts": { "category": "tracking", "scope": "suffix" }\n}'}
+            placeholder={
+              '{\n  "https://raw.githubusercontent.com/example/hosts": { "category": "tracking", "scope": "suffix" }\n}'
+            }
             className="mt-2 w-full rounded-xl border border-slate-300 bg-white p-3 font-mono text-xs disabled:opacity-50"
           />
           <div className="mt-2 flex items-center gap-3">
@@ -621,9 +611,7 @@ export function SettingsPage() {
               type="button"
               data-testid="adblock-source-policies-save"
               disabled={
-                mutationLocked ||
-                savingAdblock ||
-                adblockPoliciesJson.trim() === adblockPoliciesSaved
+                mutationLocked || savingAdblock || adblockPoliciesJson.trim() === adblockPoliciesSaved
               }
               onClick={saveAdblockPolicies}
               className="rounded-xl bg-slate-900 px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
@@ -638,9 +626,8 @@ export function SettingsPage() {
           </div>
           <p className="text-xs text-slate-500 mt-2">
             Saved to the store and picked up by every node — including{' '}
-            <code className="font-mono">dns-resolver</code> — within 30 seconds,
-            without a restart. Both processes rebuild the rule trie when the
-            policy fingerprint changes.
+            <code className="font-mono">dns-resolver</code> — within 30 seconds, without a restart. Both
+            processes rebuild the rule trie when the policy fingerprint changes.
           </p>
         </div>
       </motion.section>
@@ -648,19 +635,23 @@ export function SettingsPage() {
       {/* Toasts */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3">
         <AnimatePresence>
-          {toasts.map(t => (
-            <motion.div 
+          {toasts.map((t) => (
+            <motion.div
               key={t.id}
               initial={{ opacity: 0, y: 20, scale: 0.95 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
               className={`flex items-center gap-3 px-4 py-3 rounded-2xl shadow-xl border ${
-                t.type === 'ok' 
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200/50 shadow-emerald-900/5' 
+                t.type === 'ok'
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-200/50 shadow-emerald-900/5'
                   : 'bg-red-50 text-red-800 border-red-200/50 shadow-red-900/5'
               }`}
             >
-              {t.type === 'ok' ? <Check size={18} className="text-emerald-500" /> : <AlertCircle size={18} className="text-red-500" />}
+              {t.type === 'ok' ? (
+                <Check size={18} className="text-emerald-500" />
+              ) : (
+                <AlertCircle size={18} className="text-red-500" />
+              )}
               <span className="font-medium text-sm pr-2">{t.message}</span>
             </motion.div>
           ))}
@@ -693,14 +684,16 @@ export function SettingsPage() {
       )}
 
       {/* Header */}
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.3, ease: "easeOut" }}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
         className="flex flex-col md:flex-row md:items-center justify-between gap-6"
       >
         <div>
-          <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-1">Configuration</div>
+          <div className="text-sky-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-1">
+            Configuration
+          </div>
           <div className="flex items-center gap-2.5">
             <Settings size={24} className="text-sky-500" />
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight leading-none">Settings</h1>
@@ -711,20 +704,18 @@ export function SettingsPage() {
 
       {/* Main Grid Layout */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
-        
         {/* Left Column: Core & Access */}
         <div className="xl:col-span-1 space-y-6">
-          
           {/* Core Integrations */}
-          <motion.form 
+          <motion.form
             onSubmit={handleSubmitCore(handleSaveCore)}
-            initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.3, delay: 0.05, ease: "easeOut" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.05, ease: 'easeOut' }}
             className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col"
           >
             <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 translate-x-1/2"></div>
-            
+
             <div className="flex items-center gap-3 mb-6 relative z-10">
               <div className="p-2.5 bg-indigo-100/80 text-indigo-600 rounded-xl">
                 <Key size={20} />
@@ -739,30 +730,40 @@ export function SettingsPage() {
               {/* API Key Box */}
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div>
-                  <label htmlFor="gemini-key-input" className="block font-semibold text-slate-900 text-sm">Gemini API Key</label>
-                  <p className="text-xs text-slate-500 mt-0.5">Used by AI classifier node. You can test a new key before saving.</p>
+                  <label htmlFor="gemini-key-input" className="block font-semibold text-slate-900 text-sm">
+                    Gemini API Key
+                  </label>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Used by AI classifier node. You can test a new key before saving.
+                  </p>
                 </div>
                 <div className="relative">
                   <input
                     id="gemini-key-input"
-                    type={showApiKey && !geminiKeyValue.includes('*') ? "text" : "password"}
+                    type={showApiKey && !geminiKeyValue.includes('*') ? 'text' : 'password'}
                     disabled={mutationLocked}
-                    {...registerCore("geminiKey")}
+                    {...registerCore('geminiKey')}
                     placeholder="Enter API Key"
                     className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all text-sm font-mono text-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
                     autoComplete="off"
                   />
-{coreErrors.geminiKey && <p className="text-red-500 text-xs mt-1">{coreErrors.geminiKey.message}</p>}
+                  {coreErrors.geminiKey && (
+                    <p className="text-red-500 text-xs mt-1">{coreErrors.geminiKey.message}</p>
+                  )}
                   <button
                     type="button"
-                    aria-label={showApiKey && !geminiKeyValue.includes('*') ? 'Hide Gemini API key' : 'Show Gemini API key'}
+                    aria-label={
+                      showApiKey && !geminiKeyValue.includes('*')
+                        ? 'Hide Gemini API key'
+                        : 'Show Gemini API key'
+                    }
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                     onClick={() => setShowApiKey(!showApiKey)}
                   >
                     {showApiKey && !geminiKeyValue.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                
+
                 <div className="flex items-center justify-between pt-2 border-t border-slate-50">
                   <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                     <Check size={14} className="text-emerald-500" />
@@ -783,32 +784,42 @@ export function SettingsPage() {
               {/* Webhook Box */}
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div>
-                  <label htmlFor="webhook-url-input" className="block font-semibold text-slate-900 text-sm">Agent Webhook URL</label>
-                  <p className="text-xs text-slate-500 mt-0.5">Endpoint for instant alerts. You can test a new URL before saving.</p>
+                  <label htmlFor="webhook-url-input" className="block font-semibold text-slate-900 text-sm">
+                    Agent Webhook URL
+                  </label>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Endpoint for instant alerts. You can test a new URL before saving.
+                  </p>
                 </div>
                 <div className="relative">
                   <input
                     id="webhook-url-input"
-                    type={showWebhook && !webhookUrlValue.includes('*') ? "text" : "password"}
+                    type={showWebhook && !webhookUrlValue.includes('*') ? 'text' : 'password'}
                     disabled={mutationLocked}
-                    {...registerCore("webhookUrl")}
+                    {...registerCore('webhookUrl')}
                     placeholder="https://..."
                     aria-invalid={coreErrors.webhookUrl ? true : undefined}
                     aria-describedby={coreErrors.webhookUrl ? 'webhook-url-error' : undefined}
                     className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none transition-all text-sm font-mono text-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
                     autoComplete="off"
                   />
-{coreErrors.webhookUrl && <p id="webhook-url-error" className="text-red-500 text-xs mt-1">{coreErrors.webhookUrl.message}</p>}
+                  {coreErrors.webhookUrl && (
+                    <p id="webhook-url-error" className="text-red-500 text-xs mt-1">
+                      {coreErrors.webhookUrl.message}
+                    </p>
+                  )}
                   <button
                     type="button"
-                    aria-label={showWebhook && !webhookUrlValue.includes('*') ? 'Hide webhook URL' : 'Show webhook URL'}
+                    aria-label={
+                      showWebhook && !webhookUrlValue.includes('*') ? 'Hide webhook URL' : 'Show webhook URL'
+                    }
                     className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
                     onClick={() => setShowWebhook(!showWebhook)}
                   >
                     {showWebhook && !webhookUrlValue.includes('*') ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
-                
+
                 <div className="flex items-center justify-between pt-2 border-t border-slate-50">
                   <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
                     <Bell size={14} className="text-blue-500" />
@@ -829,7 +840,12 @@ export function SettingsPage() {
               {/* Telemetry Box */}
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm flex items-center justify-between">
                 <div>
-                  <label htmlFor="retention-days-input" className="block font-semibold text-slate-900 text-sm">Log Retention</label>
+                  <label
+                    htmlFor="retention-days-input"
+                    className="block font-semibold text-slate-900 text-sm"
+                  >
+                    Log Retention
+                  </label>
                   <p className="text-xs text-slate-500 mt-0.5">Days to keep diagnostic logs.</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -841,11 +857,15 @@ export function SettingsPage() {
                     disabled={mutationLocked}
                     aria-invalid={coreErrors.retentionDays ? true : undefined}
                     aria-describedby={coreErrors.retentionDays ? 'retention-days-error' : undefined}
-                    {...registerCore("retentionDays", { valueAsNumber: true })}
+                    {...registerCore('retentionDays', { valueAsNumber: true })}
                     className="w-16 text-center px-2 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none font-medium text-slate-700 text-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                   <span className="text-xs font-medium text-slate-500">Days</span>
-{coreErrors.retentionDays && <p id="retention-days-error" className="text-red-500 text-xs ml-2">{coreErrors.retentionDays.message}</p>}
+                  {coreErrors.retentionDays && (
+                    <p id="retention-days-error" className="text-red-500 text-xs ml-2">
+                      {coreErrors.retentionDays.message}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -863,15 +883,15 @@ export function SettingsPage() {
           </motion.form>
 
           {/* Access Control */}
-          <motion.form 
+          <motion.form
             onSubmit={handleSubmitGuest(handleSaveGuest)}
-            initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.3, delay: 0.1, ease: "easeOut" }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.1, ease: 'easeOut' }}
             className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col"
           >
             <div className="absolute top-0 left-0 w-64 h-64 bg-emerald-100/30 rounded-full blur-3xl -z-10 -translate-y-1/2 -translate-x-1/2"></div>
-            
+
             <div className="flex items-center gap-3 mb-6 relative z-10">
               <div className="p-2.5 bg-emerald-100/80 text-emerald-600 rounded-xl">
                 <Users size={20} />
@@ -886,8 +906,13 @@ export function SettingsPage() {
               <div className="p-4 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <div className="flex items-center justify-between bg-slate-50 rounded-xl p-3 border border-slate-100">
                   <div>
-                    <h4 id="guest-mode-heading" className="font-semibold text-slate-900 text-sm">Enable Guest Mode</h4>
-                    <p className="text-xs text-slate-500 mt-0.5">Allows login as <code className="px-1 bg-slate-200 rounded text-slate-700 font-mono">guest</code></p>
+                    <h4 id="guest-mode-heading" className="font-semibold text-slate-900 text-sm">
+                      Enable Guest Mode
+                    </h4>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Allows login as{' '}
+                      <code className="px-1 bg-slate-200 rounded text-slate-700 font-mono">guest</code>
+                    </p>
                   </div>
 
                   <button
@@ -900,30 +925,39 @@ export function SettingsPage() {
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed ${guest.enabled ? 'bg-emerald-500' : 'bg-slate-300'} ${mutationLocked ? 'opacity-60' : ''}`}
                     onClick={() => {
                       if (mutationLocked) return;
-                      setGuest(prev => ({ ...prev, enabled: !prev.enabled }));
+                      setGuest((prev) => ({ ...prev, enabled: !prev.enabled }));
                     }}
                   >
-                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${guest.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${guest.enabled ? 'translate-x-6' : 'translate-x-1'}`}
+                    />
                   </button>
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="guest-password-input" className="block text-xs font-semibold text-slate-700">
+                  <label
+                    htmlFor="guest-password-input"
+                    className="block text-xs font-semibold text-slate-700"
+                  >
                     {guest.exists ? 'Reset Guest Password (Optional)' : 'Set Initial Guest Password'}
                   </label>
                   <div className="relative">
                     <input
                       id="guest-password-input"
-                      type={showGuestPassword ? "text" : "password"}
+                      type={showGuestPassword ? 'text' : 'password'}
                       disabled={mutationLocked}
-                      {...registerGuest("guestPassword")}
+                      {...registerGuest('guestPassword')}
                       placeholder="Enter password..."
                       aria-invalid={guestErrors.guestPassword ? true : undefined}
                       aria-describedby={guestErrors.guestPassword ? 'guest-password-error' : undefined}
                       className="w-full pl-3 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all text-sm font-mono text-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
                       autoComplete="new-password"
                     />
-{guestErrors.guestPassword && <p id="guest-password-error" className="text-red-500 text-xs mt-1">{guestErrors.guestPassword.message}</p>}
+                    {guestErrors.guestPassword && (
+                      <p id="guest-password-error" className="text-red-500 text-xs mt-1">
+                        {guestErrors.guestPassword.message}
+                      </p>
+                    )}
                     <button
                       type="button"
                       aria-label={showGuestPassword ? 'Hide guest password' : 'Show guest password'}
@@ -948,19 +982,18 @@ export function SettingsPage() {
               </button>
             </div>
           </motion.form>
-
         </div>
 
         {/* Right Column: Scoring Engine */}
         <div className="xl:col-span-2">
-          <motion.section 
-            initial={{ opacity: 0, y: 20 }} 
-            animate={{ opacity: 1, y: 0 }} 
-            transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
+          <motion.section
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.15, ease: 'easeOut' }}
             className="bg-white/60 backdrop-blur-xl border border-white/80 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col h-full"
           >
             <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-amber-50/40 rounded-full blur-[80px] -z-10 -translate-y-1/2 translate-x-1/3"></div>
-            
+
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 relative z-10">
               <div className="flex items-center gap-3">
                 <div className="p-2.5 bg-amber-100/80 text-amber-600 rounded-xl">
@@ -992,38 +1025,106 @@ export function SettingsPage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
-              
               {/* Domain Structure Analysis */}
               <div className="p-5 rounded-2xl bg-white border border-slate-100 shadow-sm space-y-4">
                 <h3 className="font-semibold text-slate-800 flex items-center gap-2 text-sm">
                   <Globe size={16} className="text-sky-500" />
                   Domain Structure Analysis
                 </h3>
-                
+
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
-                  <label htmlFor="scoring-punycode-score" className="text-xs font-medium text-slate-600">Punycode Penalty</label>
-                  <input id="scoring-punycode-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.punycode_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("punycode_score", { valueAsNumber: true })} />
-{scoringErrors.punycode_score && <span className="text-red-500 text-[10px]">punycode_score</span>}
+                  <label htmlFor="scoring-punycode-score" className="text-xs font-medium text-slate-600">
+                    Punycode Penalty
+                  </label>
+                  <input
+                    id="scoring-punycode-score"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.punycode_score ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('punycode_score', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.punycode_score && (
+                    <span className="text-red-500 text-[10px]">punycode_score</span>
+                  )}
 
-                  <label htmlFor="scoring-mixed-script-score" className="text-xs font-medium text-slate-600">Mixed Script Penalty</label>
-                  <input id="scoring-mixed-script-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.mixed_script_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("mixed_script_score", { valueAsNumber: true })} />
-{scoringErrors.mixed_script_score && <span className="text-red-500 text-[10px]">mixed_script_score</span>}
+                  <label htmlFor="scoring-mixed-script-score" className="text-xs font-medium text-slate-600">
+                    Mixed Script Penalty
+                  </label>
+                  <input
+                    id="scoring-mixed-script-score"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.mixed_script_score ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('mixed_script_score', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.mixed_script_score && (
+                    <span className="text-red-500 text-[10px]">mixed_script_score</span>
+                  )}
 
-                  <label htmlFor="scoring-long-domain-length" className="text-xs font-medium text-slate-600">Long Domain (Chars)</label>
-                  <input id="scoring-long-domain-length" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.long_domain_length ? true : undefined} className="settings-num-input text-sm" {...registerScoring("long_domain_length", { valueAsNumber: true })} />
-{scoringErrors.long_domain_length && <span className="text-red-500 text-[10px]">long_domain_length</span>}
+                  <label htmlFor="scoring-long-domain-length" className="text-xs font-medium text-slate-600">
+                    Long Domain (Chars)
+                  </label>
+                  <input
+                    id="scoring-long-domain-length"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.long_domain_length ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('long_domain_length', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.long_domain_length && (
+                    <span className="text-red-500 text-[10px]">long_domain_length</span>
+                  )}
 
-                  <label htmlFor="scoring-long-domain-score" className="text-xs font-medium text-slate-600">Long Domain Penalty</label>
-                  <input id="scoring-long-domain-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.long_domain_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("long_domain_score", { valueAsNumber: true })} />
-{scoringErrors.long_domain_score && <span className="text-red-500 text-[10px]">long_domain_score</span>}
+                  <label htmlFor="scoring-long-domain-score" className="text-xs font-medium text-slate-600">
+                    Long Domain Penalty
+                  </label>
+                  <input
+                    id="scoring-long-domain-score"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.long_domain_score ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('long_domain_score', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.long_domain_score && (
+                    <span className="text-red-500 text-[10px]">long_domain_score</span>
+                  )}
 
-                  <label htmlFor="scoring-hyphen-count-threshold" className="text-xs font-medium text-slate-600">Hyphen Threshold</label>
-                  <input id="scoring-hyphen-count-threshold" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.hyphen_count_threshold ? true : undefined} className="settings-num-input text-sm" {...registerScoring("hyphen_count_threshold", { valueAsNumber: true })} />
-{scoringErrors.hyphen_count_threshold && <span className="text-red-500 text-[10px]">hyphen_count_threshold</span>}
+                  <label
+                    htmlFor="scoring-hyphen-count-threshold"
+                    className="text-xs font-medium text-slate-600"
+                  >
+                    Hyphen Threshold
+                  </label>
+                  <input
+                    id="scoring-hyphen-count-threshold"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.hyphen_count_threshold ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('hyphen_count_threshold', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.hyphen_count_threshold && (
+                    <span className="text-red-500 text-[10px]">hyphen_count_threshold</span>
+                  )}
 
-                  <label htmlFor="scoring-hyphen-score" className="text-xs font-medium text-slate-600">Hyphen Penalty</label>
-                  <input id="scoring-hyphen-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.hyphen_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("hyphen_score", { valueAsNumber: true })} />
-{scoringErrors.hyphen_score && <span className="text-red-500 text-[10px]">hyphen_score</span>}
+                  <label htmlFor="scoring-hyphen-score" className="text-xs font-medium text-slate-600">
+                    Hyphen Penalty
+                  </label>
+                  <input
+                    id="scoring-hyphen-score"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.hyphen_score ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('hyphen_score', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.hyphen_score && (
+                    <span className="text-red-500 text-[10px]">hyphen_score</span>
+                  )}
                 </div>
               </div>
 
@@ -1033,23 +1134,72 @@ export function SettingsPage() {
                   <Activity size={16} className="text-rose-500" />
                   Entropy & Density
                 </h3>
-                
+
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 items-center">
-                  <label htmlFor="scoring-digit-ratio-threshold" className="text-xs font-medium text-slate-600">Digit Ratio Threshold</label>
-                  <input id="scoring-digit-ratio-threshold" type="number" disabled={mutationLocked} step="0.05" aria-invalid={scoringErrors.digit_ratio_threshold ? true : undefined} className="settings-num-input text-sm" {...registerScoring("digit_ratio_threshold", { valueAsNumber: true })} />
-{scoringErrors.digit_ratio_threshold && <span className="text-red-500 text-[10px]">digit_ratio_threshold</span>}
+                  <label
+                    htmlFor="scoring-digit-ratio-threshold"
+                    className="text-xs font-medium text-slate-600"
+                  >
+                    Digit Ratio Threshold
+                  </label>
+                  <input
+                    id="scoring-digit-ratio-threshold"
+                    type="number"
+                    disabled={mutationLocked}
+                    step="0.05"
+                    aria-invalid={scoringErrors.digit_ratio_threshold ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('digit_ratio_threshold', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.digit_ratio_threshold && (
+                    <span className="text-red-500 text-[10px]">digit_ratio_threshold</span>
+                  )}
 
-                  <label htmlFor="scoring-digit-ratio-score" className="text-xs font-medium text-slate-600">Digit Ratio Penalty</label>
-                  <input id="scoring-digit-ratio-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.digit_ratio_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("digit_ratio_score", { valueAsNumber: true })} />
-{scoringErrors.digit_ratio_score && <span className="text-red-500 text-[10px]">digit_ratio_score</span>}
+                  <label htmlFor="scoring-digit-ratio-score" className="text-xs font-medium text-slate-600">
+                    Digit Ratio Penalty
+                  </label>
+                  <input
+                    id="scoring-digit-ratio-score"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.digit_ratio_score ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('digit_ratio_score', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.digit_ratio_score && (
+                    <span className="text-red-500 text-[10px]">digit_ratio_score</span>
+                  )}
 
-                  <label htmlFor="scoring-entropy-threshold" className="text-xs font-medium text-slate-600">Entropy Threshold</label>
-                  <input id="scoring-entropy-threshold" type="number" disabled={mutationLocked} step="0.1" aria-invalid={scoringErrors.entropy_threshold ? true : undefined} className="settings-num-input text-sm" {...registerScoring("entropy_threshold", { valueAsNumber: true })} />
-{scoringErrors.entropy_threshold && <span className="text-red-500 text-[10px]">entropy_threshold</span>}
+                  <label htmlFor="scoring-entropy-threshold" className="text-xs font-medium text-slate-600">
+                    Entropy Threshold
+                  </label>
+                  <input
+                    id="scoring-entropy-threshold"
+                    type="number"
+                    disabled={mutationLocked}
+                    step="0.1"
+                    aria-invalid={scoringErrors.entropy_threshold ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('entropy_threshold', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.entropy_threshold && (
+                    <span className="text-red-500 text-[10px]">entropy_threshold</span>
+                  )}
 
-                  <label htmlFor="scoring-entropy-score" className="text-xs font-medium text-slate-600">Entropy Penalty</label>
-                  <input id="scoring-entropy-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.entropy_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("entropy_score", { valueAsNumber: true })} />
-{scoringErrors.entropy_score && <span className="text-red-500 text-[10px]">entropy_score</span>}
+                  <label htmlFor="scoring-entropy-score" className="text-xs font-medium text-slate-600">
+                    Entropy Penalty
+                  </label>
+                  <input
+                    id="scoring-entropy-score"
+                    type="number"
+                    disabled={mutationLocked}
+                    aria-invalid={scoringErrors.entropy_score ? true : undefined}
+                    className="settings-num-input text-sm"
+                    {...registerScoring('entropy_score', { valueAsNumber: true })}
+                  />
+                  {scoringErrors.entropy_score && (
+                    <span className="text-red-500 text-[10px]">entropy_score</span>
+                  )}
                 </div>
               </div>
 
@@ -1059,32 +1209,81 @@ export function SettingsPage() {
                   <Shield size={16} className="text-emerald-500" />
                   Keyword Heuristics
                 </h3>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                   <div>
-                    <label htmlFor="scoring-keyword-base-score" className="block text-xs font-medium text-slate-600 mb-1">Keyword Base Score</label>
-                    <input id="scoring-keyword-base-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.keyword_base_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("keyword_base_score", { valueAsNumber: true })} />
-{scoringErrors.keyword_base_score && <span className="text-red-500 text-[10px]">keyword_base_score</span>}
+                    <label
+                      htmlFor="scoring-keyword-base-score"
+                      className="block text-xs font-medium text-slate-600 mb-1"
+                    >
+                      Keyword Base Score
+                    </label>
+                    <input
+                      id="scoring-keyword-base-score"
+                      type="number"
+                      disabled={mutationLocked}
+                      aria-invalid={scoringErrors.keyword_base_score ? true : undefined}
+                      className="settings-num-input text-sm"
+                      {...registerScoring('keyword_base_score', { valueAsNumber: true })}
+                    />
+                    {scoringErrors.keyword_base_score && (
+                      <span className="text-red-500 text-[10px]">keyword_base_score</span>
+                    )}
                   </div>
                   <div>
-                    <label htmlFor="scoring-keyword-match-score" className="block text-xs font-medium text-slate-600 mb-1">Match Multiplier</label>
-                    <input id="scoring-keyword-match-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.keyword_match_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("keyword_match_score", { valueAsNumber: true })} />
-{scoringErrors.keyword_match_score && <span className="text-red-500 text-[10px]">keyword_match_score</span>}
+                    <label
+                      htmlFor="scoring-keyword-match-score"
+                      className="block text-xs font-medium text-slate-600 mb-1"
+                    >
+                      Match Multiplier
+                    </label>
+                    <input
+                      id="scoring-keyword-match-score"
+                      type="number"
+                      disabled={mutationLocked}
+                      aria-invalid={scoringErrors.keyword_match_score ? true : undefined}
+                      className="settings-num-input text-sm"
+                      {...registerScoring('keyword_match_score', { valueAsNumber: true })}
+                    />
+                    {scoringErrors.keyword_match_score && (
+                      <span className="text-red-500 text-[10px]">keyword_match_score</span>
+                    )}
                   </div>
                   <div>
-                    <label htmlFor="scoring-brand-spoofing-score" className="block text-xs font-medium text-slate-600 mb-1">Brand Spoof Penalty</label>
-                    <input id="scoring-brand-spoofing-score" type="number" disabled={mutationLocked} aria-invalid={scoringErrors.brand_spoofing_score ? true : undefined} className="settings-num-input text-sm" {...registerScoring("brand_spoofing_score", { valueAsNumber: true })} />
-{scoringErrors.brand_spoofing_score && <span className="text-red-500 text-[10px]">brand_spoofing_score</span>}
+                    <label
+                      htmlFor="scoring-brand-spoofing-score"
+                      className="block text-xs font-medium text-slate-600 mb-1"
+                    >
+                      Brand Spoof Penalty
+                    </label>
+                    <input
+                      id="scoring-brand-spoofing-score"
+                      type="number"
+                      disabled={mutationLocked}
+                      aria-invalid={scoringErrors.brand_spoofing_score ? true : undefined}
+                      className="settings-num-input text-sm"
+                      {...registerScoring('brand_spoofing_score', { valueAsNumber: true })}
+                    />
+                    {scoringErrors.brand_spoofing_score && (
+                      <span className="text-red-500 text-[10px]">brand_spoofing_score</span>
+                    )}
                   </div>
                 </div>
 
                 <div className="mt-4 pt-4 border-t border-slate-50">
-                  <label htmlFor="new-keyword-input" className="block text-sm font-semibold text-slate-800 mb-2">Suspicious Keywords Dictionary</label>
-                  <p className="text-xs text-slate-500 mb-3">Add exact match substrings that indicate phishing or scams.</p>
+                  <label
+                    htmlFor="new-keyword-input"
+                    className="block text-sm font-semibold text-slate-800 mb-2"
+                  >
+                    Suspicious Keywords Dictionary
+                  </label>
+                  <p className="text-xs text-slate-500 mb-3">
+                    Add exact match substrings that indicate phishing or scams.
+                  </p>
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 min-h-[120px]">
                     <div className="flex flex-wrap gap-2 mb-3">
                       <AnimatePresence>
-                        {scoring.keywords.map(kw => (
+                        {scoring.keywords.map((kw) => (
                           <motion.span
                             key={kw}
                             initial={{ opacity: 0, scale: 0.8 }}
@@ -1122,11 +1321,9 @@ export function SettingsPage() {
                   </div>
                 </div>
               </div>
-
             </div>
           </motion.section>
         </div>
-
       </div>
 
       <style>{`

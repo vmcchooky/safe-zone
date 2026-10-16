@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refreshSession();
   }, [refreshSession]);
 
-  const login = async (username: string, password: string) => {
+  const login = useCallback(async (username: string, password: string) => {
     setError(null);
     setLoading(true);
 
@@ -117,9 +117,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       throw err;
     }
-  };
+  }, [refreshSession]);
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     try {
       await apiFetch<{ status: string }>('/v1/auth/logout', { method: 'POST' });
     } catch (err) {
@@ -129,7 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(null);
       });
     }
-  };
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refreshSession,
     }),
-    [error, loading, refreshSession, session],
+    [error, loading, login, logout, refreshSession, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

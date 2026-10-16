@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173",
     "typecheck": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
-    "check": "npm run typecheck && npm run build",
+    "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run build",
     "test:e2e": "playwright test"
   },
   "engines": {
@@ -42,7 +45,9 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "autoprefixer": "^10.6.1",
+    "oxlint": "^1.88.0",
     "postcss": "^8.5.29",
+    "prettier": "^3.9.10",
     "tailwindcss": "^4.3.2",
     "typescript": "7.0.2",
     "vite": "8.3.4"
