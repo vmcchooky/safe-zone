@@ -8,13 +8,13 @@ import (
 	"strings"
 	"time"
 
-	"safe-zone/internal/analysis"
 	"safe-zone/internal/logjson"
 )
 
 // Telemetry ingestion, analysis queries, agent events and OSINT evidence live
-// here. sqlite.go keeps connection lifecycle, schema/migrations, retention/vacuum,
-// whitelist, reports and config. Remaining slices: whitelist, reports, retention.
+// here. The sqlite.go breakup is complete: lifecycle/schema stay in sqlite.go;
+// domains live in groups, telemetry, whitelist, reports, retention and
+// overrides (same package, no API change).
 
 // RecordAnalysis enqueues a telemetry entry for async writing.
 // Non-blocking: if the buffer is full, the entry is silently dropped.
@@ -285,229 +285,11 @@ func (d *DB) QueryStats(ctx context.Context, period string) (Stats, error) {
 	return s, nil
 }
 
-func (d *DB) cleanupLoop() {
-	defer d.wg.Done()
-	ticker := time.NewTicker(cleanupInterval)
-	defer ticker.Stop()
+// Retention, vacuum and the incremental-vacuum conversion live in retention.go
+// (final slice of the sqlite.go breakup; same package, no API change.)
 
-	for {
-		select {
-		case <-ticker.C:
-			d.cleanup()
-		case <-d.done:
-			return
-		}
-	}
-}
-
-func (d *DB) cleanup() {
-	cutoff := time.Now().AddDate(0, 0, -d.GetRetentionDays(context.Background())).UTC().Format(time.RFC3339)
-	result, err := d.db.ExecContext(context.Background(), `DELETE FROM analysis_log WHERE analyzed_at < ?`, cutoff)
-	if err != nil {
-		logjson.Error("telemetry cleanup failed", map[string]any{
-			"service": "store",
-			"cutoff":  cutoff,
-			"error":   err.Error(),
-		})
-		return
-	}
-	if n, _ := result.RowsAffected(); n > 0 {
-		logjson.Info("telemetry cleanup removed old entries", map[string]any{
-			"service": "store",
-			"cutoff":  cutoff,
-			"removed": n,
-		})
-	}
-	if _, err := d.db.ExecContext(context.Background(), `DELETE FROM whois_cache WHERE expires_at <= ?`, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		logjson.Error("whois cache cleanup failed", map[string]any{
-			"service": "store",
-			"error":   err.Error(),
-		})
-	}
-	// Expired and revoked admin sessions. This was only ever called from the
-	// login handler, so a deployment that was not being logged into accumulated
-	// rows, and the idx on expires_at grew with them. It belongs here with the
-	// other retention sweeps rather than on a timer of its own.
-	if _, err := d.CleanupExpiredAdminSessions(context.Background()); err != nil {
-		logjson.Warn("admin session cleanup failed", map[string]any{
-			"service": "store",
-			"error":   err.Error(),
-		})
-	}
-	// Decided user reports (resolved/rejected) age out with telemetry
-	// retention. Pending reports are never auto-deleted: they are the
-	// operator's review queue. created_at uses CURRENT_TIMESTAMP (space
-	// separator), so the cutoff is formatted to match for correct
-	// lexicographic comparison.
-	if result, err := d.db.ExecContext(context.Background(),
-		`DELETE FROM block_reports WHERE status IN ('resolved', 'rejected') AND created_at < ?`,
-		time.Now().AddDate(0, 0, -d.GetRetentionDays(context.Background())).UTC().Format("2006-01-02 15:04:05")); err != nil {
-		logjson.Error("block report cleanup failed", map[string]any{
-			"service": "store",
-			"error":   err.Error(),
-		})
-	} else if n, _ := result.RowsAffected(); n > 0 {
-		logjson.Info("block report cleanup removed decided entries", map[string]any{
-			"service": "store",
-			"removed": n,
-		})
-	}
-	// Return a bounded number of freelist pages to the OS. Unlike a full
-	// VACUUM this never rewrites the whole file, so retention deletes do
-	// not grow the database file without bound.
-	if _, err := d.db.ExecContext(context.Background(), `PRAGMA incremental_vacuum(100)`); err != nil {
-		logjson.Warn("incremental vacuum failed", map[string]any{
-			"service": "store",
-			"error":   err.Error(),
-		})
-	}
-}
-
-// vacuumIncrementalDoneKey marks databases already converted to
-// incremental vacuum mode.
-const vacuumIncrementalDoneKey = "sqlite_vacuum_incremental_done"
-
-// ensureIncrementalVacuum converts pre-existing database files to
-// incremental vacuum mode exactly once. New files already inherit the
-// mode from the open-time pragma.
-func (d *DB) ensureIncrementalVacuum(ctx context.Context) error {
-	if !d.Enabled() {
-		return ErrDisabled
-	}
-	done, err := d.GetSystemConfig(ctx, vacuumIncrementalDoneKey)
-	if err == nil && done == "1" {
-		return nil
-	}
-	var mode string
-	if err := d.db.QueryRowContext(ctx, `PRAGMA auto_vacuum`).Scan(&mode); err != nil {
-		return fmt.Errorf("inspect vacuum mode: %w", err)
-	}
-	// Modes: 0 = none (needs conversion), 1 = full (already self-
-	// maintaining), 2 = incremental (desired state).
-	if strings.TrimSpace(mode) == "0" {
-		if _, err := d.db.ExecContext(ctx, `VACUUM`); err != nil {
-			return fmt.Errorf("vacuum database: %w", err)
-		}
-	}
-	if err := d.SetSystemConfig(ctx, vacuumIncrementalDoneKey, "1"); err != nil {
-		return fmt.Errorf("record vacuum conversion: %w", err)
-	}
-	return nil
-}
-
-// --- Overrides ---
-
-// GetOverride checks if a domain (or any of its parent domains) has an override.
-// Returns nil if no override is found.
-func (d *DB) GetOverride(ctx context.Context, domain string) (*Override, error) {
-	if !d.Enabled() {
-		return nil, ErrDisabled
-	}
-	// Check the exact match and its parents, stopping at the registrable
-	// label (eTLD+1). A row keyed on a public suffix would otherwise apply to
-	// every domain in that namespace, and this function is reached from the
-	// agent's audit path, so a legacy "com" row would make the agent treat
-	// every .com domain as already having an override. UpsertOverride refuses
-	// such rows; the floor here covers databases written by older builds.
-	parts := strings.Split(domain, ".")
-	floor := analysis.RegistrableWalkFloor(domain)
-	for i := 0; i < len(parts) && i <= floor; i++ {
-		candidate := strings.Join(parts[i:], ".")
-		var o Override
-		err := d.db.QueryRowContext(ctx,
-			`SELECT id, domain, action, reason, created_at, updated_at
-			 FROM local_overrides WHERE domain = ?`, candidate).
-			Scan(&o.ID, &o.Domain, &o.Action, &o.Reason, &o.CreatedAt, &o.UpdatedAt)
-		if err == nil {
-			return &o, nil
-		}
-		if err != sql.ErrNoRows {
-			return nil, fmt.Errorf("get override %s: %w", candidate, err)
-		}
-	}
-	return nil, nil
-}
-
-// ListOverrides returns all overrides, optionally filtered by action.
-func (d *DB) ListOverrides(ctx context.Context, action string) ([]Override, error) {
-	if !d.Enabled() {
-		return nil, ErrDisabled
-	}
-
-	var rows *sql.Rows
-	var err error
-	if action == "allow" || action == "block" {
-		rows, err = d.db.QueryContext(ctx,
-			`SELECT id, domain, action, reason, created_at, updated_at
-			 FROM local_overrides WHERE action = ? ORDER BY updated_at DESC`, action)
-	} else {
-		rows, err = d.db.QueryContext(ctx,
-			`SELECT id, domain, action, reason, created_at, updated_at
-			 FROM local_overrides ORDER BY updated_at DESC`)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("list overrides: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	var overrides []Override
-	for rows.Next() {
-		var o Override
-		if err := rows.Scan(&o.ID, &o.Domain, &o.Action, &o.Reason, &o.CreatedAt, &o.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan override: %w", err)
-		}
-		overrides = append(overrides, o)
-	}
-	return overrides, rows.Err()
-}
-
-// UpsertOverride creates or updates an override for a domain.
-func (d *DB) UpsertOverride(ctx context.Context, domain, action, reason string) error {
-	if !d.Enabled() {
-		return ErrDisabled
-	}
-	if action != "allow" && action != "block" {
-		return fmt.Errorf("invalid action %q: must be 'allow' or 'block'", action)
-	}
-	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
-	if domain == "" {
-		return fmt.Errorf("override domain cannot be empty")
-	}
-	// An override row is matched against the domain and its parents, so a
-	// public suffix would apply to the whole namespace: an "allow" for "com"
-	// would short-circuit the threat feed, lexical scoring, ML, AI and OSINT
-	// for every .com domain, and a "block" would take all of .com offline.
-	if !analysis.IsRegistrableDomain(domain) {
-		return fmt.Errorf("override domain %q is a public suffix or has no registrable label; use a domain you control such as example.com", domain)
-	}
-	_, err := d.db.ExecContext(ctx, `
-		INSERT INTO local_overrides (domain, action, reason, updated_at)
-		VALUES (?, ?, ?, datetime('now'))
-		ON CONFLICT(domain) DO UPDATE SET
-			action = excluded.action,
-			reason = excluded.reason,
-			updated_at = datetime('now')`,
-		domain, action, reason)
-	if err != nil {
-		return fmt.Errorf("upsert override %s: %w", domain, err)
-	}
-	return nil
-}
-
-// DeleteOverride removes an override for a domain.
-func (d *DB) DeleteOverride(ctx context.Context, domain string) error {
-	if !d.Enabled() {
-		return ErrDisabled
-	}
-	result, err := d.db.ExecContext(ctx, `DELETE FROM local_overrides WHERE domain = ?`, domain)
-	if err != nil {
-		return fmt.Errorf("delete override %s: %w", domain, err)
-	}
-	if n, _ := result.RowsAffected(); n == 0 {
-		return fmt.Errorf("override not found: %s", domain)
-	}
-	return nil
-}
+// Global domain overrides live in overrides.go (final slice of the sqlite.go
+// breakup; same package, no API change.)
 
 // --- Agent Audit Log ---
 

@@ -15,10 +15,9 @@ import (
 )
 
 // Multi-tenant policy groups, client mappings and group overrides live here.
-// sqlite.go keeps connection lifecycle, schema/migrations, telemetry,
-// retention/vacuum, whitelist, reports and config. Split roadmap: telemetry
-// queries, whitelist, reports and retention move out next, one domain per
-// file, same package, no API change.
+// The sqlite.go breakup is complete: lifecycle/schema stay in sqlite.go;
+// domains live in groups, telemetry, whitelist, reports, retention and
+// overrides (same package, no API change).
 
 // ClientGroup represents a policy group for clients.
 type ClientGroup struct {
