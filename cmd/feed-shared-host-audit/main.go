@@ -67,7 +67,10 @@ func main() {
 
 func run() int {
 	redisAddr := flag.String("redis-addr", config.String("SAFE_ZONE_REDIS_ADDR", ""), "Redis address")
-	redisPassword := flag.String("redis-password", config.SecretString("SAFE_ZONE_REDIS_PASSWORD", ""), "Redis password")
+	// Empty default resolved after parsing: a secret in the flag default is
+	// printed by usage text on every parse error and is visible in
+	// /proc/<pid>/cmdline when passed as --redis-password <secret>.
+	redisPassword := flag.String("redis-password", "", "Redis password (or SAFE_ZONE_REDIS_PASSWORD)")
 	redisDB := flag.Int("redis-db", config.Int("SAFE_ZONE_REDIS_DB", 0), "Redis database")
 	key := flag.String("key", config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey), "Redis sorted-set key holding the threat feed")
 	scanTimeout := flag.Duration("timeout", 5*time.Minute, "overall scan timeout")
@@ -75,6 +78,9 @@ func run() int {
 	var members multiFlag
 	flag.Var(&members, "member", "classify an explicit member instead of scanning (repeatable)")
 	flag.Parse()
+	if strings.TrimSpace(*redisPassword) == "" {
+		*redisPassword = config.SecretString("SAFE_ZONE_REDIS_PASSWORD", "")
+	}
 
 	report := auditReport{FeedKey: *key, ReadOnly: true, SampleCap: sampleCap}
 

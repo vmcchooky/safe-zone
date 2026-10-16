@@ -69,7 +69,11 @@ type Settings struct {
 func ParseSettings(mode Mode, flags *flag.FlagSet, args []string) (Settings, error) {
 	source := flags.String("source", config.String("SAFE_ZONE_THREAT_FEED_SOURCE", ""), "local file path or HTTP(S) feed URL")
 	redisAddr := flags.String("redis-addr", config.String("SAFE_ZONE_REDIS_ADDR", ""), "Redis address")
-	redisPassword := flags.String("redis-password", config.SecretString("SAFE_ZONE_REDIS_PASSWORD", ""), "Redis password")
+	// The default is deliberately empty and resolved from the environment
+	// AFTER parsing: a secret baked into the flag default is printed by
+	// usage text on every parse error (flag.ExitOnError) and is visible
+	// in /proc/<pid>/cmdline when passed as --redis-password <secret>.
+	redisPassword := flags.String("redis-password", "", "Redis password (or SAFE_ZONE_REDIS_PASSWORD)")
 	redisDB := flags.Int("redis-db", config.Int("SAFE_ZONE_REDIS_DB", 0), "Redis database")
 	key := flags.String("key", config.String("SAFE_ZONE_THREAT_FEED_KEY", feed.DefaultThreatFeedKey), "Redis Set key for threat feed")
 	// Replace defaults to false: whole-key staging renames would wipe other
@@ -98,6 +102,9 @@ func ParseSettings(mode Mode, flags *flag.FlagSet, args []string) (Settings, err
 
 	if err := flags.Parse(args); err != nil {
 		return Settings{}, err
+	}
+	if strings.TrimSpace(*redisPassword) == "" {
+		*redisPassword = config.SecretString("SAFE_ZONE_REDIS_PASSWORD", "")
 	}
 	if mode == ModeDaemon {
 		// time.NewTicker panics on a non-positive duration, and
