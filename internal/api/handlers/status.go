@@ -84,11 +84,11 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		Adblock:        &adblockStatus,
 		ML:             &mlStatus,
 		OSINT:          osintStatus,
-		DecisionPipeline: &risk.DecisionPipelineStatus{
-			OverrideLookupFailures: h.Risk.OverrideLookupFailures(),
-			FeedLookupFailures:     h.Risk.FeedLookupFailures(),
-			FeedConsecutiveFailures: h.Risk.FeedConsecutiveLookupFailures(),
-		},
+		// Built by the Service, not by hand: a partial literal here once
+		// silently zeroed override_consecutive_failures,
+		// outbound_proxy_enabled and every timestamp while the full
+		// constructor reported them correctly.
+		DecisionPipeline: pipelineStatus(h.Risk),
 		Endpoints: []string{
 			"/",
 			"/app/",
@@ -114,6 +114,14 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		},
 		Time: time.Now().UTC().Format(time.RFC3339Nano),
 	})
+}
+
+// pipelineStatus builds the decision-pipeline block through the Service
+// constructor so newly added counters cannot be silently dropped by a
+// hand-maintained literal again.
+func pipelineStatus(service *risk.Service) *risk.DecisionPipelineStatus {
+	status := service.DecisionPipelineStatus()
+	return &status
 }
 
 func (h *Handler) MetricsHandler(w http.ResponseWriter, r *http.Request) {
