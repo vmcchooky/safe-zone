@@ -107,7 +107,7 @@ depends = ["ui:bundle"]
 run = "go build ./cmd/... ./internal/... ./ml/..."
 
 [tasks."go:cover"]
-description = "Fail when total Go coverage drops below the gate (SAFE_ZONE_COVER_THRESHOLD, default 50)"
+description = "Fail when total Go coverage drops below the gate (SAFE_ZONE_COVER_THRESHOLD, default 65)"
 # Depends on go:test (which writes coverage.out) instead of re-running the
 # suite: the CI graph runs tasks in parallel, and a second full -race suite
 # starves golangci-lint of CPU until its 5m timeout trips.

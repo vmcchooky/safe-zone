@@ -9,7 +9,7 @@ $ErrorActionPreference = 'Stop'
 # NOTE: the profile variable is deliberately NOT named $profile — that name
 # collides with PowerShell's automatic $profile variable and makes `go test`
 # write a stray file literally named "$profile" next to the real profile.
-$threshold = if ($env:SAFE_ZONE_COVER_THRESHOLD) { [double]$env:SAFE_ZONE_COVER_THRESHOLD } else { 50.0 }
+$threshold = if ($env:SAFE_ZONE_COVER_THRESHOLD) { [double]$env:SAFE_ZONE_COVER_THRESHOLD } else { 65.0 }
 $coverProfile = if ($env:SAFE_ZONE_COVER_PROFILE) { $env:SAFE_ZONE_COVER_PROFILE } else { 'coverage.out' }
 if ($env:SAFE_ZONE_COVER_PKGS) {
   $pkgs = @($env:SAFE_ZONE_COVER_PKGS.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries))
