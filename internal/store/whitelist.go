@@ -13,7 +13,9 @@ import (
 )
 
 // The threat-feed whitelist, its safety floor and its lookups live here.
-// Remaining slices: reports, retention.
+// The sqlite.go breakup is complete: lifecycle/schema stay in sqlite.go;
+// domains live in groups, telemetry, whitelist, reports, retention and
+// overrides (same package, no API change).
 
 // --- Whitelist ---
 

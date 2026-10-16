@@ -10,7 +10,9 @@ import (
 )
 
 // User-submitted block reports, operator reviews and false-positive approvals
-// live here. Remaining slice: retention.
+// live here. The sqlite.go breakup is complete: lifecycle/schema stay in
+// sqlite.go; domains live in groups, telemetry, whitelist, reports, retention
+// and overrides (same package, no API change).
 
 // CreateBlockReport creates a new block report entry.
 func (d *DB) CreateBlockReport(ctx context.Context, domain, contact, note string) (int64, error) {
