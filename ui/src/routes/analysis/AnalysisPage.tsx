@@ -19,7 +19,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { InfoTooltip } from '../../components/InfoTooltip';
-import { apiFetch, apiJSON, messageFromError } from '../../lib/api';
+import { ApiError, apiFetch, apiJSON, messageFromError } from '../../lib/api';
 
 export interface Evidence {
   domain: string;
@@ -204,7 +204,9 @@ export function AnalysisPage() {
       setLastEventId('');
       fetchRecentAnalyses();
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      // Keep the operation context operators (and e2e) rely on; apiFetch
+      // already normalized transport + payload extraction into err.message.
+      setError(err instanceof ApiError ? `Analysis failed: ${err.message}` : messageFromError(err));
     } finally {
       setIsScanning(false);
     }

@@ -31,7 +31,7 @@ import {
 } from 'lucide-react';
 import { useDialog } from '../../components/DialogContext';
 import { InfoTooltip } from '../../components/InfoTooltip';
-import { apiFetch, apiJSON } from '../../lib/api';
+import { ApiError, apiFetch, apiJSON } from '../../lib/api';
 
 interface AnalysisConfig {
   punycode_score: number;
@@ -283,7 +283,15 @@ export function SettingsPage() {
       // The loading gate MUST clear on failure too, or /app/settings spins
       // forever whenever /v1/settings/bundle errors (500, offline, ...).
       setLoading(false);
-      setLoadError(err instanceof Error ? err.message : 'Error loading settings from server');
+      // Keep the operation context operators (and e2e) rely on; apiFetch
+      // already normalized transport + payload extraction into err.message.
+      setLoadError(
+        err instanceof ApiError
+          ? `Failed to load settings (HTTP ${err.status}): ${err.message}`
+          : err instanceof Error
+            ? err.message
+            : 'Error loading settings from server',
+      );
     }
   };
 
