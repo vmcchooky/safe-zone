@@ -35,6 +35,42 @@ func TestLoadRuntimeSecurityProductionRejectsWeakSecrets(t *testing.T) {
 	}
 }
 
+func TestLooksPlaceholderSecretRejectsShippedDevDefaults(t *testing.T) {
+	// These exact strings shipped in start.bat in git history. They clear
+	// the length checks, so the placeholder gate is the only thing that
+	// can stop an operator from promoting a dev .env to production.
+	for _, value := range []string{
+		"SafeRoadLocalAdmin123!",
+		"SafeRoadLocalApiKey1234567890",
+		"saferoad-anything-else-99",
+	} {
+		if !looksPlaceholderSecret(value) {
+			t.Fatalf("looksPlaceholderSecret(%q) = false, want true", value)
+		}
+	}
+	for _, value := range []string{
+		"StrongPassword-2026!",
+		"0123456789abcdef0123456789abcdef",
+	} {
+		if looksPlaceholderSecret(value) {
+			t.Fatalf("looksPlaceholderSecret(%q) = true, want false", value)
+		}
+	}
+}
+
+func TestLoadRuntimeSecurityProductionRejectsShippedDevDefaults(t *testing.T) {
+	t.Setenv("SAFE_ZONE_ENV", "production")
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD", "SafeRoadLocalAdmin123!")
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD_FILE", "")
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY", "SafeRoadLocalApiKey1234567890")
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY_FILE", "")
+
+	_, err := loadRuntimeSecurity()
+	if err == nil || !strings.Contains(err.Error(), "placeholder") {
+		t.Fatalf("expected placeholder-style secret error, got %v", err)
+	}
+}
+
 func TestLoadRuntimeSecurityProductionAcceptsFileSecrets(t *testing.T) {
 	dir := t.TempDir()
 	passwordFile := filepath.Join(dir, "admin_password")

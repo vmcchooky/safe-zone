@@ -307,7 +307,7 @@ func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, group
 		if err != nil {
 			return 0, fmt.Errorf("invalid CIDR format %q: %w", value, err)
 		}
-		value = ipNet.String()
+		value = normalizeCIDRForStorage(ipNet)
 	}
 
 	res, err := d.db.ExecContext(ctx, `
@@ -328,6 +328,26 @@ func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, group
 	}
 
 	return lastID, nil
+}
+
+// normalizeCIDRForStorage maps 4-in-6 CIDRs to their IPv4 form before
+// persisting. net.ParseCIDR accepts "::ffff:10.0.0.0/104" but String()
+// renders it as IPv4 ("::ffff:0:0/96" becomes the match-all "0.0.0.0/0"),
+// so storing the raw parse silently turns an operator typo into a far
+// broader rule than displayed. Normalizing here makes what-you-store match
+// what-gets-matched; the longest-prefix sort then orders (bits, ones) on a
+// single scale per family. (ParseCIDR masks host bits, so a parsed mapped
+// address always carries ones >= 96; nothing else can reach the branch.)
+func normalizeCIDRForStorage(ipNet *net.IPNet) string {
+	if ipNet == nil {
+		return ""
+	}
+	if ip4 := ipNet.IP.To4(); ip4 != nil && len(ipNet.IP) == net.IPv6len {
+		if ones, _ := ipNet.Mask.Size(); ones >= 96 {
+			return (&net.IPNet{IP: ip4, Mask: net.CIDRMask(ones-96, 32)}).String()
+		}
+	}
+	return ipNet.String()
 }
 
 // DeleteMapping removes a client device mapping.
@@ -623,9 +643,16 @@ func (d *DB) loadCIDRCache() error {
 	}
 
 	sort.Slice(cache, func(i, j int) bool {
-		s1, _ := cache[i].ipNet.Mask.Size()
-		s2, _ := cache[j].ipNet.Mask.Size()
-		return s1 > s2
+		bi, oi := cache[i].ipNet.Mask.Size()
+		bj, oj := cache[j].ipNet.Mask.Size()
+		if bi != bj {
+			// Address families first: prefix lengths from a /32 space
+			// and a /128 space are not on the same scale. Comparing
+			// only ones let a v4-mapped /96 outrank every IPv4 rule
+			// while matching every IPv4 client.
+			return bi > bj
+		}
+		return oi > oj
 	})
 
 	d.cidrMu.Lock()

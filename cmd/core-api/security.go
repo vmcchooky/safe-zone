@@ -220,6 +220,12 @@ func looksPlaceholderSecret(value string) bool {
 		"changeme",
 		"replacewith",
 		"your",
+		// The dev-stack defaults this repository used to ship
+		// (SafeRoadLocalAdmin123!, SafeRoadLocalApiKey1234567890) are
+		// public in git history. Any value built on that prefix must
+		// never pass the production gate, even though it clears the
+		// length checks above.
+		"saferoad",
 	}
 
 	for _, marker := range patternPlaceholders {
