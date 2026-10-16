@@ -1,10 +1,13 @@
 package analysis
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -98,6 +101,64 @@ func TestURLBundleRejectsTamperedModel(t *testing.T) {
 	}
 	if _, err := NewURLBundleClassifier(destination); err == nil {
 		t.Fatal("expected tampered URL bundle to fail checksum verification")
+	}
+}
+
+func TestURLBundleRejectsRotatedFeatureOrder(t *testing.T) {
+	source := filepath.Join("..", "..", "ml", "models", "url-v1")
+	destination := t.TempDir()
+	modelData, err := os.ReadFile(filepath.Join(source, "url_model.v1.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var model map[string]any
+	if err := json.Unmarshal(modelData, &model); err != nil {
+		t.Fatal(err)
+	}
+	contract, ok := model["feature_contract"].(map[string]any)
+	if !ok {
+		t.Fatal("bundle has no feature_contract")
+	}
+	names, ok := contract["handcrafted_features"].([]any)
+	if !ok || len(names) != urlFeatureCount {
+		t.Fatalf("bundle has %d handcrafted features, want %d", len(names), urlFeatureCount)
+	}
+	// Same count, rotated order: the silent train/serve skew the
+	// name-and-order check exists to catch.
+	names[0], names[1] = names[1], names[0]
+	rotated, err := json.Marshal(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(destination, "url_model.v1.json"), rotated, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"golden_vectors.v1.json"} {
+		data, err := os.ReadFile(filepath.Join(source, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(destination, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Re-sign the tampered directory so the failure, if any, comes from
+	// contract validation rather than checksum verification.
+	var sums strings.Builder
+	for _, name := range []string{"golden_vectors.v1.json", "url_model.v1.json"} {
+		data, err := os.ReadFile(filepath.Join(destination, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := sha256.Sum256(data)
+		sums.WriteString(hex.EncodeToString(sum[:]) + "  " + name + "\n")
+	}
+	if err := os.WriteFile(filepath.Join(destination, "SHA256SUMS"), []byte(sums.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err = NewURLBundleClassifier(destination)
+	if err == nil || !strings.Contains(err.Error(), "order mismatch") {
+		t.Fatalf("expected feature order mismatch error, got %v", err)
 	}
 }
 

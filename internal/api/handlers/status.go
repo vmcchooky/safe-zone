@@ -86,6 +86,8 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		OSINT:          osintStatus,
 		DecisionPipeline: &risk.DecisionPipelineStatus{
 			OverrideLookupFailures: h.Risk.OverrideLookupFailures(),
+			FeedLookupFailures:     h.Risk.FeedLookupFailures(),
+			FeedConsecutiveFailures: h.Risk.FeedConsecutiveLookupFailures(),
 		},
 		Endpoints: []string{
 			"/",

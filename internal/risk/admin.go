@@ -66,6 +66,31 @@ func (s *Service) OverrideLookupFailures() int64 {
 	return s.overrideLookupFailures.Load()
 }
 
+// FeedLookupFailures counts failed threat-feed Redis reads since start-up.
+// FeedConsecutiveLookupFailures and FeedLastLookupFailureUnix make the
+// outage alertable. All three read through the feed engine, which Service
+// always constructs in NewService.
+func (s *Service) FeedLookupFailures() int64 {
+	if s == nil || s.feed == nil {
+		return 0
+	}
+	return s.feed.feedLookupFailures.Load()
+}
+
+func (s *Service) FeedConsecutiveLookupFailures() int64 {
+	if s == nil || s.feed == nil {
+		return 0
+	}
+	return s.feed.feedConsecutiveFailures.Load()
+}
+
+func (s *Service) FeedLastLookupFailureUnix() int64 {
+	if s == nil || s.feed == nil {
+		return 0
+	}
+	return s.feed.feedLastFailureUnix.Load()
+}
+
 // overrideReader is what the override seam must satisfy. *store.DB implements
 // it directly, so production reads through the store with no wrapper.
 type overrideReader interface {
@@ -112,6 +137,13 @@ type DecisionPipelineStatus struct {
 	// invisible in logs alone — a transport is built per fetch for the agent
 	// paths, so the one-shot warning is easy to miss. Publish it as state.
 	OutboundProxyEnabled bool `json:"outbound_proxy_enabled"`
+	// FeedLookupFailures counts threat-feed Redis reads that failed since
+	// start-up. Each one means the IOC layer was blind for that evaluation
+	// (fail-open by design). FeedConsecutiveFailures and FeedLastFailureAt
+	// make it alertable; zero and empty are the healthy state.
+	FeedLookupFailures      int64  `json:"feed_lookup_failures"`
+	FeedConsecutiveFailures int64  `json:"feed_consecutive_failures"`
+	FeedLastFailureAt       string `json:"feed_last_failure_at,omitempty"`
 }
 
 func (s *Service) DecisionPipelineStatus() DecisionPipelineStatus {
@@ -122,9 +154,14 @@ func (s *Service) DecisionPipelineStatus() DecisionPipelineStatus {
 		OverrideLookupFailures:      s.overrideLookupFailures.Load(),
 		OverrideConsecutiveFailures: s.overrideConsecutiveFailures.Load(),
 		OutboundProxyEnabled:        netguard.OutboundProxyEnabled(),
+		FeedLookupFailures:          s.FeedLookupFailures(),
+		FeedConsecutiveFailures:     s.FeedConsecutiveLookupFailures(),
 	}
 	if unix := s.overrideLastFailureUnix.Load(); unix > 0 {
 		status.LastFailureAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)
+	}
+	if unix := s.FeedLastLookupFailureUnix(); unix > 0 {
+		status.FeedLastFailureAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)
 	}
 	if unix := s.overrideLastSuccessUnix.Load(); unix > 0 {
 		status.LastSuccessAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)

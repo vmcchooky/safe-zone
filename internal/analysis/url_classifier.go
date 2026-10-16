@@ -21,6 +21,34 @@ import (
 
 const urlFeatureCount = 18
 
+// urlHandcraftedFeatureNames is the positional contract for the 18
+// handcrafted URL features, in the order extract() computes them and the
+// order ml/src/url_context.py HANDCRAFTED_FEATURES trains them. The
+// coefficients, scaler mean/scale and golden vectors are all positional, so
+// a bundle with the right count but a rotated order would score every URL
+// with misaligned coefficients — silently and totally. The count check
+// below cannot see that; the name-and-order check after it can.
+var urlHandcraftedFeatureNames = []string{
+	"path_length",
+	"path_depth",
+	"query_length",
+	"query_parameter_count",
+	"percent_escape_count",
+	"digit_count",
+	"digit_ratio",
+	"special_character_count",
+	"path_entropy",
+	"suspicious_token_count",
+	"brand_token_count",
+	"has_ip_literal_in_path",
+	"has_double_slash_in_path",
+	"has_at_sign",
+	"has_executable_extension",
+	"redirect_count",
+	"redirect_cross_host_count",
+	"redirect_https_downgrade_count",
+}
+
 var percentEscapePattern = regexp.MustCompile(`%[0-9a-fA-F]{2}`)
 var ipv4PathPattern = regexp.MustCompile(`(?:^|[^0-9a-fA-F:.])((?:\d{1,3}\.){3}\d{1,3})(?:$|[^0-9])`)
 var repeatedWhitespacePattern = regexp.MustCompile(`\s\s+`)
@@ -231,6 +259,11 @@ func validateURLModelBundle(bundle urlModelBundle) error {
 	if len(bundle.Feature.HandcraftedFeatures) != urlFeatureCount ||
 		len(bundle.Scaler.Mean) != urlFeatureCount || len(bundle.Scaler.Scale) != urlFeatureCount {
 		return errors.New("URL handcrafted feature contract mismatch")
+	}
+	for i, name := range urlHandcraftedFeatureNames {
+		if bundle.Feature.HandcraftedFeatures[i] != name {
+			return fmt.Errorf("URL handcrafted feature order mismatch at %d: got %q, expected %q", i, bundle.Feature.HandcraftedFeatures[i], name)
+		}
 	}
 	if bundle.Vectorizer.Analyzer != "char" || !bundle.Vectorizer.Lowercase ||
 		bundle.Vectorizer.NgramMin < 1 || bundle.Vectorizer.NgramMax < bundle.Vectorizer.NgramMin ||
