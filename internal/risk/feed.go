@@ -36,6 +36,7 @@ func (e *FeedEngine) feedResult(ctx context.Context, domain string, brands []ana
 	exactHit, err := e.matchExactThreatFeed(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
+			e.noteFeedLookupErr()
 			logjson.Warn("threat feed lookup failed", correlation.Fields(ctx, map[string]any{
 				"service": "risk",
 				"domain":  domain,
@@ -44,6 +45,7 @@ func (e *FeedEngine) feedResult(ctx context.Context, domain string, brands []ana
 		}
 		return analysis.Result{}, FeedScope{}
 	}
+	e.noteFeedLookupSuccess()
 	if exactHit {
 		// FP-guard 2026-09/M7: an exact feed IOC on shared
 		// infrastructure (a whole CDN apex, github.com) is contextual,
@@ -63,6 +65,7 @@ func (e *FeedEngine) feedResult(ctx context.Context, domain string, brands []ana
 	candidate, err := e.matchParentCandidate(ctx, domain)
 	if err != nil {
 		if !errors.Is(err, cache.ErrDisabled) {
+			e.noteFeedLookupErr()
 			logjson.Warn("threat feed lookup failed", correlation.Fields(ctx, map[string]any{
 				"service": "risk",
 				"domain":  domain,
@@ -71,6 +74,7 @@ func (e *FeedEngine) feedResult(ctx context.Context, domain string, brands []ana
 		}
 		return analysis.Result{}, FeedScope{}
 	}
+	e.noteFeedLookupSuccess()
 	if candidate == "" {
 		return analysis.Result{}, FeedScope{}
 	}

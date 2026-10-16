@@ -1,6 +1,7 @@
 package risk
 
 import (
+	"sync/atomic"
 	"time"
 
 	"safe-zone/internal/cache"
@@ -21,4 +22,34 @@ type FeedEngine struct {
 	threatFeedKey string
 	redis         *cache.Redis
 	redisTimeout  time.Duration
+	// feedLookupFailures counts threat-feed Redis reads that failed. The
+	// pipeline stays fail-open so a Redis outage cannot block all traffic,
+	// but every failure used to be invisible beyond a per-request log line;
+	// this makes "the IOC layer is blind" a number the operator can alert
+	// on. feedConsecutiveFailures distinguishes "broken right now" from
+	// "failed since boot"; feedLastFailureUnix stamps the last one.
+	// Disabled-feed reads (cache.ErrDisabled) are not failures and are
+	// never counted.
+	feedLookupFailures      atomic.Int64
+	feedConsecutiveFailures atomic.Int64
+	feedLastFailureUnix     atomic.Int64
+}
+
+// noteFeedLookupErr records a failed threat-feed read.
+func (e *FeedEngine) noteFeedLookupErr() {
+	if e == nil {
+		return
+	}
+	e.feedLookupFailures.Add(1)
+	e.feedConsecutiveFailures.Add(1)
+	e.feedLastFailureUnix.Store(time.Now().Unix())
+}
+
+// noteFeedLookupSuccess resets the consecutive-failure run. The last-failure
+// stamp is kept: "when did it last break" stays answerable after recovery.
+func (e *FeedEngine) noteFeedLookupSuccess() {
+	if e == nil {
+		return
+	}
+	e.feedConsecutiveFailures.Store(0)
 }
