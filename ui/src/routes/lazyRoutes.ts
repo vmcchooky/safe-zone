@@ -22,9 +22,7 @@ const overridesRoute = createLazyRoute(() =>
 const userReportsRoute = createLazyRoute(() =>
   import('./UserReportsPage').then((module) => module.UserReportsPage),
 );
-const systemRoute = createLazyRoute(() =>
-  import('./SystemPage').then((module) => module.SystemPage),
-);
+const systemRoute = createLazyRoute(() => import('./SystemPage').then((module) => module.SystemPage));
 
 export const AnalysisPage = analysisRoute.Component;
 export const SettingsPage = settingsRoute.Component;

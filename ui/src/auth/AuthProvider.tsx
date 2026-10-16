@@ -1,12 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  startTransition,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
+import { createContext, useCallback, startTransition, useContext, useEffect, useMemo, useState } from 'react';
 
 import { ApiError, apiFetch, apiJSON, messageFromError } from '../lib/api';
 import { preloadAnalysisRoute } from '../routes/lazyRoutes';
@@ -63,7 +55,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         bgImage,
       ]);
       if (!nextSession || typeof nextSession !== 'object' || Array.isArray(nextSession)) {
-        throw new Error('The Safe Zone API returned an invalid session response. Check the API origin and restart the UI after changing it.');
+        throw new Error(
+          'The Safe Zone API returned an invalid session response. Check the API origin and restart the UI after changing it.',
+        );
       }
       // Keep the single continuous loader until the landing module is ready
       // to paint, so the overlay never hides and re-shows.
@@ -95,29 +89,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void refreshSession();
   }, [refreshSession]);
 
-  const login = useCallback(async (username: string, password: string) => {
-    setError(null);
-    setLoading(true);
+  const login = useCallback(
+    async (username: string, password: string) => {
+      setError(null);
+      setLoading(true);
 
-    try {
-      // Preload the Analysis chunk and app background image alongside the auth request
-      // and the single intentional minimum loader duration — one wait, one loader chain.
-      const analysisChunk = preloadAnalysisRoute();
-      const bgImage = preloadBackgroundImage();
-      const req = apiJSON<{ status: string }>('/v1/auth/login', { username, password }, { method: 'POST' });
-      await Promise.all([req, minLoaderDelay(MIN_LOADER_DURATION_MS), analysisChunk, bgImage]);
-      // Session already covered the minimum delay above; verify at the
-      // server without stacking a second wait onto the same sequence.
-      await refreshSession({ minDelayMs: 0 });
-    } catch (err) {
-      startTransition(() => {
-        setSession(null);
-        setError(messageFromError(err));
-        setLoading(false);
-      });
-      throw err;
-    }
-  }, [refreshSession]);
+      try {
+        // Preload the Analysis chunk and app background image alongside the auth request
+        // and the single intentional minimum loader duration — one wait, one loader chain.
+        const analysisChunk = preloadAnalysisRoute();
+        const bgImage = preloadBackgroundImage();
+        const req = apiJSON<{ status: string }>('/v1/auth/login', { username, password }, { method: 'POST' });
+        await Promise.all([req, minLoaderDelay(MIN_LOADER_DURATION_MS), analysisChunk, bgImage]);
+        // Session already covered the minimum delay above; verify at the
+        // server without stacking a second wait onto the same sequence.
+        await refreshSession({ minDelayMs: 0 });
+      } catch (err) {
+        startTransition(() => {
+          setSession(null);
+          setError(messageFromError(err));
+          setLoading(false);
+        });
+        throw err;
+      }
+    },
+    [refreshSession],
+  );
 
   const logout = useCallback(async () => {
     try {

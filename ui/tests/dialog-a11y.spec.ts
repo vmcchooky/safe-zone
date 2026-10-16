@@ -27,9 +27,9 @@ test.describe('Dialog and keyboard a11y regressions', () => {
     await loginPage.getByPlaceholder('Enter your username').fill(ADMIN_USER);
     await loginPage.getByPlaceholder('Enter your access secret').fill(ADMIN_PASS);
     await loginPage.getByRole('button', { name: /Authenticate/i }).click();
-    await expect(
-      loginPage.getByRole('navigation', { name: 'Workspace routes' }),
-    ).toBeVisible({ timeout: 20_000 });
+    await expect(loginPage.getByRole('navigation', { name: 'Workspace routes' })).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(loginPage.locator('.app-loader-backdrop.is-visible')).toHaveCount(0, {
       timeout: 30_000,
     });
@@ -51,7 +51,10 @@ test.describe('Dialog and keyboard a11y regressions', () => {
   test('group modal exposes dialog semantics and manages focus', async () => {
     await page.goto('/app/endpoints');
     await expect(page.locator('.shell-content h1').first()).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: /Add Group/i }).first().click();
+    await page
+      .getByRole('button', { name: /Add Group/i })
+      .first()
+      .click();
 
     const dialog = page.locator('[role="dialog"][aria-modal="true"]');
     await expect(dialog).toBeVisible();
@@ -83,10 +86,7 @@ test.describe('Dialog and keyboard a11y regressions', () => {
     await expect(dialog).toBeVisible();
 
     // The decorative backdrop must not be independent screen-reader content.
-    await expect(dialog.locator('xpath=preceding-sibling::*[1]')).toHaveAttribute(
-      'aria-hidden',
-      'true',
-    );
+    await expect(dialog.locator('xpath=preceding-sibling::*[1]')).toHaveAttribute('aria-hidden', 'true');
 
     // Form errors must be wired to their inputs via aria-describedby.
     await dialog.getByRole('button', { name: /Create Group/i }).click();
@@ -133,10 +133,7 @@ test.describe('Dialog and keyboard a11y regressions', () => {
     const reveal = page.getByRole('button', { name: 'Show guest password' });
     await expect(reveal).toHaveAttribute('type', 'button');
     await reveal.click();
-    await expect(page.getByRole('button', { name: 'Hide guest password' })).toHaveAttribute(
-      'type',
-      'button',
-    );
+    await expect(page.getByRole('button', { name: 'Hide guest password' })).toHaveAttribute('type', 'button');
     await page.getByRole('button', { name: 'Hide guest password' }).click();
 
     // Same contract on the Gemini key reveal.
@@ -197,7 +194,10 @@ test.describe('Dialog and keyboard a11y regressions', () => {
   test('group modal toggles expose aria-pressed state', async () => {
     await page.goto('/app/endpoints');
     await expect(page.locator('.shell-content h1').first()).toBeVisible({ timeout: 20_000 });
-    await page.getByRole('button', { name: /Add Group/i }).first().click();
+    await page
+      .getByRole('button', { name: /Add Group/i })
+      .first()
+      .click();
     const dialog = page.locator('[role="dialog"][aria-modal="true"]');
     await expect(dialog).toBeVisible();
 

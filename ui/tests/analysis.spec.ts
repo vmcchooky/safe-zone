@@ -46,11 +46,7 @@ async function readLoaderLog(page: Page): Promise<{ v: boolean; t: number }[]> {
  * gives up and the caller's assertions report the real failure. Only the race between
  * "the loader is gone" and "the log is read" is removed.
  */
-async function waitForLoaderSettled(
-  page: Page,
-  settleMs = 400,
-  timeoutMs = 8000,
-): Promise<void> {
+async function waitForLoaderSettled(page: Page, settleMs = 400, timeoutMs = 8000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   let hiddenSince = 0;
   while (Date.now() < deadline) {
@@ -149,9 +145,9 @@ test('uses the local Moody Dog only while the bounded loader is active', async (
   const dog = page.getByTestId('moody-dog-loader');
   try {
     await expect(dog).toBeVisible();
-    const source = await dog.evaluate((element) => String(
-      (element as HTMLElement & { src?: unknown }).src ?? element.getAttribute('src') ?? '',
-    ));
+    const source = await dog.evaluate((element) =>
+      String((element as HTMLElement & { src?: unknown }).src ?? element.getAttribute('src') ?? ''),
+    );
     expect(source).toMatch(/moody-dog(?:-[^/]+)?\.lottie$/);
     expect(source).not.toContain('lottie.host');
     await expect(page.locator('.app-loader-backdrop.is-visible')).toBeVisible();
@@ -161,7 +157,9 @@ test('uses the local Moody Dog only while the bounded loader is active', async (
     await expect(page.getByTestId('moody-dog-fallback')).toHaveCount(0);
     await expect(page.locator('.app-loader-backdrop')).toHaveCount(1);
     await expect(page.locator('.app-loader.is-fallback')).toHaveCount(0);
-    const pseudo = await page.locator('.app-loader').evaluate((el) => getComputedStyle(el, '::before').content);
+    const pseudo = await page
+      .locator('.app-loader')
+      .evaluate((el) => getComputedStyle(el, '::before').content);
     expect(pseudo).toBe('none');
   } finally {
     releaseLogin();
@@ -278,9 +276,9 @@ test('keeps one continuous loader from login through the Analysis deck', async (
   // Baseline episodes already observed (the initial session check may or
   // may not have been sampled yet on a cold page — it is irrelevant to the
   // invariant being tested).
-  const baselineEpisodes = await page.evaluate(() => (
-    (window as unknown as { __loaderLog: { v: boolean }[] }).__loaderLog.filter((e) => e.v).length
-  ));
+  const baselineEpisodes = await page.evaluate(
+    () => (window as unknown as { __loaderLog: { v: boolean }[] }).__loaderLog.filter((e) => e.v).length,
+  );
 
   await page.getByPlaceholder('Enter your username').fill('admin');
   await page.getByPlaceholder('Enter your access secret').fill('playwright_test_password_1234');
@@ -312,12 +310,12 @@ test('keeps one continuous loader from login through the Analysis deck', async (
   // Exactly two player mounts in the whole session — one per loader
   // episode (initial session check + login). A remount at the handoff
   // would show up as a third fetch of the .lottie asset.
-  const lottieTimestamps = await page.evaluate(() => (
+  const lottieTimestamps = await page.evaluate(() =>
     performance
       .getEntriesByType('resource')
       .map((entry) => entry.name)
-      .filter((url) => /moody-dog[^?]*\.lottie$/.test(url))
-  ));
+      .filter((url) => /moody-dog[^?]*\.lottie$/.test(url)),
+  );
   expect(lottieTimestamps.length).toBe(2);
   for (const url of lottieTimestamps) {
     expect(url).not.toContain('lottie.host');
@@ -353,9 +351,9 @@ test('does not flash a second loader while the Analysis chunk is slow', async ({
 
   // Baseline episodes already observed (the initial session check may or
   // may not have been sampled yet — irrelevant to the invariant).
-  const baselineEpisodes = await page.evaluate(() => (
-    (window as unknown as { __loaderLog: { v: boolean }[] }).__loaderLog.filter((e) => e.v).length
-  ));
+  const baselineEpisodes = await page.evaluate(
+    () => (window as unknown as { __loaderLog: { v: boolean }[] }).__loaderLog.filter((e) => e.v).length,
+  );
 
   await page.getByPlaceholder('Enter your username').fill('admin');
   await page.getByPlaceholder('Enter your access secret').fill('playwright_test_password_1234');
@@ -498,7 +496,9 @@ test('keeps the loader bounded and recoverable for an uncached route', async ({ 
     await page.unroute(/\/src\/routes\/SystemPage\./);
     await page.getByRole('button', { name: /Retry/i }).click();
     await expect(page.locator('.app-loader-backdrop')).toHaveCount(0, { timeout: 20000 });
-    await expect(page.locator('h1', { hasText: /^System/ }).or(page.getByText('Failed to load system status'))).toBeVisible({ timeout: 20000 });
+    await expect(
+      page.locator('h1', { hasText: /^System/ }).or(page.getByText('Failed to load system status')),
+    ).toBeVisible({ timeout: 20000 });
     expect(pageErrors).toEqual([]);
   } finally {
     await page.unroute(/\/src\/routes\/SystemPage\./);
@@ -536,7 +536,6 @@ test('reloads once to recover a stale lazy-route chunk after deployment', async 
     await page.unroute(/\/src\/routes\/SystemPage\./);
   }
 });
-
 
 test('has title and can perform an analysis', async ({ page }) => {
   await page.goto('/app/analysis');

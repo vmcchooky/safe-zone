@@ -226,9 +226,7 @@ const json = (data: unknown) => ({
 async function installExtremeMocks(page: Page) {
   await page.route('**/v1/auth/session', (route) => route.fulfill(json(ADMIN_SESSION)));
   await page.route(/\/v1\/telemetry\/stats/, (route) => route.fulfill(json(EXTREME_STATS)));
-  await page.route(/\/v1\/telemetry\/recent/, (route) =>
-    route.fulfill(json({ items: EXTREME_ENTRIES })),
-  );
+  await page.route(/\/v1\/telemetry\/recent/, (route) => route.fulfill(json({ items: EXTREME_ENTRIES })));
   await page.route(/\/v1\/agent\/status/, (route) => route.fulfill(json(EXTREME_AGENT_STATUS)));
   await page.route(/\/v1\/status$/, (route) => route.fulfill(json(EXTREME_CORE_STATUS)));
   await page.route(/\/v1\/groups$/, (route) =>
@@ -243,7 +241,14 @@ async function installExtremeMocks(page: Page) {
             strict_phishing: true,
             strict_malware: false,
           },
-          { id: 2, name: '', description: '', block_categories: [], strict_phishing: false, strict_malware: false },
+          {
+            id: 2,
+            name: '',
+            description: '',
+            block_categories: [],
+            strict_phishing: false,
+            strict_malware: false,
+          },
         ],
       }),
     ),
@@ -612,7 +617,10 @@ test.describe('Extreme data fixtures', () => {
       'Reset Defaults',
       'Apply Config',
     ]) {
-      await expect(page.getByRole('button', { name, exact: true }), `${name} must be disabled`).toBeDisabled();
+      await expect(
+        page.getByRole('button', { name, exact: true }),
+        `${name} must be disabled`,
+      ).toBeDisabled();
     }
 
     // Retrying while the API keeps failing keeps the lock engaged.
@@ -665,9 +673,7 @@ test.describe('Extreme data fixtures', () => {
     await page.getByRole('button', { name: 'Retry', exact: true }).click();
 
     await expect(page.getByTestId('settings-load-error')).toHaveCount(0);
-    await expect(page.getByLabel('Gemini API Key', { exact: true })).toHaveValue(
-      'sk-retry-loaded-key-42',
-    );
+    await expect(page.getByLabel('Gemini API Key', { exact: true })).toHaveValue('sk-retry-loaded-key-42');
     await expect(page.getByLabel('Log Retention', { exact: true })).toHaveValue('42');
     await expect(page.getByLabel('Punycode Penalty', { exact: true })).toHaveValue('77');
     await expect(page.getByRole('button', { name: 'Remove keyword retrykw' })).toBeVisible();
