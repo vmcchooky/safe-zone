@@ -2,28 +2,35 @@ import { useState } from 'react';
 import { Info } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-export function InfoTooltip({ content, size = 18, position = 'top' }: { content: ReactNode, size?: number, position?: 'top' | 'bottom' }) {
+export function InfoTooltip({
+  content,
+  size = 18,
+  position = 'top',
+}: {
+  content: ReactNode;
+  size?: number;
+  position?: 'top' | 'bottom';
+}) {
   const [isHovered, setIsHovered] = useState(false);
 
-  const positionClasses = position === 'bottom'
-    ? 'top-full mt-2.5 origin-top'
-    : 'bottom-full mb-2.5 origin-bottom';
+  const positionClasses =
+    position === 'bottom' ? 'top-full mt-2.5 origin-top' : 'bottom-full mb-2.5 origin-bottom';
 
   return (
-    <div 
+    <div
       className="relative inline-flex items-center justify-center cursor-help"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       onFocus={() => setIsHovered(true)}
       onBlur={() => setIsHovered(false)}
     >
-      <Info 
-        size={size} 
-        className={`text-slate-400 transition-colors duration-200 ${isHovered ? 'text-sky-500' : ''}`} 
+      <Info
+        size={size}
+        className={`text-slate-400 transition-colors duration-200 ${isHovered ? 'text-sky-500' : ''}`}
       />
-      
+
       {/* Tooltip content */}
-      <div 
+      <div
         className={`absolute left-1/2 -translate-x-1/2 w-max max-w-[280px] pointer-events-none transition-all duration-200 ease-out z-50 ${positionClasses} ${
           isHovered ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
         }`}

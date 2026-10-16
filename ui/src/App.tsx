@@ -42,9 +42,9 @@ interface DotLottieInstance {
 type LoaderAnimState = 'animation-pending' | 'animation-ready' | 'fallback';
 
 function usePrefersReducedMotion() {
-  const [reducedMotion, setReducedMotion] = useState(() => (
-    typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  ));
+  const [reducedMotion, setReducedMotion] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -61,11 +61,11 @@ export function ScreenLoader({ forceVisible = false }: { forceVisible?: boolean 
   const [visible, setVisible] = useState(false);
   const isVisible = forceVisible || visible;
   const reducedMotion = usePrefersReducedMotion();
-  const [animState, setAnimState] = useState<LoaderAnimState>(() => (
+  const [animState, setAnimState] = useState<LoaderAnimState>(() =>
     typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
       ? 'fallback'
-      : 'animation-pending'
-  ));
+      : 'animation-pending',
+  );
   const animationRef = useRef<(HTMLElement & { dotLottie?: DotLottieInstance | null }) | null>(null);
 
   useEffect(() => subscribeLoader(setVisible), []);
@@ -134,13 +134,15 @@ export function ScreenLoader({ forceVisible = false }: { forceVisible?: boolean 
   return (
     <div className="app-loader-backdrop is-visible" role="status" aria-label="Loading Safe Zone">
       <div className={`app-loader is-${animState}`} aria-hidden="true">
-        {!reducedMotion && animState !== 'fallback' && React.createElement('dotlottie-wc', {
-          ref: animationRef,
-          'data-testid': 'moody-dog-loader',
-          src: moodyDogLoader,
-          autoplay: true,
-          loop: true,
-        })}
+        {!reducedMotion &&
+          animState !== 'fallback' &&
+          React.createElement('dotlottie-wc', {
+            ref: animationRef,
+            'data-testid': 'moody-dog-loader',
+            src: moodyDogLoader,
+            autoplay: true,
+            loop: true,
+          })}
         {animState === 'fallback' && (
           <div className="app-loader-fallback" data-testid="moody-dog-fallback">
             <svg viewBox="0 0 64 64" className="app-loader-fallback-paw" aria-hidden="true">
@@ -175,9 +177,7 @@ function ProtectedRoutes() {
         <Route path="/system" element={<SystemPage />} />
         <Route
           path="/settings"
-          element={
-            session?.can_view_settings ? <SettingsPage /> : <Navigate to="/analysis" replace />
-          }
+          element={session?.can_view_settings ? <SettingsPage /> : <Navigate to="/analysis" replace />}
         />
         <Route path="*" element={<Navigate to="/analysis" replace />} />
       </Routes>
@@ -204,11 +204,11 @@ export function App() {
   return (
     <>
       <ScreenLoader forceVisible={loading} />
-      {(!loading && !session) ? (
+      {!loading && !session ? (
         <LoginScreen initialError={error} />
-      ) : (
-        (!loading && session) ? <ProtectedRoutes /> : null
-      )}
+      ) : !loading && session ? (
+        <ProtectedRoutes />
+      ) : null}
     </>
   );
 }

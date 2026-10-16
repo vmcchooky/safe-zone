@@ -103,9 +103,7 @@ async function loginForStorageState(browser: any): Promise<string> {
  */
 async function showDock(page: Page) {
   await page.evaluate(() => {
-    window.dispatchEvent(
-      new MouseEvent('mousemove', { clientX: 12, clientY: window.innerHeight - 8 }),
-    );
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 12, clientY: window.innerHeight - 8 }));
   });
   await expect(page.locator('.shell-floating-dock-inner')).toBeVisible({ timeout: 5_000 });
   await page.waitForTimeout(700); // dock spring transition settles
@@ -174,15 +172,21 @@ async function probeInPage(page: Page): Promise<ElementReport[]> {
         clamp(style.borderBottomRightRadius),
       ];
       const corners: Array<{ cx: number; cy: number; r: number; qx: number; qy: number }> = [];
-      if (radii[0] > 2) corners.push({ cx: r.left + radii[0], cy: r.top + radii[0], r: radii[0], qx: -1, qy: -1 });
-      if (radii[1] > 2) corners.push({ cx: r.right - radii[1], cy: r.top + radii[1], r: radii[1], qx: 1, qy: -1 });
-      if (radii[2] > 2) corners.push({ cx: r.left + radii[2], cy: r.bottom - radii[2], r: radii[2], qx: -1, qy: 1 });
-      if (radii[3] > 2) corners.push({ cx: r.right - radii[3], cy: r.bottom - radii[3], r: radii[3], qx: 1, qy: 1 });
+      if (radii[0] > 2)
+        corners.push({ cx: r.left + radii[0], cy: r.top + radii[0], r: radii[0], qx: -1, qy: -1 });
+      if (radii[1] > 2)
+        corners.push({ cx: r.right - radii[1], cy: r.top + radii[1], r: radii[1], qx: 1, qy: -1 });
+      if (radii[2] > 2)
+        corners.push({ cx: r.left + radii[2], cy: r.bottom - radii[2], r: radii[2], qx: -1, qy: 1 });
+      if (radii[3] > 2)
+        corners.push({ cx: r.right - radii[3], cy: r.bottom - radii[3], r: radii[3], qx: 1, qy: 1 });
       return corners;
     };
 
     /** Clip regions of every scroll/clip ancestor plus the viewport. */
-    const clipRegions = (el: Element): {
+    const clipRegions = (
+      el: Element,
+    ): {
       rects: DOMRect[];
       corners: Array<{ cx: number; cy: number; r: number; qx: number; qy: number }>;
     } => {

@@ -1,1 +1,5 @@
-declare namespace JSX { interface IntrinsicElements { 'dotlottie-wc': any; } }
+declare namespace JSX {
+  interface IntrinsicElements {
+    'dotlottie-wc': any;
+  }
+}

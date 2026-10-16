@@ -5,11 +5,7 @@ export function useAntiInspect() {
     const handleContextMenu = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
       // Allow context menu only on inputs, textareas, and contenteditable
-      if (
-        target.tagName === 'INPUT' ||
-        target.tagName === 'TEXTAREA' ||
-        target.isContentEditable
-      ) {
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
         return;
       }
       e.preventDefault();
@@ -21,7 +17,7 @@ export function useAntiInspect() {
         e.preventDefault();
         return;
       }
-      
+
       if (e.ctrlKey || e.metaKey) {
         // Ctrl+U (View Source)
         if (e.key === 'u' || e.key === 'U' || e.keyCode === 85) {
@@ -31,7 +27,14 @@ export function useAntiInspect() {
         // Ctrl+Shift+I / J / C (DevTools)
         if (e.shiftKey) {
           const key = e.key.toLowerCase();
-          if (key === 'i' || key === 'j' || key === 'c' || e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67) {
+          if (
+            key === 'i' ||
+            key === 'j' ||
+            key === 'c' ||
+            e.keyCode === 73 ||
+            e.keyCode === 74 ||
+            e.keyCode === 67
+          ) {
             e.preventDefault();
             return;
           }

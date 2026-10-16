@@ -3,7 +3,18 @@ import useSWR from 'swr';
 import { apiFetch, apiJSON, messageFromError } from '../lib/api';
 import { paginationWindow } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageSquareWarning, ShieldAlert, CheckCircle2, XCircle, Loader2, ChevronLeft, ChevronRight, ShieldCheck, Search, Filter } from 'lucide-react';
+import {
+  MessageSquareWarning,
+  ShieldAlert,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+  Search,
+  Filter,
+} from 'lucide-react';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
@@ -101,25 +112,36 @@ export function UserReportsPage() {
     setIsSubmittingReview(true);
     try {
       if (reviewDraft.action === 'allow') {
-        await apiJSON('/v1/overrides/review-false-positive', {
-          report_id: reviewDraft.report.id,
-          domain: reviewDraft.report.domain,
-          reason,
-          source: 'user_reports',
-          previous_action: 'block',
-        }, { method: 'POST' });
+        await apiJSON(
+          '/v1/overrides/review-false-positive',
+          {
+            report_id: reviewDraft.report.id,
+            domain: reviewDraft.report.domain,
+            reason,
+            source: 'user_reports',
+            previous_action: 'block',
+          },
+          { method: 'POST' },
+        );
       } else {
-        await apiJSON('/v1/reports/status', {
-          id: reviewDraft.report.id,
-          status: reviewDraft.action,
-          reason,
-        }, { method: 'POST' });
+        await apiJSON(
+          '/v1/reports/status',
+          {
+            id: reviewDraft.report.id,
+            status: reviewDraft.action,
+            reason,
+          },
+          { method: 'POST' },
+        );
       }
       await mutate();
       if (reviewDraft.action === 'allow') {
         showToast(`Allowed ${reviewDraft.report.domain} and resolved related pending reports.`, 'success');
       } else {
-        showToast(reviewDraft.action === 'resolved' ? 'Report marked as resolved.' : 'Report rejected.', 'success');
+        showToast(
+          reviewDraft.action === 'resolved' ? 'Report marked as resolved.' : 'Report rejected.',
+          'success',
+        );
       }
       setReviewDraft(null);
       setReviewReason('');
@@ -134,20 +156,22 @@ export function UserReportsPage() {
   const currentItems = data?.reports || [];
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }} 
-      animate={{ opacity: 1 }} 
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       className="space-y-8 max-w-7xl mx-auto p-4 lg:p-8 pb-32"
     >
       {/* Header */}
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }} 
-        animate={{ opacity: 1, y: 0 }} 
-        transition={{ duration: 0.3, ease: "easeOut" }}
+      <motion.div
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
         className="flex flex-col md:flex-row md:items-center justify-between gap-6"
       >
         <div>
-          <div className="text-amber-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-1">Feedback</div>
+          <div className="text-amber-600 font-bold uppercase tracking-wider text-xs mb-1.5 pl-1">
+            Feedback
+          </div>
           <div className="flex items-center gap-2.5">
             <MessageSquareWarning size={24} className="text-amber-500" />
             <h1 className="text-3xl font-bold text-slate-900 tracking-tight leading-none">User Reports</h1>
@@ -158,9 +182,21 @@ export function UserReportsPage() {
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-3" aria-label="Report queue summary">
         {[
-          { label: 'Pending review', value: data?.counts?.pending ?? 0, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
-          { label: 'Resolved', value: data?.counts?.resolved ?? 0, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
-          { label: 'Rejected', value: data?.counts?.rejected ?? 0, tone: 'text-rose-700 bg-rose-50 border-rose-200' },
+          {
+            label: 'Pending review',
+            value: data?.counts?.pending ?? 0,
+            tone: 'text-amber-700 bg-amber-50 border-amber-200',
+          },
+          {
+            label: 'Resolved',
+            value: data?.counts?.resolved ?? 0,
+            tone: 'text-blue-700 bg-blue-50 border-blue-200',
+          },
+          {
+            label: 'Rejected',
+            value: data?.counts?.rejected ?? 0,
+            tone: 'text-rose-700 bg-rose-50 border-rose-200',
+          },
         ].map((item) => (
           <div key={item.label} className={`rounded-2xl border px-5 py-4 ${item.tone}`}>
             <div className="text-2xl font-bold tabular-nums">{item.value}</div>
@@ -185,13 +221,19 @@ export function UserReportsPage() {
               className="w-full h-12 !pl-12 !pr-4 bg-white/80 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-slate-100 focus:border-slate-300 transition-all shadow-sm"
             />
           </div>
-          
+
           <div className="w-full sm:w-48 shrink-0">
-            <Select value={statusFilter} onValueChange={(val: any) => { setStatusFilter(val); setCurrentPage(1); }}>
+            <Select
+              value={statusFilter}
+              onValueChange={(val: any) => {
+                setStatusFilter(val);
+                setCurrentPage(1);
+              }}
+            >
               <motion.div
                 whileHover={{ scale: 1.02, y: -1 }}
-                whileTap={{ scale: 0.95, y: 0 }} 
-                transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                whileTap={{ scale: 0.95, y: 0 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 15 }}
               >
                 <SelectTrigger className="w-full bg-white/80 border-slate-200 rounded-xl px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-slate-100 focus:border-slate-300 text-slate-700 font-medium h-12 shadow-sm">
                   <div className="flex items-center gap-2">
@@ -201,10 +243,30 @@ export function UserReportsPage() {
                 </SelectTrigger>
               </motion.div>
               <SelectContent className="rounded-xl border-slate-200 shadow-lg bg-white">
-                <SelectItem value="all" className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer">All Statuses</SelectItem>
-                <SelectItem value="pending" className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer">Pending</SelectItem>
-                <SelectItem value="resolved" className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer">Resolved</SelectItem>
-                <SelectItem value="rejected" className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer">Rejected</SelectItem>
+                <SelectItem
+                  value="all"
+                  className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer"
+                >
+                  All Statuses
+                </SelectItem>
+                <SelectItem
+                  value="pending"
+                  className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer"
+                >
+                  Pending
+                </SelectItem>
+                <SelectItem
+                  value="resolved"
+                  className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer"
+                >
+                  Resolved
+                </SelectItem>
+                <SelectItem
+                  value="rejected"
+                  className="rounded-lg font-medium text-slate-700 focus:bg-amber-50 cursor-pointer"
+                >
+                  Rejected
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -233,147 +295,155 @@ export function UserReportsPage() {
           <>
             <div className="overflow-x-auto flex-1">
               <table className="w-full text-left text-base whitespace-nowrap table-fixed">
-              <thead className="bg-slate-50/50 text-slate-500 border-b border-slate-200/50">
-                <tr>
-                  <th className="px-6 py-4 font-medium w-64">Domain</th>
-                  <th className="px-6 py-4 font-medium w-48">Contact</th>
-                  <th className="px-6 py-4 font-medium w-64">Note</th>
-                  <th className="px-6 py-4 font-medium w-28 text-center">Status</th>
-                  <th className="px-6 py-4 font-medium w-48 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100/80">
-                <AnimatePresence mode="popLayout">
-                  {currentItems.map((report) => (
-                    <motion.tr
-                      key={report.id}
-                      layout
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
-                      className="hover:bg-slate-50/50 transition-colors group"
-                    >
-                      <td className="px-6 py-4 w-64">
-                        <span className="font-medium text-slate-700 font-mono block truncate w-60" title={report.domain}>
-                          {report.domain}
-                        </span>
-                        <span className="text-xs text-slate-400 block mt-1">
-                          {new Date(report.created_at).toLocaleString()}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 w-48">
-                        <span className="text-slate-600 truncate w-40 inline-block" title={report.contact || 'Anonymous'}>
-                          {report.contact || <span className="text-slate-400 italic">Anonymous</span>}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 w-64">
-                        <span className="text-slate-600 truncate w-60 block" title={report.note}>
-                          {report.note || '-'}
-                        </span>
-                        {report.review_reason ? (
+                <thead className="bg-slate-50/50 text-slate-500 border-b border-slate-200/50">
+                  <tr>
+                    <th className="px-6 py-4 font-medium w-64">Domain</th>
+                    <th className="px-6 py-4 font-medium w-48">Contact</th>
+                    <th className="px-6 py-4 font-medium w-64">Note</th>
+                    <th className="px-6 py-4 font-medium w-28 text-center">Status</th>
+                    <th className="px-6 py-4 font-medium w-48 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100/80">
+                  <AnimatePresence mode="popLayout">
+                    {currentItems.map((report) => (
+                      <motion.tr
+                        key={report.id}
+                        layout
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+                        className="hover:bg-slate-50/50 transition-colors group"
+                      >
+                        <td className="px-6 py-4 w-64">
                           <span
-                            className="mt-1 block w-60 truncate text-xs text-slate-400"
-                            title={`${report.resolution_action}: ${report.review_reason} — ${report.reviewed_by} at ${report.reviewed_at}`}
+                            className="font-medium text-slate-700 font-mono block truncate w-60"
+                            title={report.domain}
                           >
-                            {report.resolution_action}: {report.review_reason}
+                            {report.domain}
                           </span>
-                        ) : null}
-                      </td>
-                      <td className="px-6 py-4 w-28 text-center">
-                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-medium border ${
-                          report.status === 'resolved'
-                            ? 'bg-blue-50 text-blue-700 border-blue-200/60'
-                            : report.status === 'rejected'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200/60'
-                            : 'bg-amber-50 text-amber-700 border-amber-200/60'
-                        }`}>
-                          {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center w-48">
-                        <div className="flex items-center justify-center gap-2">
-                          {report.status !== 'resolved' && (
-                            <>
-                              <button
-                                onClick={() => openReview(report, 'allow')}
-                                className="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5"
-                                title="Allow this domain (Override)"
-                              >
-                                <ShieldCheck className="w-3.5 h-3.5" />
-                                Allow
-                              </button>
-                              <button
-                                onClick={() => openReview(report, 'resolved')}
-                                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                title="Mark Resolved"
-                              >
-                                <CheckCircle2 className="w-5 h-5" />
-                              </button>
-                              <button
-                                onClick={() => openReview(report, 'rejected')}
-                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                                title="Reject Report"
-                              >
-                                <XCircle className="w-5 h-5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </motion.tr>
-                  ))}
-                </AnimatePresence>
-              </tbody>
-            </table>
-          </div>
-          
-          {totalItems > 0 && (
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t border-slate-200/50 bg-slate-50/30">
-              <span className="text-sm text-slate-500">
-                Total: <span className="font-medium text-slate-700">{totalItems}</span>
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={safeCurrentPage === 1}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <div className="flex items-center gap-1">
-                  {paginationWindow(safeCurrentPage, totalPages).map((page, i) =>
-                    page === null ? (
-                      <span
-                        key={`gap-${i}`}
-                        className="min-w-[24px] h-8 flex items-center justify-center text-sm text-slate-400 select-none"
-                      >
-                        …
-                      </span>
-                    ) : (
-                      <button
-                        key={page}
-                        onClick={() => setCurrentPage(page)}
-                        className={`min-w-[32px] h-8 flex items-center justify-center rounded-lg text-sm font-medium active:scale-95 transition-all duration-200 ${
-                          safeCurrentPage === page
-                            ? 'bg-amber-50 text-amber-600 font-semibold'
-                            : 'text-slate-600 hover:bg-slate-100 active:bg-slate-200'
-                        }`}
-                      >
-                        {page}
-                      </button>
-                    ),
-                  )}
-                </div>
-                <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={safeCurrentPage === totalPages}
-                  className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
-              </div>
+                          <span className="text-xs text-slate-400 block mt-1">
+                            {new Date(report.created_at).toLocaleString()}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 w-48">
+                          <span
+                            className="text-slate-600 truncate w-40 inline-block"
+                            title={report.contact || 'Anonymous'}
+                          >
+                            {report.contact || <span className="text-slate-400 italic">Anonymous</span>}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 w-64">
+                          <span className="text-slate-600 truncate w-60 block" title={report.note}>
+                            {report.note || '-'}
+                          </span>
+                          {report.review_reason ? (
+                            <span
+                              className="mt-1 block w-60 truncate text-xs text-slate-400"
+                              title={`${report.resolution_action}: ${report.review_reason} — ${report.reviewed_by} at ${report.reviewed_at}`}
+                            >
+                              {report.resolution_action}: {report.review_reason}
+                            </span>
+                          ) : null}
+                        </td>
+                        <td className="px-6 py-4 w-28 text-center">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-sm font-medium border ${
+                              report.status === 'resolved'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200/60'
+                                : report.status === 'rejected'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200/60'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200/60'
+                            }`}
+                          >
+                            {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-center w-48">
+                          <div className="flex items-center justify-center gap-2">
+                            {report.status !== 'resolved' && (
+                              <>
+                                <button
+                                  onClick={() => openReview(report, 'allow')}
+                                  className="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5"
+                                  title="Allow this domain (Override)"
+                                >
+                                  <ShieldCheck className="w-3.5 h-3.5" />
+                                  Allow
+                                </button>
+                                <button
+                                  onClick={() => openReview(report, 'resolved')}
+                                  className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                  title="Mark Resolved"
+                                >
+                                  <CheckCircle2 className="w-5 h-5" />
+                                </button>
+                                <button
+                                  onClick={() => openReview(report, 'rejected')}
+                                  className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                  title="Reject Report"
+                                >
+                                  <XCircle className="w-5 h-5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </tbody>
+              </table>
             </div>
-          )}
+
+            {totalItems > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-4 border-t border-slate-200/50 bg-slate-50/30">
+                <span className="text-sm text-slate-500">
+                  Total: <span className="font-medium text-slate-700">{totalItems}</span>
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                    disabled={safeCurrentPage === 1}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {paginationWindow(safeCurrentPage, totalPages).map((page, i) =>
+                      page === null ? (
+                        <span
+                          key={`gap-${i}`}
+                          className="min-w-[24px] h-8 flex items-center justify-center text-sm text-slate-400 select-none"
+                        >
+                          …
+                        </span>
+                      ) : (
+                        <button
+                          key={page}
+                          onClick={() => setCurrentPage(page)}
+                          className={`min-w-[32px] h-8 flex items-center justify-center rounded-lg text-sm font-medium active:scale-95 transition-all duration-200 ${
+                            safeCurrentPage === page
+                              ? 'bg-amber-50 text-amber-600 font-semibold'
+                              : 'text-slate-600 hover:bg-slate-100 active:bg-slate-200'
+                          }`}
+                        >
+                          {page}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                  <button
+                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                    disabled={safeCurrentPage === totalPages}
+                    className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 active:bg-slate-200 active:scale-95 disabled:opacity-50 disabled:pointer-events-none transition-all duration-200"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </section>
@@ -400,7 +470,9 @@ export function UserReportsPage() {
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <div className="text-xs font-bold uppercase tracking-wider text-amber-600">Operator decision</div>
+                  <div className="text-xs font-bold uppercase tracking-wider text-amber-600">
+                    Operator decision
+                  </div>
                   <h2 id="review-dialog-title" className="mt-1 text-xl font-bold text-slate-900">
                     {reviewDraft.action === 'allow'
                       ? 'Allow domain as false positive'
@@ -408,7 +480,9 @@ export function UserReportsPage() {
                         ? 'Resolve report without override'
                         : 'Reject report'}
                   </h2>
-                  <p className="mt-2 break-all font-mono text-sm text-slate-600">{reviewDraft.report.domain}</p>
+                  <p className="mt-2 break-all font-mono text-sm text-slate-600">
+                    {reviewDraft.report.domain}
+                  </p>
                 </div>
                 <button
                   type="button"
@@ -441,7 +515,8 @@ export function UserReportsPage() {
 
               {reviewDraft.action === 'allow' ? (
                 <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  This creates a global allow override and resolves pending reports for the same domain atomically.
+                  This creates a global allow override and resolves pending reports for the same domain
+                  atomically.
                 </div>
               ) : null}
 
@@ -475,7 +550,10 @@ export function UserReportsPage() {
         ) : null}
       </AnimatePresence>
 
-      <div className="fixed bottom-6 right-6 z-[200] flex flex-col-reverse gap-3 pointer-events-none" aria-live="polite">
+      <div
+        className="fixed bottom-6 right-6 z-[200] flex flex-col-reverse gap-3 pointer-events-none"
+        aria-live="polite"
+      >
         <AnimatePresence>
           {toasts.map((toast) => (
             <motion.div
@@ -490,7 +568,11 @@ export function UserReportsPage() {
               }`}
               role={toast.type === 'error' ? 'alert' : 'status'}
             >
-              {toast.type === 'success' ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <XCircle className="h-5 w-5 shrink-0" />}
+              {toast.type === 'success' ? (
+                <CheckCircle2 className="h-5 w-5 shrink-0" />
+              ) : (
+                <XCircle className="h-5 w-5 shrink-0" />
+              )}
               <span className="text-sm font-medium">{toast.message}</span>
               <button
                 type="button"

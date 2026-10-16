@@ -43,9 +43,7 @@ export interface LazyRoute<T extends React.ComponentType<any>> {
   preload: () => Promise<void>;
 }
 
-export function createLazyRoute<T extends React.ComponentType<any>>(
-  factory: () => Promise<T>,
-): LazyRoute<T> {
+export function createLazyRoute<T extends React.ComponentType<any>>(factory: () => Promise<T>): LazyRoute<T> {
   let CachedComponent: T | null = null;
   let pending: Promise<T> | null = null;
 
@@ -64,10 +62,11 @@ export function createLazyRoute<T extends React.ComponentType<any>>(
     return pending;
   };
 
-  const preload = (): Promise<void> => load().then(
-    () => undefined,
-    () => undefined,
-  );
+  const preload = (): Promise<void> =>
+    load().then(
+      () => undefined,
+      () => undefined,
+    );
 
   function AsyncWrapper(props: any) {
     const [Component, setComponent] = useState<T | null>(() => CachedComponent);
@@ -78,7 +77,10 @@ export function createLazyRoute<T extends React.ComponentType<any>>(
         // Clear the marker only when the route that failed has actually
         // mounted. A different route may preload successfully during auth;
         // clearing there would turn a persistent failure into a reload loop.
-        if (typeof window !== 'undefined' && window.sessionStorage.getItem(staleChunkReloadKey) === window.location.pathname) {
+        if (
+          typeof window !== 'undefined' &&
+          window.sessionStorage.getItem(staleChunkReloadKey) === window.location.pathname
+        ) {
           window.sessionStorage.removeItem(staleChunkReloadKey);
         }
         return;

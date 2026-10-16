@@ -31,7 +31,15 @@ function extractMessage(payload: unknown, fallback: string): string {
     }
   }
   if (typeof payload === 'string' && payload.trim()) {
-    return payload;
+    const text = payload.trim();
+    // Non-JSON error bodies are proxy/gateway error pages, not operator
+    // messages. Show a bounded head instead of pasting a whole HTML page
+    // into toasts and alerts (React still escapes it; this is about noise,
+    // not XSS).
+    if (text.length > 200) {
+      return `${fallback} (response body omitted, ${text.length} chars)`;
+    }
+    return text;
   }
   return fallback;
 }

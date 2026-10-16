@@ -1,0 +1,9 @@
+# Build output, test artifacts and the lockfile are generated, not authored.
+package-lock.json
+dist/
+node_modules/
+coverage/
+playwright-report/
+test-results/
+blob-report/
+.vite/

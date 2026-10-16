@@ -9,7 +9,10 @@ import { test, expect } from '@playwright/test';
  * window (overflow-anchor disabled on .shell-main) — this test locks that in.
  */
 
-const SEED_DOMAINS = Array.from({ length: 26 }, (_, i) => `telemetry-probe-${String(i).padStart(2, '0')}.example.com`);
+const SEED_DOMAINS = Array.from(
+  { length: 26 },
+  (_, i) => `telemetry-probe-${String(i).padStart(2, '0')}.example.com`,
+);
 
 async function seedTelemetry(request: import('@playwright/test').APIRequestContext) {
   const login = await request.post('/v1/auth/login', {
@@ -50,7 +53,9 @@ test('keeps the pagination bar in view when flipping telemetry pages', async ({ 
   await expect(page.locator('tbody tr').first()).toBeVisible({ timeout: 20000 });
 
   // Land on the bottom of page 1, where the pagination bar lives.
-  await page.locator('.shell-main').evaluate((el) => { el.scrollTop = el.scrollHeight; });
+  await page.locator('.shell-main').evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
   await page.waitForTimeout(250);
 
   const before = await page.locator('.shell-main').evaluate((el) => ({
@@ -66,16 +71,23 @@ test('keeps the pagination bar in view when flipping telemetry pages', async ({ 
 
   // Page 2 must actually load (the first row changes) and the crossfade must
   // settle back to a single 12-row table before asserting the scroll state.
-  await expect.poll(async () => {
-    const state = await page.locator('.shell-main').evaluate((el) => ({
-      rows: document.querySelectorAll('tbody tr').length,
-      scrollHeight: el.scrollHeight,
-      firstRow: document.querySelector('tbody tr strong')?.textContent ?? '',
-    }));
-    return state.rows === 12 && state.scrollHeight === before.scrollHeight && state.firstRow !== before.firstRow
-      ? state.firstRow
-      : null;
-  }, { timeout: 15000 }).toBeTruthy();
+  await expect
+    .poll(
+      async () => {
+        const state = await page.locator('.shell-main').evaluate((el) => ({
+          rows: document.querySelectorAll('tbody tr').length,
+          scrollHeight: el.scrollHeight,
+          firstRow: document.querySelector('tbody tr strong')?.textContent ?? '',
+        }));
+        return state.rows === 12 &&
+          state.scrollHeight === before.scrollHeight &&
+          state.firstRow !== before.firstRow
+          ? state.firstRow
+          : null;
+      },
+      { timeout: 15000 },
+    )
+    .toBeTruthy();
 
   // The viewport must still be pinned at the bottom of the table: the
   // pagination bar stays on screen and the user can click Next again

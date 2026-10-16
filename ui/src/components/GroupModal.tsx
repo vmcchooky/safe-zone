@@ -17,9 +17,19 @@ interface GroupModalProps {
 const CATEGORIES = [
   { id: 'adult', name: 'Adult Content', desc: 'Restrict mature destination categories.', icon: Globe },
   { id: 'gambling', name: 'Gambling', desc: 'Block wagering, betting, and casino domains.', icon: Dices },
-  { id: 'social_media', name: 'Social Media', desc: 'Limit social platforms and high-distraction feeds.', icon: MessageSquare },
+  {
+    id: 'social_media',
+    name: 'Social Media',
+    desc: 'Limit social platforms and high-distraction feeds.',
+    icon: MessageSquare,
+  },
   { id: 'gaming', name: 'Gaming', desc: 'Restrict game portals and related services.', icon: Gamepad2 },
-  { id: 'advertising', name: 'Advertising', desc: 'Reduce ad networks and tracking endpoints.', icon: Megaphone },
+  {
+    id: 'advertising',
+    name: 'Advertising',
+    desc: 'Reduce ad networks and tracking endpoints.',
+    icon: Megaphone,
+  },
 ];
 
 const groupSchema = z.object({
@@ -81,7 +91,13 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
     }
   }, [onClose]);
 
-  const { register, handleSubmit, control, reset, formState: { errors } } = useForm<GroupFormValues>({
+  const {
+    register,
+    handleSubmit,
+    control,
+    reset,
+    formState: { errors },
+  } = useForm<GroupFormValues>({
     resolver: zodResolver(groupSchema),
     // RHF's built-in focus-on-error resolves ASYNC (after the zod resolver's
     // promise) and races the modal close: it refocuses the invalid field even
@@ -95,7 +111,7 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
       blockCategories: [],
       strictPhishing: false,
       strictMalware: false,
-    }
+    },
   });
 
   const handleInvalid = (errs: FieldErrors<GroupFormValues>) => {
@@ -233,16 +249,23 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
 
             <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
               <form id="group-form" onSubmit={handleSubmit(onSubmit, handleInvalid)} className="space-y-8">
-                
                 {apiError && (
-                  <div role="alert" className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100">
+                  <div
+                    role="alert"
+                    className="p-4 bg-red-50 text-red-600 rounded-2xl text-sm font-medium border border-red-100"
+                  >
                     {apiError}
                   </div>
                 )}
 
                 <div className="space-y-4">
                   <div>
-                    <label htmlFor="group-name-input" className="block text-sm font-semibold text-slate-700 mb-1">Group Name</label>
+                    <label
+                      htmlFor="group-name-input"
+                      className="block text-sm font-semibold text-slate-700 mb-1"
+                    >
+                      Group Name
+                    </label>
                     <input
                       id="group-name-input"
                       type="text"
@@ -253,10 +276,19 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                       placeholder="e.g., Office WiFi, Guest Network"
                       className={`w-full bg-white border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all ${errors.name ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500' : 'border-slate-200 focus:ring-sky-500/20 focus:border-sky-500'}`}
                     />
-                    {errors.name && <p id="group-name-error" className="text-rose-500 text-xs mt-1">{errors.name.message}</p>}
+                    {errors.name && (
+                      <p id="group-name-error" className="text-rose-500 text-xs mt-1">
+                        {errors.name.message}
+                      </p>
+                    )}
                   </div>
                   <div>
-                    <label htmlFor="group-description-input" className="block text-sm font-semibold text-slate-700 mb-1">Description</label>
+                    <label
+                      htmlFor="group-description-input"
+                      className="block text-sm font-semibold text-slate-700 mb-1"
+                    >
+                      Description
+                    </label>
                     <input
                       id="group-description-input"
                       type="text"
@@ -266,18 +298,24 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                       placeholder="Optional details about this group"
                       className={`w-full bg-white border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 transition-all ${errors.description ? 'border-rose-400 focus:ring-rose-500/20 focus:border-rose-500' : 'border-slate-200 focus:ring-sky-500/20 focus:border-sky-500'}`}
                     />
-                    {errors.description && <p id="group-description-error" className="text-rose-500 text-xs mt-1">{errors.description.message}</p>}
+                    {errors.description && (
+                      <p id="group-description-error" className="text-rose-500 text-xs mt-1">
+                        {errors.description.message}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-bold tracking-wider uppercase text-slate-500 mb-4">Block Categories</h3>
+                  <h3 className="text-sm font-bold tracking-wider uppercase text-slate-500 mb-4">
+                    Block Categories
+                  </h3>
                   <Controller
                     name="blockCategories"
                     control={control}
                     render={({ field }) => (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {CATEGORIES.map(cat => {
+                        {CATEGORIES.map((cat) => {
                           const active = field.value.includes(cat.id);
                           const Icon = cat.icon;
                           return (
@@ -292,26 +330,32 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                                 field.onChange(newValue);
                               }}
                               className={`flex items-center justify-between w-full p-4 rounded-2xl border transition-all ${
-                                active 
-                                  ? 'bg-sky-50/50 border-sky-200' 
+                                active
+                                  ? 'bg-sky-50/50 border-sky-200'
                                   : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                               }`}
                             >
                               <div className="flex items-center gap-3 text-left">
-                                <div className={`p-2 rounded-xl shrink-0 ${active ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-500'}`}>
+                                <div
+                                  className={`p-2 rounded-xl shrink-0 ${active ? 'bg-sky-100 text-sky-600' : 'bg-slate-100 text-slate-500'}`}
+                                >
                                   <Icon size={18} />
                                 </div>
                                 <div>
-                                  <div className={`font-semibold text-sm ${active ? 'text-sky-900' : 'text-slate-700'}`}>
+                                  <div
+                                    className={`font-semibold text-sm ${active ? 'text-sky-900' : 'text-slate-700'}`}
+                                  >
                                     {cat.name}
                                   </div>
-                                  <div className="text-xs text-slate-500 mt-0.5 line-clamp-2">
-                                    {cat.desc}
-                                  </div>
+                                  <div className="text-xs text-slate-500 mt-0.5 line-clamp-2">{cat.desc}</div>
                                 </div>
                               </div>
-                              <div className={`w-11 h-6 rounded-full transition-colors flex items-center px-1 shrink-0 ml-3 ${active ? 'bg-sky-500' : 'bg-slate-200'}`}>
-                                <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${active ? 'translate-x-5' : 'translate-x-0'}`} />
+                              <div
+                                className={`w-11 h-6 rounded-full transition-colors flex items-center px-1 shrink-0 ml-3 ${active ? 'bg-sky-500' : 'bg-slate-200'}`}
+                              >
+                                <div
+                                  className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${active ? 'translate-x-5' : 'translate-x-0'}`}
+                                />
                               </div>
                             </button>
                           );
@@ -322,7 +366,9 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                 </div>
 
                 <div>
-                  <h3 className="text-sm font-bold tracking-wider uppercase text-slate-500 mb-4">Security Features</h3>
+                  <h3 className="text-sm font-bold tracking-wider uppercase text-slate-500 mb-4">
+                    Security Features
+                  </h3>
                   <div className="space-y-3">
                     <Controller
                       name="strictPhishing"
@@ -333,15 +379,21 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                           aria-pressed={field.value}
                           onClick={() => field.onChange(!field.value)}
                           className={`flex items-center justify-between w-full p-4 rounded-2xl border transition-all ${
-                            field.value ? 'bg-emerald-50/50 border-emerald-200' : 'bg-white border-slate-200 hover:border-slate-300'
+                            field.value
+                              ? 'bg-emerald-50/50 border-emerald-200'
+                              : 'bg-white border-slate-200 hover:border-slate-300'
                           }`}
                         >
                           <div className="flex items-center gap-3 text-left">
-                            <div className={`p-2 rounded-xl shrink-0 ${field.value ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                            <div
+                              className={`p-2 rounded-xl shrink-0 ${field.value ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}
+                            >
                               <Shield size={18} />
                             </div>
                             <div>
-                              <div className={`font-semibold text-sm ${field.value ? 'text-emerald-900' : 'text-slate-700'}`}>
+                              <div
+                                className={`font-semibold text-sm ${field.value ? 'text-emerald-900' : 'text-slate-700'}`}
+                              >
                                 Strict Phishing Protection
                               </div>
                               <div className="text-xs text-slate-500 mt-0.5">
@@ -349,8 +401,12 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                               </div>
                             </div>
                           </div>
-                          <div className={`w-11 h-6 rounded-full transition-colors flex items-center px-1 shrink-0 ml-3 ${field.value ? 'bg-emerald-500' : 'bg-slate-200'}`}>
-                            <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${field.value ? 'translate-x-5' : 'translate-x-0'}`} />
+                          <div
+                            className={`w-11 h-6 rounded-full transition-colors flex items-center px-1 shrink-0 ml-3 ${field.value ? 'bg-emerald-500' : 'bg-slate-200'}`}
+                          >
+                            <div
+                              className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${field.value ? 'translate-x-5' : 'translate-x-0'}`}
+                            />
                           </div>
                         </button>
                       )}
@@ -365,15 +421,21 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                           aria-pressed={field.value}
                           onClick={() => field.onChange(!field.value)}
                           className={`flex items-center justify-between w-full p-4 rounded-2xl border transition-all ${
-                            field.value ? 'bg-rose-50/50 border-rose-200' : 'bg-white border-slate-200 hover:border-slate-300'
+                            field.value
+                              ? 'bg-rose-50/50 border-rose-200'
+                              : 'bg-white border-slate-200 hover:border-slate-300'
                           }`}
                         >
                           <div className="flex items-center gap-3 text-left">
-                            <div className={`p-2 rounded-xl shrink-0 ${field.value ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}>
+                            <div
+                              className={`p-2 rounded-xl shrink-0 ${field.value ? 'bg-rose-100 text-rose-600' : 'bg-slate-100 text-slate-500'}`}
+                            >
                               <ShieldAlert size={18} />
                             </div>
                             <div>
-                              <div className={`font-semibold text-sm ${field.value ? 'text-rose-900' : 'text-slate-700'}`}>
+                              <div
+                                className={`font-semibold text-sm ${field.value ? 'text-rose-900' : 'text-slate-700'}`}
+                              >
                                 Strict Malware Filtering
                               </div>
                               <div className="text-xs text-slate-500 mt-0.5">
@@ -381,8 +443,12 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
                               </div>
                             </div>
                           </div>
-                          <div className={`w-11 h-6 rounded-full transition-colors flex items-center px-1 shrink-0 ml-3 ${field.value ? 'bg-rose-500' : 'bg-slate-200'}`}>
-                            <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${field.value ? 'translate-x-5' : 'translate-x-0'}`} />
+                          <div
+                            className={`w-11 h-6 rounded-full transition-colors flex items-center px-1 shrink-0 ml-3 ${field.value ? 'bg-rose-500' : 'bg-slate-200'}`}
+                          >
+                            <div
+                              className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${field.value ? 'translate-x-5' : 'translate-x-0'}`}
+                            />
                           </div>
                         </button>
                       )}

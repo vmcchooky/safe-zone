@@ -24,9 +24,11 @@ test('turns a user report into an audited allow decision', async ({ page, reques
 
   const dialog = page.getByRole('dialog', { name: 'Allow domain as false positive' });
   await expect(dialog).toBeVisible();
-  await dialog.getByLabel('Review reason *').fill(
-    'Verified against support ticket FP-101; keep the allow override until classifier retraining is complete.',
-  );
+  await dialog
+    .getByLabel('Review reason *')
+    .fill(
+      'Verified against support ticket FP-101; keep the allow override until classifier retraining is complete.',
+    );
   await dialog.getByRole('button', { name: 'Confirm decision' }).click();
 
   await expect(page.getByText(`Allowed ${domain} and resolved related pending reports.`)).toBeVisible();
