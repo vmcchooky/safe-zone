@@ -19,7 +19,7 @@ ENV SAFE_ZONE_UI_SOURCEMAPS=${SAFE_ZONE_UI_SOURCEMAPS}
 RUN npm run check
 
 # Go toolchain version is owned by mise.toml [tools] go (single source of truth).
-FROM golang:1.26.9-alpine AS build
+FROM golang:1.27.2-alpine AS build
 
 ARG SERVICE=core-api
 ARG VERSION=dev
