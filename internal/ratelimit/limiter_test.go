@@ -89,6 +89,15 @@ func TestLimiterUnlimitedWhenMaxKeysNonPositive(t *testing.T) {
 	}
 }
 
+// evictionCycles is how many times the key space is refilled to the cap so
+// that eviction can be sampled evictionCycles times, and evictionBudget is the
+// aggregate those samples must finish within. Naming both keeps the budget
+// readable per event: 150ms / 3 = 50ms.
+const (
+	evictionCycles = 3
+	evictionBudget = 150 * time.Millisecond
+)
+
 // Eviction must not stall the limiter. A previous implementation sorted the
 // whole key space under the write lock, which measured 88-215 ms at 50k keys
 // and blocked every concurrent caller for the duration.
@@ -98,36 +107,94 @@ func TestLimiterUnlimitedWhenMaxKeysNonPositive(t *testing.T) {
 // active list before the sweep pass can start. Filling with fresh one-shot keys
 // instead would let the cheap pass do all the work and measure nothing — which
 // is what an earlier version of this test accidentally did.
+//
+// One eviction pass trims evictionRatio of the cap in a single sweep, so the
+// map lands well below the cap afterwards and the inserts that follow evict
+// nothing at all. An earlier version of this test filled to the cap once and
+// then measured 200 inserts, on the assumption that each one tripped eviction;
+// exactly one of the 200 did, so the gate was really a comparison on a single
+// sample. Each cycle below therefore refills to the cap before the one insert
+// it measures. (What a pass actually touches is asserted exactly, without any
+// timing, in limiter_internal_test.go.)
+//
+// The budget is deliberately loose and that is a real limit worth knowing:
+// measured under -race at 3 cycles, the eviction samples total 25.5ms (8.5ms
+// each) and the sorted implementation would total 264-645ms. The gate
+// therefore rejects a gross regression and tolerates roughly 6x headroom over
+// the measured cost. It cannot resolve anything finer — a 5x regression still
+// passes — so per-event cost is a benchmark question (BenchmarkEviction), not
+// a pass/fail one. What is gated tightly and deterministically is the shape of
+// the pass, not its speed.
 func TestEvictionDoesNotStallTheLimiter(t *testing.T) {
 	const maxKeys = 20_000
 	l := ratelimit.NewWithMaxKeys(600, 1000, maxKeys) // high burst, so keys land in active
 	defer l.Close()
 
-	for i := range maxKeys {
-		key := fmt.Sprintf("key-%d", i)
-		l.Allow(key)
-		l.Allow(key) // repeat visitor, so pass 1 cannot drain it
-	}
-	if got := l.Len(); got != maxKeys {
-		t.Fatalf("precondition: %d keys tracked, want %d", got, maxKeys)
-	}
+	var evictTotal, worst time.Duration
+	for i := range evictionCycles {
+		// Refill to the cap so the next insert really does trip eviction, and
+		// give every key a second hit while doing it: pass 1 skips one-shot
+		// keys, so repeat visitors are what force the expensive walk.
+		for l.Len() < maxKeys {
+			key := fmt.Sprintf("refill-%d-%d", i, l.Len())
+			l.Allow(key)
+			l.Allow(key)
+		}
+		before := l.Len()
 
-	worst := time.Duration(0)
-	for i := range 200 {
-		// Each insert trips eviction, because the map is already at the cap.
 		start := time.Now()
 		l.Allow(fmt.Sprintf("trigger-%d", i))
-		if elapsed := time.Since(start); elapsed > worst {
+		elapsed := time.Since(start)
+
+		if l.Len() >= before {
+			t.Fatalf("cycle %d evicted nothing (tracked %d -> %d); the sample measures a cheap insert",
+				i, before, l.Len())
+		}
+		evictTotal += elapsed
+		if elapsed > worst {
 			worst = elapsed
 		}
 	}
-	t.Logf("worst eviction-bearing request: %v at %d tracked keys", worst, maxKeys)
+	t.Logf("%d eviction-bearing requests: aggregate %v (%v each), worst single %v, at %d tracked keys",
+		evictionCycles, evictTotal, evictTotal/evictionCycles, worst, maxKeys)
 
-	// Generous against the measured 12.5 ms worst case, but far below the
-	// 88-215 ms of the sorted implementation, and loose enough not to flake on
-	// a slow or ARM host.
-	if worst > 100*time.Millisecond {
-		t.Fatalf("slowest eviction-bearing request took %v; eviction is stalling the limiter", worst)
+	if evictTotal > evictionBudget {
+		t.Fatalf("%d eviction-bearing requests took %v (%v each); eviction is stalling the limiter",
+			evictionCycles, evictTotal, evictTotal/evictionCycles)
+	}
+}
+
+// BenchmarkEviction reports the per-event cost that
+// TestEvictionDoesNotStallTheLimiter deliberately does not gate on. Run it to
+// compare eviction implementations:
+//
+//	go test ./internal/ratelimit/ -run '^$' -bench BenchmarkEviction -benchtime 20x
+func BenchmarkEviction(b *testing.B) {
+	const maxKeys = 20_000
+	l := ratelimit.NewWithMaxKeys(600, 1000, maxKeys)
+	defer l.Close()
+
+	b.ReportAllocs()
+	for i := 0; b.Loop(); i++ {
+		// Refilling to the cap is what makes an eviction possible; it is not
+		// what is being measured, so it runs untimed. Keys get a second hit
+		// for the same reason as in the test above.
+		b.StopTimer()
+		for l.Len() < maxKeys {
+			key := fmt.Sprintf("refill-%d", l.Len())
+			l.Allow(key)
+			l.Allow(key)
+		}
+		before := l.Len()
+		b.StartTimer()
+
+		l.Allow(fmt.Sprintf("trigger-%d", i))
+
+		b.StopTimer()
+		if l.Len() >= before {
+			b.Fatalf("insert evicted nothing (tracked %d -> %d)", before, l.Len())
+		}
+		b.StartTimer()
 	}
 }
 

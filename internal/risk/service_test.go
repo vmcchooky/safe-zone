@@ -621,6 +621,11 @@ func TestAnalysisConfigReloadSubscriberShutdownInterruptsBackoff(t *testing.T) {
 		// the shutdown failed to interrupt it. The old test paired a one second
 		// backoff with a 250ms bound, leaving far less headroom than the work
 		// needs on a loaded machine; widening the gap keeps the assertion honest.
+		//
+		// This is a hang detector, not a performance gate: the subscriber either
+		// exits during Close or never does. shutdownInterruptBudget sits below
+		// the backoff it interrupts (see the constant), so it should not be
+		// tightened to chase timing noise.
 		if elapsed := time.Since(startedClose); elapsed > shutdownInterruptBudget {
 			t.Fatalf("expected shutdown to interrupt backoff promptly, took %s", elapsed)
 		}

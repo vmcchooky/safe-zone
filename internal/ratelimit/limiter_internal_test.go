@@ -303,3 +303,63 @@ func TestMapAndListsStayConsistent(t *testing.T) {
 		t.Fatalf("oneShot counter = %d but %d tracked keys have hits == 1; pass 1 would skip wrongly", l.oneShot, oneShot)
 	}
 }
+
+// One eviction pass must touch a bounded share of the key space, not all of
+// it. This is the deterministic half of the eviction guard: it asserts the
+// exact number of keys a pass removes, so it needs no timing, cannot flake on
+// a loaded runner, and still fails when the pass starts walking the whole key
+// space — the shape of the regression that made eviction stall the limiter.
+//
+// The wall-clock counterpart lives in limiter_test.go and is deliberately
+// loose, because the cost of a single eviction event is dominated by how long
+// the host takes to refill the cap back up.
+func TestEvictionPassRemovesExactlyTrimCount(t *testing.T) {
+	for _, maxKeys := range []int{1, 2, 100, 5_000, 20_000} {
+		t.Run(fmt.Sprintf("cap%d", maxKeys), func(t *testing.T) {
+			l := NewWithMaxKeys(600, 1000, maxKeys)
+			defer l.Close()
+
+			for i := range maxKeys {
+				l.Allow(fmt.Sprintf("key-%d", i))
+			}
+			if got := l.Len(); got != maxKeys {
+				t.Fatalf("precondition: %d keys tracked, want %d", got, maxKeys)
+			}
+
+			trim := l.trimCount()
+			if trim > maxKeys {
+				t.Fatalf("trimCount = %d exceeds the cap %d; a pass cannot remove more keys than the map holds",
+					trim, maxKeys)
+			}
+
+			l.Allow("trigger")
+
+			// The pass removes exactly trim keys, then the new key is added.
+			want := maxKeys - trim + 1
+			if got := l.Len(); got != want {
+				t.Fatalf("after one evicting insert at cap %d: %d keys tracked, want %d "+
+					"(the pass removed %d, not %d)", maxKeys, got, want, maxKeys-got+1, trim)
+			}
+		})
+	}
+}
+
+// trimCount must stay within the key space and leave something behind. A pass
+// that could empty the map would hand every client a fresh full burst on its
+// next request, which is the rotation attack the batched trim exists to blunt.
+func TestTrimCountStaysWithinTheKeySpace(t *testing.T) {
+	for maxKeys := 1; maxKeys <= DefaultMaxKeys; maxKeys = maxKeys*2 + 1 {
+		l := NewWithMaxKeys(600, 1000, maxKeys)
+		for i := range maxKeys {
+			l.Allow(fmt.Sprintf("key-%d", i))
+		}
+		trim := l.trimCount()
+		if trim < 1 {
+			t.Fatalf("cap %d: trimCount = %d, a pass must remove at least one key", maxKeys, trim)
+		}
+		if trim > maxKeys {
+			t.Fatalf("cap %d: trimCount = %d exceeds the cap", maxKeys, trim)
+		}
+		l.Close()
+	}
+}

@@ -255,7 +255,9 @@ func TestCloseCutsShortARunningPrune(t *testing.T) {
 	elapsed := time.Since(start)
 
 	// Far below the prune's own budget. Without the lifecycle wired into the
-	// prune context this would block for the full timeout.
+	// prune context this would block for the full timeout. This is a hang
+	// detector: waitForPrune either returns or never does, and the bound only
+	// has to sit below the prune timeout it is waiting on.
 	if elapsed > 10*time.Second {
 		t.Fatalf("waitForPrune took %v; shutdown does not reach a running prune", elapsed)
 	}

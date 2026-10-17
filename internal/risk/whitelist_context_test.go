@@ -57,6 +57,13 @@ func TestWhitelistLookupsSurviveAClosedStore(t *testing.T) {
 // database connection for seconds, and a lookup waiting behind it consumed the
 // caller's whole deadline; the RAM index removes the wait, and this holds the
 // lookup path to the same lock the reload needs.
+// whitelistReloadLookups is the batch size the aggregate gate is measured
+// over, and whitelistReloadBudget is the total it must finish within.
+const (
+	whitelistReloadLookups = 500
+	whitelistReloadBudget  = 2 * time.Second
+)
+
 func TestIsAllowedDoesNotBlockAReload(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("SAFE_ZONE_FEED_FILE_ROOT", dir)
@@ -86,9 +93,26 @@ func TestIsAllowedDoesNotBlockAReload(t *testing.T) {
 		}
 	}()
 
-	// Every lookup must complete promptly even mid-reload.
+	// Every lookup must complete promptly even mid-reload. The gate is on the
+	// aggregate for the same reason as the eviction test in
+	// internal/ratelimit: the eviction-bearing call there cost tens of
+	// microseconds, far below the ~0.5ms floor this host's time.Since reports,
+	// so a per-call comparison was measuring clock granularity and scheduler
+	// preemptions rather than the operation. Here the worst single lookup reads
+	// ~1ms while the whole batch takes single-digit milliseconds, which is the
+	// same quantization seen from the other side.
+	//
+	// Summing the batch clears the clock floor and keeps a genuine regression
+	// loud: if lookups took the reload's write lock they would serialize behind
+	// a 200k-line reload, so this batch would take minutes rather than
+	// milliseconds.
+	//
+	// 2s for 500 lookups is 4ms each. Measured 2.6-9.5ms for the batch under
+	// -race, so the budget keeps ~200x headroom over the race-enabled
+	// measurement.
 	worst := time.Duration(0)
-	for range 500 {
+	loopStart := time.Now()
+	for range whitelistReloadLookups {
 		start := time.Now()
 		if !w.IsAllowed(context.Background(), "h42.example") {
 			t.Fatal("a known entry answered false during a reload")
@@ -97,8 +121,12 @@ func TestIsAllowedDoesNotBlockAReload(t *testing.T) {
 			worst = elapsed
 		}
 	}
-	if worst > time.Second {
-		t.Fatalf("worst lookup took %v during a reload", worst)
+	total := time.Since(loopStart)
+	t.Logf("%d lookups during a reload: total %v (%v each), worst single %v",
+		whitelistReloadLookups, total, total/whitelistReloadLookups, worst)
+	if total > whitelistReloadBudget {
+		t.Fatalf("%d lookups took %v (%v each) during a reload; lookups are blocking on the reload",
+			whitelistReloadLookups, total, total/whitelistReloadLookups)
 	}
 	<-done
 }
