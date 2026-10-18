@@ -37,6 +37,9 @@ func TestWarmupRespectsCanceledContext(t *testing.T) {
 	if got := atomic.LoadInt32(&requests); got != 0 {
 		t.Fatalf("canceled warmup must not issue requests, got %d", got)
 	}
+	// A hang detector: the context is already canceled before warmup starts, so
+	// the correct behaviour is to return without issuing anything. The bound
+	// only needs to be well under cfg.timeout, the work it is waiting on.
 	if elapsed > 2*time.Second {
 		t.Fatalf("canceled warmup must return promptly, took %v", elapsed)
 	}

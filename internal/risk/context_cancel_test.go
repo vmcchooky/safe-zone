@@ -17,6 +17,10 @@ func TestAnalyzeRejectsOversizedDomainBeforeStore(t *testing.T) {
 	massive := strings.Repeat("a.", 5000) + "com"
 	start := time.Now()
 	result := service.Analyze(context.Background(), massive, ClientInfo{})
+	// A hang detector, not a performance gate: the work here is unbounded
+	// store access, so the only failure worth catching is one that never
+	// finishes. The bound is deliberately far above the real cost (single-digit
+	// milliseconds) and must not be tightened to chase timing noise.
 	if time.Since(start) > 5*time.Second {
 		t.Fatal("oversized input must not cause unbounded store work")
 	}
