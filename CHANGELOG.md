@@ -34,6 +34,9 @@ PR merges to `main`, oldest batch first.
   maps for release debugging (#172).
 
 ### Changed
+- CI restores the Go build/module and golangci-lint caches on the quality job.
+  Same gate coverage; the task graph measured 656s -> 351s and the job
+  12m44s -> 8m18s on an identical commit (#184).
 - Go toolchain unified on 1.26.9 across `mise.toml`, `go.mod` and the
   Docker build image (#163).
 - Research CLIs moved `cmd/ml-*` → `tools/` with dedicated
