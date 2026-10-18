@@ -9,6 +9,10 @@ Make Safe Zone releases repeatable, reviewable, and reversible across both suppo
 
 This is a manual release process. No production release should skip the gate.
 
+Versioning, tagging and release notes are handled in
+[release-tagging.md](release-tagging.md) and run before any of the steps below.
+Tagging a release does not deploy it; this runbook covers deployment.
+
 ## Only deploy through `deploy.ps1`
 
 Build the production images with `./deploy.ps1` (or `scripts/ops/safe-zone.sh
