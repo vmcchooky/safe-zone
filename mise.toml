@@ -24,8 +24,39 @@ run = "echo Safe Zone checks passed."
 
 [tasks.ci]
 description = "Run the CI verification suite"
-depends = ["check", "ui:e2e", "go:security", "ml:test", "go:cover", "research:test"]
+# Composed from the same three groups ci.yml runs as separate jobs. The union is
+# unchanged, so a developer running `mise run ci` locally still executes every
+# gate exactly as before; the grouping exists so CI can hand each group a
+# dedicated runner instead of running them all against one saturated vCPU set.
+depends = ["ci:go", "ci:ui", "ci:ml"]
 run = "echo Safe Zone CI checks passed."
+
+[tasks."ci:go"]
+description = "Run the Go gates: lint, build, race tests, coverage gate, security scans, decision evaluation, research CLI tests"
+depends = [
+  "go:lint",
+  "go:build",
+  "go:test",
+  "go:cover",
+  "go:security",
+  "eval:decision",
+  "research:test",
+]
+run = "echo Safe Zone Go checks passed."
+
+[tasks."ci:ui"]
+description = "Run the UI gates: the embedded bundle check and the Playwright end-to-end suite"
+# Deliberately the unsharded ui:e2e. The CI workflow does not use this task: it
+# calls ui:e2e:shard directly with SAFE_ZONE_E2E_SHARD set, so that a developer
+# running `mise run ci` locally still gets the whole suite in one piece and
+# never hits the shard task's required-variable failure mode.
+depends = ["ui:e2e"]
+run = "echo Safe Zone UI checks passed."
+
+[tasks."ci:ml"]
+description = "Run the ML gates: create the pinned virtualenv and run pytest"
+depends = ["ml:test"]
+run = "echo Safe Zone ML checks passed."
 
 [tasks."ui:install"]
 description = "Install UI workspace dependencies"
@@ -83,6 +114,19 @@ description = "Build the API first, then run the UI E2E tests"
 depends = ["go:build"]
 run = "npm --prefix ui run test:e2e"
 run_windows = "cmd.exe /c \"cd ui && npm run test:e2e\""
+
+[tasks."ui:e2e:shard"]
+description = "Run one shard of the UI E2E suite (set SAFE_ZONE_E2E_SHARD to N/TOTAL)"
+# CI-only. The Playwright webServer starts core-api with `go run`, so it
+# compiles what it needs and this task does not need go:build; the build gate
+# lives in ci:go.
+#
+# Sharding is a scheduling change, not a behavioural one. Each shard runs on
+# its own runner with its own webServer pair and its own in-memory SQLite, and
+# workers stays at 1 inside a shard, so every shard executes a subset of the
+# same tests in the same serial manner as the unsplit suite. Nothing about an
+# individual test changes.
+run = "npm --prefix ui run test:e2e -- --shard=$SAFE_ZONE_E2E_SHARD"
 
 [tasks."go:test"]
 description = "Run the Go test suite with the embedded UI bundle refreshed first"
