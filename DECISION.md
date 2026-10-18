@@ -1170,6 +1170,35 @@ từ goroutine đồng bộ sẽ race với goroutine sync đang đọc.
 
 ---
 
+## 2026-10-18 — Version the releases by date
+
+**Decision:** release versions are `v1.<MM>.<DD>` (month and day, UTC), the
+major stays 1 until the operator contract breaks, and a same-day hotfix uses a
+`-2` suffix rather than a moved date.
+
+**Why:** until v1.10.16 the repository had 262 markdown files, no CHANGELOG and
+exactly one tag covering an entire mountain of changes. The numbering scheme
+existed only in the owner's head, so a second person could not tell whether a
+version was a patch or a breaking change. A date version cannot be "wrong" the
+way a hand-maintained counter can, and it makes the release history readable
+without consulting anyone.
+
+**How it stays honest:** the version is a label only. The Go module is
+unversioned and Compose pins images by commit SHA, so nothing waits on a version
+bump, and the tagging checklist in [docs/runbooks/release-tagging.md](docs/runbooks/release-tagging.md)
+requires a green `main` at the tagged SHA plus a stamped CHANGELOG.
+
+**Rejected:** SemVer minor/patch. It encodes an intent judgement that has to be
+made correctly at every release, and the first release after a batch of security
+fixes would routinely be mislabelled either way.
+
+**Also decided:** releasing without a provisioned environment is permitted, in
+writing, provided the waiver names the skipped item, the reason, where it will
+be verified, and who owns it. A waiver may not cover anything runnable locally
+or in CI.
+
+---
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
