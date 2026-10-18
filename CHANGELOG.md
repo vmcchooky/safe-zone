@@ -34,6 +34,11 @@ PR merges to `main`, oldest batch first.
   maps for release debugging (#172).
 
 ### Changed
+- CI runs the Go, UI end-to-end and ML gates on dedicated runners instead of
+  one saturated job, and shards the Playwright suite three ways (16/16/15
+  tests, still serial inside each shard). Same gate coverage: the closure of
+  the `ci` task graph is unchanged. The longest gate job went 12m44s -> 7m1s
+  measured cold-to-cold (#185).
 - CI restores the Go build/module and golangci-lint caches on the quality job.
   Same gate coverage; the task graph measured 656s -> 351s and the job
   12m44s -> 8m18s on an identical commit (#184).
