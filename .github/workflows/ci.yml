@@ -39,6 +39,33 @@ jobs:
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Measured on the runner: the task graph took 656s wall-clock with the
+      # runner saturated (go:test 636s on the critical path, go:build 227s,
+      # ui:e2e 362s all running against the same vCPUs), and the runner is
+      # fresh every run, so the Go toolchain rebuilt everything from scratch
+      # each time. The Go build and module caches are content-addressed, so
+      # restoring them can only produce the same binaries the cold build did.
+      #
+      # go.mod carries the toolchain version (go 1.26.9) and is the single
+      # source of truth for it, so hashing it also invalidates the cache when
+      # the toolchain moves. No gate changes: every task still runs, and the
+      # cache only skips recompilation.
+      - name: Restore Go build and module cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-
+
+      - name: Restore golangci-lint cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ hashFiles('.golangci.yml') }}
+
       - name: Install UI dependencies and Playwright Chromium
         run: |
           npm ci --prefix ui
