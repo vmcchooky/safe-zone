@@ -215,6 +215,8 @@ The baseline JSON-metrics alert rules live in [ops/alerts/safe-zone-alert-rules.
 
 Before major releases, use the formal pre-release security checklist at [security/pre-release-security-checklist.md](security/pre-release-security-checklist.md) together with the main [runbooks/pre-release-checklist.md](runbooks/pre-release-checklist.md).
 
+Code that an AI wrote needs a different bar than code a human wrote: CI green is not enough for auth, store, crypto, deploy or DNS-path changes. The risk classes, the security checklist, the no-self-merge rule and the reviewer self-check are in [security/ai-code-review.md](security/ai-code-review.md). Read it before merging anything that touches those paths — including work produced by an AI assistant.
+
 Versioning and tagging are covered separately in [runbooks/release-tagging.md](runbooks/release-tagging.md), along with the rule for waiving checklist items that cannot run without a provisioned environment.
 
 ## Build

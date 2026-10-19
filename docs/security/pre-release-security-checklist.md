@@ -2,6 +2,9 @@
 
 Run this checklist before every major Safe Zone release.
 
+This covers the code. For how a *change* gets reviewed — and for the extra bar
+when that change was written by an AI — see [ai-code-review.md](ai-code-review.md).
+
 ## Goal
 
 Catch obvious security regressions before deployment, not after exposure.
