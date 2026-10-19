@@ -23,14 +23,26 @@ This is the review gate for AI-written code. It exists so item 4
 
 High-risk = mandatory human diff read. CI green is NOT enough.
 
+**Globs below are path hints, not shell globs**: `*` does not cross a directory
+separator, so write `internal/api/handlers/*auth*` when you mean the handlers
+package. Verify a hint matches what you think it matches (`git ls-files
+'internal/api/auth*.go'`) — a glob that matches nothing is worse than no glob,
+because it looks like coverage.
+
 A PR is high-risk if it touches any of:
 
-- auth / sessions / admin keys (`internal/api/*auth*`, `*_FILE` secrets, login, API keys)
+- auth / sessions / admin keys (`internal/auth/*` — `auth.go`, `bearer.go`;
+  `internal/api/handlers/*auth*`; `*_FILE` secrets, login, API keys)
 - store / policy state (`internal/store/*`, groups, mappings, overrides, whitelist, migrations)
 - crypto / TLS / netguard (`internal/tlsinspect/*`, `internal/netguard/*`)
-- deploy / edge (`Dockerfile`, `docker-compose*.yml`, `Caddyfile`, `deploy/*`, `ops/*`)
-- defaults / config (`internal/config/*`, `mise.toml`, `.github/workflows/*`, any `SAFE_ZONE_*` default)
-- DNS hot path (`internal/risk/*`, `internal/ratelimit/*`, `internal/whois/*`, `internal/feed/*`)
+- deploy / edge (`Dockerfile`, `docker-compose*.yml`, `Caddyfile`, `deploy/*`, `ops/*`, `start.bat`)
+- defaults / config (`internal/config/*`, `mise.toml`, `.github/workflows/*`, `go.mod`, `go.sum`, any `SAFE_ZONE_*` default)
+- DNS hot path (`internal/risk/*`, `internal/ratelimit/*`, `internal/whois/*`, `internal/feed/*`, `internal/feedsync/*`, `internal/dns/*`)
+- scoring and degradation paths (`internal/analysis/*`, `internal/cache/*`, `internal/ai/*`, `internal/osint/*`)
+- dashboard surface (`ui/src/*`, `ui/tests/*`)
+
+**When a path is not obviously in the low-risk list below, treat it as
+high-risk.** The list is a floor, not a ceiling.
 
 Everything else (docs-only, comments, pure test additions, CHANGELOG) is
 low-risk: CI green is enough, self-merge still forbidden by (c).
@@ -54,7 +66,11 @@ Answer in the PR body. Skip = not reviewed.
    Known trap: `SAFE_ZONE_TRUSTED_PROXIES` when set overrides the whole
    Compose default (`docker-compose.yml`), collapsing Internet clients into
    one rate-limit bucket and killing exact-IP/CIDR mapping. Check
-   `internal/ratelimit/middleware.go:91,106,265,287`.
+   `internal/ratelimit/middleware.go:198 configureTrustedProxies` — that is
+   where a set value *replaces* the default rather than extending it, and
+   `docker-compose.yml` is where the bridge-inclusive default lives. The
+   supporting pieces are at `middleware.go:91,106,265,287`, but reading only
+   those four misses the trap.
 4. Does the test assert the BAD behavior, or only the happy path?
    A test that measures 1/200 operations it claims to measure stays green
    for months. For cascade fixes, temporarily revert one line below and
@@ -92,6 +108,30 @@ If a ruleset is ever created for this, record here:
   merges). Current contexts include `Build metadata`, `Go gates`,
   `UI e2e (shard 1/2/3)`, `ML gates`, `Docker build (core-api|dns-resolver|feed-sync|feed-syncd)`,
   `Dependency audit (npm)`, `Secret scan (gitleaks)`.
+
+## (d) Reviewer self-check (for whoever reviews, including an AI)
+
+(b) checks the product. This checks *your evidence*, because a reviewer using
+a broken measurement produces confident, specific, wrong findings that look
+exactly like real ones. That is not hypothetical: a review here reported six
+em dashes committed as literal `???`, backed by byte-level output — and the
+byte-level output was itself an artifact of reading git through a console
+codepage. The finding was wrong and had to be retracted.
+
+- Measure bytes, not rendering. Any claim about encoding or non-ASCII must come
+  from a tool that does not pass through a terminal:
+  `python -c "import subprocess; b=subprocess.run(['git','cat-file','-p','REV:path'],capture_output=True).stdout; print(len(b), sum(1 for x in b if x>127))"`.
+  Never conclude from what a console printed.
+- Quote raw output for every "verified" claim. A command name is not evidence.
+- Distinguish the working-tree file from the committed blob. CRLF
+  normalization makes them differ in length; only the blob is what shipped.
+- Check a glob before trusting it: `git ls-files '<pattern>'`. An empty result
+  means the coverage is imaginary, not that the area is safe.
+- Count required checks from branch protection, not from the checks rollup.
+  The rollup includes non-required jobs (here, the skipped trivy scan), so it
+  runs one higher than the number that actually gates a merge.
+- If you retract a finding, say so on the PR with the corrected measurement.
+  Do not quietly drop it.
 
 ## Done / revert for this item
 

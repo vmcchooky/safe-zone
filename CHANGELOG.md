@@ -60,6 +60,10 @@ PR merges to `main`, oldest batch first.
   `/home/safe-zone/safe-zone` (override with `-RemoteDir`).
 
 ### Added
+- AI code review process (`docs/security/ai-code-review.md`): high-risk path
+  classes, a security review checklist, a no-self-merge rule, and a reviewer
+  self-check for evidence quality. Advisory — nothing is blocked
+  automatically (#187).
 - Release versioning and tagging runbook (`docs/runbooks/release-tagging.md`)
   with the `v1.<MM>.<DD>` policy, a no-environment tagging checklist and the
   four-part waiver rule, plus a GitHub release-notes template. Recorded in
