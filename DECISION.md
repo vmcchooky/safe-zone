@@ -1199,6 +1199,116 @@ or in CI.
 
 ---
 
+## 2026-10-19 — TypeScript 7 decision: keep TS 7.0.2, no type-aware lint yet
+
+**Status:** accepted (measurement only; no code or CI change)
+
+**Context:**
+
+`ui/package.json` pins `typescript 7.0.2` and `oxlint ^1.88.0`
+(`npm ls typescript` → `typescript@7.0.2`; `npm ls oxlint` → `oxlint@1.88.0`).
+`"lint"` is plain `oxlint`; `"typecheck"` runs
+`tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit`;
+`"check"` chains typecheck + lint + format:check + build.
+`ui/.oxlintrc.json` holds 3 rules (`no-restricted-globals` raw-`fetch` ban,
+`exhaustive-deps`, `no-explicit-any` as warn) plus overrides — none of them
+type-aware, so nothing in the current gate needs type information.
+
+**Correction to the popular belief:** the repo still typechecks with `tsc`
+(`npm run typecheck` → RC=0 locally). What is missing is not type checking
+but **type-aware lint rules**: `no-floating-promises`, `no-misused-promises`,
+`await-thenable`, `restrict-template-expressions`.
+
+**Measurement 1 — the four named rules are all implementable, just not wired:**
+
+- Installed oxlint 1.88.0 already advertises `--type-aware` and
+  `--type-check` (`npx --yes oxlint@1.88.0 --help` → both flags present;
+  raw output in `C:/Temp/ev_oxlint_help.txt`).
+- Upstream, type-aware linting is provided by `oxlint-tsgolint`, which
+  tracks TS 7.0.2 and ships 59 of 61 typescript-eslint type-aware rules
+  (announcement `https://oxc.rs/blog/2026-07-22-type-aware-linting-stable.html`;
+  repo rule list at `https://github.com/oxc-project/tsgolint`
+  shows `no-floating-promises`, `no-misused-promises`, `await-thenable`
+  and `restrict-template-expressions` all implemented).
+- So the handover's question "rule nào thực sự không dùng được" has an
+  honest answer: **none of the four** — the blocker is that the repo never
+  added the `oxlint-tsgolint` package and never passed `--type-aware`
+  (nor `options.typeAware`), not that the rules are unimplementable.
+- What IS true: the classic `typescript-eslint` typed-lint path has no
+  stable TS 7 support yet (tracking issue
+  `typescript-eslint/typescript-eslint#10940`, still open; TS 7.1 support
+  WIP as of 2026-09-29). Going back to 5.x/6.x + typescript-eslint is the
+  only way to get the *old* typed pipeline — at the cost of leaving TS 7.
+
+**Measurement 2 — grep of `ui/src` for places the rules would fire:**
+
+- `no-floating-promises`: **one pattern, two sites, hygiene only.**
+  `AnalysisPage.tsx:142` calls `fetchRecentAnalyses()` (async) bare inside
+  `useEffect`, and `SettingsPage.tsx:299` calls `loadSettings()` bare the
+  same way. Both are fire-and-forget by design (their bodies handle their
+  own errors: `fetchRecentAnalyses` catches and `console.error`s;
+  `loadSettings` catches and sets `setLoadError`), so the rule would flag
+  them and the fix would be a `void` prefix — **not a caught bug**.
+  No un-awaited promise with an unhandled rejection path was found: every
+  other async call in `ui/src` is awaited or `.then/.catch`-chained
+  (`routeLoader.tsx:109-116` chains `.then/.catch/.finally`; `api.ts`
+  awaits `fetch`, `readPayload`, `response.json/text`).
+- `no-misused-promises`: **no site.** No promise passed where `void` is
+  expected. Async handlers are wrapped (`onClick={async () => {...}}` in
+  `AnalysisPage.tsx:342`) or awaited through dialog/confirm helpers.
+- `await-thenable`: **no site.** No `await` on a non-Thenable found.
+- `restrict-template-expressions`: **no site the rule would flag as a bug.**
+  Template literals interpolate strings, numbers, or narrowed values
+  (`err.message` after `instanceof`, `taskName: string`, `domain`).
+  The `any`-typed values (`err: any` in catches, `apiFetch<any>`,
+  `props: any` in recharts formatters, `(point: any)` in trend mapping)
+  flow into `messageFromError()` / `String()` / property access — not
+  directly into `${...}` printing `[object Object]`. The `any`s are a
+  **type-safety smell** (78 `no-explicit-any` warnings, 0 errors), not a
+  template-expression bug.
+- `any` leakage is real but out of scope for these four rules — e.g.
+  `SettingsPage.tsx:233` `apiFetch<any>`, `SystemPage.tsx:96`
+  `(statusData as any)`, `DialogContext.tsx:31,40`
+  `(value: any) => void` / `new Promise<any>`. A `no-unsafe-*` rule would
+  care; the four named rules would not.
+
+**Decision:**
+
+1. **Keep TypeScript 7.0.2 + oxlint, no downgrade.** Type checking works,
+  the gate (`typecheck` RC=0, `lint` 0 errors / 78 warnings) is green, and
+  the type-aware path for TS 7 exists upstream via `oxlint-tsgolint`,
+  not via typescript-eslint.
+2. **Do not add `oxlint-tsgolint` in this change.** New dependency + gate
+  behavior change; deserves its own PR with full CI (runs the TS 7 program
+  over `ui/src`; note `tsconfig.app.json` has `"strict": false`, which
+  blunts several type-aware rules; will flag at minimum the two
+  `void`-prefix sites above).
+3. **If that follow-up happens**, expected diff is small: add
+  `oxlint-tsgolint@7`, enable `options.typeAware`, prefix the two
+  fire-and-forget calls with `void`, nothing else.
+
+**Consequences:** no behavior or CI change, no new dependency. Honest cost
+of staying: two `void`-style hygiene sites stay unflagged, `any` smell
+stays warn-only. Cost of leaving (downgrade to 5.x/6.x + typescript-eslint):
+regain the old typed pipeline but lose TS 7 and take a future re-upgrade.
+
+**Validation evidence:** `npm ls typescript` → `typescript@7.0.2` (RC=0);
+`npm ls oxlint` → `oxlint@1.88.0` (RC=0); `npm run typecheck` → RC=0;
+`npm run lint` → RC=0, 78 warnings / 0 errors; `oxlint --help` lists
+`--type-aware` + `--type-check`; `git ls-files 'ui/src'` → 34 files
+(list in `C:/Temp/ev_uisrc_list.txt`); sites verified by direct read:
+`AnalysisPage.tsx:132-143,206-209,232-234,301,311`,
+`SettingsPage.tsx:226-301,408`, `routeLoader.tsx:50-69,109-116`,
+`api.ts:13-21,47-63`, `SystemPage.tsx:96,101-113`,
+`EndpointsPage.tsx:102-116`, `OverridesPage.tsx:68-103`,
+`TelemetryPage.tsx:697-699,743`, `DialogContext.tsx:31,40`,
+`AuthProvider.tsx:44-90`.
+
+**Revisit when:** `oxlint-tsgolint` tracks a newer TS than pinned, or the
+repo takes the gate-behavior PR above; or
+`typescript-eslint/typescript-eslint#10940` closes AND there is a reason to
+prefer that pipeline over tsgolint — currently none.
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
