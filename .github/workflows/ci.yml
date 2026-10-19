@@ -21,12 +21,16 @@ jobs:
         id: meta
         run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
-  quality:
-    name: Repository quality checks
+  # Each gate group gets its own runner. Measured on a single quality runner,
+  # all of these ran against the same vCPUs: the task graph was 656s wall-clock
+  # for 2671s of task time, i.e. saturated at ~4x parallelism. Splitting does not
+  # drop any gate; it stops the groups from competing for the same cores.
+  #
+  # The Go group still needs Node: internal/api/app embeds the UI bundle, so
+  # go:build and go:test depend on ui:bundle and cannot compile without it.
+  go-gates:
+    name: Go gates
     runs-on: ubuntu-latest
-    # mise run ci now also builds the ML virtualenv and installs pinned wheels
-    # (scikit-learn, lightgbm, pyarrow), which is a large first-run download.
-    # The cache below absorbs it on subsequent runs.
     timeout-minutes: 45
     steps:
       - name: Checkout
@@ -39,24 +43,119 @@ jobs:
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Restore Go build and module cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-
+
+      - name: Restore golangci-lint cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/golangci-lint
+          key: golangci-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ hashFiles('.golangci.yml') }}
+
+      - name: Install UI dependencies
+        run: npm ci --prefix ui
+
+      # Lint, build, the -race suite, the 65% coverage gate, gosec and
+      # govulncheck, the frozen decision evaluation, and the research CLI tests.
+      - name: Run Go gates
+        run: mise run ci:go
+
+  ui-e2e:
+    name: UI e2e (shard ${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Playwright runs with workers: 1 on CI, so the suite is serial and its
+    # runtime is linear in the number of tests. Sharding hands each subset its
+    # own runner and its own webServer pair, which is safe because a shard is
+    # still serial and still isolated. fail-fast is off so one red shard does
+    # not hide the state of the others.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5
+        with:
+          cache: true
+          cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The webServer starts core-api with `go run`, so the shard needs a Go
+      # build cache even though it runs no Go gate.
+      - name: Restore Go build and module cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-${{ runner.os }}-
+
+      # npm's download cache and the Playwright browser payload, both keyed so a
+      # lockfile or Playwright version change invalidates them. `npm ci` still
+      # verifies integrity against ui/package-lock.json, so a warm cache
+      # changes the speed and not the installed tree.
+      - name: Restore npm and Playwright browser caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.npm
+            ~/.cache/ms-playwright
+          key: ui-${{ runner.os }}-${{ hashFiles('ui/package-lock.json') }}-${{ hashFiles('ui/package.json') }}
+
       - name: Install UI dependencies and Playwright Chromium
         run: |
           npm ci --prefix ui
           npm --prefix ui exec -- playwright install --with-deps chromium
 
-      # Runs go lint/test/build, the decision evaluations, the UI end-to-end
-      # suite, the Go security scans, and the ML pytest suite (ml:install +
-      # ml:test). The ML tests were previously unreachable from CI: the
-      # .gitignore rule `*.py` hid ml/tests/test_*.py, so pytest collected a
-      # suite missing four of its modules.
-      - name: Run CI task graph
-        run: mise run ci
+      - name: Run UI e2e shard
+        env:
+          SAFE_ZONE_E2E_SHARD: ${{ matrix.shard }}/3
+        run: mise run ui:e2e:shard
+
+  ml-gates:
+    name: ML gates
+    runs-on: ubuntu-latest
+    # mise run ml:install builds the ML virtualenv and installs pinned wheels
+    # (scikit-learn, lightgbm, pyarrow), which is a large first-run download.
+    # The mise cache absorbs it on subsequent runs.
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up mise
+        uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5
+        with:
+          cache: true
+          cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The ML tests were previously unreachable from CI: the .gitignore rule
+      # `*.py` hid ml/tests/test_*.py, so pytest collected a suite missing four
+      # of its modules.
+      - name: Run ML gates
+        run: mise run ci:ml
 
   docker-build:
     name: Docker build (${{ matrix.service }})
     runs-on: ubuntu-latest
     needs:
-      - quality
+      - go-gates
+      - ui-e2e
+      - ml-gates
       - build-metadata
     strategy:
       fail-fast: false

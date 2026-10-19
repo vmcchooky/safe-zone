@@ -34,6 +34,14 @@ PR merges to `main`, oldest batch first.
   maps for release debugging (#172).
 
 ### Changed
+- CI runs the Go, UI end-to-end and ML gates on dedicated runners instead of
+  one saturated job, and shards the Playwright suite three ways (16/16/15
+  tests, still serial inside each shard). Same gate coverage: the closure of
+  the `ci` task graph is unchanged. The longest gate job went 12m44s -> 7m1s
+  measured cold-to-cold (#185).
+- CI restores the Go build/module and golangci-lint caches on the quality job.
+  Same gate coverage; the task graph measured 656s -> 351s and the job
+  12m44s -> 8m18s on an identical commit (#184).
 - Go toolchain unified on 1.26.9 across `mise.toml`, `go.mod` and the
   Docker build image (#163).
 - Research CLIs moved `cmd/ml-*` → `tools/` with dedicated
@@ -52,6 +60,14 @@ PR merges to `main`, oldest batch first.
   `/home/safe-zone/safe-zone` (override with `-RemoteDir`).
 
 ### Added
+- AI code review process (`docs/security/ai-code-review.md`): high-risk path
+  classes, a security review checklist, a no-self-merge rule, and a reviewer
+  self-check for evidence quality. Advisory — nothing is blocked
+  automatically (#187).
+- Release versioning and tagging runbook (`docs/runbooks/release-tagging.md`)
+  with the `v1.<MM>.<DD>` policy, a no-environment tagging checklist and the
+  four-part waiver rule, plus a GitHub release-notes template. Recorded in
+  DECISION.md (#186).
 - Threat-feed Redis failures counted (total/consecutive/last) and exposed
   in `/v1/status` `decision_pipeline`, which is now built by
   `Service.DecisionPipelineStatus()` instead of a partial literal (#174).

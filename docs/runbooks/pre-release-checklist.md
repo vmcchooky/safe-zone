@@ -2,6 +2,15 @@
 
 Complete this checklist before every Safe Zone production release.
 
+This checklist assumes a deployed environment. Versioning, tagging and the
+release notes — everything that can be done from a developer machine — are
+covered separately in [release-tagging.md](release-tagging.md). An item that
+needs no environment does not belong here; if you find one, move it.
+
+Anything below that cannot run for want of an environment may be waived under
+the rule in [release-tagging.md](release-tagging.md#waivers), which requires the
+skip, the reason, where it will be verified instead, and an owner.
+
 ## Release identity
 
 - [ ] Release version is chosen and recorded.

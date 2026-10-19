@@ -23,6 +23,7 @@ Describe the change in 2-4 sentences.
 - Relevant docs/specs:
 - Risks or tradeoffs:
 - Follow-up work, if any:
+- If any part of this change was written by an AI assistant, say so here. It does not block the merge, but the author is accountable for every line, and a change touching auth, store, crypto, deploy or the DNS path needs a human read of the diff, not just green CI (see [docs/security/ai-code-review.md](../docs/security/ai-code-review.md)).
 
 ## Verification
 
