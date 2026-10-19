@@ -27,7 +27,7 @@ A PR is high-risk if it touches any of:
 
 - auth / sessions / admin keys (`internal/api/*auth*`, `*_FILE` secrets, login, API keys)
 - store / policy state (`internal/store/*`, groups, mappings, overrides, whitelist, migrations)
-- crypto / TLS / netguard (`crypto/*`, `internal/tlsinspect/*`, `internal/netguard/*`)
+- crypto / TLS / netguard (`internal/tlsinspect/*`, `internal/netguard/*`)
 - deploy / edge (`Dockerfile`, `docker-compose*.yml`, `Caddyfile`, `deploy/*`, `ops/*`)
 - defaults / config (`internal/config/*`, `mise.toml`, `.github/workflows/*`, any `SAFE_ZONE_*` default)
 - DNS hot path (`internal/risk/*`, `internal/ratelimit/*`, `internal/whois/*`, `internal/feed/*`)
@@ -44,8 +44,12 @@ Answer in the PR body. Skip = not reviewed.
    to store/cache/log. Unauthenticated `client_id` must never select policy
    (`internal/store/groups.go:491 GetGroupForClient`).
 2. Which error path fails open silently?
-   `ADR 0001` allows fail-open only if loud (counted + logged + published).
-   See item 4 pattern `internal/risk/admin.go:38-66`.
+   Fail-open is permitted by `ADR 0001`, but only in the loud form the runtime
+   actually uses: "the policy is fail-open but loud — count it, log it, and
+   publish it" (`internal/risk/admin.go:18-26`). ADR 0001 itself does not
+   mandate the counter — it only says operators must monitor reduced detection
+   quality separately from total uptime — so do not cite it as the rule. A
+   fail-open path with no counter is not finished work.
 3. Is the default safe when the env is NOT set?
    Known trap: `SAFE_ZONE_TRUSTED_PROXIES` when set overrides the whole
    Compose default (`docker-compose.yml`), collapsing Internet clients into
