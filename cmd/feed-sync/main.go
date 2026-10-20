@@ -39,30 +39,45 @@ func main() {
 	}
 
 	ctx := correlation.WithRunID(context.Background(), correlation.NewID("feed-sync"))
-	report, err := feedsync.RunCycle(ctx, settings, "feed-sync")
+	reports, err := feedsync.RunCycleAll(ctx, settings, "feed-sync")
 	if err != nil {
-		os.Exit(1)
-	}
-
-	encoded, err := json.MarshalIndent(report, "", "  ")
-	if err != nil {
-		logjson.Error("feed sync report encode failed", correlation.Fields(ctx, map[string]any{
+		// A failing source does not stop the others, but the run as a whole
+		// did not succeed, so the exit code says so.
+		logjson.Error("feed sync completed with failures", correlation.Fields(ctx, map[string]any{
 			"service": "feed-sync",
+			"source":  settings.Source,
 			"error":   err.Error(),
 		}))
-		os.Exit(1)
+		if len(reports) == 0 {
+			os.Exit(1)
+		}
 	}
 
-	logjson.Info("feed sync completed", correlation.Fields(ctx, map[string]any{
-		"service": "feed-sync",
-		"source":  settings.Source,
-		"written": report.Written,
-		"valid":   report.Stats.Valid,
-		"invalid": report.Stats.Invalid,
-	}))
-	fmt.Println(string(encoded))
+	for _, report := range reports {
+		encoded, err := json.MarshalIndent(report, "", "  ")
+		if err != nil {
+			logjson.Error("feed sync report encode failed", correlation.Fields(ctx, map[string]any{
+				"service": "feed-sync",
+				"error":   err.Error(),
+			}))
+			os.Exit(1)
+		}
+
+		logjson.Info("feed sync completed", correlation.Fields(ctx, map[string]any{
+			"service": "feed-sync",
+			"source":  settings.Source,
+			"written": report.Written,
+			"valid":   report.Stats.Valid,
+			"invalid": report.Stats.Invalid,
+		}))
+		fmt.Println(string(encoded))
+	}
 
 	if !settings.DryRun && strings.TrimSpace(settings.RedisAddr) != "" {
 		feedsync.WarnIfFeedOversized(ctx, settings.RedisAddr, settings.RedisPassword, settings.RedisDB, settings.Key)
+	}
+
+	if err != nil {
+		os.Exit(1)
 	}
 }

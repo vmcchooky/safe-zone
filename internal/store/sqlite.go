@@ -276,6 +276,19 @@ CREATE TABLE IF NOT EXISTS whitelist_domains (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- A durable copy of the allow list taken before a replacement import, so a
+-- bad import can be undone instead of leaving the operator without the list
+-- they curated.
+CREATE TABLE IF NOT EXISTS whitelist_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    source TEXT NOT NULL DEFAULT '',
+    entry_count INTEGER NOT NULL DEFAULT 0,
+    sha256 TEXT NOT NULL DEFAULT '',
+    domains BLOB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_whitelist_snapshots_created ON whitelist_snapshots(created_at);
+
 CREATE TABLE IF NOT EXISTS client_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -715,6 +728,16 @@ func (d *DB) Close() error {
 // return ErrDisabled rather than panicking on a closed handle.
 func (d *DB) Enabled() bool {
 	return d != nil && d.db != nil && !d.closed.Load()
+}
+
+// Ping checks that the database is reachable. It is the cheapest way to
+// tell a live service from one whose storage is gone, which is what a
+// readiness probe needs.
+func (d *DB) Ping(ctx context.Context) error {
+	if !d.Enabled() {
+		return ErrDisabled
+	}
+	return d.db.PingContext(ctx)
 }
 
 // --- Telemetry ---

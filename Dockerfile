@@ -66,7 +66,7 @@ COPY --from=build --chown=app:app /out/service /app/service
 USER app
 
 ENV SAFE_ZONE_HEALTHCHECK_PORT=8080
-ENV SAFE_ZONE_HEALTHCHECK_PATH=/healthz
+ENV SAFE_ZONE_HEALTHCHECK_PATH=/readyz
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD sh -c 'wget -qO- "http://127.0.0.1:${SAFE_ZONE_HEALTHCHECK_PORT}${SAFE_ZONE_HEALTHCHECK_PATH}" >/dev/null 2>&1 || exit 1'
 

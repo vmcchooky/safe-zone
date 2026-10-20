@@ -54,7 +54,7 @@ services:
       - .env
     environment:
       SAFE_ZONE_HEALTHCHECK_PORT: "8080"
-      SAFE_ZONE_HEALTHCHECK_PATH: ${SAFE_ZONE_HEALTHCHECK_PATH:-/healthz}
+      SAFE_ZONE_HEALTHCHECK_PATH: ${SAFE_ZONE_HEALTHCHECK_PATH:-/readyz}
       SAFE_ZONE_CORE_API_ADDR: ${SAFE_ZONE_CORE_API_ADDR:-:8080}
       SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
       SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
@@ -153,7 +153,7 @@ services:
       - .env
     environment:
       SAFE_ZONE_HEALTHCHECK_PORT: "8081"
-      SAFE_ZONE_HEALTHCHECK_PATH: ${SAFE_ZONE_HEALTHCHECK_PATH:-/healthz}
+      SAFE_ZONE_HEALTHCHECK_PATH: ${SAFE_ZONE_HEALTHCHECK_PATH:-/readyz}
       SAFE_ZONE_DNS_RESOLVER_ADDR: ${SAFE_ZONE_DNS_RESOLVER_ADDR:-:8081}
       SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
       SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
@@ -222,7 +222,7 @@ services:
     env_file:
       - .env
     environment:
-      SAFE_ZONE_THREAT_FEED_SOURCE: ${SAFE_ZONE_THREAT_FEED_SOURCE:-}
+      SAFE_ZONE_THREAT_FEED_SOURCE: ${SAFE_ZONE_THREAT_FEED_SOURCE:-https://urlhaus.abuse.ch/downloads/csv_recent/}
       SAFE_ZONE_THREAT_FEED_KEY: ${SAFE_ZONE_THREAT_FEED_KEY:-safe-zone:threat:feed}
       SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
       SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
@@ -241,7 +241,7 @@ services:
         max-file: "${SAFE_ZONE_DOCKER_LOG_MAX_FILE:-5}"
 
   feed-sync:
-    profiles: ["feed-sync"]
+    profiles: ["feed-sync-once"]
     build:
       context: .
       args:

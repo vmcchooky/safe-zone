@@ -24,11 +24,15 @@ import (
 // An empty adminAPIKey denies /metrics rather than exposing it. The caller
 // logs that state at startup so a missing key is diagnosed instead of
 // silently turning the endpoint into a 401 for the monitoring stack.
-func NewRouter(r *resolver.Resolver, adminAPIKey string) *http.ServeMux {
+func NewRouter(r *resolver.Resolver, adminAPIKey string, readinessChecks ...serve.ReadinessCheck) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/", r.StatusHandler)
 	mux.HandleFunc("/healthz", resolver.HealthHandler("dns-resolver"))
+	// /readyz is a real readiness probe: it checks the dependencies the
+	// resolver needs, so a container that is running but cannot resolve
+	// anything is reported as not ready instead of healthy.
+	mux.HandleFunc("/readyz", serve.ReadinessHandler("dns-resolver", readinessChecks...))
 	mux.HandleFunc("/v1/version", r.VersionHandler)
 	mux.Handle("/metrics", serve.RequireBearer(adminAPIKey, http.HandlerFunc(r.MetricsHandler)))
 	// /v1/policy is deliberately unauthenticated: it is the decision endpoint

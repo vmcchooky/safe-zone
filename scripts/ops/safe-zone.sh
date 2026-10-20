@@ -648,7 +648,7 @@ cmd="${1:-help}"
 backup_path_override="${2:-${SAFE_ZONE_SCRIPT_BACKUP_PATH:-}}"
 keep_count="${SAFE_ZONE_SCRIPT_KEEP:-7}"
 log_retention_days="${SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS:-7}"
-feed_sync_enabled="${SAFE_ZONE_SCRIPT_FEED_SYNC:-0}"
+feed_sync_enabled="${SAFE_ZONE_SCRIPT_FEED_SYNC:-1}"
 case "$cmd" in
   deploy)
     run_mise_task ops:deploy || true
@@ -720,7 +720,7 @@ case "$cmd" in
     old_ifs="$IFS"
     IFS=","
     for source in $sources; do
-      SAFE_ZONE_THREAT_FEED_SOURCE="$source" compose_stack "$stack" --profile feed-sync run --rm feed-sync /app/service -source "$source"
+      SAFE_ZONE_THREAT_FEED_SOURCE="$source" compose_stack "$stack" --profile feed-sync-once run --rm feed-sync /app/service -source "$source"
     done
     IFS="$old_ifs"
     ;;

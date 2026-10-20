@@ -3,6 +3,55 @@
 Notable changes to Safe Zone. Dates are UTC. Entries land here when their
 PR merges to `main`, oldest batch first.
 
+## [Unreleased]
+
+### Security
+- The allow list no longer fails silently. A load failure is recorded,
+  logged with its consequence, reported in `/v1/status` as
+  `whitelist.loaded` / `whitelist.error`, and stops `core-api` and
+  `dns-resolver` from starting in production. A configured allow-list file
+  that cannot be read is an error, not an empty allow list.
+- A blocked domain can no longer be silently unblocked. An unparsable
+  `SAFE_ZONE_BLOCK_PAGE_IP` falls back to the null IP instead of producing
+  an empty answer, and the resolver refuses to start in production with a
+  malformed value.
+- `SAFE_ZONE_AGENT_WHITELIST_ENABLED` now defaults to `false`. Enabling the
+  agent engine previously replaced the whole operator-curated allow list
+  with a downloaded file on the first run.
+- The agent's whitelist import is verifiable and undoable: an optional
+  `SAFE_ZONE_AGENT_WHITELIST_SHA256` rejects a download that is not the
+  expected file, a rollback snapshot is taken before every import, and
+  `GET /v1/whitelist/snapshots` plus `POST /v1/whitelist/rollback` restore a
+  previous allow list.
+- `core-api` refuses to start in production when no threat feed source is
+  configured, and the `feed-syncd` daemon ships enabled with a real default
+  source. A stock production install previously had no feed at all and no
+  alert that could have said so.
+- DoT now requires a trusted certificate in production. A missing key pair
+  stops the resolver instead of serving a self-signed certificate that every
+  client rejects.
+- The container healthcheck probes `/readyz` instead of `/healthz`, so a
+  service that is running but cannot do its job is reported as unhealthy.
+
+### Changed
+- `/readyz` is a real readiness probe: SQLite is mandatory, Redis is
+  optional (a Redis outage degrades coverage but the resolver still
+  answers), and the allow list state is reported.
+- `feed-syncd` accepts several comma-separated sources, matching the agent
+  task and the alert rules. One failing source no longer takes the others
+  down.
+- Every `SAFE_ZONE_*` setting the code reads is now documented in
+  `.env.example`; a new CI gate (`tools/env-docs-check`) keeps it that way.
+  21 settings were previously invisible to an operator, including
+  `SAFE_ZONE_AGENT_AUDIT_AUTO_ENFORCE`, `SAFE_ZONE_FEED_ADMISSION_MODE` and
+  the four rate-limit tiers that had no documented value.
+
+### Added
+- `/v1/whitelist/snapshots` and `/v1/whitelist/rollback` for the allow-list
+  rollback copies.
+- `whitelist` block in `/v1/status` reporting whether the allow list is in
+  effect.
+
 ## [1.10.16] - 2026-10-16
 
 ### Security

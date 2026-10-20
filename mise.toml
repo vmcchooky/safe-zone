@@ -32,7 +32,7 @@ depends = ["ci:go", "ci:ui", "ci:ml"]
 run = "echo Safe Zone CI checks passed."
 
 [tasks."ci:go"]
-description = "Run the Go gates: lint, build, race tests, coverage gate, security scans, decision evaluation, research CLI tests"
+description = "Run the Go gates: lint, build, race tests, coverage gate, security scans, decision evaluation, research CLI tests, environment documentation check"
 depends = [
   "go:lint",
   "go:build",
@@ -41,6 +41,7 @@ depends = [
   "go:security",
   "eval:decision",
   "research:test",
+  "check:env-docs",
 ]
 run = "echo Safe Zone Go checks passed."
 
@@ -170,6 +171,10 @@ run = "go build ./tools/..."
 [tasks."research:test"]
 description = "Test the ML research CLIs under tools/"
 run = "go test -race ./tools/..."
+
+[tasks."check:env-docs"]
+description = "Verify that every SAFE_ZONE_* setting read by the code is documented in .env.example"
+run = "go run ./tools/env-docs-check -repo-root ."
 
 [tasks."go:lint"]
 description = "Run the Go linter"

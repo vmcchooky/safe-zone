@@ -5,6 +5,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,6 +36,14 @@ type WhitelistUpdateConfig struct {
 	// egress must pass the shared outbound policy like every other
 	// collector. Tests opt in for loopback fixtures.
 	AllowPrivateSources bool
+	// SHA256 is the expected digest of the downloaded source file, in hex.
+	// When set, a body that does not match is rejected before it is parsed,
+	// so a truncated download or a tampered response cannot replace the
+	// allow list. Empty skips the check, which is only acceptable for a
+	// source the operator controls end to end.
+	SHA256 string
+	// KeepSnapshots bounds how many rollback copies the store keeps.
+	KeepSnapshots int
 }
 
 // DefaultWhitelistDownloadBytes bounds the whitelist source download.
@@ -107,7 +117,21 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 		"domains": len(domains),
 	}))
 
-	// Update SQLite
+	// Update SQLite. A rollback copy of the live allow list is taken first:
+	// the import replaces the whole set, and the allow list is the primary
+	// safety valve, so an import that goes wrong must be undoable.
+	snapshotID, err := t.snapshotCurrentAllowList(ctx)
+	if err != nil {
+		logjson.Error("agent whitelist update could not snapshot the allow list", correlation.Fields(ctx, map[string]any{
+			"service": "core-api",
+			"task":    "whitelist_update",
+			"error":   err.Error(),
+		}))
+		details := fmt.Sprintf(`{"error":%q}`, err.Error())
+		_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_failed", "", details)
+		return fmt.Errorf("snapshot allow list: %w", err)
+	}
+
 	if err := t.store.UpdateWhitelist(ctx, domains); err != nil {
 		logjson.Error("agent whitelist update sqlite write failed", correlation.Fields(ctx, map[string]any{
 			"service": "core-api",
@@ -135,6 +159,9 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 		}))
 		details := fmt.Sprintf(`{"error":%q}`, err.Error())
 		_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_failed", "", details)
+		// The durable set was replaced but the RAM index was not rebuilt, so
+		// the two disagree. Put the previous set back.
+		t.restoreSnapshot(ctx, snapshotID)
 		return fmt.Errorf("reload bloom filter: %w", err)
 	}
 
@@ -153,6 +180,90 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 		"duration_ms": elapsed.Milliseconds(),
 	}))
 	return nil
+}
+
+// verifyChecksum compares the downloaded body against the expected digest.
+//
+// The allow list is the primary safety valve, so a body that is not the file
+// the operator expects must never be parsed and imported. A truncated
+// download, a captive-portal page or a tampered response all reach the
+// import path as "a valid list of domains" unless something checks them.
+func (t *WhitelistUpdateTask) verifyChecksum(body []byte) error {
+	expected := strings.ToLower(strings.TrimSpace(t.config.SHA256))
+	if expected == "" {
+		logjson.Warn("agent whitelist update has no expected checksum; the download is trusted as-is", correlation.Fields(context.Background(), map[string]any{
+			"service": "core-api",
+			"task":    "whitelist_update",
+			"source":  t.config.SourceURL,
+			"remedy":  "set SAFE_ZONE_AGENT_WHITELIST_SHA256 to the digest of the expected file",
+		}))
+		return nil
+	}
+
+	sum := sha256.Sum256(body)
+	actual := hex.EncodeToString(sum[:])
+	if actual != expected {
+		return fmt.Errorf("whitelist source checksum mismatch: got %s, want %s", actual, expected)
+	}
+	return nil
+}
+
+// snapshotCurrentAllowList stores a rollback copy of the live allow list
+// before it is replaced.
+func (t *WhitelistUpdateTask) snapshotCurrentAllowList(ctx context.Context) (int64, error) {
+	var domains []string
+	if err := t.store.StreamWhitelist(ctx, func(domain string) error {
+		domains = append(domains, domain)
+		return nil
+	}); err != nil {
+		return 0, fmt.Errorf("read current whitelist for snapshot: %w", err)
+	}
+	if len(domains) == 0 {
+		// Nothing to lose: the first import has no previous set to restore.
+		return 0, nil
+	}
+
+	id, err := t.store.SaveWhitelistSnapshot(ctx, t.config.SourceURL, domains)
+	if err != nil {
+		return 0, fmt.Errorf("save whitelist snapshot: %w", err)
+	}
+	logjson.Info("agent whitelist update saved a rollback snapshot", correlation.Fields(ctx, map[string]any{
+		"service":  "core-api",
+		"task":     "whitelist_update",
+		"snapshot": id,
+		"entries":  len(domains),
+	}))
+	return id, nil
+}
+
+// restoreSnapshot puts the allow list back after a failed import.
+func (t *WhitelistUpdateTask) restoreSnapshot(ctx context.Context, id int64) {
+	if id == 0 {
+		return
+	}
+	if _, err := t.store.RestoreWhitelistSnapshot(ctx, id); err != nil {
+		logjson.Error("agent whitelist update could not restore the rollback snapshot", correlation.Fields(ctx, map[string]any{
+			"service":  "core-api",
+			"task":     "whitelist_update",
+			"snapshot": id,
+			"error":    err.Error(),
+		}))
+		return
+	}
+	if err := t.whitelist.LoadFromDB(); err != nil {
+		logjson.Error("agent whitelist update could not rebuild the index after the rollback", correlation.Fields(ctx, map[string]any{
+			"service":  "core-api",
+			"task":     "whitelist_update",
+			"snapshot": id,
+			"error":    err.Error(),
+		}))
+		return
+	}
+	logjson.Info("agent whitelist update restored the rollback snapshot", correlation.Fields(ctx, map[string]any{
+		"service":  "core-api",
+		"task":     "whitelist_update",
+		"snapshot": id,
+	}))
 }
 
 func (t *WhitelistUpdateTask) downloadAndParse(ctx context.Context) ([]string, error) {
@@ -190,6 +301,10 @@ func (t *WhitelistUpdateTask) downloadAndParse(ctx context.Context) ([]string, e
 	}
 	if int64(buf.Len()) > limit {
 		return nil, fmt.Errorf("whitelist source exceeds %d bytes download cap", limit)
+	}
+
+	if err := t.verifyChecksum(buf.Bytes()); err != nil {
+		return nil, err
 	}
 
 	zipReader, err := zip.NewReader(bytes.NewReader(buf.Bytes()), int64(buf.Len()))

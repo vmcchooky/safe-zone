@@ -30,12 +30,19 @@ if (-not $PSBoundParameters.ContainsKey('Keep') -and $env:SAFE_ZONE_SCRIPT_KEEP)
 if (-not $PSBoundParameters.ContainsKey('LogRetentionDays') -and $env:SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS) {
   $LogRetentionDays = [int]$env:SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS
 }
-if (-not $PSBoundParameters.ContainsKey('FeedSync') -and $env:SAFE_ZONE_SCRIPT_FEED_SYNC) {
-  switch ($env:SAFE_ZONE_SCRIPT_FEED_SYNC.Trim().ToLowerInvariant()) {
-    '1' { $FeedSync = $true }
-    'true' { $FeedSync = $true }
-    'yes' { $FeedSync = $true }
-    'on' { $FeedSync = $true }
+if (-not $PSBoundParameters.ContainsKey('FeedSync')) {
+  # The threat feed is part of the product, not an opt-in extra: a
+  # deployment without it blocks nothing the lexical heuristics do not
+  # catch, and the alert rules that watch feed staleness can never fire.
+  # -FeedSync:false or SAFE_ZONE_SCRIPT_FEED_SYNC=0 turns it off.
+  $FeedSync = $true
+  if ($env:SAFE_ZONE_SCRIPT_FEED_SYNC) {
+    switch ($env:SAFE_ZONE_SCRIPT_FEED_SYNC.Trim().ToLowerInvariant()) {
+      '0' { $FeedSync = $false }
+      'false' { $FeedSync = $false }
+      'no' { $FeedSync = $false }
+      'off' { $FeedSync = $false }
+    }
   }
 }
 
@@ -915,7 +922,7 @@ switch ($Command) {
 
     foreach ($source in $sources) {
       Write-Section "Syncing $source"
-      Invoke-Compose -SubCommandArgs @('--profile', 'feed-sync', 'run', '--rm', 'feed-sync', '/app/service', '-source', $source)
+      Invoke-Compose -SubCommandArgs @('--profile', 'feed-sync-once', 'run', '--rm', 'feed-sync', '/app/service', '-source', $source)
     }
   }
   default {

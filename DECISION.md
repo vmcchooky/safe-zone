@@ -1199,6 +1199,133 @@ or in CI.
 
 ---
 
+## 2026-10-20 — Fail loud instead of degrading silently: configuration, allow list, feed, readiness
+
+**Status:** accepted
+
+**Context:**
+
+An audit of every existing feature against production readiness found a
+consistent class of defect: the code was *safe* in the sense that it kept
+serving, but it kept serving in a state the operator did not ask for, and
+nothing said so. Four concrete cases:
+
+1. **The allow list could fail to load with no trace.** `internal/risk/service.go`
+   called `wl.LoadFromFile(...)` and `wl.LoadFromDB()` and discarded both
+   errors with `_ =`. The allow list is the primary safety valve: a domain on
+   it is reported SAFE and never reaches the threat feed, lexical scoring, ML,
+   AI, OSINT or group enforcement. A read failure meant the service ran with
+   an empty allow list, every curated exception was scored, and whitelisted
+   domains could be blocked — with not one log line.
+
+2. **A malformed `SAFE_ZONE_BLOCK_PAGE_IP` turned a block into an allow.**
+   `internal/dns/resolver/resolver.go` parsed the address to nil and skipped
+   the answer, so a blocked domain resolved as NOERROR/NODATA and the client
+   reached the origin. The block silently disappeared.
+
+3. **A production deployment had no threat feed at all.** `feed-syncd` and
+   `feed-sync` sat behind a compose profile that the production stack did
+   not enable, `SAFE_ZONE_AGENT_FEED_PRESET` and `SAFE_ZONE_AGENT_FEED_SOURCES`
+   defaulted to empty, and `SAFE_ZONE_AGENT_ENABLED` defaulted to false. The
+   alert rules that watch feed staleness were guarded on
+   `feed_sync.configured == true`, so with no source configured they could
+   never fire either. The net effect: a stock production install blocked
+   nothing the lexical heuristics did not catch, and reported no problem.
+
+4. **`/healthz` and `/readyz` were the same unconditional `{"status":"ok"}`.**
+   A container with dead Redis, an unwritable SQLite file or a wedged agent
+   reported healthy. The container healthcheck probed that endpoint, so a
+   functionally dead service looked alive to both Docker and monitoring.
+
+A fifth, related: `SAFE_ZONE_AGENT_WHITELIST_ENABLED` defaulted to **true**,
+which meant enabling the agent engine immediately replaced the entire
+operator-curated allow list with a downloaded file, with no integrity check,
+no backup and no way back.
+
+**Decision:**
+
+1. **A failed allow-list load is recorded, reported, and fatal in
+   production.** The error is kept on the `Whitelist`, surfaced in
+   `/v1/status` as `whitelist.loaded` / `whitelist.error`, logged with the
+   consequence spelled out, and `core-api` and `dns-resolver` refuse to start
+   in production when it happened. A configured allow-list file that cannot
+   be read is an error, not an empty allow list.
+2. **A block never disappears.** `BlockIPv4`/`BlockIPv6` no longer return
+   nil; an unparsable or IPv6-only block page address falls back to the null
+   IP, so the domain stays blocked. `cmd/dns-resolver` additionally rejects
+   a malformed `SAFE_ZONE_BLOCK_PAGE_IP` at startup in production.
+3. **A production deployment must have a threat feed.** `core-api` refuses
+   to start in production when no feed source is configured. The
+   `feed-syncd` daemon ships enabled (the deploy helpers enable the
+   `feed-sync` profile by default), `SAFE_ZONE_THREAT_FEED_SOURCE` and
+   `SAFE_ZONE_AGENT_FEED_PRESET` have real defaults, and the daemon now
+   accepts several sources, which is what the agent task and the alert rules
+   already assumed.
+4. **Readiness is a real probe.** `/readyz` checks the dependencies the
+   service needs: SQLite is mandatory (the overrides and the allow list are
+   read from it on the request path), Redis is optional (a Redis outage
+   degrades coverage but the resolver still answers), and the allow list is
+   reported. The container healthcheck probes `/readyz`.
+5. **The allow list is not rewritten by default.** `SAFE_ZONE_AGENT_WHITELIST_ENABLED`
+   defaults to false, the download is verified against
+   `SAFE_ZONE_AGENT_WHITELIST_SHA256` when set, a rollback snapshot is taken
+   before every import, and `GET /v1/whitelist/snapshots` plus
+   `POST /v1/whitelist/rollback` make a bad import undoable.
+6. **DoT in production needs a trusted certificate.** A missing key pair
+   stops the resolver in production instead of serving a self-signed
+   certificate every client rejects.
+7. **Every `SAFE_ZONE_*` setting the code reads is documented.** A new CI
+   gate (`tools/env-docs-check`) fails the build when a setting exists in
+   the code but not in `.env.example`.
+
+**Consequences:**
+
+- A production deployment that was previously running with an empty allow
+  list, no feed or a dead dependency now refuses to start until the
+  operator configures it. That is the point, but it is a visible change: the
+  release notes must say which settings are now mandatory.
+- The allow-list load failure is visible in `/v1/status` rather than only in
+  the logs, so monitoring can assert on it.
+- The rollback snapshot costs one copy of the allow list (tens of megabytes
+  for a million domains) and keeps the three most recent.
+- The feed daemon now syncs several sources, so one provider being down no
+  longer takes the remaining coverage with it.
+
+**Validation evidence:**
+
+- `go build ./...` PASS; `go test ./...` PASS (all packages).
+- `internal/config`: `ProductionGuard` covers unset keys, malformed IPs,
+  disallowed enum values, unparsable booleans and integers; the guard fails
+  in production and only warns elsewhere.
+- `internal/risk/whitelist_load_failure_test.go`: a rejected import is
+  recorded, reported as `loaded=false`, keeps the previous index, and the
+  service surfaces it; a healthy load reports `loaded=true`.
+- `internal/dns/resolver/block_ip_invalid_test.go`: `BlockIPv4`/`BlockIPv6`
+  never return nil, and a blocked query still gets an answer with an invalid
+  block page address.
+- `cmd/dns-resolver/dot_cert_test.go`: production without key files fails,
+  a local run generates a self-signed certificate, a broken key pair fails,
+  a configured pair loads.
+- `internal/agent/whitelist_snapshot_test.go`: a checksum mismatch is
+  rejected before parsing and never reaches the allow list; a matching
+  checksum is accepted; an import takes a rollback snapshot; the rollback
+  restores the previous set; snapshots are pruned to three.
+- `internal/serve/readiness_test.go`: healthy, degraded and not-ready map to
+  200/200/503, and a hanging check times out.
+- `internal/feedsync/multi_source_test.go`: several sources parse from the
+  flag and from the environment, an empty list is refused, and the one-shot
+  and the daemon resolve identical options.
+- `tools/env-docs-check`: 172 settings checked, 0 undocumented.
+
+**Revisit when:**
+
+- The allow-list load failure policy changes (for example a decision to
+  degrade instead of refusing to start).
+- A multi-node deployment needs the allow-list failure to be handled
+  differently per node.
+- The readiness contract grows a dependency that is neither mandatory nor
+  optional.
+
 ## Decision Lookup
 
 - CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
