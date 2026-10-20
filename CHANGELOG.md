@@ -72,6 +72,14 @@ PR merges to `main`, oldest batch first.
   element styles through React style attributes, so the policy was blocking
   the layout of the logo, the score bars and the threat-pressure bars in
   production. `script-src` is unchanged and still refuses inline scripts.
+- The domain dataset build no longer labels ad and tracker hosts as
+  malicious. The label policy now comes from the trust tier the data
+  manifest records, so `stevenblack_hosts.txt` (tier `unwanted-ad-tracker`)
+  is excluded from the positive class instead of inflating the measured
+  recall and hiding the real false-positive risk. The artifact is not
+  re-exported by this change; the new numbers come with the next
+  evaluation.
+
 ## [1.10.16] - 2026-10-16
 
 ### Security

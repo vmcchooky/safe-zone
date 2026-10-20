@@ -196,6 +196,99 @@ def source_for(domain: str, candidates: list[tuple[str, set[str]]]) -> str:
     raise RuntimeError(f"domain has no provenance source: {domain}")
 
 
+# --- Label policy ---------------------------------------------------------
+#
+# The data manifest records the trust tier of every raw source. The manifest
+# is the single source of truth for that tier, so the label policy is derived
+# from it here instead of being restated as another hardcoded list.
+#
+# A source may only supply a positive (malicious) label when its tier says
+# the source is about malware or phishing. The canonical plan forbids using a
+# broad ad/tracker blocklist as malicious ground truth (§0.4, §2.3):
+# stevenblack_hosts.txt is an ad/tracker list, the manifest already records
+# it as "unwanted-ad-tracker", and this build used it as a positive source
+# anyway. That inflated the measured recall and understated the real
+# false-positive risk, because the negative side is full of ad-tech and CDN
+# domains that a model trained on "ads are malicious" learns to block.
+MANIFEST = ROOT / "ml" / "data" / "data_manifest.json"
+
+MALICIOUS_TIERS = frozenset(
+    {"strong-malicious", "specialist-community-malicious", "weak-malicious"}
+)
+SAFE_TIERS = frozenset({"strong-safe", "weak-safe"})
+
+# Build label -> manifest logical name(s). A build label may be backed by
+# more than one manifest source, for example the Vietnamese allow list,
+# which is maintained as a text file and a CSV.
+SOURCE_MANIFEST_NAMES = {
+    "hagezi": ("hagezi_tif.txt",),
+    "tempest_phishing": ("tempest_phishing.txt",),
+    "phishtank": ("verified_online.csv",),
+    "phishing_army": ("phishing_army.txt",),
+    "urlhaus": ("urlhaus.csv",),
+    "stevenblack": ("stevenblack_hosts.txt",),
+    "openphish": ("openphish.txt",),
+    "vietnam_blacklist": ("raw_scraped_domains.json",),
+    "tranco": ("tranco_46ZYX.csv",),
+    "top_1m": ("top-1m.csv",),
+    "vietnam_whitelist": ("vietnam_domains.txt", "vietnam_websites.csv"),
+}
+
+
+def load_manifest_tiers(path: Path = MANIFEST) -> dict[str, str]:
+    """Return {logical_name: trust_tier} from the data manifest."""
+    with path.open(encoding="utf-8") as source:
+        manifest = json.load(source)
+
+    tiers: dict[str, str] = {}
+    for entry in manifest.get("raw_sources", []):
+        name = str(entry.get("logical_name", "")).strip()
+        tier = str(entry.get("trust_tier", "")).strip()
+        if name and tier:
+            tiers[name] = tier
+    return tiers
+
+
+def resolve_source_tiers(tiers: dict[str, str]) -> dict[str, str]:
+    """Map every build label to the trust tier the manifest records for it.
+
+    A source that is not in the manifest is an error: the label policy cannot
+    be resolved without it, and guessing is what produced the drift in the
+    first place. When a build label is backed by several manifest sources,
+    they must all carry the same tier.
+    """
+    resolved: dict[str, str] = {}
+    for label, manifest_names in SOURCE_MANIFEST_NAMES.items():
+        label_tiers = set()
+        for manifest_name in manifest_names:
+            tier = tiers.get(manifest_name)
+            if tier is None:
+                raise RuntimeError(
+                    f"source {label!r} ({manifest_name}) is missing from {MANIFEST.name}; "
+                    "refusing to guess its trust tier"
+                )
+            label_tiers.add(tier)
+        if len(label_tiers) > 1:
+            raise RuntimeError(
+                f"source {label!r} is backed by manifest sources with different trust "
+                f"tiers {sorted(label_tiers)}; the label policy is ambiguous"
+            )
+        resolved[label] = label_tiers.pop()
+    return resolved
+
+
+def split_sources_by_tier(source_tiers: dict[str, str]) -> tuple[list[str], list[str], dict[str, str]]:
+    """Split the build labels into positive, negative and excluded."""
+    positive = [label for label, tier in source_tiers.items() if tier in MALICIOUS_TIERS]
+    negative = [label for label, tier in source_tiers.items() if tier in SAFE_TIERS]
+    excluded = {
+        label: tier
+        for label, tier in source_tiers.items()
+        if tier not in MALICIOUS_TIERS and tier not in SAFE_TIERS
+    }
+    return positive, negative, excluded
+
+
 def main() -> None:
     randomizer = random.Random(RANDOM_STATE)
     stats: dict[str, dict[str, object]] = {}
@@ -248,11 +341,45 @@ def main() -> None:
     ):
         stats[name] = stat(raw, domains)
 
+    # --- Label policy, resolved from the data manifest ---
+    source_tiers = resolve_source_tiers(load_manifest_tiers())
+    positive_labels, negative_labels, excluded_labels = split_sources_by_tier(source_tiers)
+    for label, tier in sorted(excluded_labels.items()):
+        print(
+            f"excluded from the binary labels: {label} (trust_tier={tier})",
+            flush=True,
+        )
+
+    source_sets: dict[str, set[str]] = {
+        "hagezi": hagezi,
+        "tempest_phishing": tempest,
+        "phishtank": phishtank,
+        "phishing_army": phishing_army,
+        "urlhaus": urlhaus,
+        "stevenblack": stevenblack,
+        "openphish": openphish,
+        "vietnam_blacklist": vn_blacklist,
+        "tranco": tranco,
+        "top_1m": top_1m,
+        "vietnam_whitelist": vn_txt | vn_added,
+    }
+    # Only the manifest-approved sources may label a domain. A source that
+    # the manifest does not classify as malicious never becomes a positive
+    # label, no matter how large it is.
+    positive_sets = {label: source_sets[label] for label in positive_labels}
+    negative_sets = {label: source_sets[label] for label in negative_labels}
+
     mandatory_sources = [
         ("vietnam_blacklist", vn_blacklist), ("phishtank", phishtank),
         ("openphish", openphish), ("phishing_army", phishing_army), ("urlhaus", urlhaus),
     ]
-    all_blacklist = set().union(*(domains for _, domains in mandatory_sources), hagezi, tempest, stevenblack)
+    for label, _ in mandatory_sources:
+        if source_tiers[label] not in MALICIOUS_TIERS:
+            raise RuntimeError(
+                f"mandatory positive source {label!r} has trust tier {source_tiers[label]!r}, "
+                "which is not a malicious tier"
+            )
+    all_blacklist = set().union(*positive_sets.values())
     conflicts = whitelist & all_blacklist
     
     DERIVED = OUT.parent / "derived"
@@ -263,16 +390,16 @@ def main() -> None:
         writer.writerow(("domain", "safe_sources", "malicious_sources"))
         for d in sorted(conflicts):
             ss = [name for name, doms in [("vietnam_whitelist", vn_txt | vn_csv | vn_added), ("tranco", tranco), ("top_1m", top_1m)] if d in doms]
-            ms = [name for name, doms in [("hagezi", hagezi), ("tempest_phishing", tempest), ("stevenblack", stevenblack), ("phishtank", phishtank), ("phishing_army", phishing_army), ("urlhaus", urlhaus), ("openphish", openphish), ("vietnam_blacklist", vn_blacklist)] if d in doms]
+            ms = [name for name, doms in source_sets.items() if d in doms]
             writer.writerow((d, "|".join(ss), "|".join(ms)))
-            
+
     whitelist -= conflicts
     tranco -= conflicts
     top_1m -= conflicts
     vn_txt -= conflicts
     vn_csv -= conflicts
     vn_added -= conflicts
-    
+
     hagezi -= conflicts
     tempest -= conflicts
     stevenblack -= conflicts
@@ -288,9 +415,28 @@ def main() -> None:
     target_blacklist = len(whitelist)
     if len(mandatory) > target_blacklist:
         raise RuntimeError("mandatory malicious data exceeds whitelist; revise balance strategy")
-    pool = (hagezi | tempest | stevenblack) - mandatory
-    sampled_background = set(randomizer.sample(sorted(pool), target_blacklist - len(mandatory)))
+
+    # The balance pool is built only from manifest-approved malicious sources.
+    # Excluding a source shrinks the pool, and a pool that cannot fill the
+    # 1:1 balance is not a reason to sample a source the manifest says is not
+    # malicious: the negative side is shrunk to match instead.
+    pool_labels = [label for label in positive_labels if label not in dict(mandatory_sources)]
+    pool = set().union(*(source_sets[label] for label in pool_labels)) - mandatory
+    wanted = target_blacklist - len(mandatory)
+    if wanted > len(pool):
+        target_blacklist = len(mandatory) + len(pool)
+        wanted = len(pool)
+        print(
+            f"balance adjusted: the malicious pool holds {len(pool)} domains, "
+            f"so the negative side is reduced to {target_blacklist} to keep the 1:1 ratio",
+            flush=True,
+        )
+    sampled_background = set(randomizer.sample(sorted(pool), wanted))
     blacklist = mandatory | sampled_background
+
+    # Keep the negative side at the same size as the positive side.
+    if len(whitelist) > target_blacklist:
+        whitelist = set(randomizer.sample(sorted(whitelist), target_blacklist))
 
     for name, domains in (("hagezi", hagezi), ("tempest_phishing", tempest), ("stevenblack", stevenblack)):
         stats[name]["final_sampled"] = len(blacklist & domains)
@@ -298,6 +444,9 @@ def main() -> None:
         stats[{"vietnam_blacklist": "vietnam_blacklist_json"}.get(name, name)]["final"] = len(blacklist & domains)
     for name, domains in (("tranco", tranco), ("top_1m", top_1m), ("vietnam_whitelist", vn_txt | vn_added)):
         stats[name]["final"] = len(whitelist & domains)
+    for label, tier in sorted(excluded_labels.items()):
+        stats[label]["excluded_from_labels"] = True
+        stats[label]["trust_tier"] = tier
 
     org_counts = Counter(vn_metadata[d]["impersonated_org_category"] for d in (blacklist & vn_blacklist))
     stats["vietnam_blacklist_json"].update({
@@ -305,8 +454,18 @@ def main() -> None:
         "org_categories": dict(sorted(org_counts.items())),
     })
 
-    safe_sources = [("vietnam_whitelist", vn_txt | vn_added), ("tranco", tranco), ("top_1m", top_1m)]
-    malicious_sources = mandatory_sources + [("hagezi", hagezi), ("tempest_phishing", tempest), ("stevenblack", stevenblack)]
+    safe_sources = [
+        (label, negative_sets[label])
+        for label in ("vietnam_whitelist", "tranco", "top_1m")
+        if label in negative_sets
+    ]
+    # The provenance of a positive label comes only from the
+    # manifest-approved malicious sources. An excluded source contributes
+    # nothing: it may not label a domain, and it may not appear in the
+    # provenance of one.
+    malicious_sources = mandatory_sources + [
+        (label, domains) for label, domains in positive_sets.items() if label not in dict(mandatory_sources)
+    ]
     rows: list[tuple[str, int]] = [(d, 0) for d in whitelist] + [(d, 1) for d in blacklist]
     randomizer.shuffle(rows)
     lite_safe = set(randomizer.sample(sorted(whitelist), min(150_000, len(whitelist))))
@@ -334,10 +493,19 @@ def main() -> None:
     report = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "random_state": RANDOM_STATE,
+        "label_policy": {
+            "manifest": MANIFEST.name,
+            "malicious_tiers": sorted(MALICIOUS_TIERS),
+            "safe_tiers": sorted(SAFE_TIERS),
+            "source_tiers": source_tiers,
+            "positive_sources": sorted(positive_labels),
+            "negative_sources": sorted(negative_labels),
+            "excluded_sources": excluded_labels,
+        },
         "sources": stats,
         "dedup_stats": {
             "cross_source_whitelist_removed": sum(len(s) for s in (tranco, top_1m, vn_txt, vn_csv)) - len(tranco | top_1m | vn_txt | vn_csv),
-            "cross_source_blacklist_removed": sum(len(s) for s in (hagezi, tempest, phishtank, phishing_army, urlhaus, stevenblack, openphish, vn_blacklist)) - len(all_blacklist),
+            "cross_source_blacklist_removed": sum(len(s) for s in positive_sets.values()) - len(all_blacklist),
             "cross_label_conflicts": len(conflicts),
             "cross_label_resolution": "quarantine",
         },

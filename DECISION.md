@@ -1425,4 +1425,112 @@ state the system was not in.
 - The end-to-end suite starts running against the built bundle, which would
   let the policy be tested the way it is deployed.
 
+## 2026-10-20 — The label policy comes from the data manifest, not from a second hardcoded list
+
+**Status:** accepted (dataset policy; the bundle is not re-exported here)
+
+**Context:**
+
+`scripts/data_processing/create_data_manifest.py` records a `trust_tier`
+for every raw source. `scripts/data_processing/build_domain_dataset.py`
+never read it: the build had its own hardcoded list of sources, and the two
+lists disagreed.
+
+The disagreement had a concrete effect. `stevenblack_hosts.txt` is recorded
+in the manifest as `unwanted-ad-tracker` — an ad and tracker blocklist — and
+the canonical plan says explicitly that such a list is not malicious ground
+truth (§0.4 "Không coi broad ad/tracker blocklist là malicious ground
+truth", §2.3 "Không dùng mixed-purpose source làm positive binary nếu chưa
+review"). The build nevertheless used it as a positive source: it was in the
+`malicious_sources` provenance list and in the pool that fills the 1:1
+balance.
+
+Measured against the shipped dataset (`ml/data/processed/domain_dataset_provenance.csv`,
+2.772.090 rows, exactly 1:1):
+
+| Source | Rows | Share of positives | Manifest tier |
+|---|---:|---:|---|
+| hagezi | 808.638 | 58,3% | `weak-malicious` |
+| tempest_phishing | 318.768 | 23,0% | `weak-malicious` |
+| phishing_army | 133.692 | 9,6% | `specialist-community-malicious` |
+| vietnam_blacklist | 78.034 | 5,6% | `strong-malicious` |
+| phishtank | 32.983 | 2,4% | `strong-malicious` |
+| **stevenblack** | **11.493** | **0,83%** | **`unwanted-ad-tracker`** |
+| urlhaus | 2.211 | 0,2% | `strong-malicious` |
+| openphish | 226 | 0,02% | `specialist-community-malicious` |
+
+The row count is small, but the effect is not. The negative side is full of
+ad-tech and CDN domains (847.593 rows from `top_1m` alone), and those are
+exactly the domains the September 2026 CDN false-positive work had to
+harden. A model that learns "ads are malicious" from the positive class
+generalizes onto that negative population, and the measured recall flatters
+the result while the real false-positive risk stays hidden.
+
+**Decision:**
+
+1. **The manifest is the single source of truth for the label policy.** The
+   build resolves every source's tier from `ml/data/data_manifest.json` and
+   refuses to run when a source it knows is missing from the manifest, or
+   when one build label is backed by manifest sources with different tiers.
+2. **Only manifest-approved malicious sources may supply a positive label.**
+   A source whose tier is outside the malicious set is excluded from the
+   binary labels entirely: it may not label a domain, and it may not appear
+   in the provenance of one. `stevenblack` is therefore excluded; the
+   ad/tracker signal already exists as a content-policy layer
+   (`internal/domaintrie` and the adblock engine), which is where it
+   belongs.
+3. **The balance adapts instead of oversampling.** Excluding a source
+   shrinks the pool that fills the 1:1 ratio. The negative side is reduced
+   to match instead, and the adjustment is printed and recorded in the
+   cleaning report. No new data source is required: the negative side has
+   1,386,045 domains available against a pool of 1,127,406.
+4. **The policy is pinned by tests.** `ml/tests/test_label_policy.py`
+   asserts that no ad/tracker tier can reach the positive set, that every
+   manifest source is accounted for by the build, and that the build's tier
+   sets match the manifest taxonomy.
+5. **The bundle is not re-exported here.** The artifact in
+   `deploy/model-bundle/v1` still carries the old labels. Re-training,
+   re-calibrating and re-evaluating is a separate step with its own
+   approval, and the model-quality gates that follow it (the 22/34
+   representative recall and the 3/3 targeted benign false positives) are
+   the ones that decide whether the new dataset is better. Shipping the
+   policy change without the new numbers would replace one unverified
+   artifact with another.
+
+**Consequences:**
+
+- The next dataset build drops 11.493 ad/tracker domains from the positive
+  class and shrinks the negative side by the same amount to keep the 1:1
+  ratio.
+- The measured recall will fall. That is the point: the number was
+  inflated by a label the project never meant to use.
+- A new raw source now has to be classified in the manifest before the
+  build can use it, and a source the manifest does not classify is a build
+  error rather than a silent omission.
+
+**Validation evidence:**
+
+- `ml/tests/test_label_policy.py`: 6 tests pass; the full `ml/tests` suite
+  is 84 passing.
+- `python -m py_compile scripts/data_processing/build_domain_dataset.py`
+  passes.
+- Dry run of the new policy against the shipped provenance file: positive
+  sources `hagezi`, `openphish`, `phishing_army`, `phishtank`,
+  `tempest_phishing`, `urlhaus`, `vietnam_blacklist`; negative sources
+  `top_1m`, `tranco`, `vietnam_whitelist`; excluded `stevenblack`
+  (`unwanted-ad-tracker`) with 11.493 rows that the policy now refuses to
+  label.
+- The first version of the test failed on a real gap: the manifest lists
+  `vietnam_websites.csv`, which the build reads but did not declare. The
+  mapping now allows one build label to be backed by several manifest
+  sources, with the requirement that they share a tier.
+
+**Revisit when:**
+
+- The dataset is rebuilt and a candidate bundle is evaluated against the
+  representative and targeted-benign corpora.
+- The manifest gains a tier the policy does not classify yet.
+- The ad/tracker signal is wanted in the model as a third class rather than
+  only in the content-policy layer.
+
 ## Decision Lookup
