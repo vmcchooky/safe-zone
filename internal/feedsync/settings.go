@@ -151,6 +151,17 @@ func ParseSettings(mode Mode, flags *flag.FlagSet, args []string) (Settings, err
 	if len(sources) == 0 {
 		return Settings{}, errSourceRequired
 	}
+	if *replace && len(sources) > 1 {
+		// Replace stages one source and renames it over the live set, which
+		// deletes everything the other sources wrote. With several sources
+		// in one run that is not a warning worth ignoring, it is data loss
+		// on the second source.
+		return Settings{}, fmt.Errorf(
+			"replace mode stages a single source and would delete the other %d sources from the shared key; "+
+				"run one source per invocation or use additive mode",
+			len(sources)-1,
+		)
+	}
 
 	settings := Settings{
 		Sources:       sources,

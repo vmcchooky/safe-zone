@@ -120,12 +120,16 @@ func (d *DB) WhitelistSnapshotByID(ctx context.Context, id int64) (*WhitelistSna
 
 // RestoreWhitelistSnapshot replaces the live allow list with a snapshot and
 // returns the number of entries restored.
+//
+// The restore deliberately bypasses the import safety floor: the floor
+// compares against the current live set, so it would refuse to put back a
+// smaller set — which is precisely the case a rollback exists for.
 func (d *DB) RestoreWhitelistSnapshot(ctx context.Context, id int64) (int, error) {
 	snapshot, err := d.WhitelistSnapshotByID(ctx, id)
 	if err != nil {
 		return 0, err
 	}
-	if err := d.UpdateWhitelist(ctx, snapshot.Domains); err != nil {
+	if err := d.RestoreWhitelist(ctx, snapshot.Domains); err != nil {
 		return 0, fmt.Errorf("restore whitelist snapshot %d: %w", id, err)
 	}
 	return len(snapshot.Domains), nil

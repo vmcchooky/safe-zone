@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"safe-zone/internal/agent"
@@ -55,15 +56,22 @@ func run() int {
 	// the lexical heuristics did not catch, and the alert rules that watch
 	// feed staleness could never fire because "configured" was false.
 	//
-	// The feed may be written by the agent task, by the feed-syncd daemon,
-	// or by an external writer, so the guard is on the source
-	// configuration rather than on the daemon being present.
-	if config.IsProduction() && len(feedSources) == 0 {
-		logjson.Error("core-api has no threat feed source configured", map[string]any{
-			"service":   "core-api",
-			"impact":    "domains listed as malicious by a threat feed are not blocked",
-			"remedy":    "set SAFE_ZONE_AGENT_FEED_PRESET=production-free, or list SAFE_ZONE_AGENT_FEED_SOURCES explicitly",
-			"note":      "the feed-syncd daemon reads SAFE_ZONE_THREAT_FEED_SOURCE, so that variable must be set as well",
+	// The guard is on the configuration, not on the feed being populated:
+	// at start-up the first sync may not have run yet. So it asks the
+	// question that configuration can answer: is there a source, and is
+	// there something that will sync it?
+	//
+	// A source set alone is not enough. The agent task is opt-in
+	// (SAFE_ZONE_AGENT_ENABLED defaults to false), and the daemon reads a
+	// different variable, so a preset with neither the agent nor the
+	// daemon configured would satisfy the check while nothing ever
+	// populates the feed.
+	daemonSource := strings.TrimSpace(config.String("SAFE_ZONE_THREAT_FEED_SOURCE", ""))
+	agentEnabled := config.Bool("SAFE_ZONE_AGENT_ENABLED", false)
+	if problem := feedConfigurationProblem(feedSources, agentEnabled, daemonSource); problem != nil {
+		logjson.Error("core-api threat feed configuration is not usable in production", map[string]any{
+			"service": "core-api",
+			"error":   problem.Error(),
 		})
 		return 1
 	}

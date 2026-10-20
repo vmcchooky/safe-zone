@@ -58,6 +58,25 @@ func (d *DB) whitelistMinRelative() int {
 }
 
 func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
+	return d.updateWhitelist(ctx, domains, true)
+}
+
+// RestoreWhitelist replaces the live allow list with a known-good set.
+//
+// It does not apply the safety floor, and that is deliberate. The floor
+// compares an incoming set against the size of the *current* live set, so
+// it refuses exactly the case a rollback exists for: a bad import replaced
+// a small curated list with a huge one, and putting the small list back is
+// a large relative drop. The set being restored was live before, so it is
+// known to be a size the system can run with.
+//
+// The public-suffix filter still applies: a snapshot cannot introduce an
+// entry that would allowlist a whole namespace.
+func (d *DB) RestoreWhitelist(ctx context.Context, domains []string) error {
+	return d.updateWhitelist(ctx, domains, false)
+}
+
+func (d *DB) updateWhitelist(ctx context.Context, domains []string, enforceFloor bool) error {
 	if !d.Enabled() {
 		return ErrDisabled
 	}
@@ -126,7 +145,7 @@ func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
 	if countErr != nil {
 		return fmt.Errorf("read current whitelist size before replace: %w", countErr)
 	}
-	if previous > 0 {
+	if enforceFloor && previous > 0 {
 		minAbsolute := d.whitelistMinAbsolute()
 		minRelative := d.whitelistMinRelative()
 		if len(accepted) < minAbsolute {
