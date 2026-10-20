@@ -14,8 +14,8 @@ package main
 import (
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -38,17 +38,31 @@ var ignoredPrefixes = []string{
 }
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	repoRoot := flag.String("repo-root", ".", "repository root")
 	flag.Parse()
 
-	codeSettings, err := collectCodeSettings(*repoRoot)
+	// Every file this tool reads is opened through a root scoped to the
+	// repository. A path that escapes the root, including through a
+	// symlink, is refused by the filesystem layer rather than by a check
+	// this tool would have to remember to make.
+	root, err := os.OpenRoot(*repoRoot)
 	if err != nil {
-		fail(err)
+		return fail(err)
+	}
+	defer func() { _ = root.Close() }()
+
+	codeSettings, err := collectCodeSettings(root)
+	if err != nil {
+		return fail(err)
 	}
 
-	exampleSettings, err := collectExampleSettings(filepath.Join(*repoRoot, ".env.example"))
+	exampleSettings, err := collectExampleSettings(root)
 	if err != nil {
-		fail(err)
+		return fail(err)
 	}
 
 	documented := make(map[string]bool, len(exampleSettings))
@@ -66,7 +80,7 @@ func main() {
 
 	if len(missing) == 0 {
 		fmt.Printf("env-docs-check: every SAFE_ZONE_* setting read by the code is documented in .env.example (%d checked)\n", len(codeSettings))
-		return
+		return 0
 	}
 
 	fmt.Fprintf(os.Stderr, "env-docs-check: %d settings are read by the code but missing from .env.example:\n", len(missing))
@@ -77,7 +91,7 @@ func main() {
 	fmt.Fprintln(os.Stderr, "Add each one to .env.example with a comment that says what it does and what")
 	fmt.Fprintln(os.Stderr, "the default is. An undocumented setting is one an operator cannot configure,")
 	fmt.Fprintln(os.Stderr, "cannot audit, and cannot reason about.")
-	os.Exit(1)
+	return 1
 }
 
 // isIgnored reports whether a name belongs to a documented family.
@@ -91,25 +105,24 @@ func isIgnored(name string) bool {
 }
 
 // collectCodeSettings scans the Go sources for settings the code reads.
-func collectCodeSettings(repoRoot string) ([]string, error) {
+func collectCodeSettings(root *os.Root) ([]string, error) {
 	seen := make(map[string]struct{})
 
 	for _, dir := range []string{"internal", "cmd"} {
-		root := filepath.Join(repoRoot, dir)
-		if _, err := os.Stat(root); err != nil {
+		if _, err := fs.Stat(root.FS(), dir); err != nil {
 			continue
 		}
-		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		err := fs.WalkDir(root.FS(), dir, func(path string, entry fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
-			if info.IsDir() {
+			if entry.IsDir() {
 				return nil
 			}
 			if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 				return nil
 			}
-			content, readErr := os.ReadFile(path)
+			content, readErr := fs.ReadFile(root.FS(), path)
 			if readErr != nil {
 				return readErr
 			}
@@ -132,8 +145,8 @@ func collectCodeSettings(repoRoot string) ([]string, error) {
 }
 
 // collectExampleSettings reads the documented settings from .env.example.
-func collectExampleSettings(path string) ([]string, error) {
-	content, err := os.ReadFile(path)
+func collectExampleSettings(root *os.Root) ([]string, error) {
+	content, err := fs.ReadFile(root.FS(), ".env.example")
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +164,7 @@ func collectExampleSettings(path string) ([]string, error) {
 	return names, nil
 }
 
-func fail(err error) {
+func fail(err error) int {
 	fmt.Fprintf(os.Stderr, "env-docs-check: %v\n", err)
-	os.Exit(1)
+	return 1
 }
