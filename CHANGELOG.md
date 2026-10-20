@@ -51,7 +51,27 @@ PR merges to `main`, oldest batch first.
   rollback copies.
 - `whitelist` block in `/v1/status` reporting whether the allow list is in
   effect.
+- End-to-end coverage for the report-resolution path and for the read-only
+  role, neither of which had any test before.
 
+### Fixed
+- The report-review dialog no longer says "Resolve report without
+  override". Resolving a report creates a global allow override, exactly
+  like the allow path; the dialog now says so and warns about the side
+  effect for both actions.
+- The read-only role now disables the mutation controls it should: the
+  allow/block buttons on the analysis result, adding and deleting an
+  override, flushing the cache, downloading the logs, adding a policy
+  group, adding a client mapping, deleting either, and triggering an agent
+  task. A guest used to see enabled controls that answered 403.
+- The operator UI no longer loads a webfont it could not load. The Google
+  Fonts import was blocked by the production Content-Security-Policy, so
+  the declared family never applied; the page falls back to a system font
+  stack now, with no third-party request.
+- The Content-Security-Policy allows inline styles. The operator UI sets
+  element styles through React style attributes, so the policy was blocking
+  the layout of the logo, the score bars and the threat-pressure bars in
+  production. `script-src` is unchanged and still refuses inline scripts.
 ## [1.10.16] - 2026-10-16
 
 ### Security

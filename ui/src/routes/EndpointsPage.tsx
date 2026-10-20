@@ -47,8 +47,10 @@ import { GroupModal } from '../components/GroupModal';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useDialog } from '../components/DialogContext';
+import { READ_ONLY_HINT, useCanMutate } from '../auth/AuthProvider';
 
 export function EndpointsPage() {
+  const canMutate = useCanMutate();
   const {
     data: statusData,
     error: statusErr,
@@ -351,9 +353,10 @@ export function EndpointsPage() {
                             whileHover={{ scale: 1.1 }}
                             whileTap={{ scale: 0.95 }}
                             onClick={() => triggerTask(t.name)}
-                            disabled={t.state === 'running'}
+                            disabled={t.state === 'running' || !canMutate}
                             className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50"
-                            title="Trigger Now"
+                            title={canMutate ? 'Trigger Now' : READ_ONLY_HINT}
+                            aria-label={`Trigger the ${t.name} task now`}
                           >
                             <Play
                               size={16}
@@ -396,11 +399,14 @@ export function EndpointsPage() {
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
+            disabled={!canMutate}
+            title={canMutate ? 'Create a policy group' : READ_ONLY_HINT}
             onClick={() => {
+              if (!canMutate) return;
               setEditingGroup(null);
               setIsGroupModalOpen(true);
             }}
-            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 transition-colors shadow-md shadow-slate-900/10"
+            className="flex items-center gap-2 px-4 py-2 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-800 transition-colors shadow-md shadow-slate-900/10 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus size={16} /> Add Group
           </motion.button>
@@ -477,9 +483,11 @@ export function EndpointsPage() {
                   <motion.button
                     whileHover={{ scale: 1.1 }}
                     whileTap={{ scale: 0.9 }}
+                    disabled={!canMutate}
                     onClick={() => deleteGroup(g)}
-                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-auto"
-                    title="Delete Group"
+                    className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-auto disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+                    title={canMutate ? 'Delete Group' : READ_ONLY_HINT}
+                    aria-label={`Delete the policy group ${g.name}`}
                   >
                     <Trash2 size={16} />
                   </motion.button>
@@ -625,7 +633,9 @@ export function EndpointsPage() {
               whileTap={{ scale: 0.95, y: 0 }}
               transition={{ type: 'spring', stiffness: 500, damping: 15 }}
               type="submit"
-              className="bg-slate-900 text-white px-5 py-3 rounded-xl font-medium text-sm flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors shadow-sm"
+              disabled={!canMutate}
+              title={canMutate ? 'Create the client mapping' : READ_ONLY_HINT}
+              className="bg-slate-900 text-white px-5 py-3 rounded-xl font-medium text-sm flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Plus size={16} />
               Add Map
@@ -671,9 +681,11 @@ export function EndpointsPage() {
                       <motion.button
                         whileHover={{ scale: 1.1 }}
                         whileTap={{ scale: 0.9 }}
+                        disabled={!canMutate}
                         onClick={() => deleteMapping(m.id)}
-                        className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete Mapping"
+                        className="inline-flex items-center justify-center p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+                        title={canMutate ? 'Delete Mapping' : READ_ONLY_HINT}
+                        aria-label={`Delete the client mapping ${m.value}`}
                       >
                         <Trash2 size={18} />
                       </motion.button>

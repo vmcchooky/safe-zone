@@ -137,11 +137,13 @@ export function UserReportsPage() {
       await mutate();
       if (reviewDraft.action === 'allow') {
         showToast(`Allowed ${reviewDraft.report.domain} and resolved related pending reports.`, 'success');
-      } else {
+      } else if (reviewDraft.action === 'resolved') {
         showToast(
-          reviewDraft.action === 'resolved' ? 'Report marked as resolved.' : 'Report rejected.',
+          `Resolved the report and allowed ${reviewDraft.report.domain}. The domain is no longer blocked.`,
           'success',
         );
+      } else {
+        showToast('Report rejected.', 'success');
       }
       setReviewDraft(null);
       setReviewReason('');
@@ -368,6 +370,7 @@ export function UserReportsPage() {
                                   onClick={() => openReview(report, 'allow')}
                                   className="px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors flex items-center gap-1.5"
                                   title="Allow this domain (Override)"
+                                  aria-label={`Allow ${report.domain} as a false positive`}
                                 >
                                   <ShieldCheck className="w-3.5 h-3.5" />
                                   Allow
@@ -375,7 +378,8 @@ export function UserReportsPage() {
                                 <button
                                   onClick={() => openReview(report, 'resolved')}
                                   className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                                  title="Mark Resolved"
+                                  title="Resolve the report and stop blocking this domain"
+                                  aria-label={`Resolve the report for ${report.domain} and stop blocking it`}
                                 >
                                   <CheckCircle2 className="w-5 h-5" />
                                 </button>
@@ -383,6 +387,7 @@ export function UserReportsPage() {
                                   onClick={() => openReview(report, 'rejected')}
                                   className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                                   title="Reject Report"
+                                  aria-label={`Reject the report for ${report.domain}`}
                                 >
                                   <XCircle className="w-5 h-5" />
                                 </button>
@@ -477,7 +482,7 @@ export function UserReportsPage() {
                     {reviewDraft.action === 'allow'
                       ? 'Allow domain as false positive'
                       : reviewDraft.action === 'resolved'
-                        ? 'Resolve report without override'
+                        ? 'Resolve report and allow the domain'
                         : 'Reject report'}
                   </h2>
                   <p className="mt-2 break-all font-mono text-sm text-slate-600">
@@ -513,10 +518,11 @@ export function UserReportsPage() {
                 <span>{reviewReason.length}/2000</span>
               </div>
 
-              {reviewDraft.action === 'allow' ? (
+              {reviewDraft.action === 'allow' || reviewDraft.action === 'resolved' ? (
                 <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                  This creates a global allow override and resolves pending reports for the same domain
-                  atomically.
+                  {reviewDraft.action === 'allow'
+                    ? 'This creates a global allow override and resolves pending reports for the same domain atomically.'
+                    : 'Resolving a report also creates a global allow override for this domain and resolves the other pending reports for it. The domain stops being blocked everywhere.'}
                 </div>
               ) : null}
 

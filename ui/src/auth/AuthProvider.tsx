@@ -150,3 +150,17 @@ export function useAuth() {
   }
   return value;
 }
+
+// useCanMutate reports whether the signed-in operator may change state.
+//
+// The API enforces this on the server, but a control that is enabled and
+// then answers 403 is a worse experience than a control that is disabled
+// with a reason. The session already carries the flag, so this is a lookup.
+export function useCanMutate(): boolean {
+  const { session } = useAuth();
+  return session?.can_mutate === true;
+}
+
+// READ_ONLY_HINT explains why a mutation control is disabled, in the same
+// words the operator sees in the guest notice.
+export const READ_ONLY_HINT = 'Your session is read-only. Ask an administrator for access.';

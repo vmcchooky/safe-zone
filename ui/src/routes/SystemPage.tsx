@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { READ_ONLY_HINT, useCanMutate } from '../auth/AuthProvider';
 import {
   HardDrive,
   Activity,
@@ -75,6 +76,7 @@ export function SystemPage() {
 }
 
 function SystemPageContent() {
+  const canMutate = useCanMutate();
   const { data: statusData, error: statusErr } = useSWR<AgentStatus | { status: AgentStatus }>(
     '/v1/agent/status',
     apiFetch,
@@ -388,8 +390,9 @@ function SystemPageContent() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={handleClearCache}
-            disabled={isClearing}
-            className="w-full mt-auto flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50"
+            disabled={isClearing || !canMutate}
+            title={canMutate ? 'Flush the cached decisions' : READ_ONLY_HINT}
+            className="w-full mt-auto flex items-center justify-center gap-2 py-2.5 px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-medium transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <RefreshCw size={18} className={isClearing ? 'animate-spin' : ''} />
             {isClearing ? 'Flushing Cache...' : 'Flush Cache'}
@@ -421,7 +424,9 @@ function SystemPageContent() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={handleDownloadLogs}
-            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 rounded-xl font-medium transition-all shadow-sm"
+            disabled={!canMutate}
+            title={canMutate ? 'Download the diagnostic logs' : READ_ONLY_HINT}
+            className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-white border border-slate-200 hover:border-slate-300 text-slate-700 hover:text-slate-900 rounded-xl font-medium transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Download size={18} />
             Download Diagnostic Logs

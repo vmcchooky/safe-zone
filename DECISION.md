@@ -1326,8 +1326,103 @@ no backup and no way back.
 - The readiness contract grows a dependency that is neither mandatory nor
   optional.
 
-## Decision Lookup
+## 2026-10-20 — The operator UI states what the server does, and the read-only role is enforced in the browser
 
-- CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
-- Cache / policy / feed semantics: `rg -n "cache|revision|admission|OSINT|policy" DECISION.md`
-- Full review: read this file only for repository-wide decision history or when targeted lookup fails and the missing context could change scope, validation or safety.
+**Status:** accepted
+
+**Context:**
+
+Three defects in the operator surface, all of which made the UI describe a
+state the system was not in.
+
+1. **The report-review dialog contradicted the server.** The dialog for the
+   "resolved" action was titled *"Resolve report without override"*, and
+   the side-effect warning was shown only for the "allow" action. The
+   server does the same thing for both: `POST /v1/reports/status` with
+   `status=resolved` calls `ApproveFalsePositive`, which creates a global
+   allow override and resolves the related pending reports
+   (`internal/api/handlers/reports.go`). An operator who clicked "resolve"
+   believed the domain stayed blocked, and it stopped being blocked
+   everywhere.
+
+2. **The read-only role was decorative.** The session payload carries
+   `can_mutate` and `read_only` (`ui/src/lib/types.ts`), and the API
+   enforces the role. The UI used neither: the allow/block buttons on the
+   analysis result, adding and deleting an override, flushing the cache,
+   downloading the logs, adding a policy group, adding a client mapping,
+   deleting either, and triggering an agent task all stayed enabled for a
+   guest, who then got a 403 whose body is a Vietnamese sentence. There was
+   no end-to-end test for the guest role at all.
+
+3. **The Content-Security-Policy blocked the layout.** The policy ships
+   `style-src 'self'` with no `unsafe-inline`, and it is applied to every
+   core-api response including `/app/*`. The UI sets element styles through
+   React style attributes (15 of them) and carries one inline `<style>`
+   block, so the logo sizing, the score bars and the threat-pressure bars
+   lost their styles in production. The Google Fonts `@import` was blocked
+   the same way, so the declared family never loaded and the page fell back
+   silently. The end-to-end suite could not catch either: it runs against
+   the Vite dev server, which does not apply the policy.
+
+**Decision:**
+
+1. **Say what the server does.** The "resolved" action is titled *"Resolve
+   report and allow the domain"*, both actions warn that a global allow
+   override is created, and the confirmation toast says the domain is no
+   longer blocked. The server's own `resolution_action` stays the source
+   of truth for the outcome.
+2. **Enforce the read-only role in the browser.** A `useCanMutate()` hook
+   reads the flag the session already carries. Every mutation control is
+   disabled with a reason instead of being enabled and failing. The
+   server-side check is unchanged: this removes the false affordance, it
+   does not replace the enforcement.
+3. **`style-src` allows inline styles; `script-src` does not.** The
+   exception is scoped to styles, where an injection cannot execute code.
+   `script-src` keeps `'self'` without `'unsafe-inline'` and
+   `'unsafe-eval'`, and a test asserts that. The alternative, moving every
+   inline style into a class, was rejected: it touches five large UI
+   files, and the end-to-end suite runs against the dev server, so the
+   regression would not have been caught before release.
+4. **No webfont.** The Google Fonts import was blocked by the policy, so
+   the page already fell back to a system stack in production. The import
+   is removed and the stack is declared directly: no third-party request,
+   no policy exception, and the rendering matches what production already
+   showed.
+
+**Consequences:**
+
+- A guest sees disabled controls with an explanation, not a 403.
+- The report queue no longer offers an action whose effect the dialog
+  misdescribed.
+- The policy keeps its protection against script injection, which is the
+  part that matters; it stops blocking the operator's own layout.
+- Two new end-to-end suites cover the report-resolution path and the
+  read-only role, neither of which had any coverage.
+
+**Validation evidence:**
+
+- `ui/tests/reports-resolved.spec.ts`: the dialog names the action, warns
+  about the allow override, and the domain is afterwards answered `SAFE`
+  with `decision.action = allow`.
+- `ui/tests/guest-readonly.spec.ts`: the guest session reports
+  `read_only: true` and `can_mutate: false`, and the add-override, flush
+  cache and add-group controls are disabled.
+- `internal/serve/securityheaders_test.go`: the policy contains
+  `style-src 'self' 'unsafe-inline'`, and `script-src` contains neither
+  `'unsafe-inline'` nor a bare `'unsafe-eval'`.
+- `ui/tests/reports.spec.ts`: the shared counter assertion was replaced with
+  the domain's actual verdict, because the queue counters are shared with
+  every other report test running against the same server.
+- `npm run typecheck` RC=0; `npm run lint` 0 errors; the Playwright suite
+  is 49 passing.
+
+**Revisit when:**
+
+- The operator UI moves to a build that can emit static CSS for the inline
+  styles, which would let the policy drop `'unsafe-inline'` again.
+- The guest role gains a permission finer than "read everything, write
+  nothing", which would need more than one flag on the session.
+- The end-to-end suite starts running against the built bundle, which would
+  let the policy be tested the way it is deployed.
+
+## Decision Lookup

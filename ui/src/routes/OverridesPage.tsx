@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { useDialog } from '../components/DialogContext';
+import { READ_ONLY_HINT, useCanMutate } from '../auth/AuthProvider';
 
 const overrideSchema = z.object({
   domain: z
@@ -43,6 +44,7 @@ export function OverridesPage() {
     keepPreviousData: true,
   });
   const { alert, confirm } = useDialog();
+  const canMutate = useCanMutate();
 
   const {
     register,
@@ -66,6 +68,10 @@ export function OverridesPage() {
   const itemsPerPage = 12;
 
   const onSubmit = async (data: OverrideFormValues) => {
+    if (!canMutate) {
+      setSubmitError(READ_ONLY_HINT);
+      return;
+    }
     setIsSubmitting(true);
     setSubmitError('');
 
@@ -90,6 +96,10 @@ export function OverridesPage() {
   };
 
   const handleDelete = async (domain: string) => {
+    if (!canMutate) {
+      await alert({ message: READ_ONLY_HINT, type: 'error' });
+      return;
+    }
     if (!(await confirm(`Delete override for ${domain}?`))) return;
     try {
       await apiFetch(`/v1/overrides?domain=${encodeURIComponent(domain)}`, { method: 'DELETE' });
@@ -198,7 +208,8 @@ export function OverridesPage() {
             whileTap={{ scale: 0.95, y: 0 }}
             transition={{ type: 'spring', stiffness: 500, damping: 15 }}
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !canMutate}
+            title={canMutate ? 'Add the override' : READ_ONLY_HINT}
             className="w-24 h-11 bg-slate-900 text-white text-sm font-medium rounded-xl hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-900/20 disabled:opacity-50 disabled:pointer-events-none transition-colors duration-200 shadow-sm flex items-center justify-center shrink-0"
           >
             {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add'}
@@ -293,8 +304,10 @@ export function OverridesPage() {
                         <td className="px-6 py-4 text-right">
                           <button
                             onClick={() => handleDelete(override.domain)}
-                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                            title="Delete Override"
+                            disabled={!canMutate}
+                            className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-slate-400 disabled:hover:bg-transparent"
+                            title={canMutate ? 'Delete Override' : READ_ONLY_HINT}
+                            aria-label={`Delete the override for ${override.domain}`}
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
