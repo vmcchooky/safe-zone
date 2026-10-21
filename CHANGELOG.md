@@ -3,7 +3,7 @@
 Notable changes to Safe Zone. Dates are UTC. Entries land here when their
 PR merges to `main`, oldest batch first.
 
-## [Unreleased]
+## [1.10.21] - 2026-10-21
 
 ### Security
 - The allow list no longer fails silently. A load failure is recorded,
