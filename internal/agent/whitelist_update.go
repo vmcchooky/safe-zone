@@ -42,8 +42,6 @@ type WhitelistUpdateConfig struct {
 	// allow list. Empty skips the check, which is only acceptable for a
 	// source the operator controls end to end.
 	SHA256 string
-	// KeepSnapshots bounds how many rollback copies the store keeps.
-	KeepSnapshots int
 }
 
 // DefaultWhitelistDownloadBytes bounds the whitelist source download.

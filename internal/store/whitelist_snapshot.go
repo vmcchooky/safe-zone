@@ -8,11 +8,21 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"safe-zone/internal/logjson"
 )
 
 // ErrWhitelistSnapshotNotFound reports that no rollback snapshot matches the
 // requested id.
 var ErrWhitelistSnapshotNotFound = errors.New("whitelist snapshot not found")
+
+// ErrWhitelistSnapshotEmpty reports a snapshot with no entries. Restoring it
+// would wipe the allow list, which is the failure a rollback exists to undo.
+var ErrWhitelistSnapshotEmpty = errors.New("whitelist snapshot is empty")
+
+// ErrWhitelistSnapshotCorrupt reports a snapshot whose stored digest or entry
+// count no longer matches its rows.
+var ErrWhitelistSnapshotCorrupt = errors.New("whitelist snapshot failed verification")
 
 // MaxWhitelistSnapshots bounds how many rollback copies are kept. The allow
 // list can hold a million domains, so each snapshot is tens of megabytes;
@@ -67,10 +77,19 @@ func (d *DB) SaveWhitelistSnapshot(ctx context.Context, source string, domains [
 
 // pruneWhitelistSnapshots keeps only the most recent snapshots.
 func (d *DB) pruneWhitelistSnapshots(ctx context.Context) {
-	_, _ = d.db.ExecContext(ctx,
+	if _, err := d.db.ExecContext(ctx,
 		`DELETE FROM whitelist_snapshots WHERE id NOT IN (
 			SELECT id FROM whitelist_snapshots ORDER BY id DESC LIMIT ?
-		)`, MaxWhitelistSnapshots)
+		)`, MaxWhitelistSnapshots); err != nil {
+		// The snapshot that was just written is intact; pruning is
+		// housekeeping. Silently ignoring the error let the table grow without
+		// bound with nothing in the logs to explain the disk usage.
+		logjson.Warn("whitelist snapshot prune failed", map[string]any{
+			"service": "store",
+			"keep":    MaxWhitelistSnapshots,
+			"error":   err.Error(),
+		})
+	}
 }
 
 // LatestWhitelistSnapshot returns the most recent snapshot, or
@@ -94,6 +113,58 @@ func (d *DB) LatestWhitelistSnapshot(ctx context.Context) (*WhitelistSnapshot, e
 
 	snapshot.Domains = splitSnapshotDomains(string(blob))
 	return &snapshot, nil
+}
+
+// ListWhitelistSnapshots returns the stored rollback copies, newest first,
+// without their domain blobs. An operator needs to discover a snapshot id
+// before calling rollback; returning only the latest forced them to guess.
+func (d *DB) ListWhitelistSnapshots(ctx context.Context) ([]WhitelistSnapshot, error) {
+	if !d.Enabled() {
+		return nil, ErrDisabled
+	}
+
+	rows, err := d.db.QueryContext(ctx,
+		`SELECT id, created_at, source, entry_count, sha256 FROM whitelist_snapshots ORDER BY id DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list whitelist snapshots: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var snapshots []WhitelistSnapshot
+	for rows.Next() {
+		var snapshot WhitelistSnapshot
+		if err := rows.Scan(&snapshot.ID, &snapshot.CreatedAt, &snapshot.Source, &snapshot.EntryCount, &snapshot.SHA256); err != nil {
+			return nil, fmt.Errorf("scan whitelist snapshot: %w", err)
+		}
+		snapshots = append(snapshots, snapshot)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate whitelist snapshots: %w", err)
+	}
+	return snapshots, nil
+}
+
+// LatestWhitelistRollback returns the most recent durable rollback audit
+// event, or nil when no rollback has been recorded.
+func (d *DB) LatestWhitelistRollback(ctx context.Context) (*AgentEvent, error) {
+	if !d.Enabled() {
+		return nil, ErrDisabled
+	}
+
+	var event AgentEvent
+	err := d.db.QueryRowContext(ctx,
+		`SELECT id, task_name, event_type, COALESCE(domain, ''), COALESCE(details, ''), created_at
+		 FROM agent_audit_log
+		 WHERE task_name = 'whitelist' AND event_type = 'rollback'
+		 ORDER BY id DESC LIMIT 1`).
+		Scan(&event.ID, &event.TaskName, &event.EventType, &event.Domain, &event.Details, &event.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read latest whitelist rollback: %w", err)
+	}
+	return &event, nil
 }
 
 // WhitelistSnapshotByID returns the snapshot with the given id.
@@ -128,6 +199,14 @@ func (d *DB) RestoreWhitelistSnapshot(ctx context.Context, id int64) (int, error
 	snapshot, err := d.WhitelistSnapshotByID(ctx, id)
 	if err != nil {
 		return 0, err
+	}
+	if snapshot.EntryCount == 0 || len(snapshot.Domains) == 0 {
+		return 0, fmt.Errorf("%w: snapshot %d has no entries", ErrWhitelistSnapshotEmpty, id)
+	}
+	blob := strings.Join(snapshot.Domains, "\n")
+	sum := sha256.Sum256([]byte(blob))
+	if snapshot.EntryCount != len(snapshot.Domains) || !strings.EqualFold(snapshot.SHA256, hex.EncodeToString(sum[:])) {
+		return 0, fmt.Errorf("%w: snapshot %d no longer matches its digest or entry count", ErrWhitelistSnapshotCorrupt, id)
 	}
 	if err := d.RestoreWhitelist(ctx, snapshot.Domains); err != nil {
 		return 0, fmt.Errorf("restore whitelist snapshot %d: %w", id, err)

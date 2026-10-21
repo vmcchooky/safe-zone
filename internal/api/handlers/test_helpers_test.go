@@ -21,6 +21,7 @@ import (
 type handlerTestServer struct {
 	Handler *Handler
 	Store   *store.DB
+	DBPath  string
 	Server  *httptest.Server
 	Client  *http.Client
 }
@@ -89,6 +90,8 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	mux.HandleFunc("/v1/reports/status", handler.RequireAdminFunc(handler.UpdateReportStatusHandler))
 	mux.HandleFunc("/v1/agent/trigger", handler.RequireAdminFunc(AgentTriggerHandler(nil)))
 	mux.HandleFunc("/v1/agent/proposals", handler.RequireAdminForMutationFunc(handler.AgentProposalsHandler))
+	mux.HandleFunc("/v1/whitelist/snapshots", handler.RequireAdminFunc(handler.WhitelistSnapshotHandler))
+	mux.HandleFunc("/v1/whitelist/rollback", handler.RequireAdminFunc(handler.WhitelistRollbackHandler))
 
 	server := httptest.NewServer(serve.WithRequestID(httputil.LogRequests("core-api", handler.Metrics)(mux)))
 	t.Cleanup(server.Close)
@@ -96,6 +99,7 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	return &handlerTestServer{
 		Handler: handler,
 		Store:   storeDB,
+		DBPath:  dbPath,
 		Server:  server,
 		Client:  server.Client(),
 	}
