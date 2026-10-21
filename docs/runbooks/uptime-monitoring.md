@@ -21,6 +21,28 @@ Expected success response:
 - HTTP `200`
 - JSON body containing `"status":"ok"`
 
+## Readiness semantics (`/readyz`)
+
+`/readyz` is public on both `core-api` and `dns-resolver`. It reports one of
+three states:
+
+| `status` | HTTP | Meaning |
+|---|---|---|
+| `ok` | `200` | Every dependency answered. |
+| `degraded` | `200` | An optional dependency (Redis, allow-list file) failed. The service still answers, with reduced capability. This is not a restart signal. |
+| `not_ready` | `503` | A mandatory dependency (SQLite) failed. The service cannot do its job. |
+
+Per-check values are `ok` or `unavailable`; the raw dependency error is written
+to the service log with the `service` and `check` fields and is not returned
+publicly. Each check increments `readiness_check_<name>_ok_total` or
+`readiness_check_<name>_failures_total`, so a monitoring rule can alert on a
+degraded state even though the HTTP code is `200`.
+
+A SQLite check is bounded by a 2-second timeout. A long-running query can make
+`/readyz` report `not_ready` for that window; Docker does not restart an
+unhealthy container, and Caddy keeps routing traffic, so this is a short
+false-fail in status/monitoring rather than an outage.
+
 ## Option A: Uptime Kuma
 
 1. Create a new HTTP(s) monitor.

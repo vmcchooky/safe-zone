@@ -32,7 +32,7 @@ func NewRouter(r *resolver.Resolver, adminAPIKey string, readinessChecks ...serv
 	// /readyz is a real readiness probe: it checks the dependencies the
 	// resolver needs, so a container that is running but cannot resolve
 	// anything is reported as not ready instead of healthy.
-	mux.HandleFunc("/readyz", serve.ReadinessHandler("dns-resolver", readinessChecks...))
+	mux.HandleFunc("/readyz", serve.ReadinessHandler("dns-resolver", r.Metrics, readinessChecks...))
 	mux.HandleFunc("/v1/version", r.VersionHandler)
 	mux.Handle("/metrics", serve.RequireBearer(adminAPIKey, http.HandlerFunc(r.MetricsHandler)))
 	// /v1/policy is deliberately unauthenticated: it is the decision endpoint

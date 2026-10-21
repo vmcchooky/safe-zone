@@ -25,7 +25,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/", rootHandler)
 	mux.HandleFunc("/v1/status", h.RequireAuthFunc(h.StatusHandler))
 	mux.HandleFunc("/healthz", handlers.HealthHandler("core-api"))
-	mux.HandleFunc("/readyz", serve.ReadinessHandler("core-api", h.Risk.ReadinessChecks()...))
+	mux.HandleFunc("/readyz", serve.ReadinessHandler("core-api", h.Metrics, h.Risk.ReadinessChecks()...))
 	mux.HandleFunc("/v1/version", h.VersionHandler)
 	// /metrics is admin-only. It exposes the per-endpoint request summary
 	// (method, path, status, counts, latency), which lets any authenticated

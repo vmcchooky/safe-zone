@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -34,7 +35,8 @@ func TestWhitelistRollbackReportsRevisionAndPublishResult(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/whitelist/rollback?id="+strconv.FormatInt(snapshotID, 10), nil)
+	req := httptest.NewRequest(http.MethodPost, "/v1/whitelist/rollback?id="+strconv.FormatInt(snapshotID, 10),
+		strings.NewReader(`{"reason":"restore the curated allow list"}`))
 	rec := httptest.NewRecorder()
 	ts.Handler.WhitelistRollbackHandler(rec, req)
 

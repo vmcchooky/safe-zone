@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
+
+	"safe-zone/internal/logjson"
+	"safe-zone/internal/observability"
 )
 
 // ReadinessReport is the outcome of a readiness check.
@@ -15,9 +19,20 @@ import (
 //	"degraded"   an optional dependency failed; the service still answers,
 //	             with reduced capability
 //	"not_ready"  a mandatory dependency failed; the service cannot work
+//
+// The per-check values are deliberately coarse ("ok" or "unavailable"). The
+// raw error stays in the process log: /readyz is public on both services, and
+// a dependency error can name an internal path, host or credential.
 type ReadinessReport struct {
 	Status string            `json:"status"`
 	Checks map[string]string `json:"checks,omitempty"`
+
+	failures map[string]readinessFailure
+}
+
+type readinessFailure struct {
+	err       error
+	mandatory bool
 }
 
 // ReadinessCheck is one dependency a service needs to answer correctly.
@@ -48,9 +63,37 @@ const ReadinessTimeout = 2 * time.Second
 // "can this service do its job", which is what an orchestrator needs before
 // it routes traffic here, and what a monitoring rule needs before it claims
 // the service is up.
-func ReadinessHandler(service string, checks ...ReadinessCheck) http.HandlerFunc {
+//
+// HTTP status follows the same split:
+//
+//	ok        200
+//	degraded  200  the service still answers, with reduced capability
+//	not_ready 503
+//
+// A degraded service is intentionally not a 503: an optional dependency
+// outage must not make an orchestrator stop routing traffic to a service that
+// can still do its job. Alerts should watch the status field and the
+// readiness counters, not only the HTTP code.
+func ReadinessHandler(service string, metrics *observability.Registry, checks ...ReadinessCheck) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		report := EvaluateReadiness(r.Context(), checks...)
+
+		for name, failure := range report.failures {
+			// The log is the only place the raw error is kept.
+			logjson.Warn("readiness check failed", map[string]any{
+				"service":   service,
+				"check":     name,
+				"mandatory": failure.mandatory,
+				"error":     failure.err.Error(),
+			})
+			metrics.IncCounter(readinessCounterName(name, "failures"))
+		}
+		for name := range report.Checks {
+			if _, failed := report.failures[name]; failed {
+				continue
+			}
+			metrics.IncCounter(readinessCounterName(name, "ok"))
+		}
 
 		status := http.StatusOK
 		if report.Status == "not_ready" {
@@ -83,6 +126,7 @@ func EvaluateReadiness(ctx context.Context, checks ...ReadinessCheck) ReadinessR
 	}
 
 	report.Checks = make(map[string]string, len(checks))
+	report.failures = make(map[string]readinessFailure)
 	for _, check := range checks {
 		if check.Check == nil {
 			continue
@@ -97,7 +141,8 @@ func EvaluateReadiness(ctx context.Context, checks ...ReadinessCheck) ReadinessR
 			continue
 		}
 
-		report.Checks[check.Name] = err.Error()
+		report.Checks[check.Name] = "unavailable"
+		report.failures[check.Name] = readinessFailure{err: err, mandatory: check.Mandatory}
 		if check.Mandatory {
 			report.Status = "not_ready"
 			return report
@@ -108,4 +153,24 @@ func EvaluateReadiness(ctx context.Context, checks ...ReadinessCheck) ReadinessR
 	}
 
 	return report
+}
+
+// readinessCounterName turns a check name into a bounded metric name. Check
+// names come from code, not from requests, but normalising them keeps the
+// counter names stable if a future check carries a separator.
+func readinessCounterName(check, outcome string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(check) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	name := b.String()
+	if name == "" {
+		name = "unnamed"
+	}
+	return "readiness_check_" + name + "_" + outcome + "_total"
 }

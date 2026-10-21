@@ -6,7 +6,10 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"safe-zone/internal/observability"
 )
 
 func TestEvaluateReadinessAllHealthy(t *testing.T) {
@@ -35,8 +38,8 @@ func TestEvaluateReadinessOptionalFailureDegrades(t *testing.T) {
 	if report.Status != "degraded" {
 		t.Fatalf("status = %q, want degraded", report.Status)
 	}
-	if report.Checks["redis"] == "ok" {
-		t.Fatal("the redis check must carry the failure")
+	if report.Checks["redis"] != "unavailable" {
+		t.Fatalf("the redis check = %q, want unavailable", report.Checks["redis"])
 	}
 }
 
@@ -48,6 +51,62 @@ func TestEvaluateReadinessMandatoryFailureIsNotReady(t *testing.T) {
 
 	if report.Status != "not_ready" {
 		t.Fatalf("status = %q, want not_ready", report.Status)
+	}
+}
+
+// /readyz is public on both services. The raw dependency error can name an
+// internal path, host or credential, so it must stay in the log and never
+// reach the response body.
+func TestReadinessHandlerDoesNotExposeDependencyErrors(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	secret := "open /var/lib/safe-zone/private.db: permission denied"
+	ReadinessHandler("core-api", observability.NewRegistry(),
+		ReadinessCheck{
+			Name:      "sqlite",
+			Mandatory: true,
+			Check:     func(context.Context) error { return errors.New(secret) },
+		},
+	)(recorder, request)
+
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status code = %d, want %d", recorder.Code, http.StatusServiceUnavailable)
+	}
+	if strings.Contains(recorder.Body.String(), "permission denied") || strings.Contains(recorder.Body.String(), "/var/lib") {
+		t.Fatalf("response leaked the raw dependency error: %s", recorder.Body.String())
+	}
+
+	var payload struct {
+		Checks map[string]string `json:"checks"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("response is not JSON: %v (%s)", err, recorder.Body.String())
+	}
+	if payload.Checks["sqlite"] != "unavailable" {
+		t.Fatalf("sqlite check = %q, want unavailable", payload.Checks["sqlite"])
+	}
+}
+
+// A check failure must be visible to monitoring even though the public body
+// only says "unavailable". Each code-defined check gets its own bounded
+// counter for both outcomes.
+func TestReadinessHandlerCountsEachCheck(t *testing.T) {
+	registry := observability.NewRegistry()
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+
+	ReadinessHandler("core-api", registry,
+		ReadinessCheck{Name: "sqlite", Mandatory: true, Check: func(context.Context) error { return nil }},
+		ReadinessCheck{Name: "redis", Mandatory: false, Check: func(context.Context) error { return errors.New("connection refused") }},
+	)(recorder, request)
+
+	counters := registry.Snapshot().Counters
+	if counters["readiness_check_sqlite_ok_total"] != 1 {
+		t.Fatalf("sqlite ok counter = %d, want 1 (all counters: %v)", counters["readiness_check_sqlite_ok_total"], counters)
+	}
+	if counters["readiness_check_redis_failures_total"] != 1 {
+		t.Fatalf("redis failure counter = %d, want 1 (all counters: %v)", counters["readiness_check_redis_failures_total"], counters)
 	}
 }
 
@@ -83,7 +142,7 @@ func TestReadinessHandlerStatusCodes(t *testing.T) {
 			recorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
 
-			ReadinessHandler("core-api", tc.check)(recorder, request)
+			ReadinessHandler("core-api", observability.NewRegistry(), tc.check)(recorder, request)
 
 			if recorder.Code != tc.wantCode {
 				t.Fatalf("status code = %d, want %d", recorder.Code, tc.wantCode)
