@@ -24,9 +24,16 @@ PR merges to `main`, oldest batch first.
   `GET /v1/whitelist/snapshots` plus `POST /v1/whitelist/rollback` restore a
   previous allow list.
 - `core-api` refuses to start in production when no threat feed source is
-  configured, and the `feed-syncd` daemon ships enabled with a real default
-  source. A stock production install previously had no feed at all and no
-  alert that could have said so.
+  configured, and the canonical production stack now includes the
+  `feed-syncd` daemon with a real default source. The base Compose file keeps
+  the daemon behind the `feed-sync` profile for the developer stack; the
+  production override resets that profile so the deploy cannot quietly omit
+  it. A stock production install previously had no feed at all and no alert
+  that could have said so.
+- The production Compose override pins `SAFE_ZONE_ENV=production` for
+  `core-api` and `dns-resolver`. The shared `.env` in `.env.example` ships
+  `SAFE_ZONE_ENV=local`, and Compose passed it straight into production,
+  disabling the guards that key off the environment.
 - DoT now requires a trusted certificate in production. A missing key pair
   stops the resolver instead of serving a self-signed certificate that every
   client rejects.

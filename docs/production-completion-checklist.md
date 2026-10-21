@@ -95,7 +95,7 @@ Steps:
 Goal: make free feed ingestion repeatable, observable, and safe when sources fail or drift.
 
 - `[x]` Generic `feed-sync` supports local files, HTTP(S), CSV/TXT, and gzip.
-- `[x]` `feed-syncd` exists for scheduled sync.
+- `[x]` `feed-syncd` exists for scheduled sync and is part of the canonical production Compose stack; the developer stack keeps it opt-in behind the `feed-sync` profile. CI asserts both shapes with `docker compose config`.
 - `[x]` Agent multi-source additive feed sync exists.
 - `[x]` A first-class `production-free` preset exists in code and ops helpers. It currently resolves to URLhaus plus OpenPhish community feed.
 - `[x]` Feed staleness runbook exists, and stale-feed policy is enforced by code through `feed_sync` status metadata.
