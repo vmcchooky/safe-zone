@@ -49,6 +49,10 @@ PR merges to `main`, oldest batch first.
   client rejects.
 - The container healthcheck probes `/readyz` instead of `/healthz`, so a
   service that is running but cannot do its job is reported as unhealthy.
+- The Go toolchain moves to 1.26.10 across `mise.toml`, `go.mod` and the
+  Docker build image. `govulncheck` flagged GO-2026-6809 in `crypto/x509`
+  (distrust compromised intermediate certificates), fixed in that patch
+  release.
 
 ### Changed
 - `/readyz` is a real readiness probe: SQLite is mandatory, Redis is
