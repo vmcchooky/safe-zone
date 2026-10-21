@@ -30,8 +30,15 @@ PR merges to `main`, oldest batch first.
   `feed-syncd` daemon with a real default source. The base Compose file keeps
   the daemon behind the `feed-sync` profile for the developer stack; the
   production override resets that profile so the deploy cannot quietly omit
-  it. `SAFE_ZONE_SCRIPT_FEED_SYNC=0` is an explicit opt-out that stops the
-  daemon after deploy. A stock production install previously had no feed at
+  it. `SAFE_ZONE_SCRIPT_FEED_SYNC=0` stops the daemon after a deploy that
+  goes through the helper script. A direct `docker compose ... up` recreates
+  and starts it because it is in the production stack, so the opt-out holds
+  only while every deploy goes through the helper. The start-up guard does
+  not see the stopped daemon either: it reads `SAFE_ZONE_THREAT_FEED_SOURCE`
+  and `SAFE_ZONE_AGENT_ENABLED`, so an opted-out deployment with no other
+  writer passes the guard while nothing syncs the feed. Feed state is
+  observable only through `/v1/status` -> `feed_sync`; alerting on it is not
+  part of this change. A stock production install previously had no feed at
   all and no alert that could have said so.
 - The production Compose override pins `SAFE_ZONE_ENV=production` for
   `core-api` and `dns-resolver`. The shared `.env` in `.env.example` ships

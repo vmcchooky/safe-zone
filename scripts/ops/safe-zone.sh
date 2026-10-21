@@ -756,7 +756,15 @@ Environment:
   SAFE_ZONE_BACKUP_KEEP_PLAINTEXT=1   Keep plaintext snapshot files after encrypted bundle creation.
   SAFE_ZONE_RCLONE_REMOTE=gdrive:     Optional rclone remote for offsite backup upload.
   SAFE_ZONE_RCLONE_DEST=safe-zone-backups
-  SAFE_ZONE_SCRIPT_FEED_SYNC=1        Run feed-syncd after deploy (the production stack includes it; 0 stops it).
+  SAFE_ZONE_SCRIPT_FEED_SYNC=1        Run feed-syncd after deploy (the production stack includes it).
+                                      0 stops it after a deploy that goes through this helper. A direct
+                                      docker compose ... up recreates and starts it, so the opt-out
+                                      holds only while every deploy goes through this helper. The
+                                      start-up guard cannot see a stopped daemon (it reads
+                                      SAFE_ZONE_THREAT_FEED_SOURCE / SAFE_ZONE_AGENT_ENABLED), so an
+                                      opted-out deployment with no other writer passes the guard while
+                                      nobody syncs. Feed state is observable only through
+                                      /v1/status -> feed_sync; alerting on it is not part of this change.
 USAGE
     ;;
 esac

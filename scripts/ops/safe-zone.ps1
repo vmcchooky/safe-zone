@@ -815,6 +815,16 @@ Environment:
   SAFE_ZONE_BACKUP_GPG_PASSPHRASE=<passphrase>
   SAFE_ZONE_BACKUP_GPG_PASSPHRASE_FILE=<path>
   SAFE_ZONE_BACKUP_KEEP_PLAINTEXT=1
+  SAFE_ZONE_SCRIPT_FEED_SYNC=1
+      Run feed-syncd after deploy (the production stack includes it).
+      0 stops it after a deploy that goes through this helper. A direct
+      docker compose ... up recreates and starts it, so the opt-out holds
+      only while every deploy goes through this helper. The start-up guard
+      cannot see a stopped daemon (it reads SAFE_ZONE_THREAT_FEED_SOURCE /
+      SAFE_ZONE_AGENT_ENABLED), so an opted-out deployment with no other
+      writer passes the guard while nobody syncs. Feed state is observable
+      only through /v1/status -> feed_sync; alerting on it is not part of
+      this change.
 '@ | Write-Host
 }
 
@@ -859,11 +869,15 @@ switch ($Command) {
     Write-Section 'Deploying Safe Zone'
     Set-BuildMetadataEnv
     Assert-MLRolloutBundle
-    $composeArgs = @('up', '-d', '--build')
-    if ($FeedSync) {
-      $composeArgs = @('--profile', 'feed-sync') + $composeArgs
+    # feed-syncd is part of the production stack (the production override
+    # removes the developer profile), so a plain up starts it. The opt-out is
+    # an explicit stop, not an omission that leaves the previous container
+    # running unnoticed.
+    Invoke-Compose -SubCommandArgs @('up', '-d', '--build') -TargetStack 'production' -UseProductionProfile
+    if (-not $FeedSync) {
+      Write-Warn 'SAFE_ZONE_SCRIPT_FEED_SYNC=0: stopping the production feed-syncd daemon'
+      Invoke-ComposeBestEffort -SubCommandArgs @('stop', 'feed-syncd') -TargetStack 'production'
     }
-    Invoke-Compose -SubCommandArgs $composeArgs -TargetStack 'production' -UseProductionProfile
     Wait-ForHealth -Url 'http://localhost:8080/healthz' -Name 'core-api'
     Wait-ForHealth -Url 'http://localhost:8081/healthz' -Name 'dns-resolver'
     Write-Host 'Deployment healthy.' -ForegroundColor Green

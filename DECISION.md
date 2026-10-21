@@ -1264,9 +1264,17 @@ no backup and no way back.
    file keeps `feed-syncd` behind the `feed-sync` profile for the developer
    stack, and `docker-compose.production.yml` resets that profile
    (`profiles: !reset []`) so the canonical production stack always includes
-   the daemon. `SAFE_ZONE_SCRIPT_FEED_SYNC=0` is an explicit opt-out that
-   stops the daemon after deploy, not a way to leave a production stack
-   without a feed. `SAFE_ZONE_THREAT_FEED_SOURCE` and
+   the daemon. `SAFE_ZONE_SCRIPT_FEED_SYNC=0` stops the daemon after a
+   deploy that goes through the helper script, not a way to leave a
+   production stack without a feed. A direct `docker compose ... up`
+   recreates and starts it because it is in the production stack, so the
+   opt-out holds only while every deploy goes through the helper. The
+   start-up guard cannot see the stopped daemon: it reads
+   `SAFE_ZONE_THREAT_FEED_SOURCE` and `SAFE_ZONE_AGENT_ENABLED`, so an
+   opted-out deployment with no other writer passes the guard while nothing
+   syncs the feed. Feed state is observable only through `/v1/status` ->
+   `feed_sync`; alerting on it is a separate slice, not part of this change.
+   `SAFE_ZONE_THREAT_FEED_SOURCE` and
    `SAFE_ZONE_AGENT_FEED_PRESET` have real defaults, and the daemon accepts
    several sources, which is what the agent task and the alert rules already
    assumed.
