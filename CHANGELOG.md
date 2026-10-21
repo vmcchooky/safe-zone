@@ -10,7 +10,9 @@ PR merges to `main`, oldest batch first.
   logged with its consequence, reported in `/v1/status` as
   `whitelist.loaded` / `whitelist.error`, and stops `core-api` and
   `dns-resolver` from starting in production. A configured allow-list file
-  that cannot be read is an error, not an empty allow list.
+  that cannot be read is an error, not an empty allow list. Unset or empty
+  `SAFE_ZONE_WHITELIST_PATH` now means DB-only; the service no longer invents
+  `./data/whitelist.txt` and refuses to start on a stock install.
 - A blocked domain can no longer be silently unblocked. An unparsable
   `SAFE_ZONE_BLOCK_PAGE_IP` falls back to the null IP instead of producing
   an empty answer, and the resolver refuses to start in production with a
@@ -28,8 +30,9 @@ PR merges to `main`, oldest batch first.
   `feed-syncd` daemon with a real default source. The base Compose file keeps
   the daemon behind the `feed-sync` profile for the developer stack; the
   production override resets that profile so the deploy cannot quietly omit
-  it. A stock production install previously had no feed at all and no alert
-  that could have said so.
+  it. `SAFE_ZONE_SCRIPT_FEED_SYNC=0` is an explicit opt-out that stops the
+  daemon after deploy. A stock production install previously had no feed at
+  all and no alert that could have said so.
 - The production Compose override pins `SAFE_ZONE_ENV=production` for
   `core-api` and `dns-resolver`. The shared `.env` in `.env.example` ships
   `SAFE_ZONE_ENV=local`, and Compose passed it straight into production,
@@ -43,7 +46,10 @@ PR merges to `main`, oldest batch first.
 ### Changed
 - `/readyz` is a real readiness probe: SQLite is mandatory, Redis is
   optional (a Redis outage degrades coverage but the resolver still
-  answers), and the allow list state is reported.
+  answers), and the allow list state is reported. `ok` and `degraded` answer
+  200; `not_ready` answers 503. Per-check values are only `ok` or
+  `unavailable`; the raw error stays in the log, and each check increments a
+  `readiness_check_<name>_<outcome>_total` counter.
 - `feed-syncd` accepts several comma-separated sources, matching the agent
   task and the alert rules. One failing source no longer takes the others
   down.
@@ -83,9 +89,30 @@ PR merges to `main`, oldest batch first.
   malicious. The label policy now comes from the trust tier the data
   manifest records, so `stevenblack_hosts.txt` (tier `unwanted-ad-tracker`)
   is excluded from the positive class instead of inflating the measured
-  recall and hiding the real false-positive risk. The artifact is not
-  re-exported by this change; the new numbers come with the next
-  evaluation.
+  recall and hiding the real false-positive risk. The policy tests call the
+  shipped `resolve_source_tiers`/`split_sources_by_tier` functions, so a
+  name special case cannot re-add the source without turning CI red.
+  `label_policy_version` is now 2 in the manifest and both producers. The
+  artifact is not re-exported by this change; the new numbers come with the
+  next evaluation.
+- A whitelist rollback now reaches `dns-resolver` without a restart. The
+  durable `whitelist_revision` is bumped in the same transaction as the
+  rows, the API publishes `whitelist_updated`, and the resolver also
+  reconciles every 30 seconds, so a missed message or a Redis outage still
+  converges. The rollback response reports `revision` and `published`, and
+  status endpoints expose `whitelist.revision`.
+- A whitelist rollback now requires a reason and writes an
+  `agent_audit_log` event with the snapshot, entry count, actor, reason,
+  revision and correlation id. The snapshots listing exposes
+  `last_rollback`.
+- Whitelist snapshot restores verify the stored SHA-256 and entry count,
+  refuse an empty snapshot, and log prune failures. `GET
+  /v1/whitelist/snapshots` lists the retained snapshots instead of only the
+  latest.
+- The read-only role now also disables the group Edit button; the
+  `GroupModal` submit path receives `canMutate` as a second line of defence.
+  The guest Playwright test now covers group edit/delete, mapping
+  create/delete, Analysis Allow/Block and the `/reports` redirect.
 
 ## [1.10.16] - 2026-10-16
 

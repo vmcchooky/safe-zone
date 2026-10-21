@@ -137,6 +137,7 @@ Steps:
 Goal: operators can understand incidents without reading raw container logs by hand.
 
 - `[x]` `/metrics` exists on `core-api` and `dns-resolver`.
+- `[x]` `/readyz` reports `ok`/`degraded` as HTTP 200 and `not_ready` as HTTP 503, returns only `ok`/`unavailable` per check, logs the raw error, and increments per-check counters.
 - `[x]` In-memory request counts, bytes, duration, and status summaries exist.
 - `[x]` Metrics intentionally stay JSON-only for the single-VPS MVP; the alert baseline consumes JSON snapshots.
 - `[x]` Webhook/Slack/Telegram/email alerting exists through agent tasks, and baseline production alert rules are documented.
@@ -313,6 +314,7 @@ Profiles can be combined, but every enabled component adds its corresponding gat
 
 - `[x]` Engine implements timeout, per-task single flight, panic recovery, status and admin trigger.
 - `[x]` Current task catalog is documented: `audit`, `feedsync`, `osint-audit`, `alert`, `whitelist_update`.
+- `[x]` Whitelist rollback requires a reason, writes an `agent_audit_log` event with actor/snapshot/entries/revision, and verifies snapshot SHA-256 and entry count before restore.
 - `[!]` Set `SAFE_ZONE_AGENT_WHITELIST_ENABLED=false` in first production environment until controlled import/backup/rollback drill passes.
 - `[x]` Admin manual trigger áp dụng cùng enablement policy với scheduler: task disabled trả `409 Conflict`; unknown task trả `404`, queue đầy trả `429`, và các nhánh API được kiểm thử tự động.
 - `[!]` Run live Agent audit smoke and record resulting reviewed/auto-block event and cache invalidation.

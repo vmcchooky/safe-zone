@@ -1216,7 +1216,10 @@ nothing said so. Four concrete cases:
    it is reported SAFE and never reaches the threat feed, lexical scoring, ML,
    AI, OSINT or group enforcement. A read failure meant the service ran with
    an empty allow list, every curated exception was scored, and whitelisted
-   domains could be blocked — with not one log line.
+   domains could be blocked — with not one log line. The first fix also
+   exposed a second defect: an unset `SAFE_ZONE_WHITELIST_PATH` fell back to
+   `./data/whitelist.txt`, so a stock production install with no file refused
+   to start instead of using the DB-only mode.
 
 2. **A malformed `SAFE_ZONE_BLOCK_PAGE_IP` turned a block into an allow.**
    `internal/dns/resolver/resolver.go` parsed the address to nil and skipped
@@ -1245,7 +1248,9 @@ no backup and no way back.
 **Decision:**
 
 1. **A failed allow-list load is recorded, reported, and fatal in
-   production.** The error is kept on the `Whitelist`, surfaced in
+   production.** `SAFE_ZONE_WHITELIST_PATH` is optional: unset or empty means
+   DB-only, and the service does not invent `./data/whitelist.txt`. When a
+   path is set it must load; the error is kept on the `Whitelist`, surfaced in
    `/v1/status` as `whitelist.loaded` / `whitelist.error`, logged with the
    consequence spelled out, and `core-api` and `dns-resolver` refuse to start
    in production when it happened. A configured allow-list file that cannot
@@ -1255,17 +1260,25 @@ no backup and no way back.
    IP, so the domain stays blocked. `cmd/dns-resolver` additionally rejects
    a malformed `SAFE_ZONE_BLOCK_PAGE_IP` at startup in production.
 3. **A production deployment must have a threat feed.** `core-api` refuses
-   to start in production when no feed source is configured. The
-   `feed-syncd` daemon ships enabled (the deploy helpers enable the
-   `feed-sync` profile by default), `SAFE_ZONE_THREAT_FEED_SOURCE` and
-   `SAFE_ZONE_AGENT_FEED_PRESET` have real defaults, and the daemon now
-   accepts several sources, which is what the agent task and the alert rules
-   already assumed.
+   to start in production when no feed source is configured. The base Compose
+   file keeps `feed-syncd` behind the `feed-sync` profile for the developer
+   stack, and `docker-compose.production.yml` resets that profile
+   (`profiles: !reset []`) so the canonical production stack always includes
+   the daemon. `SAFE_ZONE_SCRIPT_FEED_SYNC=0` is an explicit opt-out that
+   stops the daemon after deploy, not a way to leave a production stack
+   without a feed. `SAFE_ZONE_THREAT_FEED_SOURCE` and
+   `SAFE_ZONE_AGENT_FEED_PRESET` have real defaults, and the daemon accepts
+   several sources, which is what the agent task and the alert rules already
+   assumed.
 4. **Readiness is a real probe.** `/readyz` checks the dependencies the
    service needs: SQLite is mandatory (the overrides and the allow list are
    read from it on the request path), Redis is optional (a Redis outage
    degrades coverage but the resolver still answers), and the allow list is
-   reported. The container healthcheck probes `/readyz`.
+   reported. `ok` and `degraded` answer 200; only `not_ready` answers 503.
+   The public body carries only `ok` / `unavailable` per check; the raw error
+   is logged with the service and check name, and every check increments a
+   bounded `readiness_check_<name>_<outcome>_total` counter. The container
+   healthcheck probes `/readyz`.
 5. **The allow list is not rewritten by default.** `SAFE_ZONE_AGENT_WHITELIST_ENABLED`
    defaults to false, the download is verified against
    `SAFE_ZONE_AGENT_WHITELIST_SHA256` when set, a rollback snapshot is taken
@@ -1277,6 +1290,19 @@ no backup and no way back.
 7. **Every `SAFE_ZONE_*` setting the code reads is documented.** A new CI
    gate (`tools/env-docs-check`) fails the build when a setting exists in
    the code but not in `.env.example`.
+8. **A rollback reaches every process, not only the API.** The whitelist
+   table carries a durable revision in `system_config`, bumped in the same
+   transaction as the rows. `core-api` publishes `whitelist_updated` on the
+   shared config channel; `dns-resolver` subscribes and also reconciles
+   every 30 seconds, so a missed message or a Redis outage still converges.
+   The rollback response reports `revision` and `published`, and the status
+   endpoints expose `whitelist.revision`.
+9. **A rollback is auditable and its snapshots are verifiable.** Rollback
+   requires a reason of at least 8 runes and writes an `agent_audit_log`
+   event with the snapshot id, entry count, actor, reason, revision and
+   correlation id. The snapshots listing exposes `last_rollback`. A restore
+   verifies the stored SHA-256 and entry count, refuses an empty snapshot,
+   and logs prune failures instead of discarding them.
 
 **Consequences:**
 
@@ -1284,19 +1310,30 @@ no backup and no way back.
   list, no feed or a dead dependency now refuses to start until the
   operator configures it. That is the point, but it is a visible change: the
   release notes must say which settings are now mandatory.
+- A stock install no longer needs a whitelist file at all: unset
+  `SAFE_ZONE_WHITELIST_PATH` uses the DB-only mode, and the operator opts
+  into a file explicitly.
 - The allow-list load failure is visible in `/v1/status` rather than only in
   the logs, so monitoring can assert on it.
 - The rollback snapshot costs one copy of the allow list (tens of megabytes
   for a million domains) and keeps the three most recent.
+- A rollback now propagates to `dns-resolver` without a restart. With Redis
+  available the update is immediate; without it, the 30-second reconciliation
+  bounds the stale window.
+- Every rollback leaves an audit record with the operator, reason and
+  revision, and a damaged snapshot is refused before it replaces the live
+  allow list.
 - The feed daemon now syncs several sources, so one provider being down no
   longer takes the remaining coverage with it.
 
 **Validation evidence:**
 
 - `go build ./...` PASS; `go test ./...` PASS (all packages).
-- `internal/config`: `ProductionGuard` covers unset keys, malformed IPs,
-  disallowed enum values, unparsable booleans and integers; the guard fails
-  in production and only warns elsewhere.
+- `internal/config`: `ValidateIP` rejects a malformed IP instead of returning
+  the silent nil from `net.ParseIP`. The unused `ProductionGuard` was removed:
+  it was never wired into startup, and its `Err()` used a different
+  environment set than `IsProduction()`, so `SAFE_ZONE_ENV=prod` would have
+  bypassed it.
 - `internal/risk/whitelist_load_failure_test.go`: a rejected import is
   recorded, reported as `loaded=false`, keeps the previous index, and the
   service surfaces it; a healthy load reports `loaded=true`.
@@ -1311,7 +1348,27 @@ no backup and no way back.
   checksum is accepted; an import takes a rollback snapshot; the rollback
   restores the previous set; snapshots are pruned to three.
 - `internal/serve/readiness_test.go`: healthy, degraded and not-ready map to
-  200/200/503, and a hanging check times out.
+  200/200/503, a hanging check times out, a dependency error is absent from
+  the public body, and each check increments its observability counter.
+- `internal/risk/whitelist_env_test.go`: unset and empty
+  `SAFE_ZONE_WHITELIST_PATH` both select DB-only; an explicit missing path is
+  an error.
+- `internal/risk/whitelist_revision_test.go` and
+  `internal/store/whitelist_revision_test.go`: a rollback bumps the durable
+  revision atomically with the rows, the reconciler picks it up with Redis
+  off, and the pub/sub subscriber reloads on `whitelist_updated`.
+- `internal/api/handlers/whitelist_snapshot_test.go`: rollback requires a
+  reason, writes the audit event with actor/reason/snapshot/entries/revision,
+  reports `revision`/`published`, and the listing exposes `last_rollback`.
+- `internal/store/whitelist_snapshot_verify_test.go`: a corrupted or empty
+  snapshot is refused, the digest and entry count are checked, and prune
+  failures are logged.
+- `cmd/feed-syncd/main_test.go`: per-report logs use `report.Source`, not the
+  joined settings source list.
+- `ui/tests/guest-readonly.spec.ts`: a guest cannot edit or delete a group,
+  add or delete a mapping, allow or block an analysis result, or open
+  `/reports`; the group Edit button was the control that previously stayed
+  enabled.
 - `internal/feedsync/multi_source_test.go`: several sources parse from the
   flag and from the environment, an empty list is refused, and the one-shot
   and the daemon resolve identical options.
@@ -1484,10 +1541,13 @@ the result while the real false-positive risk stays hidden.
    to match instead, and the adjustment is printed and recorded in the
    cleaning report. No new data source is required: the negative side has
    1,386,045 domains available against a pool of 1,127,406.
-4. **The policy is pinned by tests.** `ml/tests/test_label_policy.py`
-   asserts that no ad/tracker tier can reach the positive set, that every
-   manifest source is accounted for by the build, and that the build's tier
-   sets match the manifest taxonomy.
+4. **The policy is pinned by tests that call the shipped functions.**
+   `ml/tests/test_label_policy.py` calls `resolve_source_tiers` and
+   `split_sources_by_tier` directly, asserts the real positive, negative and
+   excluded sets (including `stevenblack` in excluded), covers the
+   missing/conflicting-tier errors, and checks that every manifest source is
+   accounted for. A special case that re-adds `stevenblack` inside the split
+   function turns the test red even when the tier constants are untouched.
 5. **The bundle is not re-exported here.** The artifact in
    `deploy/model-bundle/v1` still carries the old labels. Re-training,
    re-calibrating and re-evaluating is a separate step with its own
@@ -1496,6 +1556,13 @@ the result while the real false-positive risk stays hidden.
    the ones that decide whether the new dataset is better. Shipping the
    policy change without the new numbers would replace one unverified
    artifact with another.
+6. **The policy version is durable.** `label_policy_version` is 2 in
+   `ml/data/data_manifest.json`, `ml/src/make_splits.py` and
+   `scripts/data_processing/create_data_manifest.py`; the test asserts all
+   three agree. The build shares one RNG stream between balance sampling,
+   the negative downsample and the lite sample, so lite datasets built before
+   and after this policy change are not row-comparable; compare them on the
+   full dataset or regenerate both sides.
 
 **Consequences:**
 
@@ -1510,8 +1577,9 @@ the result while the real false-positive risk stays hidden.
 
 **Validation evidence:**
 
-- `ml/tests/test_label_policy.py`: 6 tests pass; the full `ml/tests` suite
-  is 84 passing.
+- `ml/tests/test_label_policy.py`: 12 tests pass; the full `ml/tests` suite
+  passes (see the PR evidence block). Reintroducing
+  `or label == "stevenblack"` in `split_sources_by_tier` fails three tests.
 - `python -m py_compile scripts/data_processing/build_domain_dataset.py`
   passes.
 - Dry run of the new policy against the shipped provenance file: positive
@@ -1524,6 +1592,10 @@ the result while the real false-positive risk stays hidden.
   `vietnam_websites.csv`, which the build reads but did not declare. The
   mapping now allows one build label to be backed by several manifest
   sources, with the requirement that they share a tier.
+- `label_policy_version` is 2 in the manifest and both producers; the test
+  reads the constant from each file and asserts the manifest value. The
+  `domain_dataset_lite.csv` comparability caveat is recorded in
+  `docs/research/ml/method.md` and at the RNG in the build script.
 
 **Revisit when:**
 
