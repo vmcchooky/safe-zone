@@ -471,11 +471,15 @@ export function EndpointsPage() {
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
+                  disabled={!canMutate}
                   onClick={() => {
+                    if (!canMutate) return;
                     setEditingGroup(g);
                     setIsGroupModalOpen(true);
                   }}
-                  className="px-3 py-1.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                  className="px-3 py-1.5 text-sm font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-100"
+                  title={canMutate ? 'Edit Group' : READ_ONLY_HINT}
+                  aria-label={`Edit the policy group ${g.name}`}
                 >
                   Edit
                 </motion.button>
@@ -710,6 +714,7 @@ export function EndpointsPage() {
         onClose={() => setIsGroupModalOpen(false)}
         onSave={mutateGroups}
         group={editingGroup}
+        canMutate={canMutate}
       />
     </motion.div>
   );
