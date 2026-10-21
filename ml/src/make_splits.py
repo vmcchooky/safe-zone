@@ -19,6 +19,11 @@ if BASE_DIR not in sys.path:
 
 from src.build_candidate_cohort import build_candidate_cohort
 
+# Bumped when the label policy changes, so a split manifest records which
+# policy produced it. Version 2 excludes ad/tracker sources (for example
+# stevenblack_hosts.txt) from the positive label set.
+LABEL_POLICY_VERSION = 2
+
 
 def compute_file_sha256(filepath: str) -> str:
     hasher = hashlib.sha256()
@@ -212,7 +217,7 @@ def make_splits(
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "pipeline_git_sha": "1fb895883bad2ae2dcc2fde586812963a547d653",
         "input_data_manifest_hash": input_manifest_hash,
-        "label_policy_version": 1,
+        "label_policy_version": LABEL_POLICY_VERSION,
         "canonicalization_psl_version": "public_suffix_list.v1.dat",
         "group_key_algorithm": "registrable_domain_sha256",
         "seed": seed,

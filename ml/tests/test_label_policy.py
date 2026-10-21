@@ -11,8 +11,13 @@ ad/tracker list, the manifest records it as "unwanted-ad-tracker", and it
 was a positive source. That inflated the measured recall and understated the
 real false-positive risk, because the negative side is full of ad-tech and
 CDN domains that a model trained on "ads are malicious" learns to block.
+
+The tests call the shipped policy functions, not just their constants: a
+special case such as ``or label == "stevenblack"`` inside
+``split_sources_by_tier`` must turn this file red.
 """
 
+import ast
 import json
 import sys
 from pathlib import Path
@@ -21,10 +26,23 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 MANIFEST = REPO_ROOT / "ml" / "data" / "data_manifest.json"
-BUILD_SCRIPT = REPO_ROOT / "scripts" / "data_processing" / "build_domain_dataset.py"
+MAKE_SPLITS = REPO_ROOT / "ml" / "src" / "make_splits.py"
+CREATE_MANIFEST = REPO_ROOT / "scripts" / "data_processing" / "create_data_manifest.py"
 
 MALICIOUS_TIERS = {"strong-malicious", "specialist-community-malicious", "weak-malicious"}
 SAFE_TIERS = {"strong-safe", "weak-safe"}
+LABEL_POLICY_VERSION = 2
+
+POSITIVE_SOURCES = {
+    "hagezi",
+    "tempest_phishing",
+    "phishtank",
+    "phishing_army",
+    "urlhaus",
+    "openphish",
+    "vietnam_blacklist",
+}
+NEGATIVE_SOURCES = {"tranco", "top_1m", "vietnam_whitelist"}
 
 
 def _manifest_tiers() -> dict[str, str]:
@@ -37,8 +55,8 @@ def _manifest_tiers() -> dict[str, str]:
     }
 
 
-def _build_script_policy() -> dict[str, object]:
-    """Import the build module so the test reads the shipped policy.
+def _build_module():
+    """Import the build module so the tests read the shipped policy.
 
     The module is imported by path because it lives outside the ``src``
     package the other tests import.
@@ -48,13 +66,29 @@ def _build_script_policy() -> dict[str, object]:
     try:
         import build_domain_dataset  # type: ignore[import-not-found]
 
-        return {
-            "malicious_tiers": set(build_domain_dataset.MALICIOUS_TIERS),
-            "safe_tiers": set(build_domain_dataset.SAFE_TIERS),
-            "source_manifest_names": dict(build_domain_dataset.SOURCE_MANIFEST_NAMES),
-        }
+        return build_domain_dataset
     finally:
         sys.path.pop(0)
+
+
+def _build_script_policy() -> dict[str, object]:
+    module = _build_module()
+    return {
+        "malicious_tiers": set(module.MALICIOUS_TIERS),
+        "safe_tiers": set(module.SAFE_TIERS),
+        "source_manifest_names": dict(module.SOURCE_MANIFEST_NAMES),
+    }
+
+
+def _module_constant(path: Path, name: str):
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        for target in node.targets:
+            if isinstance(target, ast.Name) and target.id == name:
+                return ast.literal_eval(node.value)
+    raise AssertionError(f"{path} does not define {name}")
 
 
 def test_manifest_declares_a_trust_tier_for_every_source():
@@ -88,21 +122,78 @@ def test_build_policy_matches_the_manifest_taxonomy():
     assert policy["safe_tiers"] == SAFE_TIERS
 
 
+def test_resolve_source_tiers_maps_every_build_label_to_the_manifest():
+    module = _build_module()
+    resolved = module.resolve_source_tiers(_manifest_tiers())
+
+    assert set(resolved) == set(module.SOURCE_MANIFEST_NAMES)
+    assert resolved["stevenblack"] == "unwanted-ad-tracker"
+    assert resolved["vietnam_whitelist"] == "strong-safe"
+    assert resolved["hagezi"] == "weak-malicious"
+
+
+def test_split_sources_by_tier_excludes_the_ad_tracker_from_positive():
+    """The real split output must match the manifest taxonomy.
+
+    A special case that re-adds stevenblack to the positive list changes the
+    output and fails here, even when the tier constants are untouched.
+    """
+    module = _build_module()
+    source_tiers = module.resolve_source_tiers(_manifest_tiers())
+    positive, negative, excluded = module.split_sources_by_tier(source_tiers)
+
+    assert set(positive) == POSITIVE_SOURCES
+    assert set(negative) == NEGATIVE_SOURCES
+    assert excluded == {"stevenblack": "unwanted-ad-tracker"}
+    assert "stevenblack" not in positive
+    assert "stevenblack" not in negative
+
+
+def test_split_sources_by_tier_uses_only_the_tier():
+    """A source name must not override its tier, in either direction."""
+    module = _build_module()
+    positive, negative, excluded = module.split_sources_by_tier(
+        {
+            "stevenblack": "unwanted-ad-tracker",
+            "hagezi": "weak-malicious",
+            "tranco": "weak-safe",
+        }
+    )
+
+    assert positive == ["hagezi"]
+    assert negative == ["tranco"]
+    assert excluded == {"stevenblack": "unwanted-ad-tracker"}
+
+
+def test_resolve_source_tiers_rejects_a_missing_source():
+    module = _build_module()
+    tiers = _manifest_tiers()
+    tiers.pop("stevenblack_hosts.txt")
+
+    with pytest.raises(RuntimeError, match="stevenblack"):
+        module.resolve_source_tiers(tiers)
+
+
+def test_resolve_source_tiers_rejects_conflicting_tiers():
+    module = _build_module()
+    tiers = _manifest_tiers()
+    tiers["vietnam_websites.csv"] = "weak-safe"
+
+    with pytest.raises(RuntimeError, match="vietnam_whitelist"):
+        module.resolve_source_tiers(tiers)
+
+
 def test_no_ad_tracker_source_can_supply_a_positive_label():
     """The core invariant: the build may not label with a non-malicious source."""
-    policy = _build_script_policy()
+    module = _build_module()
     tiers = _manifest_tiers()
-    malicious_tiers = policy["malicious_tiers"]
+    positive, _, _ = module.split_sources_by_tier(module.resolve_source_tiers(tiers))
 
-    for label, manifest_names in policy["source_manifest_names"].items():
-        for manifest_name in manifest_names:
-            tier = tiers.get(manifest_name)
-            assert tier is not None, f"source {label} ({manifest_name}) is not in the manifest"
-            if "ad" in tier or "tracker" in tier:
-                assert tier not in malicious_tiers, (
-                    f"source {label} ({manifest_name}) has trust tier {tier!r} and must not "
-                    "be able to supply a positive label"
-                )
+    for label in positive:
+        tier = tiers[module.SOURCE_MANIFEST_NAMES[label][0]]
+        assert tier in module.MALICIOUS_TIERS, (
+            f"source {label} has trust tier {tier!r} and must not supply a positive label"
+        )
 
 
 def test_every_source_in_the_manifest_is_accounted_for():
@@ -123,3 +214,14 @@ def test_every_source_in_the_manifest_is_accounted_for():
 
 def test_malicious_and_safe_tiers_do_not_overlap():
     assert not (MALICIOUS_TIERS & SAFE_TIERS)
+
+
+def test_label_policy_version_is_recorded_everywhere():
+    """A split must be traceable to the policy that produced it."""
+    with MANIFEST.open(encoding="utf-8") as handle:
+        manifest = json.load(handle)
+
+    assert manifest["label_policy_version"] == LABEL_POLICY_VERSION
+    for path in (MAKE_SPLITS, CREATE_MANIFEST):
+        assert _module_constant(path, "LABEL_POLICY_VERSION") == LABEL_POLICY_VERSION
+        assert '"label_policy_version": LABEL_POLICY_VERSION' in path.read_text(encoding="utf-8")

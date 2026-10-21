@@ -290,6 +290,12 @@ def split_sources_by_tier(source_tiers: dict[str, str]) -> tuple[list[str], list
 
 
 def main() -> None:
+    # One RNG stream feeds the balance sampling, the negative downsample and
+    # the lite sample. A change to the positive pool (for example excluding an
+    # ad/tracker source) shifts every later draw, so lite rows can differ even
+    # for sources that did not change. Datasets built on either side of a
+    # policy change are not row-comparable; compare them on the full dataset,
+    # or regenerate both sides before comparing lite-based metrics.
     randomizer = random.Random(RANDOM_STATE)
     stats: dict[str, dict[str, object]] = {}
 
@@ -468,6 +474,9 @@ def main() -> None:
     ]
     rows: list[tuple[str, int]] = [(d, 0) for d in whitelist] + [(d, 1) for d in blacklist]
     randomizer.shuffle(rows)
+    # See the RNG note at the top of main(): this sample is not comparable
+    # across label-policy changes because the shared stream has advanced
+    # differently.
     lite_safe = set(randomizer.sample(sorted(whitelist), min(150_000, len(whitelist))))
     lite_malicious = set(randomizer.sample(sorted(blacklist), min(150_000, len(blacklist))))
     lite_rows = [(d, 0) for d in lite_safe] + [(d, 1) for d in lite_malicious]
