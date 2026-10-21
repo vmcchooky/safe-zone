@@ -66,7 +66,7 @@ func TestListWhitelistSnapshotsIsNewestFirstAndKeepsThree(t *testing.T) {
 	db := newSnapshotTestDB(t)
 	ctx := context.Background()
 
-	var ids []int64
+	ids := make([]int64, 0, 4)
 	for _, domain := range []string{"one.example", "two.example", "three.example", "four.example"} {
 		if err := db.UpdateWhitelist(ctx, []string{domain}); err != nil {
 			t.Fatal(err)
