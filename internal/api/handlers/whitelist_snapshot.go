@@ -101,8 +101,7 @@ func (h *Handler) WhitelistRollbackHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.Risk.Whitelist().LoadFromDB(); err != nil {
-		// The durable set is restored but the RAM index is stale, so the
-		// resolver would answer with the pre-rollback allow list.
+		// The durable set is restored but this process's RAM index is stale.
 		logjson.Error("whitelist rollback did not rebuild the in-process index", map[string]any{
 			"service":  "core-api",
 			"snapshot": snapshotID,
@@ -112,15 +111,35 @@ func (h *Handler) WhitelistRollbackHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// core-api has the restored set; dns-resolver holds its own RAM copy.
+	// Publish the new revision so it reloads now. When Redis is off the
+	// publisher reports false and the 30s store reconciliation applies it;
+	// either way the response says what happened instead of implying that
+	// every process is already serving the rollback.
+	revision := h.Risk.Whitelist().Revision()
+	published, publishErr := h.Risk.PublishWhitelistReload(ctx, revision)
+	if publishErr != nil {
+		logjson.Warn("whitelist rollback could not publish the reload event; the poll reconciler will apply it", map[string]any{
+			"service":  "core-api",
+			"snapshot": snapshotID,
+			"revision": revision,
+			"error":    publishErr.Error(),
+		})
+	}
+
 	logjson.Info("whitelist rolled back", map[string]any{
-		"service":  "core-api",
-		"snapshot": snapshotID,
-		"entries":  restored,
+		"service":   "core-api",
+		"snapshot":  snapshotID,
+		"entries":   restored,
+		"revision":  revision,
+		"published": published,
 	})
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{
-		"status":   "ok",
-		"snapshot": snapshotID,
-		"entries":  restored,
+		"status":    "ok",
+		"snapshot":  snapshotID,
+		"entries":   restored,
+		"revision":  revision,
+		"published": published,
 	})
 }

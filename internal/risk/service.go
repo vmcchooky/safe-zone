@@ -58,10 +58,15 @@ const (
 
 const (
 	analysisConfigReloadEventType = "analysis_config_updated"
-	configReloadSourceStartup     = "startup"
-	configReloadSourceLocalWrite  = "local_write"
-	configReloadSourcePubSub      = "pubsub"
-	configReloadSourceReconcile   = "reconcile"
+	// whitelistConfigReloadEventType shares the config reload channel: the
+	// payload carries a decimal revision instead of the analysis fingerprint.
+	// A rollback publishes it so a separate dns-resolver process reloads
+	// immediately; the poll reconciler covers Redis being disabled.
+	whitelistConfigReloadEventType = "whitelist_updated"
+	configReloadSourceStartup      = "startup"
+	configReloadSourceLocalWrite   = "local_write"
+	configReloadSourcePubSub       = "pubsub"
+	configReloadSourceReconcile    = "reconcile"
 )
 
 var replaceFileLocks sync.Map

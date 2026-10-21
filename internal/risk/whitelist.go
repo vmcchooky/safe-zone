@@ -53,6 +53,10 @@ type Whitelist struct {
 	// error used to be discarded at the call site, so the service ran with
 	// a stale or empty allow list and nothing said so.
 	loadErr error
+	// revision is the durable revision this index was built from. The
+	// reconciler compares it with system_config so a second process
+	// (dns-resolver) notices a rollback or import without a restart.
+	revision int64
 }
 
 // NewWhitelist creates an empty Whitelist.
@@ -94,6 +98,28 @@ func (w *Whitelist) publish(bf *BloomFilter, exact []string) {
 	w.mu.Unlock()
 }
 
+// publishWithRevision replaces the index and records which durable revision it
+// came from in one lock, so the reconciler never sees the new set paired with
+// the old revision (which would suppress the next reload).
+func (w *Whitelist) publishWithRevision(bf *BloomFilter, exact []string, revision int64) {
+	w.mu.Lock()
+	w.bloom = bf
+	w.exact = exact
+	w.revision = revision
+	w.mu.Unlock()
+}
+
+// Revision returns the durable allow-list revision this index was built from.
+// Zero means the store has never replaced the allow list.
+func (w *Whitelist) Revision() int64 {
+	if w == nil {
+		return 0
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.revision
+}
+
 // LoadFromDB streams the SQLite whitelist and rebuilds the RAM index.
 func (w *Whitelist) LoadFromDB() error {
 	err := w.loadFromDB()
@@ -131,6 +157,16 @@ func (w *Whitelist) loadFromDB() error {
 		return nil
 	}
 
+	// Read the revision before streaming the rows. If a replace commits while
+	// this load is in flight, the local revision is older than the set it
+	// eventually publishes, so the next reconcile sees a mismatch and loads
+	// again. Reading it after the rows could pair a new revision with the old
+	// set and never converge.
+	revision, err := w.db.GetWhitelistRevision(context.Background())
+	if err != nil {
+		return fmt.Errorf("read whitelist revision from db: %w", err)
+	}
+
 	count, err := w.db.GetWhitelistCount(context.Background())
 	if err != nil {
 		return fmt.Errorf("count whitelist from db: %w", err)
@@ -151,7 +187,7 @@ func (w *Whitelist) loadFromDB() error {
 			})
 			return nil
 		}
-		w.publish(nil, nil)
+		w.publishWithRevision(nil, nil, revision)
 		return nil
 	}
 
@@ -164,13 +200,14 @@ func (w *Whitelist) loadFromDB() error {
 	}
 
 	bf, exact := buildIndex(domains)
-	w.publish(bf, exact)
+	w.publishWithRevision(bf, exact, revision)
 
 	logjson.Info("whitelist index loaded from database", map[string]any{
 		"service":   "risk",
 		"storage":   "sqlite",
 		"strategy":  "bloom+exact",
 		"domains":   len(exact),
+		"revision":  revision,
 		"filter_kb": float64(bf.m) / 8.0 / 1024.0,
 		"hashes":    bf.k,
 	})
@@ -382,6 +419,10 @@ type WhitelistLoadStatus struct {
 	Loaded bool `json:"loaded"`
 	// Error is the failure of the most recent load attempt, if any.
 	Error string `json:"error,omitempty"`
+	// Revision is the durable revision the in-process index was built from.
+	// Both core-api and dns-resolver publish it so a split allow list is
+	// visible without reading logs or restarting a service.
+	Revision int64 `json:"revision"`
 }
 
 // LoadStatus reports the outcome of the most recent load attempt.
@@ -389,10 +430,12 @@ func (w *Whitelist) LoadStatus() WhitelistLoadStatus {
 	if w == nil {
 		return WhitelistLoadStatus{Loaded: true}
 	}
+	status := WhitelistLoadStatus{Loaded: true, Revision: w.Revision()}
 	if err := w.LoadError(); err != nil {
-		return WhitelistLoadStatus{Loaded: false, Error: err.Error()}
+		status.Loaded = false
+		status.Error = err.Error()
 	}
-	return WhitelistLoadStatus{Loaded: true}
+	return status
 }
 
 // Metrics queries Whitelist capacity and RAM usage.
