@@ -19,7 +19,7 @@ ENV SAFE_ZONE_UI_SOURCEMAPS=${SAFE_ZONE_UI_SOURCEMAPS}
 RUN npm run check
 
 # Go toolchain version is owned by mise.toml [tools] go (single source of truth).
-FROM golang:1.26.9-alpine AS build
+FROM golang:1.26.10-alpine AS build
 
 ARG SERVICE=core-api
 ARG VERSION=dev
@@ -66,7 +66,7 @@ COPY --from=build --chown=app:app /out/service /app/service
 USER app
 
 ENV SAFE_ZONE_HEALTHCHECK_PORT=8080
-ENV SAFE_ZONE_HEALTHCHECK_PATH=/healthz
+ENV SAFE_ZONE_HEALTHCHECK_PATH=/readyz
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=5 CMD sh -c 'wget -qO- "http://127.0.0.1:${SAFE_ZONE_HEALTHCHECK_PORT}${SAFE_ZONE_HEALTHCHECK_PATH}" >/dev/null 2>&1 || exit 1'
 

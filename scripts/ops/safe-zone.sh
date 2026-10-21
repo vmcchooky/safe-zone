@@ -648,7 +648,7 @@ cmd="${1:-help}"
 backup_path_override="${2:-${SAFE_ZONE_SCRIPT_BACKUP_PATH:-}}"
 keep_count="${SAFE_ZONE_SCRIPT_KEEP:-7}"
 log_retention_days="${SAFE_ZONE_SCRIPT_LOG_RETENTION_DAYS:-7}"
-feed_sync_enabled="${SAFE_ZONE_SCRIPT_FEED_SYNC:-0}"
+feed_sync_enabled="${SAFE_ZONE_SCRIPT_FEED_SYNC:-1}"
 case "$cmd" in
   deploy)
     run_mise_task ops:deploy || true
@@ -679,10 +679,14 @@ case "$cmd" in
   deploy)
     set_build_metadata_env
     validate_ml_rollout_bundle
-    if is_true "$feed_sync_enabled"; then
-      compose_stack production --profile production-edge --profile feed-sync up -d --build
-    else
-      compose_stack production --profile production-edge up -d --build
+    # feed-syncd is part of the production stack (the production override
+    # removes the developer profile), so a plain up starts it. The opt-out is
+    # an explicit stop, not an omission that leaves the previous container
+    # running unnoticed.
+    compose_stack production --profile production-edge up -d --build
+    if ! is_true "$feed_sync_enabled"; then
+      log_warn "SAFE_ZONE_SCRIPT_FEED_SYNC=0: stopping the production feed-syncd daemon"
+      compose_stack production stop feed-syncd >/dev/null 2>&1 || true
     fi
     ;;
   deploy-dev)
@@ -720,7 +724,7 @@ case "$cmd" in
     old_ifs="$IFS"
     IFS=","
     for source in $sources; do
-      SAFE_ZONE_THREAT_FEED_SOURCE="$source" compose_stack "$stack" --profile feed-sync run --rm feed-sync /app/service -source "$source"
+      SAFE_ZONE_THREAT_FEED_SOURCE="$source" compose_stack "$stack" --profile feed-sync-once run --rm feed-sync /app/service -source "$source"
     done
     IFS="$old_ifs"
     ;;
@@ -752,7 +756,15 @@ Environment:
   SAFE_ZONE_BACKUP_KEEP_PLAINTEXT=1   Keep plaintext snapshot files after encrypted bundle creation.
   SAFE_ZONE_RCLONE_REMOTE=gdrive:     Optional rclone remote for offsite backup upload.
   SAFE_ZONE_RCLONE_DEST=safe-zone-backups
-  SAFE_ZONE_SCRIPT_FEED_SYNC=1        Include the feed-sync profile during deploy.
+  SAFE_ZONE_SCRIPT_FEED_SYNC=1        Run feed-syncd after deploy (the production stack includes it).
+                                      0 stops it after a deploy that goes through this helper. A direct
+                                      docker compose ... up recreates and starts it, so the opt-out
+                                      holds only while every deploy goes through this helper. The
+                                      start-up guard cannot see a stopped daemon (it reads
+                                      SAFE_ZONE_THREAT_FEED_SOURCE / SAFE_ZONE_AGENT_ENABLED), so an
+                                      opted-out deployment with no other writer passes the guard while
+                                      nobody syncs. Feed state is observable only through
+                                      /v1/status -> feed_sync; alerting on it is not part of this change.
 USAGE
     ;;
 esac

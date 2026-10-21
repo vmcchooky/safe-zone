@@ -6,12 +6,14 @@ import * as z from 'zod';
 import { X, Shield, ShieldAlert, Globe, Gamepad2, Dices, MessageSquare, Megaphone } from 'lucide-react';
 import type { PolicyGroup } from '../lib/types';
 import { apiJSON } from '../lib/api';
+import { READ_ONLY_HINT } from '../auth/AuthProvider';
 
 interface GroupModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: () => void;
   group: PolicyGroup | null;
+  canMutate: boolean;
 }
 
 const CATEGORIES = [
@@ -42,7 +44,7 @@ const groupSchema = z.object({
 
 type GroupFormValues = z.infer<typeof groupSchema>;
 
-export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) {
+export function GroupModal({ isOpen, onClose, onSave, group, canMutate }: GroupModalProps) {
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
@@ -183,6 +185,7 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
   }, [isOpen, closeAndRestoreFocus]);
 
   const onSubmit = async (data: GroupFormValues) => {
+    if (!canMutate) return;
     setSaving(true);
     setApiError(null);
 
@@ -469,8 +472,9 @@ export function GroupModal({ isOpen, onClose, onSave, group }: GroupModalProps) 
               <button
                 type="submit"
                 form="group-form"
-                disabled={saving}
-                className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 transition-colors flex items-center gap-2"
+                disabled={saving || !canMutate}
+                title={canMutate ? undefined : READ_ONLY_HINT}
+                className="px-5 py-2.5 rounded-xl text-sm font-medium text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
               >
                 {saving && (
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

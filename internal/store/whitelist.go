@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"safe-zone/internal/analysis"
@@ -26,6 +27,12 @@ import (
 // caller can retry, fall back, or raise an alert without having caused an
 // outage by trying.
 var ErrWhitelistBelowFloor = errors.New("whitelist import below safety floor")
+
+// whitelistRevisionKey is the system_config row that carries the durable
+// revision of the allow list. It is bumped in the same transaction that
+// replaces the table, so a reader can never observe a revision that does not
+// match the set it just loaded.
+const whitelistRevisionKey = "whitelist_revision"
 
 const (
 	// defaultWhitelistMinAbsolute is the floor used when the operator has not
@@ -58,6 +65,25 @@ func (d *DB) whitelistMinRelative() int {
 }
 
 func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
+	return d.updateWhitelist(ctx, domains, true)
+}
+
+// RestoreWhitelist replaces the live allow list with a known-good set.
+//
+// It does not apply the safety floor, and that is deliberate. The floor
+// compares an incoming set against the size of the *current* live set, so
+// it refuses exactly the case a rollback exists for: a bad import replaced
+// a small curated list with a huge one, and putting the small list back is
+// a large relative drop. The set being restored was live before, so it is
+// known to be a size the system can run with.
+//
+// The public-suffix filter still applies: a snapshot cannot introduce an
+// entry that would allowlist a whole namespace.
+func (d *DB) RestoreWhitelist(ctx context.Context, domains []string) error {
+	return d.updateWhitelist(ctx, domains, false)
+}
+
+func (d *DB) updateWhitelist(ctx context.Context, domains []string, enforceFloor bool) error {
 	if !d.Enabled() {
 		return ErrDisabled
 	}
@@ -126,7 +152,7 @@ func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
 	if countErr != nil {
 		return fmt.Errorf("read current whitelist size before replace: %w", countErr)
 	}
-	if previous > 0 {
+	if enforceFloor && previous > 0 {
 		minAbsolute := d.whitelistMinAbsolute()
 		minRelative := d.whitelistMinRelative()
 		if len(accepted) < minAbsolute {
@@ -174,11 +200,70 @@ func (d *DB) UpdateWhitelist(ctx context.Context, domains []string) error {
 		}
 	}
 
+	// The revision and the domain rows commit together. If the bump fails the
+	// whole replace rolls back, which is the safe direction: a set that changed
+	// without a revision would leave the other process serving it until the
+	// next restart.
+	if _, err := bumpWhitelistRevision(ctx, tx); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit whitelist transaction: %w", err)
 	}
 
 	return nil
+}
+
+// bumpWhitelistRevision increments the durable allow-list revision inside the
+// caller's transaction and returns the new value.
+func bumpWhitelistRevision(ctx context.Context, tx *sql.Tx) (int64, error) {
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT value FROM system_config WHERE key = ?`, whitelistRevisionKey).Scan(&raw)
+	var current int64
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// First replace: start at 1 so zero always means "never loaded".
+	case err != nil:
+		return 0, fmt.Errorf("read whitelist revision: %w", err)
+	default:
+		current, err = strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || current < 0 {
+			return 0, fmt.Errorf("parse stored whitelist revision %q", raw)
+		}
+	}
+
+	next := current + 1
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO system_config (key, value, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+	`, whitelistRevisionKey, strconv.FormatInt(next, 10)); err != nil {
+		return 0, fmt.Errorf("bump whitelist revision: %w", err)
+	}
+	return next, nil
+}
+
+// GetWhitelistRevision returns the durable allow-list revision. A store that
+// has never held a whitelist reports zero; every successful replace, including
+// a rollback, increments it.
+func (d *DB) GetWhitelistRevision(ctx context.Context) (int64, error) {
+	if !d.Enabled() {
+		return 0, ErrDisabled
+	}
+	raw, err := d.GetSystemConfig(ctx, whitelistRevisionKey)
+	if err != nil {
+		return 0, err
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	revision, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || revision < 0 {
+		return 0, fmt.Errorf("parse whitelist revision %q", raw)
+	}
+	return revision, nil
 }
 
 func buildWhitelistInsertQuery(domains []string) (string, []any) {

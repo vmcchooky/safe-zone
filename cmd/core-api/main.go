@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"safe-zone/internal/agent"
@@ -45,6 +46,32 @@ func run() int {
 		logjson.Error("core-api invalid threat feed configuration", map[string]any{
 			"service": "core-api",
 			"error":   err.Error(),
+		})
+		return 1
+	}
+	// A deployment with no threat feed is not a deployment with less
+	// protection: the feed is the only layer that knows about a domain
+	// that is already listed as malicious. The default configuration had no
+	// source at all, so a stock production install blocked nothing that
+	// the lexical heuristics did not catch, and the alert rules that watch
+	// feed staleness could never fire because "configured" was false.
+	//
+	// The guard is on the configuration, not on the feed being populated:
+	// at start-up the first sync may not have run yet. So it asks the
+	// question that configuration can answer: is there a source, and is
+	// there something that will sync it?
+	//
+	// A source set alone is not enough. The agent task is opt-in
+	// (SAFE_ZONE_AGENT_ENABLED defaults to false), and the daemon reads a
+	// different variable, so a preset with neither the agent nor the
+	// daemon configured would satisfy the check while nothing ever
+	// populates the feed.
+	daemonSource := strings.TrimSpace(config.String("SAFE_ZONE_THREAT_FEED_SOURCE", ""))
+	agentEnabled := config.Bool("SAFE_ZONE_AGENT_ENABLED", false)
+	if problem := feedConfigurationProblem(feedSources, agentEnabled, daemonSource); problem != nil {
+		logjson.Error("core-api threat feed configuration is not usable in production", map[string]any{
+			"service": "core-api",
+			"error":   problem.Error(),
 		})
 		return 1
 	}
@@ -92,6 +119,21 @@ func run() int {
 	}
 
 	riskService := risk.NewServiceFromEnvForRole("core-api")
+	// The allow list is the primary safety valve: a whitelisted domain
+	// short-circuits the feed, lexical, ML, AI, OSINT and group enforcement
+	// layers. Starting with a failed allow list means the service runs with
+	// protection the operator did not configure, so production refuses to
+	// start instead of degrading silently.
+	if loadErr := riskService.Whitelist().LoadError(); loadErr != nil {
+		logjson.Error("whitelist failed to load; refusing to start in production", map[string]any{
+			"service":     "core-api",
+			"error":       loadErr.Error(),
+			"consequence": "whitelisted domains are scored by the decision pipeline and can be blocked",
+		})
+		if config.IsProduction() {
+			return 1
+		}
+	}
 	metrics := observability.NewRegistry()
 	cfg := handlers.Config{
 
@@ -262,13 +304,24 @@ func run() int {
 		)
 
 		// Whitelist Update Task
+		//
+		// Disabled by default. The task replaces the entire allow list and
+		// rebuilds the Bloom filter from a downloaded file, so enabling it
+		// without a controlled import/backup/rollback drill first means one
+		// bad download rewrites the allow list the operator curated. The
+		// canonical plan and the production checklist both ask for this to
+		// stay off until that drill has passed.
 		whitelistUpdateTask := agent.NewWhitelistUpdateTask(
 			riskService.StoreDB(),
 			riskService.Whitelist(),
 			agent.WhitelistUpdateConfig{
 				SourceURL: config.String("SAFE_ZONE_AGENT_WHITELIST_SOURCE_URL", "https://tranco-list.eu/download/L/1000000"),
 				Timeout:   config.DurationSeconds("SAFE_ZONE_AGENT_WHITELIST_TIMEOUT_SECONDS", 10*time.Minute),
-				Enabled:   config.Bool("SAFE_ZONE_AGENT_WHITELIST_ENABLED", true),
+				Enabled:   config.Bool("SAFE_ZONE_AGENT_WHITELIST_ENABLED", false),
+				// The digest of the expected source file. Without it a
+				// truncated download or a tampered response reaches the
+				// import path and replaces the allow list.
+				SHA256: config.String("SAFE_ZONE_AGENT_WHITELIST_SHA256", ""),
 			},
 		)
 		agentEngine.Register(

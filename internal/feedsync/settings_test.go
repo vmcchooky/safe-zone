@@ -143,6 +143,7 @@ func TestSyncSettingsRequiresSource(t *testing.T) {
 func TestBuildSyncOptionsCarriesTTL(t *testing.T) {
 	settings := Settings{
 		Source:        "https://feeds.example.test/list.txt",
+		Sources:       []string{"https://feeds.example.test/list.txt"},
 		RedisAddr:     "127.0.0.1:6379",
 		Key:           feed.DefaultThreatFeedKey,
 		Replace:       true,

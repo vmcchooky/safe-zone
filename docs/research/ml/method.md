@@ -99,6 +99,7 @@ Xây dựng bộ dữ liệu huấn luyện sạch, cân bằng, có tính đạ
 ### Số liệu
 - `domain_dataset.csv`: 2,772,090 bản ghi (tỷ lệ safe:malicious = 1:1).
 - `domain_dataset_lite.csv`: 300,000 bản ghi (tập con cho ablation nhanh).
+  - **So sánh giữa các phiên bản:** pipeline dùng chung một RNG stream cho cân bằng, downsample và lấy mẫu lite. Khi label policy đổi (ví dụ loại `stevenblack_hosts.txt` khỏi positive), stream dịch và các dòng lite có thể khác ngay cả ở nguồn không đổi. Không so sánh trực tiếp kết quả lite trước/sau thay đổi policy; dùng full dataset hoặc tái tạo cả hai phía.
 - `domain_dataset_provenance.csv`: 2,772,090 bản ghi (truy xuất nguồn gốc đầy đủ).
 - Preflight validation: 0 bare IP, 0 FQDN không hợp lệ, 0 trùng lặp, 0 xung đột nhãn.
 

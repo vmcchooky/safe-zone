@@ -13,6 +13,10 @@ DATA_DIR = ROOT / "data"
 ML_DATA_DIR = ROOT / "ml" / "data"
 PROCESSED_DIR = ML_DATA_DIR / "processed"
 
+# Bumped when the label policy changes. Version 2 excludes ad/tracker sources
+# (for example stevenblack_hosts.txt) from the positive label set.
+LABEL_POLICY_VERSION = 2
+
 def sha256_file(path: Path) -> str:
     if not path.exists():
         return ""
@@ -52,7 +56,7 @@ def main():
         "raw_sources": [],
         "processed": [],
         "cleaning_report_sha256": sha256_file(PROCESSED_DIR / "cleaning_report.json"),
-        "label_policy_version": 1
+        "label_policy_version": LABEL_POLICY_VERSION
     }
 
     for logical_name, path, trust_tier in raw_files:

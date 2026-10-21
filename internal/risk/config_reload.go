@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"safe-zone/internal/analysis"
@@ -143,6 +145,7 @@ func (s *Service) runConfigReloadReconciler() {
 			return
 		case <-ticker.C:
 			s.reconcileAnalysisConfig()
+			s.reconcileWhitelist()
 		}
 	}
 }
@@ -154,14 +157,23 @@ func (s *Service) handleConfigReloadMessage(raw string) {
 
 	var event analysisConfigReloadEvent
 	if err := json.Unmarshal([]byte(raw), &event); err != nil {
-		logjson.Warn("analysis config reload event decode failed", map[string]any{
+		logjson.Warn("config reload event decode failed", map[string]any{
 			"service": "risk",
 			"channel": s.configReloadChan,
 			"error":   err.Error(),
 		})
 		return
 	}
-	if event.Type != analysisConfigReloadEventType || event.Revision == "" {
+	switch event.Type {
+	case analysisConfigReloadEventType:
+		s.handleAnalysisConfigReloadEvent(event)
+	case whitelistConfigReloadEventType:
+		s.handleWhitelistConfigReloadEvent(event)
+	}
+}
+
+func (s *Service) handleAnalysisConfigReloadEvent(event analysisConfigReloadEvent) {
+	if event.Revision == "" {
 		return
 	}
 	currentRevision := s.currentConfigRevision()
@@ -195,6 +207,57 @@ func (s *Service) handleConfigReloadMessage(raw string) {
 	}
 
 	logjson.Info("analysis config reload applied", map[string]any{
+		"service":       "risk",
+		"channel":       s.configReloadChan,
+		"old_revision":  oldRevision,
+		"new_revision":  newRevision,
+		"event_source":  event.Source,
+		"event_time":    event.UpdatedAt,
+		"reload_source": configReloadSourcePubSub,
+		"node_role":     s.nodeRole,
+	})
+}
+
+func (s *Service) handleWhitelistConfigReloadEvent(event analysisConfigReloadEvent) {
+	revision, err := strconv.ParseInt(strings.TrimSpace(event.Revision), 10, 64)
+	if err != nil || revision <= 0 {
+		logjson.Warn("whitelist reload event has an invalid revision", map[string]any{
+			"service":        "risk",
+			"channel":        s.configReloadChan,
+			"event_revision": event.Revision,
+			"error":          "revision must be a positive integer",
+		})
+		return
+	}
+	if current := s.whitelist.Revision(); revision == current {
+		logjson.Info("whitelist reload ignored", map[string]any{
+			"service":          "risk",
+			"channel":          s.configReloadChan,
+			"event_revision":   revision,
+			"current_revision": current,
+			"event_source":     event.Source,
+			"ignore_reason":    "duplicate_or_self_loop",
+			"node_role":        s.nodeRole,
+		})
+		return
+	}
+
+	oldRevision, newRevision, applied, err := s.reloadWhitelistFromStore()
+	if err != nil {
+		logjson.Warn("whitelist reload from store failed", map[string]any{
+			"service":        "risk",
+			"channel":        s.configReloadChan,
+			"event_revision": revision,
+			"event_source":   event.Source,
+			"error":          err.Error(),
+		})
+		return
+	}
+	if !applied {
+		return
+	}
+
+	logjson.Info("whitelist reload applied", map[string]any{
 		"service":       "risk",
 		"channel":       s.configReloadChan,
 		"old_revision":  oldRevision,
@@ -258,6 +321,126 @@ func (s *Service) reloadAnalysisConfigFromStore(source string) (string, string, 
 
 	appliedRevision := s.applyAnalysisConfig(cfg, source)
 	return currentRevision, appliedRevision, true, nil
+}
+
+// reconcileWhitelist compares the durable allow-list revision with the one the
+// in-process index was built from. This is the path that works with Redis
+// disabled: no pub/sub is involved, only the same store both services already
+// open.
+func (s *Service) reconcileWhitelist() {
+	if s == nil {
+		return
+	}
+
+	oldRevision, newRevision, applied, err := s.reloadWhitelistFromStore()
+	if err != nil {
+		logjson.Warn("whitelist reconciliation failed", map[string]any{
+			"service":       "risk",
+			"poll_interval": configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval).String(),
+			"error":         err.Error(),
+			"node_role":     s.nodeRole,
+		})
+		return
+	}
+	if !applied {
+		return
+	}
+
+	logjson.Info("whitelist reconciliation applied", map[string]any{
+		"service":       "risk",
+		"old_revision":  oldRevision,
+		"new_revision":  newRevision,
+		"poll_interval": configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval).String(),
+		"reload_source": configReloadSourceReconcile,
+		"node_role":     s.nodeRole,
+	})
+}
+
+// reloadWhitelistFromStore rebuilds the RAM index when the store revision is
+// ahead of the local one. A failed rebuild leaves the previous index and the
+// previous revision in place, so the next tick retries instead of marking a
+// stale set as current.
+func (s *Service) reloadWhitelistFromStore() (int64, int64, bool, error) {
+	if s == nil || s.store == nil || !s.store.Enabled() {
+		return 0, 0, false, store.ErrDisabled
+	}
+	if s.whitelist == nil {
+		return 0, 0, false, errors.New("whitelist is not configured")
+	}
+
+	revision, err := s.store.GetWhitelistRevision(context.Background())
+	if err != nil {
+		return 0, 0, false, err
+	}
+	current := s.whitelist.Revision()
+	if revision == current {
+		return current, revision, false, nil
+	}
+
+	if err := s.whitelist.LoadFromDB(); err != nil {
+		return current, revision, false, err
+	}
+	// LoadFromDB records the revision it actually read. If a replace commits
+	// while the load is in flight, that can be newer than the revision this
+	// call compared against; reporting the applied value keeps the log
+	// truthful either way.
+	return current, s.whitelist.Revision(), true, nil
+}
+
+// PublishWhitelistReload tells the other process to reload its allow list.
+//
+// It returns whether a message was actually published. Redis being disabled is
+// not an error: the poll reconciler is the fallback, and a rollback must not
+// fail because the optional cache is down.
+func (s *Service) PublishWhitelistReload(ctx context.Context, revision int64) (bool, error) {
+	if s == nil || revision <= 0 {
+		return false, nil
+	}
+	if s.redis == nil || !s.redis.Enabled() {
+		return false, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	channel := s.configReloadChan
+	if channel == "" {
+		channel = defaultAnalysisConfigReloadChannel
+	}
+	eventSource := configReloadSourceLocalWrite
+	if s.nodeRole != "" {
+		eventSource = s.nodeRole
+	}
+
+	event := analysisConfigReloadEvent{
+		Type:      whitelistConfigReloadEventType,
+		Revision:  strconv.FormatInt(revision, 10),
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source:    eventSource,
+	}
+	err := s.withRedis(ctx, func(redisCtx context.Context) error {
+		return s.redis.PublishJSON(redisCtx, channel, event)
+	})
+	if err != nil {
+		if errors.Is(err, cache.ErrDisabled) {
+			return false, nil
+		}
+		logjson.Warn("whitelist reload publish failed", correlation.Fields(ctx, map[string]any{
+			"service":  "risk",
+			"channel":  channel,
+			"revision": revision,
+			"error":    err.Error(),
+		}))
+		return false, err
+	}
+
+	logjson.Info("whitelist reload published", correlation.Fields(ctx, map[string]any{
+		"service":      "risk",
+		"channel":      channel,
+		"revision":     revision,
+		"event_source": eventSource,
+		"node_role":    s.nodeRole,
+	}))
+	return true, nil
 }
 
 func nextConfigReloadBackoff(current, maxBackoff time.Duration) time.Duration {

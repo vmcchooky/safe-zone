@@ -20,6 +20,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { InfoTooltip } from '../../components/InfoTooltip';
 import { ApiError, apiFetch, apiJSON, messageFromError } from '../../lib/api';
+import { READ_ONLY_HINT, useCanMutate } from '../../auth/AuthProvider';
 
 export interface Evidence {
   domain: string;
@@ -105,6 +106,7 @@ function resetShellScrollPosition() {
 
 export function AnalysisPage() {
   const location = useLocation();
+  const canMutate = useCanMutate();
   const reviewDomain = new URLSearchParams(location.search).get('domain')?.trim() ?? '';
   const domainInputRef = useRef<HTMLInputElement>(null);
   const [domain, setDomain] = useState('');
@@ -609,8 +611,11 @@ export function AnalysisPage() {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ type: 'spring', stiffness: 300, damping: 15, delay: 0.05 }}
                         style={{ backgroundColor: '#F4C2C2', color: '#f8fafc' }}
+                        disabled={!canMutate}
+                        title={canMutate ? 'Allow this domain' : READ_ONLY_HINT}
+                        aria-disabled={!canMutate}
                         onClick={async () => {
-                          if (!result) return;
+                          if (!result || !canMutate) return;
                           try {
                             await apiJSON(
                               '/v1/overrides',
@@ -626,7 +631,7 @@ export function AnalysisPage() {
                             addToast(`Failed: ${messageFromError(err)}`, 'error');
                           }
                         }}
-                        className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150"
+                        className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:!scale-100 disabled:active:!translate-y-0"
                       >
                         Allow
                       </motion.button>
@@ -635,8 +640,11 @@ export function AnalysisPage() {
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ type: 'spring', stiffness: 300, damping: 15, delay: 0.1 }}
                         style={{ backgroundColor: '#64748b', color: '#f8fafc' }}
+                        disabled={!canMutate}
+                        title={canMutate ? 'Block this domain' : READ_ONLY_HINT}
+                        aria-disabled={!canMutate}
                         onClick={async () => {
-                          if (!result) return;
+                          if (!result || !canMutate) return;
                           try {
                             await apiJSON(
                               '/v1/overrides',
@@ -652,7 +660,7 @@ export function AnalysisPage() {
                             addToast(`Failed: ${messageFromError(err)}`, 'error');
                           }
                         }}
-                        className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150"
+                        className="px-6 py-2 rounded-xl font-bold shadow-sm active:!scale-90 active:!translate-y-1 transition-all duration-300 ease-out active:duration-150 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:!scale-100 disabled:active:!translate-y-0"
                       >
                         Block
                       </motion.button>

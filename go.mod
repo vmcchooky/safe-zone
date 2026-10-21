@@ -2,7 +2,7 @@ module safe-zone
 
 // Go toolchain version is owned by mise.toml [tools] go (single source of
 // truth). go.mod, mise.toml and Dockerfile must all state the same version.
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/alicebob/miniredis/v2 v2.40.0

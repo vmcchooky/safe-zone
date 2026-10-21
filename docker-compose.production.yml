@@ -6,6 +6,10 @@ services:
 
   core-api:
     environment:
+      # .env.example ships SAFE_ZONE_ENV=local for the developer stack, and
+      # Compose passes env_file values through. Pin the environment here so the
+      # production stack cannot silently run with production guards disabled.
+      SAFE_ZONE_ENV: production
       # Bound detailed SQLite growth in production while retaining an explicit
       # operator override for lower sampling on sustained high-volume hosts.
       # Audit and URL-ML feedback use separate unsampled writers.
@@ -15,6 +19,9 @@ services:
 
   dns-resolver:
     environment:
+      # See the core-api note above: the base .env is shared with the developer
+      # stack, so production must not inherit SAFE_ZONE_ENV=local from it.
+      SAFE_ZONE_ENV: production
       SAFE_ZONE_DNS_DOT_CERT_FILE: /run/safe-zone/dot-certs/fullchain.pem
       SAFE_ZONE_DNS_DOT_KEY_FILE: /run/safe-zone/dot-certs/privkey.pem
     ports:
@@ -22,3 +29,10 @@ services:
       - "${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-853}:${SAFE_ZONE_DNS_DOT_CONTAINER_PORT:-8533}"
     volumes:
       - "${SAFE_ZONE_DNS_DOT_CERTS_DIR:-./ops/certs/dot}:/run/safe-zone/dot-certs:ro"
+
+  feed-syncd:
+    # The daemon is part of the production stack: a deployment with no feed
+    # blocks nothing the lexical heuristics do not catch. The base file keeps
+    # the profile so the developer stack stays opt-in; !reset removes it here.
+    # Compose merges profiles additively, so `profiles: []` is not enough.
+    profiles: !reset []

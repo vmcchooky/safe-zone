@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -150,7 +151,11 @@ func TestURLBundleRejectsRotatedFeatureOrder(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		sum := sha256.Sum256(data)
+		// hashFile canonicalizes CRLF to LF before hashing. Hash the same
+		// bytes here or the re-signed bundle fails on a Windows checkout,
+		// where the fixture files carry CRLF.
+		canonical := bytes.ReplaceAll(data, []byte("\r\n"), []byte("\n"))
+		sum := sha256.Sum256(canonical)
 		sums.WriteString(hex.EncodeToString(sum[:]) + "  " + name + "\n")
 	}
 	if err := os.WriteFile(filepath.Join(destination, "SHA256SUMS"), []byte(sums.String()), 0o600); err != nil {

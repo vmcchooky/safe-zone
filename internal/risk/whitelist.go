@@ -47,6 +47,16 @@ type Whitelist struct {
 	// replaced wholesale on load. Reading it after the lock is released is safe
 	// because nothing mutates a published slice.
 	exact []string
+	// loadErr records the failure of the most recent load attempt. A load
+	// that fails leaves the previous index in place, which is safe, but it
+	// also means the allow list is not what the operator configured. The
+	// error used to be discarded at the call site, so the service ran with
+	// a stale or empty allow list and nothing said so.
+	loadErr error
+	// revision is the durable revision this index was built from. The
+	// reconciler compares it with system_config so a second process
+	// (dns-resolver) notices a rollback or import without a restart.
+	revision int64
 }
 
 // NewWhitelist creates an empty Whitelist.
@@ -88,10 +98,73 @@ func (w *Whitelist) publish(bf *BloomFilter, exact []string) {
 	w.mu.Unlock()
 }
 
+// publishWithRevision replaces the index and records which durable revision it
+// came from in one lock, so the reconciler never sees the new set paired with
+// the old revision (which would suppress the next reload).
+func (w *Whitelist) publishWithRevision(bf *BloomFilter, exact []string, revision int64) {
+	w.mu.Lock()
+	w.bloom = bf
+	w.exact = exact
+	w.revision = revision
+	w.mu.Unlock()
+}
+
+// Revision returns the durable allow-list revision this index was built from.
+// Zero means the store has never replaced the allow list.
+func (w *Whitelist) Revision() int64 {
+	if w == nil {
+		return 0
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.revision
+}
+
 // LoadFromDB streams the SQLite whitelist and rebuilds the RAM index.
 func (w *Whitelist) LoadFromDB() error {
+	err := w.loadFromDB()
+	w.recordLoad(err)
+	return err
+}
+
+// LoadError returns the failure of the most recent load attempt, or nil when
+// the last attempt succeeded. The allow list is the primary safety valve: a
+// domain on it short-circuits the feed, lexical, ML, AI, OSINT and group
+// enforcement layers. A load that fails leaves the previous index in place,
+// which is safe, but the allow list is then not what the operator
+// configured — and the caller used to discard the error entirely.
+func (w *Whitelist) LoadError() error {
+	if w == nil {
+		return nil
+	}
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.loadErr
+}
+
+// recordLoad stores the outcome of a load attempt.
+func (w *Whitelist) recordLoad(err error) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.loadErr = err
+	w.mu.Unlock()
+}
+
+func (w *Whitelist) loadFromDB() error {
 	if w == nil || w.db == nil || !w.db.Enabled() {
 		return nil
+	}
+
+	// Read the revision before streaming the rows. If a replace commits while
+	// this load is in flight, the local revision is older than the set it
+	// eventually publishes, so the next reconcile sees a mismatch and loads
+	// again. Reading it after the rows could pair a new revision with the old
+	// set and never converge.
+	revision, err := w.db.GetWhitelistRevision(context.Background())
+	if err != nil {
+		return fmt.Errorf("read whitelist revision from db: %w", err)
 	}
 
 	count, err := w.db.GetWhitelistCount(context.Background())
@@ -114,7 +187,7 @@ func (w *Whitelist) LoadFromDB() error {
 			})
 			return nil
 		}
-		w.publish(nil, nil)
+		w.publishWithRevision(nil, nil, revision)
 		return nil
 	}
 
@@ -127,13 +200,14 @@ func (w *Whitelist) LoadFromDB() error {
 	}
 
 	bf, exact := buildIndex(domains)
-	w.publish(bf, exact)
+	w.publishWithRevision(bf, exact, revision)
 
 	logjson.Info("whitelist index loaded from database", map[string]any{
 		"service":   "risk",
 		"storage":   "sqlite",
 		"strategy":  "bloom+exact",
 		"domains":   len(exact),
+		"revision":  revision,
 		"filter_kb": float64(bf.m) / 8.0 / 1024.0,
 		"hashes":    bf.k,
 	})
@@ -145,6 +219,12 @@ func (w *Whitelist) LoadFromDB() error {
 // With a database configured the file is imported there and the RAM index is
 // rebuilt from the store, so one code path builds the index either way.
 func (w *Whitelist) LoadFromFile(path string) error {
+	err := w.loadFromFile(path)
+	w.recordLoad(err)
+	return err
+}
+
+func (w *Whitelist) loadFromFile(path string) error {
 	if path == "" {
 		return nil
 	}
@@ -152,11 +232,11 @@ func (w *Whitelist) LoadFromFile(path string) error {
 	file, err := safefile.OpenWithin(config.FeedFileRoot(), path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			logjson.Warn("whitelist file not found; continuing without whitelisting", map[string]any{
-				"service": "risk",
-				"path":    path,
-			})
-			return nil
+			// The operator asked for this allow list by name, so a missing file
+			// is a misconfiguration, not an empty allow list. Returning nil
+			// here used to leave the service running with no allow list at
+			// all, which is the opposite of what was configured.
+			return fmt.Errorf("whitelist file %q not found under %q", path, config.FeedFileRoot())
 		}
 		return err
 	}
@@ -329,6 +409,33 @@ type WhitelistMetrics struct {
 	// This is the number the memory estimate scales with, roughly 50 bytes per
 	// entry on top of the filter.
 	ExactIndexEntries int `json:"exact_index_entries"`
+}
+
+// WhitelistLoadStatus reports whether the allow list is actually in effect.
+type WhitelistLoadStatus struct {
+	// Loaded is false when the most recent load attempt failed. The previous
+	// index stays in place, so the service still works — it just does not
+	// have the allow list the operator configured.
+	Loaded bool `json:"loaded"`
+	// Error is the failure of the most recent load attempt, if any.
+	Error string `json:"error,omitempty"`
+	// Revision is the durable revision the in-process index was built from.
+	// Both core-api and dns-resolver publish it so a split allow list is
+	// visible without reading logs or restarting a service.
+	Revision int64 `json:"revision"`
+}
+
+// LoadStatus reports the outcome of the most recent load attempt.
+func (w *Whitelist) LoadStatus() WhitelistLoadStatus {
+	if w == nil {
+		return WhitelistLoadStatus{Loaded: true}
+	}
+	status := WhitelistLoadStatus{Loaded: true, Revision: w.Revision()}
+	if err := w.LoadError(); err != nil {
+		status.Loaded = false
+		status.Error = err.Error()
+	}
+	return status
 }
 
 // Metrics queries Whitelist capacity and RAM usage.

@@ -1199,8 +1199,418 @@ or in CI.
 
 ---
 
-## Decision Lookup
+## 2026-10-20 — Fail loud instead of degrading silently: configuration, allow list, feed, readiness
 
-- CDN / false positive: `rg -n "CDN|self-service|shared-apex|false-positive|threat feed" DECISION.md`
-- Cache / policy / feed semantics: `rg -n "cache|revision|admission|OSINT|policy" DECISION.md`
-- Full review: read this file only for repository-wide decision history or when targeted lookup fails and the missing context could change scope, validation or safety.
+**Status:** accepted
+
+**Context:**
+
+An audit of every existing feature against production readiness found a
+consistent class of defect: the code was *safe* in the sense that it kept
+serving, but it kept serving in a state the operator did not ask for, and
+nothing said so. Four concrete cases:
+
+1. **The allow list could fail to load with no trace.** `internal/risk/service.go`
+   called `wl.LoadFromFile(...)` and `wl.LoadFromDB()` and discarded both
+   errors with `_ =`. The allow list is the primary safety valve: a domain on
+   it is reported SAFE and never reaches the threat feed, lexical scoring, ML,
+   AI, OSINT or group enforcement. A read failure meant the service ran with
+   an empty allow list, every curated exception was scored, and whitelisted
+   domains could be blocked — with not one log line. The first fix also
+   exposed a second defect: an unset `SAFE_ZONE_WHITELIST_PATH` fell back to
+   `./data/whitelist.txt`, so a stock production install with no file refused
+   to start instead of using the DB-only mode.
+
+2. **A malformed `SAFE_ZONE_BLOCK_PAGE_IP` turned a block into an allow.**
+   `internal/dns/resolver/resolver.go` parsed the address to nil and skipped
+   the answer, so a blocked domain resolved as NOERROR/NODATA and the client
+   reached the origin. The block silently disappeared.
+
+3. **A production deployment had no threat feed at all.** `feed-syncd` and
+   `feed-sync` sat behind a compose profile that the production stack did
+   not enable, `SAFE_ZONE_AGENT_FEED_PRESET` and `SAFE_ZONE_AGENT_FEED_SOURCES`
+   defaulted to empty, and `SAFE_ZONE_AGENT_ENABLED` defaulted to false. The
+   alert rules that watch feed staleness were guarded on
+   `feed_sync.configured == true`, so with no source configured they could
+   never fire either. The net effect: a stock production install blocked
+   nothing the lexical heuristics did not catch, and reported no problem.
+
+4. **`/healthz` and `/readyz` were the same unconditional `{"status":"ok"}`.**
+   A container with dead Redis, an unwritable SQLite file or a wedged agent
+   reported healthy. The container healthcheck probed that endpoint, so a
+   functionally dead service looked alive to both Docker and monitoring.
+
+A fifth, related: `SAFE_ZONE_AGENT_WHITELIST_ENABLED` defaulted to **true**,
+which meant enabling the agent engine immediately replaced the entire
+operator-curated allow list with a downloaded file, with no integrity check,
+no backup and no way back.
+
+**Decision:**
+
+1. **A failed allow-list load is recorded, reported, and fatal in
+   production.** `SAFE_ZONE_WHITELIST_PATH` is optional: unset or empty means
+   DB-only, and the service does not invent `./data/whitelist.txt`. When a
+   path is set it must load; the error is kept on the `Whitelist`, surfaced in
+   `/v1/status` as `whitelist.loaded` / `whitelist.error`, logged with the
+   consequence spelled out, and `core-api` and `dns-resolver` refuse to start
+   in production when it happened. A configured allow-list file that cannot
+   be read is an error, not an empty allow list.
+2. **A block never disappears.** `BlockIPv4`/`BlockIPv6` no longer return
+   nil; an unparsable or IPv6-only block page address falls back to the null
+   IP, so the domain stays blocked. `cmd/dns-resolver` additionally rejects
+   a malformed `SAFE_ZONE_BLOCK_PAGE_IP` at startup in production.
+3. **A production deployment must have a threat feed.** `core-api` refuses
+   to start in production when no feed source is configured. The base Compose
+   file keeps `feed-syncd` behind the `feed-sync` profile for the developer
+   stack, and `docker-compose.production.yml` resets that profile
+   (`profiles: !reset []`) so the canonical production stack always includes
+   the daemon. `SAFE_ZONE_SCRIPT_FEED_SYNC=0` stops the daemon after a
+   deploy that goes through the helper script, not a way to leave a
+   production stack without a feed. A direct `docker compose ... up`
+   recreates and starts it because it is in the production stack, so the
+   opt-out holds only while every deploy goes through the helper. The
+   start-up guard cannot see the stopped daemon: it reads
+   `SAFE_ZONE_THREAT_FEED_SOURCE` and `SAFE_ZONE_AGENT_ENABLED`, so an
+   opted-out deployment with no other writer passes the guard while nothing
+   syncs the feed. Feed state is observable only through `/v1/status` ->
+   `feed_sync`; alerting on it is a separate slice, not part of this change.
+   `SAFE_ZONE_THREAT_FEED_SOURCE` and
+   `SAFE_ZONE_AGENT_FEED_PRESET` have real defaults, and the daemon accepts
+   several sources, which is what the agent task and the alert rules already
+   assumed.
+4. **Readiness is a real probe.** `/readyz` checks the dependencies the
+   service needs: SQLite is mandatory (the overrides and the allow list are
+   read from it on the request path), Redis is optional (a Redis outage
+   degrades coverage but the resolver still answers), and the allow list is
+   reported. `ok` and `degraded` answer 200; only `not_ready` answers 503.
+   The public body carries only `ok` / `unavailable` per check; the raw error
+   is logged with the service and check name, and every check increments a
+   bounded `readiness_check_<name>_<outcome>_total` counter. The container
+   healthcheck probes `/readyz`.
+5. **The allow list is not rewritten by default.** `SAFE_ZONE_AGENT_WHITELIST_ENABLED`
+   defaults to false, the download is verified against
+   `SAFE_ZONE_AGENT_WHITELIST_SHA256` when set, a rollback snapshot is taken
+   before every import, and `GET /v1/whitelist/snapshots` plus
+   `POST /v1/whitelist/rollback` make a bad import undoable.
+6. **DoT in production needs a trusted certificate.** A missing key pair
+   stops the resolver in production instead of serving a self-signed
+   certificate every client rejects.
+7. **Every `SAFE_ZONE_*` setting the code reads is documented.** A new CI
+   gate (`tools/env-docs-check`) fails the build when a setting exists in
+   the code but not in `.env.example`.
+8. **A rollback reaches every process, not only the API.** The whitelist
+   table carries a durable revision in `system_config`, bumped in the same
+   transaction as the rows. `core-api` publishes `whitelist_updated` on the
+   shared config channel; `dns-resolver` subscribes and also reconciles
+   every 30 seconds, so a missed message or a Redis outage still converges.
+   The rollback response reports `revision` and `published`, and the status
+   endpoints expose `whitelist.revision`.
+9. **A rollback is auditable and its snapshots are verifiable.** Rollback
+   requires a reason of at least 8 runes and writes an `agent_audit_log`
+   event with the snapshot id, entry count, actor, reason, revision and
+   correlation id. The snapshots listing exposes `last_rollback`. A restore
+   verifies the stored SHA-256 and entry count, refuses an empty snapshot,
+   and logs prune failures instead of discarding them.
+
+**Consequences:**
+
+- A production deployment that was previously running with an empty allow
+  list, no feed or a dead dependency now refuses to start until the
+  operator configures it. That is the point, but it is a visible change: the
+  release notes must say which settings are now mandatory.
+- A stock install no longer needs a whitelist file at all: unset
+  `SAFE_ZONE_WHITELIST_PATH` uses the DB-only mode, and the operator opts
+  into a file explicitly.
+- The allow-list load failure is visible in `/v1/status` rather than only in
+  the logs, so monitoring can assert on it.
+- The rollback snapshot costs one copy of the allow list (tens of megabytes
+  for a million domains) and keeps the three most recent.
+- A rollback now propagates to `dns-resolver` without a restart. With Redis
+  available the update is immediate; without it, the 30-second reconciliation
+  bounds the stale window.
+- Every rollback leaves an audit record with the operator, reason and
+  revision, and a damaged snapshot is refused before it replaces the live
+  allow list.
+- The feed daemon now syncs several sources, so one provider being down no
+  longer takes the remaining coverage with it.
+
+**Validation evidence:**
+
+- `go build ./...` PASS; `go test ./...` PASS (all packages).
+- `internal/config`: `ValidateIP` rejects a malformed IP instead of returning
+  the silent nil from `net.ParseIP`. The unused `ProductionGuard` was removed:
+  it was never wired into startup, and its `Err()` used a different
+  environment set than `IsProduction()`, so `SAFE_ZONE_ENV=prod` would have
+  bypassed it.
+- `internal/risk/whitelist_load_failure_test.go`: a rejected import is
+  recorded, reported as `loaded=false`, keeps the previous index, and the
+  service surfaces it; a healthy load reports `loaded=true`.
+- `internal/dns/resolver/block_ip_invalid_test.go`: `BlockIPv4`/`BlockIPv6`
+  never return nil, and a blocked query still gets an answer with an invalid
+  block page address.
+- `cmd/dns-resolver/dot_cert_test.go`: production without key files fails,
+  a local run generates a self-signed certificate, a broken key pair fails,
+  a configured pair loads.
+- `internal/agent/whitelist_snapshot_test.go`: a checksum mismatch is
+  rejected before parsing and never reaches the allow list; a matching
+  checksum is accepted; an import takes a rollback snapshot; the rollback
+  restores the previous set; snapshots are pruned to three.
+- `internal/serve/readiness_test.go`: healthy, degraded and not-ready map to
+  200/200/503, a hanging check times out, a dependency error is absent from
+  the public body, and each check increments its observability counter.
+- `internal/risk/whitelist_env_test.go`: unset and empty
+  `SAFE_ZONE_WHITELIST_PATH` both select DB-only; an explicit missing path is
+  an error.
+- `internal/risk/whitelist_revision_test.go` and
+  `internal/store/whitelist_revision_test.go`: a rollback bumps the durable
+  revision atomically with the rows, the reconciler picks it up with Redis
+  off, and the pub/sub subscriber reloads on `whitelist_updated`.
+- `internal/api/handlers/whitelist_snapshot_test.go`: rollback requires a
+  reason, writes the audit event with actor/reason/snapshot/entries/revision,
+  reports `revision`/`published`, and the listing exposes `last_rollback`.
+- `internal/store/whitelist_snapshot_verify_test.go`: a corrupted or empty
+  snapshot is refused, the digest and entry count are checked, and prune
+  failures are logged.
+- `cmd/feed-syncd/main_test.go`: per-report logs use `report.Source`, not the
+  joined settings source list.
+- `ui/tests/guest-readonly.spec.ts`: a guest cannot edit or delete a group,
+  add or delete a mapping, allow or block an analysis result, or open
+  `/reports`; the group Edit button was the control that previously stayed
+  enabled.
+- `internal/feedsync/multi_source_test.go`: several sources parse from the
+  flag and from the environment, an empty list is refused, and the one-shot
+  and the daemon resolve identical options.
+- `tools/env-docs-check`: 172 settings checked, 0 undocumented.
+
+**Revisit when:**
+
+- The allow-list load failure policy changes (for example a decision to
+  degrade instead of refusing to start).
+- A multi-node deployment needs the allow-list failure to be handled
+  differently per node.
+- The readiness contract grows a dependency that is neither mandatory nor
+  optional.
+
+## 2026-10-20 — The operator UI states what the server does, and the read-only role is enforced in the browser
+
+**Status:** accepted
+
+**Context:**
+
+Three defects in the operator surface, all of which made the UI describe a
+state the system was not in.
+
+1. **The report-review dialog contradicted the server.** The dialog for the
+   "resolved" action was titled *"Resolve report without override"*, and
+   the side-effect warning was shown only for the "allow" action. The
+   server does the same thing for both: `POST /v1/reports/status` with
+   `status=resolved` calls `ApproveFalsePositive`, which creates a global
+   allow override and resolves the related pending reports
+   (`internal/api/handlers/reports.go`). An operator who clicked "resolve"
+   believed the domain stayed blocked, and it stopped being blocked
+   everywhere.
+
+2. **The read-only role was decorative.** The session payload carries
+   `can_mutate` and `read_only` (`ui/src/lib/types.ts`), and the API
+   enforces the role. The UI used neither: the allow/block buttons on the
+   analysis result, adding and deleting an override, flushing the cache,
+   downloading the logs, adding a policy group, adding a client mapping,
+   deleting either, and triggering an agent task all stayed enabled for a
+   guest, who then got a 403 whose body is a Vietnamese sentence. There was
+   no end-to-end test for the guest role at all.
+
+3. **The Content-Security-Policy blocked the layout.** The policy ships
+   `style-src 'self'` with no `unsafe-inline`, and it is applied to every
+   core-api response including `/app/*`. The UI sets element styles through
+   React style attributes (15 of them) and carries one inline `<style>`
+   block, so the logo sizing, the score bars and the threat-pressure bars
+   lost their styles in production. The Google Fonts `@import` was blocked
+   the same way, so the declared family never loaded and the page fell back
+   silently. The end-to-end suite could not catch either: it runs against
+   the Vite dev server, which does not apply the policy.
+
+**Decision:**
+
+1. **Say what the server does.** The "resolved" action is titled *"Resolve
+   report and allow the domain"*, both actions warn that a global allow
+   override is created, and the confirmation toast says the domain is no
+   longer blocked. The server's own `resolution_action` stays the source
+   of truth for the outcome.
+2. **Enforce the read-only role in the browser.** A `useCanMutate()` hook
+   reads the flag the session already carries. Every mutation control is
+   disabled with a reason instead of being enabled and failing. The
+   server-side check is unchanged: this removes the false affordance, it
+   does not replace the enforcement.
+3. **`style-src` allows inline styles; `script-src` does not.** The
+   exception is scoped to styles, where an injection cannot execute code.
+   `script-src` keeps `'self'` without `'unsafe-inline'` and
+   `'unsafe-eval'`, and a test asserts that. The alternative, moving every
+   inline style into a class, was rejected: it touches five large UI
+   files, and the end-to-end suite runs against the dev server, so the
+   regression would not have been caught before release.
+4. **No webfont.** The Google Fonts import was blocked by the policy, so
+   the page already fell back to a system stack in production. The import
+   is removed and the stack is declared directly: no third-party request,
+   no policy exception, and the rendering matches what production already
+   showed.
+
+**Consequences:**
+
+- A guest sees disabled controls with an explanation, not a 403.
+- The report queue no longer offers an action whose effect the dialog
+  misdescribed.
+- The policy keeps its protection against script injection, which is the
+  part that matters; it stops blocking the operator's own layout.
+- Two new end-to-end suites cover the report-resolution path and the
+  read-only role, neither of which had any coverage.
+
+**Validation evidence:**
+
+- `ui/tests/reports-resolved.spec.ts`: the dialog names the action, warns
+  about the allow override, and the domain is afterwards answered `SAFE`
+  with `decision.action = allow`.
+- `ui/tests/guest-readonly.spec.ts`: the guest session reports
+  `read_only: true` and `can_mutate: false`, and the add-override, flush
+  cache and add-group controls are disabled.
+- `internal/serve/securityheaders_test.go`: the policy contains
+  `style-src 'self' 'unsafe-inline'`, and `script-src` contains neither
+  `'unsafe-inline'` nor a bare `'unsafe-eval'`.
+- `ui/tests/reports.spec.ts`: the shared counter assertion was replaced with
+  the domain's actual verdict, because the queue counters are shared with
+  every other report test running against the same server.
+- `npm run typecheck` RC=0; `npm run lint` 0 errors; the Playwright suite
+  is 49 passing.
+
+**Revisit when:**
+
+- The operator UI moves to a build that can emit static CSS for the inline
+  styles, which would let the policy drop `'unsafe-inline'` again.
+- The guest role gains a permission finer than "read everything, write
+  nothing", which would need more than one flag on the session.
+- The end-to-end suite starts running against the built bundle, which would
+  let the policy be tested the way it is deployed.
+
+## 2026-10-20 — The label policy comes from the data manifest, not from a second hardcoded list
+
+**Status:** accepted (dataset policy; the bundle is not re-exported here)
+
+**Context:**
+
+`scripts/data_processing/create_data_manifest.py` records a `trust_tier`
+for every raw source. `scripts/data_processing/build_domain_dataset.py`
+never read it: the build had its own hardcoded list of sources, and the two
+lists disagreed.
+
+The disagreement had a concrete effect. `stevenblack_hosts.txt` is recorded
+in the manifest as `unwanted-ad-tracker` — an ad and tracker blocklist — and
+the canonical plan says explicitly that such a list is not malicious ground
+truth (§0.4 "Không coi broad ad/tracker blocklist là malicious ground
+truth", §2.3 "Không dùng mixed-purpose source làm positive binary nếu chưa
+review"). The build nevertheless used it as a positive source: it was in the
+`malicious_sources` provenance list and in the pool that fills the 1:1
+balance.
+
+Measured against the shipped dataset (`ml/data/processed/domain_dataset_provenance.csv`,
+2.772.090 rows, exactly 1:1):
+
+| Source | Rows | Share of positives | Manifest tier |
+|---|---:|---:|---|
+| hagezi | 808.638 | 58,3% | `weak-malicious` |
+| tempest_phishing | 318.768 | 23,0% | `weak-malicious` |
+| phishing_army | 133.692 | 9,6% | `specialist-community-malicious` |
+| vietnam_blacklist | 78.034 | 5,6% | `strong-malicious` |
+| phishtank | 32.983 | 2,4% | `strong-malicious` |
+| **stevenblack** | **11.493** | **0,83%** | **`unwanted-ad-tracker`** |
+| urlhaus | 2.211 | 0,2% | `strong-malicious` |
+| openphish | 226 | 0,02% | `specialist-community-malicious` |
+
+The row count is small, but the effect is not. The negative side is full of
+ad-tech and CDN domains (847.593 rows from `top_1m` alone), and those are
+exactly the domains the September 2026 CDN false-positive work had to
+harden. A model that learns "ads are malicious" from the positive class
+generalizes onto that negative population, and the measured recall flatters
+the result while the real false-positive risk stays hidden.
+
+**Decision:**
+
+1. **The manifest is the single source of truth for the label policy.** The
+   build resolves every source's tier from `ml/data/data_manifest.json` and
+   refuses to run when a source it knows is missing from the manifest, or
+   when one build label is backed by manifest sources with different tiers.
+2. **Only manifest-approved malicious sources may supply a positive label.**
+   A source whose tier is outside the malicious set is excluded from the
+   binary labels entirely: it may not label a domain, and it may not appear
+   in the provenance of one. `stevenblack` is therefore excluded; the
+   ad/tracker signal already exists as a content-policy layer
+   (`internal/domaintrie` and the adblock engine), which is where it
+   belongs.
+3. **The balance adapts instead of oversampling.** Excluding a source
+   shrinks the pool that fills the 1:1 ratio. The negative side is reduced
+   to match instead, and the adjustment is printed and recorded in the
+   cleaning report. No new data source is required: the negative side has
+   1,386,045 domains available against a pool of 1,127,406.
+4. **The policy is pinned by tests that call the shipped functions.**
+   `ml/tests/test_label_policy.py` calls `resolve_source_tiers` and
+   `split_sources_by_tier` directly, asserts the real positive, negative and
+   excluded sets (including `stevenblack` in excluded), covers the
+   missing/conflicting-tier errors, and checks that every manifest source is
+   accounted for. A special case that re-adds `stevenblack` inside the split
+   function turns the test red even when the tier constants are untouched.
+5. **The bundle is not re-exported here.** The artifact in
+   `deploy/model-bundle/v1` still carries the old labels. Re-training,
+   re-calibrating and re-evaluating is a separate step with its own
+   approval, and the model-quality gates that follow it (the 22/34
+   representative recall and the 3/3 targeted benign false positives) are
+   the ones that decide whether the new dataset is better. Shipping the
+   policy change without the new numbers would replace one unverified
+   artifact with another.
+6. **The policy version is durable.** `label_policy_version` is 2 in
+   `ml/data/data_manifest.json`, `ml/src/make_splits.py` and
+   `scripts/data_processing/create_data_manifest.py`; the test asserts all
+   three agree. The build shares one RNG stream between balance sampling,
+   the negative downsample and the lite sample, so lite datasets built before
+   and after this policy change are not row-comparable; compare them on the
+   full dataset or regenerate both sides.
+
+**Consequences:**
+
+- The next dataset build drops 11.493 ad/tracker domains from the positive
+  class and shrinks the negative side by the same amount to keep the 1:1
+  ratio.
+- The measured recall will fall. That is the point: the number was
+  inflated by a label the project never meant to use.
+- A new raw source now has to be classified in the manifest before the
+  build can use it, and a source the manifest does not classify is a build
+  error rather than a silent omission.
+
+**Validation evidence:**
+
+- `ml/tests/test_label_policy.py`: 12 tests pass; the full `ml/tests` suite
+  passes (see the PR evidence block). Reintroducing
+  `or label == "stevenblack"` in `split_sources_by_tier` fails three tests.
+- `python -m py_compile scripts/data_processing/build_domain_dataset.py`
+  passes.
+- Dry run of the new policy against the shipped provenance file: positive
+  sources `hagezi`, `openphish`, `phishing_army`, `phishtank`,
+  `tempest_phishing`, `urlhaus`, `vietnam_blacklist`; negative sources
+  `top_1m`, `tranco`, `vietnam_whitelist`; excluded `stevenblack`
+  (`unwanted-ad-tracker`) with 11.493 rows that the policy now refuses to
+  label.
+- The first version of the test failed on a real gap: the manifest lists
+  `vietnam_websites.csv`, which the build reads but did not declare. The
+  mapping now allows one build label to be backed by several manifest
+  sources, with the requirement that they share a tier.
+- `label_policy_version` is 2 in the manifest and both producers; the test
+  reads the constant from each file and asserts the manifest value. The
+  `domain_dataset_lite.csv` comparability caveat is recorded in
+  `docs/research/ml/method.md` and at the RNG in the build script.
+
+**Revisit when:**
+
+- The dataset is rebuilt and a candidate bundle is evaluated against the
+  representative and targeted-benign corpora.
+- The manifest gains a tier the policy does not classify yet.
+- The ad/tracker signal is wanted in the model as a third class rather than
+  only in the content-policy layer.
+
+## Decision Lookup

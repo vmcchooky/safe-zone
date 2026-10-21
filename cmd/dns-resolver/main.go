@@ -84,6 +84,27 @@ func run() int {
 		return 1
 	}
 
+	// A malformed block page address used to be swallowed: the resolver
+	// parsed it to nil and skipped the answer, so a blocked domain came
+	// back as NOERROR/NODATA and the client reached the origin. Reject the
+	// misconfiguration at startup instead of discovering it during an
+	// incident.
+	blockPageIP := config.String("SAFE_ZONE_BLOCK_PAGE_IP", "127.0.0.1")
+	if _, ipErr := config.ValidateIP(blockPageIP); ipErr != nil {
+		logjson.Error("invalid SAFE_ZONE_BLOCK_PAGE_IP", map[string]any{
+			"service":   "dns-resolver",
+			"value":     blockPageIP,
+			"error":     ipErr.Error(),
+			"consequence": "blocked domains would resolve to the origin instead of the block page",
+		})
+		if config.IsProduction() {
+			return 1
+		}
+		logjson.Warn("falling back to the null IP for blocked answers outside production", map[string]any{
+			"service": "dns-resolver",
+		})
+	}
+
 	// Upstream fetches go through the shared outbound guard: every dial —
 	// including those caused by redirects — is validated against the
 	// deny-private policy. Exchange additionally validates the configured
@@ -109,6 +130,21 @@ func run() int {
 	}
 
 	riskService := risk.NewServiceFromEnvForRole("dns-resolver")
+	// The allow list is the primary safety valve: a whitelisted domain
+	// short-circuits the feed, lexical, ML, AI, OSINT and group enforcement
+	// layers. Starting with a failed allow list means the resolver blocks
+	// domains the operator explicitly allowed, so production refuses to
+	// start instead of degrading silently.
+	if loadErr := riskService.Whitelist().LoadError(); loadErr != nil {
+		logjson.Error("whitelist failed to load; refusing to start in production", map[string]any{
+			"service":     "dns-resolver",
+			"error":       loadErr.Error(),
+			"consequence": "whitelisted domains are scored by the decision pipeline and can be blocked",
+		})
+		if config.IsProduction() {
+			return 1
+		}
+	}
 	defer func() {
 		if err := riskService.Close(); err != nil {
 			logjson.Warn("risk service close failed", map[string]any{
@@ -146,13 +182,13 @@ func run() int {
 	}
 
 	res := resolver.New(riskService, metrics, upstreams, resolver.Config{
-		BlockPageIP:    config.String("SAFE_ZONE_BLOCK_PAGE_IP", "127.0.0.1"),
+		BlockPageIP:    blockPageIP,
 		BlockStrategy:  blockStrategy,
 		DNSTTL:         uint32(ttlVal), // #nosec G115 -- bounds validated above
 		DeploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
 	}, dotLimiter)
 
-	mux := server.NewRouter(res, adminAPIKey)
+	mux := server.NewRouter(res, adminAPIKey, riskService.ReadinessChecks()...)
 
 	var handler http.Handler = mux
 	if tiered != nil {
@@ -188,31 +224,15 @@ func run() int {
 		certFile := config.String("SAFE_ZONE_DNS_DOT_CERT_FILE", "")
 		keyFile := config.String("SAFE_ZONE_DNS_DOT_KEY_FILE", "")
 
-		var cert tls.Certificate
-		var certErr error
-		if certFile != "" || keyFile != "" {
-			cert, certErr = tls.LoadX509KeyPair(certFile, keyFile)
-			if certErr != nil {
-				logjson.Error("failed to load configured TLS keys", map[string]any{
-					"service":   "dns-resolver",
-					"cert_file": certFile,
-					"key_file":  keyFile,
-					"error":     certErr.Error(),
-				})
-				return 1
-			}
-		} else {
-			logjson.Warn("TLS key files not configured; generating temporary self-signed cert", map[string]any{
-				"service": "dns-resolver",
+		cert, certErr := resolveDotCertificate(certFile, keyFile)
+		if certErr != nil {
+			logjson.Error("failed to prepare the DoT certificate", map[string]any{
+				"service":   "dns-resolver",
+				"cert_file": certFile,
+				"key_file":  keyFile,
+				"error":     certErr.Error(),
 			})
-			cert, certErr = generateSelfSignedCert()
-			if certErr != nil {
-				logjson.Error("failed to generate self-signed cert", map[string]any{
-					"service": "dns-resolver",
-					"error":   certErr.Error(),
-				})
-				return 1
-			}
+			return 1
 		}
 
 		tlsConfig := &tls.Config{
@@ -309,9 +329,19 @@ func run() int {
 
 // generateSelfSignedCert sinh chứng chỉ SSL tự ký 2048-bit RSA trực tiếp trên RAM làm fallback
 func generateSelfSignedCert() (tls.Certificate, error) {
-	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	certPEM, keyPEM, err := generateSelfSignedCertPEM()
 	if err != nil {
 		return tls.Certificate{}, err
+	}
+	return tls.X509KeyPair(certPEM, keyPEM)
+}
+
+// generateSelfSignedCertPEM returns the PEM encoding of a throwaway
+// certificate and its private key.
+func generateSelfSignedCertPEM() (certPEM, keyPEM []byte, err error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	template := x509.Certificate{
@@ -329,11 +359,10 @@ func generateSelfSignedCert() (tls.Certificate, error) {
 
 	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
 	if err != nil {
-		return tls.Certificate{}, err
+		return nil, nil, err
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
-
-	return tls.X509KeyPair(certPEM, keyPEM)
+	certPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	return certPEM, keyPEM, nil
 }
