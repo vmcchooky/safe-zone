@@ -1,9 +1,20 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:ital,wght@0,300..900;1,300..900&display=swap');
 @import 'tailwindcss';
 
 :root {
   color-scheme: light;
-  font-family: 'Nunito', 'Segoe UI Variable Display', 'Segoe UI', sans-serif;
+  /* No webfont. The previous Google Fonts @import was blocked by the
+     production Content-Security-Policy (style-src 'self' and font-src
+     'self' allow no external origin), so the declared family never loaded
+     and the page silently fell back anyway. A system stack renders the
+     same intent with no third-party request and no policy exception. */
+  font-family:
+    'Segoe UI Variable Display',
+    'Segoe UI',
+    system-ui,
+    -apple-system,
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
   --bg: #f8fafc;
   --bg-panel: rgba(255, 255, 255, 0.75);
   --bg-panel-soft: rgba(255, 255, 255, 0.45);

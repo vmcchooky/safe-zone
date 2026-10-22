@@ -34,6 +34,7 @@ type statusResponse struct {
 	FeedSync       *feed.StatusSummary              `json:"feed_sync,omitempty"`
 	Adblock        *risk.AdblockStatus              `json:"adblock,omitempty"`
 	OSINT          *OSINTStatus                     `json:"osint,omitempty"`
+	Whitelist      *risk.WhitelistLoadStatus        `json:"whitelist,omitempty"`
 	Endpoints      []string                         `json:"endpoints,omitempty"`
 	RateLimiting   *RateLimitingStatus              `json:"rate_limiting,omitempty"`
 	// DecisionPipeline reports fail-open degradations on the DNS hot path.
@@ -73,6 +74,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		Enabled: h.Risk.OSINT().Enabled(),
 		Mode:    h.Risk.OSINT().Mode(),
 	}
+	whitelistStatus := h.Risk.Whitelist().LoadStatus()
 	httputil.WriteJSON(w, http.StatusOK, statusResponse{
 		Service:        "core-api",
 		Status:         "ok",
@@ -84,6 +86,7 @@ func (h *Handler) StatusHandler(w http.ResponseWriter, r *http.Request) {
 		Adblock:        &adblockStatus,
 		ML:             &mlStatus,
 		OSINT:          osintStatus,
+		Whitelist:      &whitelistStatus,
 		// Built by the Service, not by hand: a partial literal here once
 		// silently zeroed override_consecutive_failures,
 		// outbound_proxy_enabled and every timestamp while the full

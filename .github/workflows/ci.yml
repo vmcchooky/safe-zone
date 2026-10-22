@@ -21,6 +21,36 @@ jobs:
         id: meta
         run: echo "build_time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
+  compose-config:
+    name: Compose configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # The production deploy is the merge of both files. Assert the shape the
+      # docs promise instead of trusting a profile flag in a shell script:
+      # feed-syncd must be in the stack, and the shared .env must not leak
+      # SAFE_ZONE_ENV=local into the production services.
+      - name: Check the canonical production stack
+        run: |
+          cp .env.example .env
+          docker compose -f docker-compose.yml -f docker-compose.production.yml config --format json > production-compose.json
+          jq -e '.services["feed-syncd"] != null' production-compose.json
+          jq -e '.services["core-api"].environment.SAFE_ZONE_ENV == "production"' production-compose.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_ENV == "production"' production-compose.json
+
+      # The developer stack stays opt-in; that is the contract the production
+      # override exists to preserve.
+      - name: Check the developer stack stays opt-in
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config --services > dev-compose-services.txt
+          if grep -qx 'feed-syncd' dev-compose-services.txt; then
+            echo "feed-syncd must not be enabled in the developer stack" >&2
+            exit 1
+          fi
+
   # Each gate group gets its own runner. Measured on a single quality runner,
   # all of these ran against the same vCPUs: the task graph was 656s wall-clock
   # for 2671s of task time, i.e. saturated at ~4x parallelism. Splitting does not
@@ -156,6 +186,7 @@ jobs:
       - go-gates
       - ui-e2e
       - ml-gates
+      - compose-config
       - build-metadata
     strategy:
       fail-fast: false

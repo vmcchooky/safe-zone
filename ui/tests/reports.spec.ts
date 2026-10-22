@@ -20,6 +20,7 @@ test('turns a user report into an audited allow decision', async ({ page, reques
 
   const reportRow = page.getByRole('row').filter({ hasText: domain });
   await expect(reportRow).toBeVisible();
+
   await reportRow.getByRole('button', { name: 'Allow' }).click();
 
   const dialog = page.getByRole('dialog', { name: 'Allow domain as false positive' });
@@ -33,6 +34,14 @@ test('turns a user report into an audited allow decision', async ({ page, reques
 
   await expect(page.getByText(`Allowed ${domain} and resolved related pending reports.`)).toBeVisible();
   await expect(reportRow).toHaveCount(0);
-  await expect(page.getByLabel('Report queue summary')).toContainText('Resolved');
-  await expect(page.getByLabel('Report queue summary')).toContainText('1');
+
+  // The decision must be real, not only recorded: the domain is answered
+  // SAFE and carries an allow override. The queue counters are shared with
+  // every other report test running against the same server, so they are
+  // not asserted here.
+  const analyze = await request.get(`/v1/analyze?domain=${domain}`);
+  expect(analyze.ok()).toBeTruthy();
+  const payload = await analyze.json();
+  expect(payload.verdict).toBe('SAFE');
+  expect(payload.decision?.action).toBe('allow');
 });

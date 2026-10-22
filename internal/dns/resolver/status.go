@@ -44,7 +44,11 @@ func (r *Resolver) StatusHandler(w http.ResponseWriter, req *http.Request) {
 		"upstream_doh_resolvers": r.Upstreams.Status(),
 		"redis":                  r.Risk.Telemetry().CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
-		"ml":                     r.Risk.ML().MLStatus(req.Context()),
+		// The allow list lives in this process's RAM too. Publishing the
+		// revision is how an operator sees that a rollback reached the
+		// resolver, instead of inferring it from a DNS answer.
+		"whitelist": r.Risk.Whitelist().LoadStatus(),
+		"ml":        r.Risk.ML().MLStatus(req.Context()),
 		// This service holds its own adblock configuration copy, reconciled
 		// from the store on the same 30s cycle as core-api. Publishing the
 		// fingerprint here is what makes a split configuration detectable

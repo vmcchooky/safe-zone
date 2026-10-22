@@ -58,10 +58,15 @@ const (
 
 const (
 	analysisConfigReloadEventType = "analysis_config_updated"
-	configReloadSourceStartup     = "startup"
-	configReloadSourceLocalWrite  = "local_write"
-	configReloadSourcePubSub      = "pubsub"
-	configReloadSourceReconcile   = "reconcile"
+	// whitelistConfigReloadEventType shares the config reload channel: the
+	// payload carries a decimal revision instead of the analysis fingerprint.
+	// A rollback publishes it so a separate dns-resolver process reloads
+	// immediately; the poll reconciler covers Redis being disabled.
+	whitelistConfigReloadEventType = "whitelist_updated"
+	configReloadSourceStartup      = "startup"
+	configReloadSourceLocalWrite   = "local_write"
+	configReloadSourcePubSub       = "pubsub"
+	configReloadSourceReconcile    = "reconcile"
 )
 
 var replaceFileLocks sync.Map
@@ -466,10 +471,31 @@ func NewService(options Options) *Service {
 	}
 
 	wl := NewWhitelist(options.Store)
+	// A failed load keeps the previous (empty) index, which means the allow
+	// list is not what the operator configured. The error used to be
+	// discarded here, so the service started with an empty allow list and
+	// nothing said so: whitelisted domains fell through to the decision
+	// pipeline and could be blocked. Report it, and let the caller decide
+	// whether it is fatal for its environment.
 	if options.WhitelistPath != "" {
-		_ = wl.LoadFromFile(options.WhitelistPath)
+		if err := wl.LoadFromFile(options.WhitelistPath); err != nil {
+			logjson.Error("whitelist load failed; the allow list is not in effect", map[string]any{
+				"service":     "risk",
+				"source":      "file",
+				"path":        options.WhitelistPath,
+				"error":       err.Error(),
+				"consequence": "whitelisted domains are scored by the decision pipeline and can be blocked",
+			})
+		}
 	} else if options.Store != nil && options.Store.Enabled() {
-		_ = wl.LoadFromDB()
+		if err := wl.LoadFromDB(); err != nil {
+			logjson.Error("whitelist load failed; the allow list is not in effect", map[string]any{
+				"service":     "risk",
+				"source":      "database",
+				"error":       err.Error(),
+				"consequence": "whitelisted domains are scored by the decision pipeline and can be blocked",
+			})
+		}
 	}
 
 	brandStore := analysis.BrandStore(store.NewBrandStore(

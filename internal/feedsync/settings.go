@@ -42,6 +42,12 @@ const (
 // Settings is the resolved configuration of one sync run. It is separated
 // from flag parsing so the effective options are testable.
 type Settings struct {
+	// Sources are the feed sources to sync, in the order they were
+	// configured. The daemon used to accept exactly one source while the
+	// agent task and the alert rules assumed several, so the production
+	// path and the monitoring path disagreed about what "the feed" was.
+	Sources []string
+	// Source is the joined source list, for logging.
 	Source        string
 	RedisAddr     string
 	RedisPassword string
@@ -141,12 +147,25 @@ func ParseSettings(mode Mode, flags *flag.FlagSet, args []string) (Settings, err
 	if normalizedAdmissionMode == feed.AdmissionFilter {
 		return Settings{}, errFilterEvaluationOnly
 	}
-	if strings.TrimSpace(*source) == "" {
+	sources := feed.ParseSources(*source)
+	if len(sources) == 0 {
 		return Settings{}, errSourceRequired
+	}
+	if *replace && len(sources) > 1 {
+		// Replace stages one source and renames it over the live set, which
+		// deletes everything the other sources wrote. With several sources
+		// in one run that is not a warning worth ignoring, it is data loss
+		// on the second source.
+		return Settings{}, fmt.Errorf(
+			"replace mode stages a single source and would delete the other %d sources from the shared key; "+
+				"run one source per invocation or use additive mode",
+			len(sources)-1,
+		)
 	}
 
 	settings := Settings{
-		Source:        *source,
+		Sources:       sources,
+		Source:        strings.Join(sources, ","),
 		RedisAddr:     *redisAddr,
 		RedisPassword: *redisPassword,
 		RedisDB:       *redisDB,
@@ -168,10 +187,20 @@ func ParseSettings(mode Mode, flags *flag.FlagSet, args []string) (Settings, err
 }
 
 // BuildSyncOptions assembles the feed.Sync contract from the resolved
-// settings.
+// settings for the first configured source.
 func BuildSyncOptions(settings Settings, client *http.Client) feed.SyncOptions {
+	source := settings.Source
+	if len(settings.Sources) > 0 {
+		source = settings.Sources[0]
+	}
+	return BuildSyncOptionsForSource(settings, client, source)
+}
+
+// BuildSyncOptionsForSource assembles the feed.Sync contract for one
+// configured source.
+func BuildSyncOptionsForSource(settings Settings, client *http.Client, source string) feed.SyncOptions {
 	return feed.SyncOptions{
-		Source:                     settings.Source,
+		Source:                     source,
 		FileRoot:                   config.FeedFileRoot(),
 		MaxBytes:                   int64(config.Int("SAFE_ZONE_FEED_MAX_BYTES", int(feed.DefaultMaxFeedBytes))),
 		RedisAddr:                  settings.RedisAddr,

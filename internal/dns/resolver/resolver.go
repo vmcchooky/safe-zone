@@ -225,18 +225,38 @@ func (r *Resolver) EffectiveBlockStrategy() string {
 	return r.Config.BlockStrategy
 }
 
+// BlockIPv4 returns the address a blocked A query resolves to.
+//
+// A malformed or IPv6-only SAFE_ZONE_BLOCK_PAGE_IP must never turn a block
+// into a silent allow. net.ParseIP returns nil for such a value, and a nil
+// answer used to be skipped in BlockedDNSMessage, which produced
+// NOERROR/NODATA and let the client reach the origin anyway. Falling back to
+// the null IP keeps the domain blocked; the startup guard in
+// cmd/dns-resolver rejects the misconfiguration in production.
 func (r *Resolver) BlockIPv4() net.IP {
 	if r.EffectiveBlockStrategy() == BlockStrategyNullIP {
-		return net.IPv4(0, 0, 0, 0)
+		return net.IPv4zero
 	}
-	return net.ParseIP(r.Config.BlockPageIP).To4()
+	if parsed := net.ParseIP(r.Config.BlockPageIP); parsed != nil {
+		if v4 := parsed.To4(); v4 != nil {
+			return v4
+		}
+	}
+	return net.IPv4zero
 }
 
+// BlockIPv6 returns the address a blocked AAAA query resolves to. It never
+// returns nil for the same reason BlockIPv4 never does.
 func (r *Resolver) BlockIPv6() net.IP {
 	if r.EffectiveBlockStrategy() == BlockStrategyNullIP {
 		return net.IPv6zero
 	}
-	return net.ParseIP(r.Config.BlockPageIP).To16()
+	if parsed := net.ParseIP(r.Config.BlockPageIP); parsed != nil {
+		if v6 := parsed.To16(); v6 != nil {
+			return v6
+		}
+	}
+	return net.IPv6zero
 }
 
 func (r *Resolver) BlockedDNSMessage(query *dns.Msg) (*dns.Msg, error) {

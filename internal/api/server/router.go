@@ -25,7 +25,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/", rootHandler)
 	mux.HandleFunc("/v1/status", h.RequireAuthFunc(h.StatusHandler))
 	mux.HandleFunc("/healthz", handlers.HealthHandler("core-api"))
-	mux.HandleFunc("/readyz", handlers.HealthHandler("core-api"))
+	mux.HandleFunc("/readyz", serve.ReadinessHandler("core-api", h.Metrics, h.Risk.ReadinessChecks()...))
 	mux.HandleFunc("/v1/version", h.VersionHandler)
 	// /metrics is admin-only. It exposes the per-endpoint request summary
 	// (method, path, status, counts, latency), which lets any authenticated
@@ -78,6 +78,13 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	mux.HandleFunc("/v1/agent/status", h.RequireAuthFunc(h.AgentStatusHandler(agentEngine)))
 	mux.HandleFunc("/v1/agent/trigger", h.RequireAdminFunc(handlers.AgentTriggerHandler(agentEngine)))
 	mux.HandleFunc("/v1/agent/proposals", h.RequireAdminForMutationFunc(h.AgentProposalsHandler))
+
+	// Whitelist rollback. The allow list is replaced wholesale by an import,
+	// so the operator needs a way to inspect the rollback copies and to undo
+	// a bad one. Both endpoints are admin-only: a rollback changes what the
+	// resolver answers with.
+	mux.HandleFunc("/v1/whitelist/snapshots", h.RequireAdminFunc(h.WhitelistSnapshotHandler))
+	mux.HandleFunc("/v1/whitelist/rollback", h.RequireAdminFunc(h.WhitelistRollbackHandler))
 
 	// Groups & Mappings
 	mux.HandleFunc("/v1/groups", h.RequireAdminForMutationFunc(h.GroupsHandler))
