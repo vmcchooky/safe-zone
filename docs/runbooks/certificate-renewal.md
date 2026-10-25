@@ -23,18 +23,28 @@ scripts/ops/safe-zone.sh duckdns
 docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production-edge restart caddy
 ```
 
-DoT certificates are configured separately through:
+DoT is opt-in. When `SAFE_ZONE_DNS_DOT_ENABLED=true`, the resolver reads:
 
 - mounted files under `${SAFE_ZONE_DNS_DOT_CERTS_DIR:-./ops/certs/dot}`
 - `/run/safe-zone/dot-certs/fullchain.pem`
 - `/run/safe-zone/dot-certs/privkey.pem`
 
-If they are empty, the resolver generates a temporary self-signed certificate for development.
+Outside production (`local`/`test`), an empty pair generates a temporary
+self-signed certificate. Production refuses to start without a configured
+pair. The production base Compose file does not publish `853`; the opt-in
+overlay `ops/vps-edge/docker-compose.dot.yml` adds both the port and the
+certificate mount.
 
-After a renewal, refresh the mounted DoT pair and restart only the resolver:
+After a renewal, refresh the mounted DoT pair and recreate only the resolver:
 
 ```sh
 scripts/ops/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem
-docker compose -f docker-compose.yml -f docker-compose.production.yml restart dns-resolver
-scripts/ops/public-edge-smoke.sh "$SAFE_ZONE_PUBLIC_HOST"
+# SAFE_ZONE_DNS_DOT_ENABLED=true must be set in .env
+docker compose -f docker-compose.yml -f docker-compose.production.yml \
+  -f ops/vps-edge/docker-compose.dot.yml up -d dns-resolver
+scripts/ops/public-edge-smoke.sh --dot "$SAFE_ZONE_PUBLIC_HOST"
 ```
+
+`export-dot-cert.sh` writes the key as mode `0640` and assigns it to container
+group `101` by default, so the unprivileged `app` user can read it. Override
+the group with `SAFE_ZONE_DOT_KEY_GROUP` only if the image GID changes.

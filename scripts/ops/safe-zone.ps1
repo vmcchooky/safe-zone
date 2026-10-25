@@ -154,7 +154,16 @@ function Get-ComposeBaseArgs {
 
   $composeArgs = @('-f', 'docker-compose.yml')
   switch ($TargetStack) {
-    'production' { $composeArgs += @('-f', 'docker-compose.production.yml') }
+    'production' {
+      $composeArgs += @('-f', 'docker-compose.production.yml')
+      $tier = Get-DotEnvValue -Name 'SAFE_ZONE_DEPLOYMENT_TIER'
+      if ($tier -and ($tier.Trim().ToLowerInvariant() -in @('shared-host-edge', 'shared-host-edge-staging'))) {
+        $composeArgs += @('-f', 'ops/vps-edge/docker-compose.host-edge.yml')
+      }
+      if (Get-FlagEnabled -Name 'SAFE_ZONE_DNS_DOT_ENABLED') {
+        $composeArgs += @('-f', 'ops/vps-edge/docker-compose.dot.yml')
+      }
+    }
     'dev' { $composeArgs += @('-f', 'docker-compose.dev.yml') }
     default { throw "unsupported stack: $TargetStack" }
   }
@@ -420,6 +429,16 @@ function Copy-OptionalSnapshots {
   $productionCompose = Join-Path $RepoRoot 'docker-compose.production.yml'
   if (Test-Path $productionCompose -PathType Leaf) {
     Copy-Item -Force -Path $productionCompose -Destination (Join-Path $TargetDir 'docker-compose.production.yml.snapshot')
+  }
+
+  $hostEdgeCompose = Join-Path $RepoRoot 'ops/vps-edge/docker-compose.host-edge.yml'
+  if (Test-Path $hostEdgeCompose -PathType Leaf) {
+    Copy-Item -Force -Path $hostEdgeCompose -Destination (Join-Path $TargetDir 'docker-compose.host-edge.yml.snapshot')
+  }
+
+  $dotCompose = Join-Path $RepoRoot 'ops/vps-edge/docker-compose.dot.yml'
+  if (Test-Path $dotCompose -PathType Leaf) {
+    Copy-Item -Force -Path $dotCompose -Destination (Join-Path $TargetDir 'docker-compose.dot.yml.snapshot')
   }
 }
 

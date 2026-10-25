@@ -6,6 +6,7 @@ project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
 backup_dir="${SAFE_ZONE_BACKUP_DIR:-${project_dir}/backups}"
 stack="${SAFE_ZONE_STACK:-production}"
 tmp_dir="${project_dir}/tmp"
+dot_override="ops/vps-edge/docker-compose.dot.yml"
 
 cd "$project_dir"
 
@@ -100,12 +101,32 @@ set_build_metadata_env() {
   log_info "Build metadata: version=${SAFE_ZONE_BUILD_VERSION} commit=$(printf '%.12s' "$SAFE_ZONE_BUILD_GIT_COMMIT") tag=${SAFE_ZONE_BUILD_RELEASE_TAG}"
 }
 
+dot_enabled() {
+  is_true "$(env_value SAFE_ZONE_DNS_DOT_ENABLED || true)"
+}
+
+host_edge_enabled() {
+  case "$(env_value SAFE_ZONE_DEPLOYMENT_TIER || true)" in
+    shared-host-edge|shared-host-edge-staging) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 compose_stack() {
   selected_stack="$1"
   shift
   case "$selected_stack" in
     production)
-      $compose -f docker-compose.yml -f docker-compose.production.yml "$@"
+      compose_files="-f docker-compose.yml -f docker-compose.production.yml"
+      if host_edge_enabled; then
+        compose_files="$compose_files -f ops/vps-edge/docker-compose.host-edge.yml"
+      fi
+      if dot_enabled; then
+        compose_files="$compose_files -f $dot_override"
+      fi
+      # Intentional word splitting: compose_files is a list of relative paths
+      # without spaces, and POSIX sh has no arrays.
+      $compose $compose_files "$@"
       ;;
     dev)
       $compose -f docker-compose.yml -f docker-compose.dev.yml "$@"
@@ -295,6 +316,12 @@ copy_optional_snapshots() {
   fi
   if [ -f docker-compose.production.yml ]; then
     cp docker-compose.production.yml "${target}/docker-compose.production.yml.snapshot"
+  fi
+  if [ -f ops/vps-edge/docker-compose.host-edge.yml ]; then
+    cp ops/vps-edge/docker-compose.host-edge.yml "${target}/docker-compose.host-edge.yml.snapshot"
+  fi
+  if [ -f ops/vps-edge/docker-compose.dot.yml ]; then
+    cp ops/vps-edge/docker-compose.dot.yml "${target}/docker-compose.dot.yml.snapshot"
   fi
 }
 

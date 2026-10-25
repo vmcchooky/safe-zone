@@ -1,13 +1,100 @@
 #!/usr/bin/env sh
 set -eu
 
-host="${1:-${SAFE_ZONE_PUBLIC_HOST:-}}"
-dot_port="${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-853}"
+usage() {
+  cat <<'USAGE'
+Usage: scripts/ops/public-edge-smoke.sh [--dot|--no-dot] <host>
+
+Checks public HTTPS, the analyze API, DoH, and (when DoT is enabled) the
+DoT handshake/query path. Without --dot/--no-dot, the script follows
+SAFE_ZONE_DNS_DOT_ENABLED from the environment or .env.
+USAGE
+}
+
+host=""
+dot_flag=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --dot)
+      dot_flag="true"
+      shift
+      ;;
+    --no-dot)
+      dot_flag="false"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      if [ -n "$host" ]; then
+        echo "ERROR: only one host argument is accepted" >&2
+        exit 2
+      fi
+      host="$1"
+      shift
+      ;;
+  esac
+done
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+project_dir="$(CDPATH= cd -- "$script_dir/../.." && pwd)"
+
+env_value() {
+  key="$1"
+  eval "value=\${$key:-}"
+  if [ -n "${value:-}" ]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  env_file="${SAFE_ZONE_ENV_FILE:-$project_dir/.env}"
+  if [ -f "$env_file" ]; then
+    value="$(grep -E "^[[:space:]]*${key}=" "$env_file" | tail -n 1 | sed -E "s/^[[:space:]]*${key}=//" | tr -d '\r' || true)"
+    value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//')"
+    case "$value" in
+      \'*\')
+        value="${value#\'}"
+        value="${value%\'}"
+        ;;
+    esac
+    if [ -n "$value" ]; then
+      printf '%s' "$value"
+    fi
+  fi
+}
+
+is_true() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+host="${host:-${SAFE_ZONE_PUBLIC_HOST:-}}"
+dot_port="${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-}"
+if [ -z "$dot_port" ]; then
+  dot_port="$(env_value SAFE_ZONE_DNS_DOT_PUBLISHED_PORT || true)"
+fi
+dot_port="${dot_port:-853}"
 
 if [ -z "$host" ]; then
-  echo "usage: scripts/ops/public-edge-smoke.sh safe.example.com" >&2
-  echo "or set SAFE_ZONE_PUBLIC_HOST." >&2
+  usage >&2
   exit 2
+fi
+
+if [ -n "$dot_flag" ]; then
+  dot_enabled="$dot_flag"
+elif is_true "$(env_value SAFE_ZONE_DNS_DOT_ENABLED || true)"; then
+  dot_enabled="true"
+else
+  dot_enabled="false"
 fi
 
 tmp_dns="$(mktemp)"
@@ -31,23 +118,29 @@ printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\0
     -o "$tmp_dns"
 [ -s "$tmp_dns" ]
 
-if command -v openssl >/dev/null 2>&1; then
+if [ "$dot_enabled" = "true" ]; then
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo "ERROR: DoT is enabled but openssl is not installed; cannot verify the handshake." >&2
+    exit 2
+  fi
   echo "Checking DoT TLS certificate..."
   openssl s_client \
     -connect "${host}:${dot_port}" \
     -servername "${host}" \
     -verify_return_error \
     </dev/null >/dev/null 2>&1
-fi
 
-if command -v kdig >/dev/null 2>&1; then
-  echo "Checking DoT query path with kdig..."
-  kdig @"${host}" -p "${dot_port}" +tls example.com >/dev/null
-elif command -v dog >/dev/null 2>&1; then
-  echo "Checking DoT query path with dog..."
-  dog example.com @"tls://${host}:${dot_port}" >/dev/null
+  if command -v kdig >/dev/null 2>&1; then
+    echo "Checking DoT query path with kdig..."
+    kdig @"${host}" -p "${dot_port}" +tls example.com >/dev/null
+  elif command -v dog >/dev/null 2>&1; then
+    echo "Checking DoT query path with dog..."
+    dog example.com @"tls://${host}:${dot_port}" >/dev/null
+  else
+    echo "No DoT query tool found; verified TLS handshake only."
+  fi
 else
-  echo "No DoT query tool found; verified TLS handshake only."
+  echo "DoT disabled; skipping DoT checks."
 fi
 
 echo "Public edge smoke checks passed for ${host}."

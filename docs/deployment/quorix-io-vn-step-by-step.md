@@ -27,7 +27,7 @@ Safe Zone public endpoints would then be:
 - Dashboard: `https://safe.quorix.io.vn/app/`
 - Analyze API: `https://safe.quorix.io.vn/v1/analyze`
 - DoH: `https://safe.quorix.io.vn/dns-query`
-- DoT: `safe.quorix.io.vn:853`
+- DoT: `safe.quorix.io.vn:853` (optional, disabled by default)
 
 ## What you need to prepare
 
@@ -136,7 +136,7 @@ If the provider supports cloud firewall during provisioning, allow:
 - `22/tcp`
 - `80/tcp`
 - `443/tcp`
-- `853/tcp`
+- `853/tcp` only if you plan to enable DoT
 
 ## Step 3: create an SSH key on your local machine
 
@@ -288,10 +288,13 @@ SAFE_ZONE_ADMIN_PASSWORD=your-long-random-password
 SAFE_ZONE_ADMIN_API_KEY=your-long-random-api-key
 
 SAFE_ZONE_AI_PROVIDER=none
+SAFE_ZONE_DNS_DOT_ENABLED=false
 
 SAFE_ZONE_DUCKDNS_DOMAIN=
 SAFE_ZONE_DUCKDNS_TOKEN=
 ```
+
+DoT is opt-in. Leave `SAFE_ZONE_DNS_DOT_ENABLED=false` unless you already have a trusted certificate pair; Step 15 covers enabling it.
 
 Why `SAFE_ZONE_AI_PROVIDER=none` first:
 
@@ -307,21 +310,26 @@ chmod +x scripts/ops/safe-zone.sh scripts/ops/duckdns-update.sh scripts/ops/benc
 scripts/ops/safe-zone.sh deploy
 ```
 
+When `SAFE_ZONE_DNS_DOT_ENABLED=true`, the deploy helper also merges
+`ops/vps-edge/docker-compose.dot.yml` to publish `853`. With the default
+`false`, `853` stays closed.
+
 This will start:
 
 - `core-api`
 - `dns-resolver`
 - `redis`
 - `caddy`
+- `feed-syncd`
 
 ## Step 12: verify containers and health
 
 On the VPS:
 
 ```sh
-docker compose --profile production-edge ps
+docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production-edge ps
 scripts/ops/safe-zone.sh status
-docker compose --profile production-edge logs -f --tail=100
+docker compose -f docker-compose.yml -f docker-compose.production.yml --profile production-edge logs -f --tail=100
 ```
 
 Healthy signs:
@@ -330,6 +338,7 @@ Healthy signs:
 - `dns-resolver` is up
 - `redis` is up
 - `caddy` is up
+- `feed-syncd` is up
 
 ## Step 13: verify HTTPS
 
@@ -365,7 +374,22 @@ Endpoint:
 
 - `https://safe.quorix.io.vn/dns-query`
 
-### DoT
+### DoT (optional)
+
+DoT is disabled by default. Skip this section while
+`SAFE_ZONE_DNS_DOT_ENABLED=false`; port `853` should remain closed.
+
+To enable it:
+
+1. Export a trusted certificate pair for `safe.quorix.io.vn`:
+
+   ```sh
+   scripts/ops/export-dot-cert.sh /path/to/fullchain.pem /path/to/privkey.pem
+   ```
+
+2. Set `SAFE_ZONE_DNS_DOT_ENABLED=true` in `.env`.
+3. Re-run `scripts/ops/safe-zone.sh deploy` so the DoT overlay is merged.
+4. Allow `853/tcp` in the provider firewall and UFW.
 
 Host:
 
@@ -379,16 +403,22 @@ Note:
 
 - host port `853` maps to container port `8533` internally
 - this is intentional so the service can run as a non-root process in the container
+- the production base Compose file does not publish `853`; the overlay `ops/vps-edge/docker-compose.dot.yml` does
 
-## Step 16: optionally enable free threat feeds
+## Step 16: review free threat feeds
 
-Edit `.env` and set:
+The production env template enables the `production-free` preset (URLhaus plus
+the OpenPhish community feed):
 
 ```env
-SAFE_ZONE_AGENT_FEED_SOURCES=https://urlhaus.abuse.ch/downloads/csv_recent/,https://rescure.me/rescure_domain_blacklist.txt
+SAFE_ZONE_THREAT_FEED_SOURCE=https://urlhaus.abuse.ch/downloads/csv_recent/,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
+SAFE_ZONE_AGENT_FEED_PRESET=production-free
+SAFE_ZONE_AGENT_FEED_SOURCES=
 ```
 
-Then run:
+`feed-syncd` downloads `SAFE_ZONE_THREAT_FEED_SOURCE`, while `core-api` uses the
+preset (or an explicit `SAFE_ZONE_AGENT_FEED_SOURCES` list) for the feed status
+page. Keep both sides aligned when you add or remove a source, then run:
 
 ```sh
 scripts/ops/safe-zone.sh feed-sync

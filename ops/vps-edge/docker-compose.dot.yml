@@ -1,3 +1,8 @@
+# Opt-in overlay for direct DNS-over-TLS on host port 853.
+#
+# Use it only with a trusted fullchain/privkey pair exported by
+# scripts/ops/export-dot-cert.sh. The production base compose deliberately
+# does not publish 853, so disabling DoT cannot leave an empty public port.
 services:
   dns-resolver:
     environment:

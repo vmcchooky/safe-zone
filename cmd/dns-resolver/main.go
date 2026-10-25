@@ -215,7 +215,7 @@ func run() int {
 		// DoT keeps an all-interface default, unlike the DoH listener above.
 		// DoT has no reverse-proxy path in this stack: Caddy terminates 443
 		// for the operator UI and DoH, and DoT clients connect straight to
-		// :8533 (docker-compose.production.yml publishes it as :853). Binding
+		// :8533 (the opt-in DoT overlay publishes it as :853). Binding
 		// it to loopback would make the feature unreachable rather than safer.
 		// The exposure is bounded by the per-client-IP DoT rate limiter
 		// configured above; an operator who does not need DoT should set

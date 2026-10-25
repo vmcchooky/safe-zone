@@ -43,7 +43,7 @@ Ubuntu 24.04 LTS
 40+ GB disk
 1 public IPv4
 Docker + Docker Compose
-Inbound 80/tcp, 443/tcp, 853/tcp
+Inbound 80/tcp, 443/tcp (add 853/tcp only when DoT is enabled)
 ```
 
 As of 2026-05-21, excluding Oracle, **a truly free permanent VPS with all of the above is effectively unavailable**.
@@ -222,7 +222,7 @@ Authentication: SSH public key
 Inbound ports: SSH 22, HTTP 80, HTTPS 443
 ```
 
-5. After VM creation, add inbound rule:
+5. After VM creation, add an inbound rule for `853/tcp` only if you plan to enable DoT:
 
 ```text
 853/tcp
@@ -283,7 +283,7 @@ For realistic Safe Zone testing, create:
 Machine type: e2-medium or e2-standard-2
 OS: Ubuntu 24.04 LTS
 Disk: 40–60 GB standard persistent disk
-Firewall: 22/tcp, 80/tcp, 443/tcp, 853/tcp
+Firewall: 22/tcp, 80/tcp, 443/tcp (853/tcp only when DoT is enabled)
 ```
 
 Then deploy the full stack.
@@ -698,7 +698,7 @@ Provider firewall / security group:
 22/tcp   SSH
 80/tcp   HTTP for Let's Encrypt and redirect
 443/tcp  HTTPS
-853/tcp  DNS-over-TLS
+853/tcp  DNS-over-TLS (optional; only when DoT is enabled)
 ```
 
 Optional during debugging:
@@ -756,7 +756,8 @@ Enable firewall:
 sudo ufw allow OpenSSH
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-sudo ufw allow 853/tcp
+# Only when SAFE_ZONE_DNS_DOT_ENABLED=true:
+# sudo ufw allow 853/tcp
 sudo ufw enable
 sudo ufw status
 ```
@@ -857,6 +858,11 @@ curl -I https://safe.quorix.io.vn/dns-query
 A DNS-aware DoH client is better for full validation.
 
 ### 14.2 DoT
+
+DoT is opt-in. The default production stack does not publish `853`. Enable it
+only after exporting a trusted certificate pair and setting
+`SAFE_ZONE_DNS_DOT_ENABLED=true`; deploy through `scripts/ops/safe-zone.sh` so
+`ops/vps-edge/docker-compose.dot.yml` is merged.
 
 Host:
 

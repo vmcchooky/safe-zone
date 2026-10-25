@@ -22,7 +22,7 @@ Nếu mục tiêu của bạn là deploy Safe Zone **đầy đủ tính năng**,
 - dashboard;
 - API `/v1/analyze`;
 - DoH `/dns-query` qua HTTPS;
-- DoT qua port `853/tcp`;
+- DoT qua port `853/tcp` (tùy chọn, mặc định tắt);
 
 thì bạn nên dùng **VPS / Cloud VM thật**.
 
@@ -41,7 +41,7 @@ Ubuntu 24.04 LTS
 40+ GB disk
 1 public IPv4
 Docker + Docker Compose
-Mở được inbound 80/tcp, 443/tcp, 853/tcp
+Mở được inbound 80/tcp, 443/tcp (chỉ mở 853/tcp khi bật DoT)
 ```
 
 Nếu loại Oracle ra, hiện tại gần như **không có VPS free vĩnh viễn** nào đáp ứng trọn bộ cấu hình này.
@@ -231,7 +231,7 @@ Static Public IP nếu không được cover
 Image: Ubuntu Server 24.04 LTS
 Authentication: SSH public key
 Inbound ports ban đầu: 22, 80, 443
-Sau khi tạo VM: mở thêm 853/tcp
+Sau khi tạo VM: mở thêm 853/tcp chỉ khi bật DoT
 ```
 
 Nếu có lựa chọn size:
@@ -252,7 +252,7 @@ Tạo các rule:
 | 22 | TCP | Your IP hoặc Any | Allow | SSH |
 | 80 | TCP | Any | Allow | HTTP / Let's Encrypt |
 | 443 | TCP | Any | Allow | HTTPS / DoH |
-| 853 | TCP | Any | Allow | DoT |
+| 853 | TCP | Any | Allow | DoT (tùy chọn) |
 
 Nếu muốn an toàn hơn, port `22` chỉ nên allow IP nhà bạn.
 
@@ -269,7 +269,7 @@ Region: gần Việt Nam nhất trong khả năng chi phí, ví dụ asia-southe
 Machine type: e2-standard-2 hoặc e2-medium nếu muốn nhẹ hơn
 OS: Ubuntu 24.04 LTS
 Disk: 40–60 GB standard persistent disk
-Firewall: allow HTTP, HTTPS, SSH; tạo rule thêm 853/tcp
+Firewall: allow HTTP, HTTPS, SSH; tạo rule thêm 853/tcp chỉ khi bật DoT
 ```
 
 Nếu chỉ dùng always-free thật sự:
@@ -300,7 +300,7 @@ Chỉ nên dùng AWS nếu bạn chấp nhận:
 AMI: Ubuntu Server 24.04 LTS
 Instance type: t2.micro hoặc t3.micro nếu free-eligible
 Storage: 30 GB gp2/gp3 nếu nằm trong free tier
-Security Group: 22, 80, 443, 853
+Security Group: 22, 80, 443 (thêm 853 chỉ khi bật DoT)
 ```
 
 ### 8.2 Thêm swap nếu RAM thấp
@@ -387,7 +387,8 @@ Bật firewall UFW:
 sudo ufw allow OpenSSH
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
-sudo ufw allow 853/tcp
+# Chỉ khi SAFE_ZONE_DNS_DOT_ENABLED=true:
+# sudo ufw allow 853/tcp
 sudo ufw enable
 sudo ufw status
 ```
@@ -604,6 +605,11 @@ Có thể test bằng `curl` hoặc DNS client hỗ trợ DoH.
 
 ### 19.2 DoT
 
+DoT mặc định tắt. Production base không publish port `853`. Chỉ bật sau khi
+export cặp certificate tin cậy bằng `scripts/ops/export-dot-cert.sh`, đặt
+`SAFE_ZONE_DNS_DOT_ENABLED=true` trong `.env`, rồi deploy qua
+`scripts/ops/safe-zone.sh` để merge `ops/vps-edge/docker-compose.dot.yml`.
+
 Thông tin:
 
 ```text
@@ -627,17 +633,19 @@ Nếu `TcpTestSucceeded: True` là port đã mở.
 
 ---
 
-## 20. Bật threat feeds miễn phí sau khi base stack ổn
+## 20. Kiểm tra threat feeds miễn phí sau khi base stack ổn
 
-Chỉ làm sau khi HTTPS/API đã chạy tốt.
-
-Sửa `.env`:
+Production env template bật preset `production-free` (URLhaus + OpenPhish):
 
 ```env
-SAFE_ZONE_AGENT_FEED_SOURCES=https://urlhaus.abuse.ch/downloads/csv_recent/,https://rescure.me/rescure_domain_blacklist.txt
+SAFE_ZONE_THREAT_FEED_SOURCE=https://urlhaus.abuse.ch/downloads/csv_recent/,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
+SAFE_ZONE_AGENT_FEED_PRESET=production-free
+SAFE_ZONE_AGENT_FEED_SOURCES=
 ```
 
-Chạy sync:
+`feed-syncd` tải `SAFE_ZONE_THREAT_FEED_SOURCE`, còn `core-api` dùng preset
+(hoặc `SAFE_ZONE_AGENT_FEED_SOURCES` nếu bạn liệt kê tay) cho trang feed status.
+Giữ hai bên khớp nhau khi thêm/bớt nguồn, rồi chạy:
 
 ```sh
 scripts/ops/safe-zone.sh feed-sync
@@ -1170,18 +1178,18 @@ SAFE_ZONE_ADMIN_PASSWORD=replace-with-long-password
 SAFE_ZONE_ADMIN_API_KEY=replace-with-long-api-key
 
 SAFE_ZONE_AI_PROVIDER=none
+SAFE_ZONE_DNS_DOT_ENABLED=false
 
 SAFE_ZONE_DUCKDNS_DOMAIN=
 SAFE_ZONE_DUCKDNS_TOKEN=
 
+SAFE_ZONE_THREAT_FEED_SOURCE=https://urlhaus.abuse.ch/downloads/csv_recent/,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
+SAFE_ZONE_AGENT_FEED_PRESET=production-free
 SAFE_ZONE_AGENT_FEED_SOURCES=
 ```
 
-Sau khi chạy ổn, mới thêm:
-
-```env
-SAFE_ZONE_AGENT_FEED_SOURCES=https://urlhaus.abuse.ch/downloads/csv_recent/,https://rescure.me/rescure_domain_blacklist.txt
-```
+Không để trống cả `SAFE_ZONE_THREAT_FEED_SOURCE` và preset trong production:
+`core-api` sẽ từ chối khởi động vì không có nguồn feed nào.
 
 ---
 

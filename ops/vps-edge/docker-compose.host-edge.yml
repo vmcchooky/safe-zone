@@ -1,13 +1,20 @@
+# Shared-host overlay: no bundled Caddy and no DoT publication by itself. The
+# production base is still required so feed-syncd, production guards, and
+# loopback bindings apply; scripts/ops/safe-zone.sh merges that base
+# automatically when SAFE_ZONE_DEPLOYMENT_TIER is shared-host-edge or
+# shared-host-edge-staging. The helper adds ops/vps-edge/docker-compose.dot.yml
+# when direct DoT is enabled. Requires Docker Compose v2.24+ for !override.
 services:
   caddy:
-    profiles: ["disabled-by-shared-vps-edge"]
+    # !override replaces the base profile list. Adding a profile with normal
+    # merge semantics would still match --profile production-edge, so Caddy
+    # would start on a host that already has its own edge.
+    profiles: !override ["disabled-by-shared-vps-edge"]
 
   core-api:
     ports:
       - "127.0.0.1:8080:8080"
 
   dns-resolver:
-    environment:
-      SAFE_ZONE_DNS_DOT_ENABLED: ${SAFE_ZONE_DNS_DOT_ENABLED:-false}
     ports:
       - "127.0.0.1:8081:8081"

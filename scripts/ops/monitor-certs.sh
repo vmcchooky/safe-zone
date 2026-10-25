@@ -3,16 +3,98 @@ set -euo pipefail
 
 host="${SAFE_ZONE_CERT_MONITOR_HOST:-localhost}"
 warn_days="${SAFE_ZONE_CERT_WARN_DAYS:-14}"
+dot_port=""
+dot_flag=""
+
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+project_dir="$(CDPATH= cd -- "$script_dir/../.." && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/ops/monitor-certs.sh
+Usage: scripts/ops/monitor-certs.sh [--dot|--no-dot]
 
 Environment:
   SAFE_ZONE_CERT_MONITOR_HOST   Hostname to check (default: localhost)
   SAFE_ZONE_CERT_WARN_DAYS      Warning threshold in days (default: 14)
+  SAFE_ZONE_DNS_DOT_ENABLED     Check DoT when true
+  SAFE_ZONE_DNS_DOT_PUBLISHED_PORT  DoT host port (default: 853)
+
+Without --dot/--no-dot, the script follows SAFE_ZONE_DNS_DOT_ENABLED from the
+environment or .env.
 USAGE
 }
+
+env_value() {
+  local key="$1"
+  local value="${!key:-}"
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  local env_file="${SAFE_ZONE_ENV_FILE:-$project_dir/.env}"
+  if [[ -f "$env_file" ]]; then
+    value="$(grep -E "^[[:space:]]*${key}=" "$env_file" | tail -n 1 | sed -E "s/^[[:space:]]*${key}=//" | tr -d '\r' || true)"
+    value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//')"
+    case "$value" in
+      \'*\')
+        value="${value#\'}"
+        value="${value%\'}"
+        ;;
+    esac
+    if [[ -n "$value" ]]; then
+      printf '%s' "$value"
+    fi
+  fi
+}
+
+is_true() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dot)
+      dot_flag="true"
+      shift
+      ;;
+    --no-dot)
+      dot_flag="false"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    -*)
+      echo "ERROR: unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+    *)
+      echo "ERROR: unexpected argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -n "$dot_flag" ]]; then
+  dot_enabled="$dot_flag"
+elif is_true "$(env_value SAFE_ZONE_DNS_DOT_ENABLED || true)"; then
+  dot_enabled="true"
+else
+  dot_enabled="false"
+fi
+
+dot_port="${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-}"
+if [[ -z "$dot_port" ]]; then
+  dot_port="$(env_value SAFE_ZONE_DNS_DOT_PUBLISHED_PORT || true)"
+fi
+dot_port="${dot_port:-853}"
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
@@ -64,16 +146,15 @@ check_cert() {
 }
 
 main() {
-  if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
-    usage
-    exit 0
-  fi
-
   require_command openssl
   require_command date
 
   check_cert "HTTPS" 443
-  check_cert "DoT" 853
+  if [[ "$dot_enabled" == "true" ]]; then
+    check_cert "DoT" "$dot_port"
+  else
+    echo "DoT disabled; skipping DoT certificate check."
+  fi
 }
 
 main "$@"

@@ -36,6 +36,15 @@ printf '%s\n' 'NEW-SECRET-VALUE' > ./ops/secrets/admin_api_key.new
 mv ./ops/secrets/admin_api_key.new ./ops/secrets/admin_api_key
 ```
 
+The service containers run as `app` (UID 100 / GID 101 on Alpine 3.24). A file
+left at mode `600` by `umask 077` is not readable there, so reapply the
+container group permission after every rotation:
+
+```sh
+sudo chgrp 101 ./ops/secrets/admin_api_key
+sudo chmod 640 ./ops/secrets/admin_api_key
+```
+
 ## Rotation steps
 
 1. Generate the new secret outside the server if possible and store it in your password manager.
