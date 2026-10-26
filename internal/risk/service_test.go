@@ -1322,26 +1322,57 @@ func TestLocalAIFailureFailsOpenFromEnv(t *testing.T) {
 }
 
 func TestLocalAITimeoutFailsOpenFromEnv(t *testing.T) {
+	releaseHandler := make(chan struct{})
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1beta/models/gemini-2.5-flash-lite:generateContent" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			return
 		}
-		time.Sleep(200 * time.Millisecond)
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"candidates":[{"content":{"parts":[{"text":"{\"verdict\":\"MALICIOUS\",\"confidence\":0.9,\"reason\":\"late response\"}"}]}}]}`))
+		// Never answer while the analysis is running. A fixed sleep leaves
+		// only that much headroom over the configured deadline: under
+		// full-suite load the 50 ms timer could fire after a late MALICIOUS
+		// body had already been buffered, which made this test fail with an
+		// escalation instead of the expected fail-open. The handler is
+		// released only after Analyze returns, so a late response cannot
+		// influence the verdict.
+		<-releaseHandler
 	}))
-	defer server.Close()
+	defer func() {
+		close(releaseHandler)
+		server.Close()
+	}()
 
 	t.Setenv("SAFE_ZONE_REDIS_ADDR", "")
+	t.Setenv("SAFE_ZONE_SQLITE_PATH", filepath.Join(t.TempDir(), "env.db"))
+	t.Setenv("SAFE_ZONE_ADBLOCK_ENABLED", "false")
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "")
 	t.Setenv("SAFE_ZONE_GEMINI_BASE_URL", server.URL+"/v1beta")
 	t.Setenv("SAFE_ZONE_GEMINI_API_KEY", "test-key")
 	t.Setenv("SAFE_ZONE_GEMINI_MODEL", "gemini-2.5-flash-lite")
 	t.Setenv("SAFE_ZONE_GEMINI_TIMEOUT_MS", "50")
 
 	service := NewServiceFromEnv()
+	t.Cleanup(func() {
+		if err := service.Close(); err != nil {
+			t.Errorf("close service: %v", err)
+		}
+	})
+	if client := service.AIClient(); client == nil || !client.Enabled() {
+		t.Fatal("expected AI client to be enabled from env")
+	}
+
+	start := time.Now()
 	result := service.Analyze(context.Background(), "secure-login-example.com", ClientInfo{})
+	elapsed := time.Since(start)
 	if result.Verdict != analysis.VerdictSuspicious {
 		t.Fatalf("expected suspicious result to remain unchanged on ai timeout, got %s", result.Verdict)
+	}
+	// A missing or ignored SAFE_ZONE_GEMINI_TIMEOUT_MS falls back to the 3 s
+	// client default. The bound only needs to distinguish that regression from
+	// a working 50 ms deadline, so it stays generous enough to survive a
+	// loaded runner.
+	if elapsed > 2*time.Second {
+		t.Fatalf("expected ai timeout to abort refinement promptly, Analyze took %s", elapsed)
 	}
 }
 
