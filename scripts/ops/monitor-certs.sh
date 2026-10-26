@@ -106,6 +106,11 @@ case "$warn_days" in
     exit 2
     ;;
 esac
+# Bash reads a leading zero as octal in arithmetic contexts. 08 and 09 are not
+# valid octal, and an arithmetic error inside an if-condition is silently
+# false, which would skip the warning window entirely. Normalize once, in
+# decimal, so 010 means ten days just like strconv.Atoi in the Go config.
+warn_days=$((10#$warn_days))
 
 if [[ -n "$dot_flag" ]]; then
   dot_enabled="$dot_flag"
