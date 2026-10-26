@@ -149,12 +149,43 @@ function Set-BuildMetadataEnv {
   Write-Host "Build metadata: version=$version commit=$($gitCommit.Substring(0, [Math]::Min(12, $gitCommit.Length))) tag=$releaseTag"
 }
 
+function Get-ComposeCommandParts {
+  # Parity with the sh helper's SAFE_ZONE_COMPOSE override. Splitting on
+  # whitespace keeps "docker compose" and custom wrapper commands testable.
+  if ($env:SAFE_ZONE_COMPOSE) {
+    return @($env:SAFE_ZONE_COMPOSE -split '\s+' | Where-Object { $_ })
+  }
+  return @('docker', 'compose')
+}
+
+function Invoke-ComposeCommand {
+  param([string[]]$ComposeArgs)
+
+  # Get-ComposeCommandParts is a pipeline function, so a single-element
+  # result unrolls into a scalar unless coerced back into an array.
+  $parts = @(Get-ComposeCommandParts)
+  $prefix = @()
+  if ($parts.Count -gt 1) {
+    $prefix = @($parts[1..($parts.Count - 1)])
+  }
+  & $parts[0] @prefix @ComposeArgs
+}
+
 function Get-ComposeBaseArgs {
   param([string]$TargetStack = $Stack)
 
   $composeArgs = @('-f', 'docker-compose.yml')
   switch ($TargetStack) {
-    'production' { $composeArgs += @('-f', 'docker-compose.production.yml') }
+    'production' {
+      $composeArgs += @('-f', 'docker-compose.production.yml')
+      $tier = Get-DotEnvValue -Name 'SAFE_ZONE_DEPLOYMENT_TIER'
+      if ($tier -and ($tier.Trim().ToLowerInvariant() -in @('shared-host-edge', 'shared-host-edge-staging'))) {
+        $composeArgs += @('-f', 'ops/vps-edge/docker-compose.host-edge.yml')
+      }
+      if (Get-FlagEnabled -Name 'SAFE_ZONE_DNS_DOT_ENABLED') {
+        $composeArgs += @('-f', 'ops/vps-edge/docker-compose.dot.yml')
+      }
+    }
     'dev' { $composeArgs += @('-f', 'docker-compose.dev.yml') }
     default { throw "unsupported stack: $TargetStack" }
   }
@@ -174,7 +205,7 @@ function Invoke-Compose {
   }
   $composeArgs += $SubCommandArgs
 
-  & docker compose @composeArgs
+  Invoke-ComposeCommand -ComposeArgs $composeArgs
   if ($LASTEXITCODE -ne 0) {
     throw "docker compose $($composeArgs -join ' ') failed with exit code $LASTEXITCODE"
   }
@@ -188,7 +219,7 @@ function Invoke-ComposeBestEffort {
 
   $composeArgs = Get-ComposeBaseArgs -TargetStack $TargetStack
   $composeArgs += $SubCommandArgs
-  & docker compose @composeArgs | Out-Null
+  Invoke-ComposeCommand -ComposeArgs $composeArgs | Out-Null
   if ($LASTEXITCODE -ne 0) {
     Write-Warn "docker compose $($composeArgs -join ' ') exited with code $LASTEXITCODE"
   }
@@ -301,6 +332,82 @@ function Assert-MLRolloutBundle {
   $bundlePath = if ([IO.Path]::IsPathRooted($hostPath)) { $hostPath } else { Join-Path $RepoRoot $hostPath }
   & pwsh -NoProfile -File (Join-Path $RepoRoot 'scripts/ops/ml-bundle.ps1') validate -BundleRoot (Split-Path -Parent $bundlePath)
   if ($LASTEXITCODE -ne 0) { throw 'ML rollout bundle validation failed' }
+}
+
+function Test-ComposeVersion {
+  # docker-compose.production.yml uses !reset and the shared-host overlay
+  # uses !override; both YAML tags landed in Compose v2.24. Detect the gap
+  # before anything builds instead of failing with a YAML parse error after
+  # a full image build. An unreadable version is only a warning: the config
+  # validation that follows still fails fast on an unsupported Compose.
+  $parts = @(Get-ComposeCommandParts)
+  $prefix = @()
+  if ($parts.Count -gt 1) {
+    $prefix = @($parts[1..($parts.Count - 1)])
+  }
+  $version = (& $parts[0] @prefix 'version' '--short' 2>$null | Select-Object -Last 1)
+  if ($LASTEXITCODE -ne 0 -or -not $version) {
+    Write-Warn "cannot read the Docker Compose version; relying on config validation to catch an unsupported Compose"
+    return
+  }
+  $version = "$version".Trim().TrimStart('v', 'V')
+  # Take the first two segments explicitly: multiple assignment from a
+  # 3-segment version like "2.39.2" would turn $minor into an array.
+  $segments = @($version -split '\.')
+  if ($segments.Count -lt 2) {
+    Write-Warn "cannot parse the Docker Compose version output; relying on config validation to catch an unsupported Compose"
+    return
+  }
+  $major = $segments[0]
+  $minor = $segments[1]
+  if ([int]$major -lt 2 -or ([int]$major -eq 2 -and [int]$minor -lt 24)) {
+    throw ("Docker Compose ${major}.${minor} does not support the !override/!reset YAML tags used by the production stack " +
+      '(docker-compose.production.yml, ops/vps-edge/docker-compose.host-edge.yml). Install Docker Compose v2.24 or newer and retry.')
+  }
+}
+
+function Assert-ProductionPreflight {
+  Write-Host 'Preflight: checking Docker Compose version (need v2.24+ for !override)...'
+  Test-ComposeVersion
+
+  Write-Host 'Preflight: validating compose configuration...'
+  Invoke-Compose -SubCommandArgs @('config', '-q') -TargetStack 'production' -UseProductionProfile
+
+  $configuredEnv = Get-DotEnvValue -Name 'SAFE_ZONE_ENV'
+  if ($configuredEnv) {
+    $configuredEnv = $configuredEnv.Trim().ToLowerInvariant()
+  }
+  if ($configuredEnv -notin @('production', 'prod')) {
+    throw "SAFE_ZONE_ENV must be 'production' (or the 'prod' alias) for a production deploy (found: '$configuredEnv')"
+  }
+
+  $blockStrategy = (Get-DotEnvValue -Name 'SAFE_ZONE_DNS_BLOCK_STRATEGY')
+  if (-not $blockStrategy) {
+    $blockStrategy = 'sinkhole'
+  }
+  $blockStrategy = $blockStrategy.Trim().ToLowerInvariant()
+  if ($blockStrategy -eq 'sinkhole') {
+    $blockPageIP = Get-DotEnvValue -Name 'SAFE_ZONE_BLOCK_PAGE_IP'
+    if (-not $blockPageIP -or $blockPageIP.Trim().ToLowerInvariant().StartsWith('replace-with-')) {
+      throw 'SAFE_ZONE_BLOCK_PAGE_IP is unset or a placeholder while SAFE_ZONE_DNS_BLOCK_STRATEGY=sinkhole; set the public IP of the block page host'
+    }
+  }
+
+  if (Get-FlagEnabled -Name 'SAFE_ZONE_DNS_DOT_ENABLED') {
+    $dotCertsDir = Get-DotEnvValue -Name 'SAFE_ZONE_DNS_DOT_CERTS_DIR'
+    if (-not $dotCertsDir) {
+      $dotCertsDir = './ops/certs/dot'
+    }
+    if (-not [IO.Path]::IsPathRooted($dotCertsDir)) {
+      $dotCertsDir = Join-Path $RepoRoot ($dotCertsDir.TrimStart('.').TrimStart('\', '/'))
+    }
+    if (-not (Test-Path (Join-Path $dotCertsDir 'fullchain.pem') -PathType Leaf) -or
+      -not (Test-Path (Join-Path $dotCertsDir 'privkey.pem') -PathType Leaf)) {
+      throw "DoT is enabled but $dotCertsDir is missing fullchain.pem or privkey.pem; export the pair with scripts/ops/export-dot-cert.sh"
+    }
+  }
+
+  Write-Host 'Preflight passed.'
 }
 
 function Resolve-SqliteRuntimePath {
@@ -420,6 +527,16 @@ function Copy-OptionalSnapshots {
   $productionCompose = Join-Path $RepoRoot 'docker-compose.production.yml'
   if (Test-Path $productionCompose -PathType Leaf) {
     Copy-Item -Force -Path $productionCompose -Destination (Join-Path $TargetDir 'docker-compose.production.yml.snapshot')
+  }
+
+  $hostEdgeCompose = Join-Path $RepoRoot 'ops/vps-edge/docker-compose.host-edge.yml'
+  if (Test-Path $hostEdgeCompose -PathType Leaf) {
+    Copy-Item -Force -Path $hostEdgeCompose -Destination (Join-Path $TargetDir 'docker-compose.host-edge.yml.snapshot')
+  }
+
+  $dotCompose = Join-Path $RepoRoot 'ops/vps-edge/docker-compose.dot.yml'
+  if (Test-Path $dotCompose -PathType Leaf) {
+    Copy-Item -Force -Path $dotCompose -Destination (Join-Path $TargetDir 'docker-compose.dot.yml.snapshot')
   }
 }
 
@@ -869,6 +986,11 @@ switch ($Command) {
     Write-Section 'Deploying Safe Zone'
     Set-BuildMetadataEnv
     Assert-MLRolloutBundle
+    # Fails before anything builds: compose version/config problems, missing
+    # production env, placeholder sinkhole IP, or a DoT pair that is not
+    # mounted. The resolver's own startup guards would exit 1 anyway, but
+    # only after the images were built.
+    Assert-ProductionPreflight
     # feed-syncd is part of the production stack (the production override
     # removes the developer profile), so a plain up starts it. The opt-out is
     # an explicit stop, not an omission that leaves the previous container

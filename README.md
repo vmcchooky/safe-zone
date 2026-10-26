@@ -227,7 +227,7 @@ the example configuration; verify your `.env` before deployment.
 | Function | Default in the example | External data | Control |
 |---|---|---|---|
 | DNS forwarding | Public DoH pool: Cloudflare, Google, Quad9, and AdGuard (`SAFE_ZONE_UPSTREAM_DOH_URLS`) | Forwarded queries go to one of the configured upstream DoH providers. | Point to your own upstream or providers you trust. |
-| Threat feeds | `feed-syncd` downloads `SAFE_ZONE_THREAT_FEED_SOURCE` (URLhaus in the example) | The feed provider sees requests from your host. | Use approved or local sources; monitor feed freshness. |
+| Threat feeds | `feed-syncd` downloads `SAFE_ZONE_THREAT_FEED_SOURCE` (URLhaus + OpenPhish in the example) | The feed provider sees requests from your host. | Use approved or local sources; monitor feed freshness. |
 | Adblock lists | Enabled; downloads StevenBlack hosts in the example | The host-list source sees requests from your host. | Set `SAFE_ZONE_ADBLOCK_ENABLED=false` or use your own source. |
 | TLS/WHOIS enrichment | Enabled (`SAFE_ZONE_ENRICH_ENABLED=true`) | Outbound connections to target hosts and WHOIS services. | Disable or restrict if outbound enrichment is not acceptable. |
 | OSINT | Enabled in the example (`SAFE_ZONE_OSINT_ENABLED=true`) | May query configured OSINT sources. | Set `SAFE_ZONE_OSINT_ENABLED=false` and review sources. |
@@ -257,9 +257,11 @@ Use this as a starting point; the
       import, backup, and rollback drill has passed.
 - [ ] Choose a block strategy and set a valid IPv4 `SAFE_ZONE_BLOCK_PAGE_IP` for
       sinkhole mode. Smoke-test the strategy you choose.
-- [ ] DoT is enabled by default. Install a trusted DoT certificate/key, or set
-      `SAFE_ZONE_DNS_DOT_ENABLED=false` if DoT is not used. A production start
-      with DoT enabled and no usable certificate/key fails.
+- [ ] DoT is opt-in and disabled by default. To expose it, export a trusted
+      certificate pair with `scripts/ops/export-dot-cert.sh`, set
+      `SAFE_ZONE_DNS_DOT_ENABLED=true`, and deploy through
+      `scripts/ops/safe-zone.sh` so `ops/vps-edge/docker-compose.dot.yml` is
+      merged. A production start with DoT enabled and no usable pair fails.
 - [ ] Confirm `/readyz` is healthy and review `/v1/status` for SQLite, Redis,
       allow-list, and feed state. SQLite is mandatory; a configured allow-list
       that fails to load is fatal in production. Other optional dependencies may
@@ -269,11 +271,19 @@ Use this as a starting point; the
 - [ ] Review [Data flow and privacy](#data-flow-and-privacy) and approve or
       disable every external provider.
 
-Deploy the production stack:
+Deploy the production stack through the helper so build metadata and the edge
+overlays are applied:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+scripts/ops/safe-zone.sh deploy
 ```
+
+On Windows, use `pwsh ./scripts/ops/safe-zone.ps1 deploy`. The helper merges
+`ops/vps-edge/docker-compose.host-edge.yml` when
+`SAFE_ZONE_DEPLOYMENT_TIER=shared-host-edge*`, and
+`ops/vps-edge/docker-compose.dot.yml` when `SAFE_ZONE_DNS_DOT_ENABLED=true`.
+Do not run `docker compose build` on the VPS directly; it produces images
+without commit/version metadata.
 
 Full edge setup (firewall, DoT certificates, DuckDNS, cron):
 [production-edge.md](docs/runbooks/production-edge.md). Reference sizing, not a
@@ -288,10 +298,10 @@ price guarantee: [Safe Zone OPEX estimate](docs/deployment/Safe_Zone_OPEX_Estima
 | `SAFE_ZONE_PUBLIC_HOST` | `safezone.example.com` in the example | Public hostname for Caddy TLS and DoH. |
 | `SAFE_ZONE_ADMIN_PASSWORD` / `SAFE_ZONE_ADMIN_API_KEY` | generated locally | Required in production, or provide a `*_FILE` path. |
 | `SAFE_ZONE_WHITELIST_PATH` | empty (DB-only mode) | Optional allow-list seed; a configured but unreadable path is fatal in production. |
-| `SAFE_ZONE_THREAT_FEED_SOURCE` | URLhaus in `.env.example` | Feed source(s) for `feed-syncd`; comma-separated for several. |
+| `SAFE_ZONE_THREAT_FEED_SOURCE` | URLhaus + OpenPhish in `.env.example` | Feed source(s) for `feed-syncd`; comma-separated for several. |
 | `SAFE_ZONE_DNS_BLOCK_STRATEGY` | `sinkhole` | `sinkhole`, `nxdomain`, `refused`, or `nullip`. |
 | `SAFE_ZONE_BLOCK_PAGE_IP` | `127.0.0.1` | Public IPv4 for sinkhole block pages; validated at startup. |
-| `SAFE_ZONE_DNS_DOT_ENABLED` | `true` | DoT listener; production needs a trusted cert/key, or set `false`. |
+| `SAFE_ZONE_DNS_DOT_ENABLED` | `false` | Opt-in DoT listener; requires the DoT overlay and a trusted cert/key. |
 | `SAFE_ZONE_ML_MODE` | `disabled` | Optional ML mode; URL-ML remains shadow-only. |
 | `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` local; `5` in the production Compose file | Telemetry write sampling. |
 | `SAFE_ZONE_TRUSTED_PROXIES` | loopback | CIDRs allowed to set forwarded headers; Compose adds the Docker bridge. |

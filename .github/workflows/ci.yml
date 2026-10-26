@@ -40,6 +40,88 @@ jobs:
           jq -e '.services["feed-syncd"] != null' production-compose.json
           jq -e '.services["core-api"].environment.SAFE_ZONE_ENV == "production"' production-compose.json
           jq -e '.services["dns-resolver"].environment.SAFE_ZONE_ENV == "production"' production-compose.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_DNS_DOT_ENABLED == "false"' production-compose.json
+          jq -e '[.services["dns-resolver"].ports[]? | select((.target|tostring) == "8533")] | length == 0' production-compose.json
+
+          # A shared .env from the developer stack may enable DoT. The production
+          # base must still keep 853 closed; only the overlay may open it.
+          cp .env .env.compose-check
+          printf '\nSAFE_ZONE_DNS_DOT_ENABLED=true\n' >> .env
+          docker compose -f docker-compose.yml -f docker-compose.production.yml config --format json > production-compose-env-dot.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_DNS_DOT_ENABLED == "false"' production-compose-env-dot.json
+          jq -e '[.services["dns-resolver"].ports[]? | select((.target|tostring) == "8533")] | length == 0' production-compose-env-dot.json
+          mv .env.compose-check .env
+
+      # The Go services bind unprivileged ports, need no kernel capabilities,
+      # and run as the non-root app user. Assert the hardening in the rendered
+      # stack instead of trusting the compose source. Caddy and redis are
+      # deliberately excluded until they are verified without their defaults.
+      - name: Check container hardening
+        run: |
+          for service in core-api dns-resolver feed-syncd; do
+            jq -e --arg s "$service" '.services[$s].cap_drop == ["ALL"]' production-compose.json
+            jq -e --arg s "$service" '.services[$s].security_opt == ["no-new-privileges:true"]' production-compose.json
+          done
+
+          # feed-sync is a one-shot profile, so render it explicitly.
+          docker compose -f docker-compose.yml -f docker-compose.production.yml \
+            --profile feed-sync-once config --format json > feed-sync-compose.json
+          jq -e '.services["feed-sync"].cap_drop == ["ALL"]' feed-sync-compose.json
+          jq -e '.services["feed-sync"].security_opt == ["no-new-privileges:true"]' feed-sync-compose.json
+
+          # Caddy is profile-gated in the base stack; render it here so the
+          # exclusion is checked on a config that actually contains it.
+          docker compose -f docker-compose.yml -f docker-compose.production.yml \
+            --profile production-edge config --format json > production-compose-edge.json
+          for service in caddy redis; do
+            jq -e --arg s "$service" '.services[$s].cap_drop == null' production-compose-edge.json
+            jq -e --arg s "$service" '.services[$s].security_opt == null' production-compose-edge.json
+          done
+
+      # DoT is opt-in. The overlay must add both the trusted certificate paths
+      # and the 853 publish without changing the default production stack.
+      - name: Check the opt-in DoT overlay
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.production.yml -f ops/vps-edge/docker-compose.dot.yml config --format json > production-compose-dot.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_DNS_DOT_ENABLED == "true"' production-compose-dot.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_DNS_DOT_CERT_FILE == "/run/safe-zone/dot-certs/fullchain.pem"' production-compose-dot.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_DNS_DOT_KEY_FILE == "/run/safe-zone/dot-certs/privkey.pem"' production-compose-dot.json
+          jq -e '[.services["dns-resolver"].ports[]? | select((.target|tostring) == "8533" and (.published|tostring) == "853")] | length == 1' production-compose-dot.json
+
+      # Shared-host-edge still uses the production base (feed-syncd and
+      # production guards) but must never start the bundled Caddy, even when
+      # the deploy helper passes --profile production-edge.
+      - name: Check the shared-host-edge stack
+        run: |
+          cp .env .env.ci-backup
+          trap 'mv .env.ci-backup .env' EXIT
+          cp ops/vps-edge/env.shared-host-edge.production.example .env
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.production.yml \
+            -f ops/vps-edge/docker-compose.host-edge.yml \
+            --profile production-edge \
+            config --format json > shared-host-compose.json
+          jq -e '.services["caddy"] == null' shared-host-compose.json
+          jq -e '.services["feed-syncd"] != null' shared-host-compose.json
+          jq -e '.services["core-api"].environment.SAFE_ZONE_ENV == "production"' shared-host-compose.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_DNS_DOT_ENABLED == "false"' shared-host-compose.json
+          jq -e '[.services["dns-resolver"].ports[]? | select((.target|tostring) == "8533")] | length == 0' shared-host-compose.json
+          jq -e '[.services["core-api"].ports[]? | select(.host_ip == "127.0.0.1" and ((.target|tostring) == "8080"))] | length == 1' shared-host-compose.json
+          jq -e '[.services["dns-resolver"].ports[]? | select(.host_ip == "127.0.0.1" and ((.target|tostring) == "8081"))] | length == 1' shared-host-compose.json
+
+          # Direct DoT stays opt-in in shared-host mode too: the overlay opens
+          # 853 but still must not activate the bundled Caddy.
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.production.yml \
+            -f ops/vps-edge/docker-compose.host-edge.yml \
+            -f ops/vps-edge/docker-compose.dot.yml \
+            --profile production-edge \
+            config --format json > shared-host-compose-dot.json
+          jq -e '.services["caddy"] == null' shared-host-compose-dot.json
+          jq -e '.services["dns-resolver"].environment.SAFE_ZONE_DNS_DOT_ENABLED == "true"' shared-host-compose-dot.json
+          jq -e '[.services["dns-resolver"].ports[]? | select((.target|tostring) == "8533" and (.published|tostring) == "853")] | length == 1' shared-host-compose-dot.json
 
       # The developer stack stays opt-in; that is the contract the production
       # override exists to preserve.
@@ -50,6 +132,45 @@ jobs:
             echo "feed-syncd must not be enabled in the developer stack" >&2
             exit 1
           fi
+
+  # The deploy helper and the two optional monitoring scripts have no Go
+  # package to hang tests off. Run their shell suites here, and run the
+  # PowerShell parity suite on Windows because its compose stub is a .cmd.
+  ops-scripts:
+    name: Ops script tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run shell ops tests
+        run: |
+          bash scripts/ops/tests/safe-zone-preflight-test.sh
+          bash scripts/ops/tests/monitor-certs-test.sh
+          bash scripts/ops/tests/public-edge-smoke-test.sh
+
+      - name: ShellCheck changed ops scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck \
+            scripts/ops/monitor-certs.sh \
+            scripts/ops/public-edge-smoke.sh \
+            scripts/ops/safe-zone.sh \
+            scripts/ops/tests/*.sh
+
+  ops-scripts-windows:
+    name: Ops script tests (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run PowerShell preflight tests
+        shell: pwsh
+        run: ./scripts/ops/tests/safe-zone-preflight-test.ps1
 
   # Each gate group gets its own runner. Measured on a single quality runner,
   # all of these ran against the same vCPUs: the task graph was 656s wall-clock

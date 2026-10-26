@@ -15,6 +15,21 @@
 # Ensure .gitignore always uses LF so Windows line endings do not break pattern parsing.
 .gitignore text eol=lf
 
+# Env templates, Compose files, and the Dockerfile must stay LF. A CRLF env
+# file copied to a Linux host can leave a trailing \r in values (hostnames,
+# URLs, secrets), and CRLF in a Dockerfile breaks line continuations.
+*.example text eol=lf
+docker-compose*.yml text eol=lf
+Dockerfile text eol=lf
+.gitattributes text eol=lf
+
+# UI sources must stay LF for the same reason as Go and shell: `npm run check`
+# runs Prettier with the default endOfLine=lf, and the Docker build runs that
+# check on the build context. A Windows checkout with core.autocrlf=true
+# otherwise fails the image build even though CI (Linux) is green.
+# Found 2026-10-24 while validating the VPS candidate.
+ui/** text=auto eol=lf
+
 # Exclude CI, internal agent metadata, and local scanners from GitHub Release archive downloads
 .github export-ignore
 .agents export-ignore

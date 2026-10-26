@@ -23,7 +23,7 @@ These are already present and should be treated as the project foundation.
 - `[x]` SQLite telemetry, overrides, client groups, and group overrides exist.
 - `[x]` Domain analysis includes lexical heuristics, whitelist checks, threat-feed checks, TLS inspection, WHOIS enrichment, and optional AI refinement.
 - `[x]` DoH endpoint exists at `/dns-query`.
-- `[x]` DoT support exists and can run on host port `853` through Compose mapping.
+- `[x]` DoT support exists and can run on host port `853` through the opt-in Compose overlay.
 - `[x]` Rate limiting exists for API, DoH, DoT, telemetry, overrides, and default routes.
 - `[x]` Panic recovery exists for HTTP handlers and DoT handler.
 - `[x]` Dockerfile and Docker Compose exist.
@@ -58,11 +58,11 @@ Goal: expose only the intended production surface to the internet.
 - `[x]` HTTPS/Let's Encrypt path exists through Caddy.
 - `[x]` DuckDNS update script and cron example exist.
 - `[x]` DoH can be served publicly on `443` through Caddy at `/dns-query`.
-- `[x]` DoT can be published on `853`.
+- `[x]` DoT can be published on `853` through the opt-in `ops/vps-edge/docker-compose.dot.yml` overlay; the production base stays closed.
 - `[x]` Repeatable public-edge checks exist through audited `scripts/ops/check-production-ports.sh` and `scripts/ops/public-edge-smoke.sh`.
 - `[x]` Lock down host exposure of internal ports `8080` and `8081` in production. Production Compose binds both to `127.0.0.1` only.
-- `[~]` Firewall/security-group validation is scripted for SSH, `80`, `443`, and `853`; host execution record captured 2026-09-20 (`docs/deployment/edge-verification-2026-09-20.md`); Azure NSG audit still needed per environment.
-- `[x]` Decide how DoT receives a trusted certificate in production. Production Compose mounts a dedicated certificate directory and the renewal runbook documents the export process.
+- `[~]` Firewall/security-group validation is scripted for SSH, `80`, `443`, and `853` only when DoT is enabled; host execution record captured 2026-09-20 (`docs/deployment/edge-verification-2026-09-20.md`); Azure NSG audit still needed per environment.
+- `[x]` Decide how DoT receives a trusted certificate in production. The opt-in DoT overlay mounts a dedicated certificate directory and the renewal runbook documents the export process.
 
 Steps:
 

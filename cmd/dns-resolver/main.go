@@ -92,9 +92,9 @@ func run() int {
 	blockPageIP := config.String("SAFE_ZONE_BLOCK_PAGE_IP", "127.0.0.1")
 	if _, ipErr := config.ValidateIP(blockPageIP); ipErr != nil {
 		logjson.Error("invalid SAFE_ZONE_BLOCK_PAGE_IP", map[string]any{
-			"service":   "dns-resolver",
-			"value":     blockPageIP,
-			"error":     ipErr.Error(),
+			"service":     "dns-resolver",
+			"value":       blockPageIP,
+			"error":       ipErr.Error(),
 			"consequence": "blocked domains would resolve to the origin instead of the block page",
 		})
 		if config.IsProduction() {
@@ -103,6 +103,31 @@ func run() int {
 		logjson.Warn("falling back to the null IP for blocked answers outside production", map[string]any{
 			"service": "dns-resolver",
 		})
+	}
+
+	// Sinkhole production answers must point at a routable block page. A
+	// loopback or documentation-range address parses fine but sends every
+	// blocked client to a dead end, which looks exactly like an outage of
+	// the whole resolver. Other strategies never emit the address, so the
+	// policy only applies to sinkhole. Private ranges are allowed with a
+	// warning: internal deployments sinkhole to a private host on purpose.
+	if config.IsProduction() && blockStrategy == resolver.BlockStrategySinkhole {
+		warning, policyErr := config.ValidateProductionBlockPageIP(blockPageIP)
+		if policyErr != nil {
+			logjson.Error("unsafe SAFE_ZONE_BLOCK_PAGE_IP for production sinkhole", map[string]any{
+				"service":     "dns-resolver",
+				"value":       blockPageIP,
+				"error":       policyErr.Error(),
+				"consequence": "every blocked domain would fail to reach a block page",
+			})
+			return 1
+		}
+		if warning != "" {
+			logjson.Warn("SAFE_ZONE_BLOCK_PAGE_IP is a private address", map[string]any{
+				"service": "dns-resolver",
+				"detail":  warning,
+			})
+		}
 	}
 
 	// Upstream fetches go through the shared outbound guard: every dial —
@@ -215,7 +240,7 @@ func run() int {
 		// DoT keeps an all-interface default, unlike the DoH listener above.
 		// DoT has no reverse-proxy path in this stack: Caddy terminates 443
 		// for the operator UI and DoH, and DoT clients connect straight to
-		// :8533 (docker-compose.production.yml publishes it as :853). Binding
+		// :8533 (the opt-in DoT overlay publishes it as :853). Binding
 		// it to loopback would make the feature unreachable rather than safer.
 		// The exposure is bounded by the per-client-IP DoT rate limiter
 		// configured above; an operator who does not need DoT should set

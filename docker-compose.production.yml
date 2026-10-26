@@ -22,13 +22,18 @@ services:
       # See the core-api note above: the base .env is shared with the developer
       # stack, so production must not inherit SAFE_ZONE_ENV=local from it.
       SAFE_ZONE_ENV: production
-      SAFE_ZONE_DNS_DOT_CERT_FILE: /run/safe-zone/dot-certs/fullchain.pem
-      SAFE_ZONE_DNS_DOT_KEY_FILE: /run/safe-zone/dot-certs/privkey.pem
+      # DoT is opt-in and needs both a trusted certificate pair and the
+      # published port from ops/vps-edge/docker-compose.dot.yml. Pin it off
+      # here so a developer .env that enables DoT cannot make the production
+      # base start a listener without the certificate mount.
+      SAFE_ZONE_DNS_DOT_ENABLED: "false"
     ports:
       - "127.0.0.1:8081:8081"
-      - "${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-853}:${SAFE_ZONE_DNS_DOT_CONTAINER_PORT:-8533}"
-    volumes:
-      - "${SAFE_ZONE_DNS_DOT_CERTS_DIR:-./ops/certs/dot}:/run/safe-zone/dot-certs:ro"
+    # DoT is opt-in. Merge ops/vps-edge/docker-compose.dot.yml to publish 853
+    # and mount a trusted pair; scripts/ops/safe-zone.sh adds that overlay
+    # automatically when SAFE_ZONE_DNS_DOT_ENABLED=true. Keeping the port out
+    # of the default stack means a disabled DoT cannot leave 853 published
+    # with no listener; check-production-ports.sh reports that as a failure.
 
   feed-syncd:
     # The daemon is part of the production stack: a deployment with no feed

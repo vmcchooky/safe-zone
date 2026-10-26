@@ -23,3 +23,15 @@ pass `--api-key-file ./ops/secrets/firecrawl_api_key`; never embed the value in
 source code or command-line arguments.
 
 Do not commit real secret material. The repository ignores everything in this directory except this README.
+
+## Container ownership
+
+The service containers run as the unprivileged `app` user (UID 100 / GID 101
+on Alpine 3.24). A file created with `umask 077` is owned by the deploy user and
+is not readable by that group. Before the first start, grant the container group
+read access without making the file world-readable:
+
+```sh
+sudo chgrp 101 ops/secrets/admin_password ops/secrets/admin_api_key
+sudo chmod 640 ops/secrets/admin_password ops/secrets/admin_api_key
+```

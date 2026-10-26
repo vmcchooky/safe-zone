@@ -5,7 +5,9 @@ Threat feeds are defense-in-depth. If feed sync fails, Safe Zone continues to an
 ## Detect
 
 ```sh
-# feed-syncd only runs under the feed-sync Compose profile
+# Production: feed-syncd is part of the stack, without a profile.
+docker compose -f docker-compose.yml -f docker-compose.production.yml logs feed-syncd --tail=200
+# Developer stack: feed-syncd stays behind the feed-sync profile.
 docker compose --profile feed-sync logs feed-syncd --tail=200
 # file log exists only when cron file-logging is enabled
 grep -i "feed" logs/feed-sync.log

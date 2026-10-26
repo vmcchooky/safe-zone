@@ -8,7 +8,7 @@ Accepted
 
 ## Decision
 
-Caddy is the only public HTTP/HTTPS edge for the production stack. It terminates HTTPS and proxies dashboard/API traffic plus DoH to internal services. DoT stays on `dns-resolver` directly over port `853`.
+Caddy is the only public HTTP/HTTPS edge for the production stack. It terminates HTTPS and proxies dashboard/API traffic plus DoH to internal services. When DoT is enabled, it stays on `dns-resolver` directly over port `853`.
 
 ## Rationale
 

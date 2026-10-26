@@ -4,3 +4,7 @@
 */5 * * * * cd /opt/safe-zone && . ./.env && scripts/ops/duckdns-update.sh >> logs/duckdns.log 2>&1
 30 * * * * cd /opt/safe-zone && . ./.env && scripts/ops/safe-zone.sh feed-sync >> logs/feed-sync.log 2>&1
 15 3 * * * cd /opt/safe-zone && . ./.env && scripts/ops/safe-zone.sh backup >> logs/backup.log 2>&1
+# Daily certificate check. --fail-on-warning makes the job exit 1 while any
+# certificate is inside the warning window (SAFE_ZONE_CERT_WARN_DAYS, 14 by
+# default). Drop the flag to log the warning without failing the job.
+0 8 * * * cd /opt/safe-zone && . ./.env && scripts/ops/monitor-certs.sh --fail-on-warning >> logs/monitor-certs.log 2>&1

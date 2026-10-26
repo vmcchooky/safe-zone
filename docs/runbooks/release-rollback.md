@@ -61,11 +61,13 @@ scripts/ops/check-block-page.sh "$SAFE_ZONE_PUBLIC_HOST" "$SAFE_ZONE_BLOCK_PAGE_
 3. Redeploy:
 
 ```sh
-docker compose \
-  -f docker-compose.yml \
-  -f ops/vps-edge/docker-compose.host-edge.yml \
-  up -d --build redis core-api dns-resolver
+scripts/ops/safe-zone.sh deploy
 ```
+
+The helper reads `SAFE_ZONE_DEPLOYMENT_TIER` from `.env` and merges the
+shared-host overlay automatically. If the last-known-good release had DoT
+enabled, keep `SAFE_ZONE_DNS_DOT_ENABLED=true` in `.env` so the DoT overlay is
+restored as well.
 
 4. Verify:
 

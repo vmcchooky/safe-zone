@@ -91,7 +91,7 @@ go run ./cmd/feed-sync -source ./feeds/local.txt -redis-addr localhost:6379
 ```
 
 Threat feed sync also accepts `.gz` feeds over local file paths or HTTP(S) URLs.
-The optional daemon is available as `go run ./cmd/feed-syncd --once` or through the Compose `feed-sync` profile.
+The daemon is available as `go run ./cmd/feed-syncd --once`. The developer stack gates it behind the `feed-sync` Compose profile; the production stack runs it by default.
 
 Accepted feed formats are TXT, CSV, gzip-compressed files, and whitespace-separated URL lists such as the OpenPhish community feed. Exact matches and subdomain suffix matches return `MALICIOUS` with reason `matched local threat feed`.
 
@@ -118,11 +118,13 @@ The DoH endpoint accepts standard DNS wire-format GET or POST requests at:
 http://localhost:8081/dns-query
 ```
 
-If you start the Docker dev stack, DoT is also exposed on loopback at:
+If you start the Docker dev stack with `SAFE_ZONE_DNS_DOT_ENABLED=true`, DoT is exposed on loopback at:
 
 ```text
 tls://127.0.0.1:1853
 ```
+
+`.env.example` ships DoT disabled. Enable it locally only when you are testing the DoT path.
 
 ## AI Engine
 
@@ -248,12 +250,15 @@ cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 
 # Production stack (5% telemetry write sampling default, loopback internal ports)
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+scripts/ops/safe-zone.sh deploy
 ```
 
-The dev stack binds `core-api`, `dns-resolver`, and DoT to loopback only for local validation.
-The production stack uses `docker-compose.production.yml`, keeps `8080` and `8081` on loopback, publishes only `80`, `443`, and `853`, and defaults telemetry write sampling to **5%** (overridable to 1% via `SAFE_ZONE_TELEMETRY_WRITE_PERCENT`).
-The runtime image includes an internal HTTP healthcheck, and the optional `feed-syncd` service is gated behind the `feed-sync` Compose profile.
+The production helper sets build metadata and merges the shared-host/DoT
+overlays; do not build release images with a bare `docker compose` on the VPS.
+
+The dev stack binds `core-api` and `dns-resolver` to loopback only for local validation; when DoT is enabled it is also bound to loopback.
+The production stack uses `docker-compose.production.yml`, keeps `8080` and `8081` on loopback, publishes `80` and `443`, and defaults telemetry write sampling to **5%** (overridable to 1% via `SAFE_ZONE_TELEMETRY_WRITE_PERCENT`). Direct DoT on `853` is opt-in: set `SAFE_ZONE_DNS_DOT_ENABLED=true` and deploy through `scripts/ops/safe-zone.sh`, which merges `ops/vps-edge/docker-compose.dot.yml`.
+The runtime image includes an internal HTTP healthcheck. The developer stack gates `feed-syncd` behind the `feed-sync` profile; the production stack runs it by default.
 For isolated capacity load testing, use `docker-compose.loadtest.yml` ([runbooks/vps-load-test.md](runbooks/vps-load-test.md)).
 
 ## Operations
@@ -293,7 +298,7 @@ For a Linux VPS, [ops/cron/safe-zone.cron.example](../ops/cron/safe-zone.cron.ex
 ## Optional Services
 
 - Redis is optional for local development and stays disabled unless `SAFE_ZONE_REDIS_ADDR` is set.
-- `feed-syncd` is optional and only runs when the `feed-sync` Compose profile is enabled.
+- `feed-syncd` runs by default in the production stack. The developer stack only runs it when the `feed-sync` Compose profile is enabled.
 - Metrics, health checks, and the operator UI remain self-hosted; the runtime does not depend on a hosted SaaS control plane.
 
 ## Notes

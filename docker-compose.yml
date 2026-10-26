@@ -130,6 +130,17 @@ services:
       - ${SAFE_ZONE_ML_BUNDLE_HOST_DIR:-./deploy/model-bundle/current}:/app/models/safe-zone/current:ro
       - ./ml/models/url-v1:/app/models/safe-zone/url-v1:ro
       - ./ml/models/url-baseline:/app/models/safe-zone/url-baseline:ro
+    # The Go services bind unprivileged ports, need no kernel capabilities,
+    # and run as the non-root `app` user (see Dockerfile). Dropping every
+    # capability and blocking privilege escalation contains a service-level
+    # compromise without affecting any code path. Caddy and redis are
+    # deliberately excluded: Caddy binds 80/443 and manages certificate
+    # stores, and redis was not verified without its default set, so this
+    # hardening lands only where it has been tested.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       - redis
     restart: unless-stopped
@@ -199,6 +210,12 @@ services:
       - app-data:/app/data
       - ./ops/secrets:/app/ops/secrets:ro
       - ${SAFE_ZONE_ML_BUNDLE_HOST_DIR:-./deploy/model-bundle/current}:/app/models/safe-zone/current:ro
+    # Same containment as core-api: unprivileged ports, no capabilities
+    # needed, non-root app user. The DoT listener binds :8533.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       - redis
     restart: unless-stopped
@@ -233,6 +250,11 @@ services:
       - redis
     volumes:
       - ./ops/secrets:/app/ops/secrets:ro
+    # Same containment as core-api; the daemon only writes feed state to Redis.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped
     logging:
       driver: json-file
@@ -264,6 +286,12 @@ services:
       - redis
     volumes:
       - ./ops/secrets:/app/ops/secrets:ro
+    # Same containment as core-api; the one-shot sync only writes feed state
+    # to Redis.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: "no"
     logging:
       driver: json-file

@@ -230,7 +230,7 @@ cấu hình ví dụ; kiểm tra `.env` trước khi deploy.
 | Chức năng | Mặc định trong ví dụ | Dữ liệu ra ngoài | Cách kiểm soát |
 |---|---|---|---|
 | DNS forwarding | Pool DoH công khai: Cloudflare, Google, Quad9 và AdGuard (`SAFE_ZONE_UPSTREAM_DOH_URLS`) | Query được forward sẽ đi tới một trong các upstream DoH đã cấu hình. | Trỏ tới upstream của bạn hoặc provider tin cậy. |
-| Threat feed | `feed-syncd` tải `SAFE_ZONE_THREAT_FEED_SOURCE` (URLhaus trong ví dụ) | Feed provider thấy request từ host của bạn. | Dùng nguồn đã duyệt hoặc local; theo dõi độ tươi. |
+| Threat feed | `feed-syncd` tải `SAFE_ZONE_THREAT_FEED_SOURCE` (URLhaus + OpenPhish trong ví dụ) | Feed provider thấy request từ host của bạn. | Dùng nguồn đã duyệt hoặc local; theo dõi độ tươi. |
 | Danh sách adblock | Bật; tải StevenBlack hosts trong ví dụ | Nguồn host-list thấy request từ host của bạn. | Đặt `SAFE_ZONE_ADBLOCK_ENABLED=false` hoặc dùng nguồn của bạn. |
 | TLS/WHOIS enrichment | Bật (`SAFE_ZONE_ENRICH_ENABLED=true`) | Kết nối outbound tới host đích và dịch vụ WHOIS. | Tắt hoặc giới hạn nếu không chấp nhận outbound. |
 | OSINT | Bật trong ví dụ (`SAFE_ZONE_OSINT_ENABLED=true`) | Có thể truy vấn nguồn OSINT đã cấu hình. | Đặt `SAFE_ZONE_OSINT_ENABLED=false` và review nguồn. |
@@ -262,9 +262,12 @@ và [release gate](docs/runbooks/release-gate.md) là nguồn chuẩn.
       import, backup và rollback allow-list đã vượt qua.
 - [ ] Chọn block strategy và đặt `SAFE_ZONE_BLOCK_PAGE_IP` IPv4 hợp lệ cho
       sinkhole. Smoke test strategy đã chọn.
-- [ ] DoT được bật mặc định. Cài certificate/key DoT tin cậy, hoặc đặt
-      `SAFE_ZONE_DNS_DOT_ENABLED=false` nếu không dùng DoT. Khởi động production
-      với DoT bật nhưng không có certificate/key dùng được sẽ thất bại.
+- [ ] DoT là opt-in và mặc định tắt. Muốn public DoT, export cặp certificate
+      tin cậy bằng `scripts/ops/export-dot-cert.sh`, đặt
+      `SAFE_ZONE_DNS_DOT_ENABLED=true`, rồi deploy qua
+      `scripts/ops/safe-zone.sh` để merge `ops/vps-edge/docker-compose.dot.yml`.
+      Khởi động production với DoT bật nhưng thiếu cặp certificate hợp lệ sẽ
+      thất bại.
 - [ ] Xác nhận `/readyz` healthy và review `/v1/status` cho SQLite, Redis,
       allow-list và feed. SQLite bắt buộc; allow-list được cấu hình nhưng tải
       lỗi là lỗi nghiêm trọng ở production. Các dependency tùy chọn khác có thể
@@ -274,11 +277,19 @@ và [release gate](docs/runbooks/release-gate.md) là nguồn chuẩn.
 - [ ] Review [Luồng dữ liệu và quyền riêng tư](#data-flow-and-privacy), approve
       hoặc tắt mọi provider bên ngoài.
 
-Deploy production stack:
+Deploy production stack qua helper để build metadata và các overlay edge được
+áp dụng:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.production.yml up -d --build
+scripts/ops/safe-zone.sh deploy
 ```
+
+Trên Windows, dùng `pwsh ./scripts/ops/safe-zone.ps1 deploy`. Helper tự merge
+`ops/vps-edge/docker-compose.host-edge.yml` khi
+`SAFE_ZONE_DEPLOYMENT_TIER=shared-host-edge*`, và
+`ops/vps-edge/docker-compose.dot.yml` khi `SAFE_ZONE_DNS_DOT_ENABLED=true`.
+Không chạy `docker compose build` trực tiếp trên VPS; image sẽ thiếu
+commit/version metadata.
 
 Hướng dẫn edge đầy đủ (firewall, certificate DoT, DuckDNS, cron):
 [production-edge.md](docs/runbooks/production-edge.md). Đây là ước lượng tài
@@ -295,10 +306,10 @@ nguyên tham khảo, không phải cam kết giá:
 | `SAFE_ZONE_PUBLIC_HOST` | `safezone.example.com` trong ví dụ | Hostname công khai cho Caddy TLS và DoH. |
 | `SAFE_ZONE_ADMIN_PASSWORD` / `SAFE_ZONE_ADMIN_API_KEY` | tự sinh local | Bắt buộc ở production, hoặc dùng đường dẫn `*_FILE`. |
 | `SAFE_ZONE_WHITELIST_PATH` | trống (DB-only mode) | Nạp allow-list ban đầu (tùy chọn); đường dẫn được cấu hình nhưng không đọc được là lỗi nghiêm trọng ở production. |
-| `SAFE_ZONE_THREAT_FEED_SOURCE` | URLhaus trong `.env.example` | Nguồn feed cho `feed-syncd`; nhiều nguồn cách nhau bằng dấu phẩy. |
+| `SAFE_ZONE_THREAT_FEED_SOURCE` | URLhaus + OpenPhish trong `.env.example` | Nguồn feed cho `feed-syncd`; nhiều nguồn cách nhau bằng dấu phẩy. |
 | `SAFE_ZONE_DNS_BLOCK_STRATEGY` | `sinkhole` | `sinkhole`, `nxdomain`, `refused` hoặc `nullip`. |
 | `SAFE_ZONE_BLOCK_PAGE_IP` | `127.0.0.1` | IPv4 công khai cho trang chặn sinkhole; được validate lúc start. |
-| `SAFE_ZONE_DNS_DOT_ENABLED` | `true` | DoT listener; production cần certificate/key tin cậy, hoặc đặt `false`. |
+| `SAFE_ZONE_DNS_DOT_ENABLED` | `false` | DoT opt-in; cần overlay DoT và certificate/key tin cậy. |
 | `SAFE_ZONE_ML_MODE` | `disabled` | Chế độ ML tùy chọn; URL-ML vẫn shadow-only. |
 | `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `100` local; `5` trong Compose production | Sample ghi telemetry. |
 | `SAFE_ZONE_TRUSTED_PROXIES` | loopback | Các CIDR được phép đặt forwarded header; Compose thêm bridge Docker. |

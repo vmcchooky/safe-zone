@@ -3,19 +3,30 @@ set -eu
 
 target=""
 evidence_dir=""
+dot_flag=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --evidence-dir)
       evidence_dir="${2:-}"
       shift 2
       ;;
+    --dot)
+      dot_flag="true"
+      shift
+      ;;
+    --no-dot)
+      dot_flag="false"
+      shift
+      ;;
     -h|--help)
       cat <<'USAGE'
-Usage: check-production-ports.sh [target] [--evidence-dir <path>]
+Usage: check-production-ports.sh [target] [--dot|--no-dot] [--evidence-dir <path>]
 
   No arguments: audit listeners, health, firewall, container bindings
-  and the DoT certificate on this host.
+  and, when DoT is enabled, the DoT certificate on this host.
   target: also probe public/internal ports on a remote host.
+  --dot / --no-dot: override SAFE_ZONE_DNS_DOT_ENABLED from the environment
+  or .env. Without either flag the script follows that setting.
   --evidence-dir: retain the full run output under <path>/run.log.
 USAGE
       exit 0
@@ -34,10 +45,60 @@ USAGE
       ;;
   esac
 done
+script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+project_dir="$(CDPATH= cd -- "$script_dir/../.." && pwd)"
 health_core="http://127.0.0.1:8080/healthz"
 health_dns="http://127.0.0.1:8081/healthz"
 internal_ports="8080 8081 6379 11434"
-public_ports="80 443 853"
+public_ports="80 443"
+
+env_value() {
+  key="$1"
+  eval "value=\${$key:-}"
+  if [ -n "${value:-}" ]; then
+    printf '%s' "$value"
+    return 0
+  fi
+
+  env_file="${SAFE_ZONE_ENV_FILE:-$project_dir/.env}"
+  if [ -f "$env_file" ]; then
+    value="$(grep -E "^[[:space:]]*${key}=" "$env_file" | tail -n 1 | sed -E "s/^[[:space:]]*${key}=//" | tr -d '\r' || true)"
+    value="$(printf '%s' "$value" | sed -E 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//')"
+    case "$value" in
+      \'*\')
+        value="${value#\'}"
+        value="${value%\'}"
+        ;;
+    esac
+    if [ -n "$value" ]; then
+      printf '%s' "$value"
+    fi
+  fi
+}
+
+is_true() {
+  case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|true|yes|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+dot_port="${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-}"
+if [ -z "$dot_port" ]; then
+  dot_port="$(env_value SAFE_ZONE_DNS_DOT_PUBLISHED_PORT || true)"
+fi
+dot_port="${dot_port:-853}"
+
+if [ -n "$dot_flag" ]; then
+  dot_enabled="$dot_flag"
+elif is_true "$(env_value SAFE_ZONE_DNS_DOT_ENABLED || true)"; then
+  dot_enabled="true"
+else
+  dot_enabled="false"
+fi
+if [ "$dot_enabled" = "true" ]; then
+  public_ports="$public_ports $dot_port"
+fi
 
 if [ -t 1 ] && [ "${NO_COLOR:-}" = "" ]; then
   green="$(printf '\033[32m')"
@@ -96,6 +157,10 @@ section() {
 }
 
 port_name() {
+  if [ "$1" = "$dot_port" ]; then
+    printf '%s' "DNS-over-TLS"
+    return
+  fi
   case "$1" in
     80) printf '%s' "HTTP" ;;
     443) printf '%s' "HTTPS" ;;
@@ -265,7 +330,13 @@ audit_ufw() {
     *'Status: active'*) pass "ufw active" ;;
     *) fail "ufw not active"; return ;;
   esac
-  for port in 22 80 443 853; do
+  ufw_ports="22 80 443"
+  allowed_pattern='22/tcp|80/tcp|443/tcp'
+  if [ "$dot_enabled" = "true" ]; then
+    ufw_ports="$ufw_ports $dot_port"
+    allowed_pattern="$allowed_pattern|${dot_port}/tcp"
+  fi
+  for port in $ufw_ports; do
     if printf '%s\n' "$rules" | grep -Eq "ALLOW.*${port}/tcp|${port}/tcp.*ALLOW"; then
       pass "ufw allows ${port}/tcp"
     else
@@ -273,11 +344,13 @@ audit_ufw() {
     fi
   done
   # Any ALLOW outside the intended set is a violation, not a warning:
-  # unexpected holes are exactly what RB-1 guards against.
-  if printf '%s\n' "$rules" | grep 'ALLOW' | grep -vE '22/tcp|80/tcp|443/tcp|853/tcp' | grep -q .; then
-    fail "ufw has ALLOW rules outside 22/80/443/853"
+  # unexpected holes are exactly what RB-1 guards against. When DoT is
+  # disabled, an 853 ALLOW is therefore reported here rather than silently
+  # accepted.
+  if printf '%s\n' "$rules" | grep 'ALLOW' | grep -vE "$allowed_pattern" | grep -q .; then
+    fail "ufw has ALLOW rules outside the intended public ports"
   else
-    pass "no ufw ALLOW outside 22/80/443/853"
+    pass "no ufw ALLOW outside the intended public ports"
   fi
 }
 
@@ -308,10 +381,19 @@ audit_docker_bindings() {
     *127.0.0.1:8081*) pass "dns-resolver published on 127.0.0.1:8081" ;;
     *) fail "dns-resolver not on 127.0.0.1:8081" ;;
   esac
-  case "$dns_ports" in
-    *0.0.0.0:853*|*'[::]:853'*) pass "dns-resolver publishes DoT 853" ;;
-    *) fail "dns-resolver does not publish DoT 853" ;;
-  esac
+  if [ "$dot_enabled" = "true" ]; then
+    if printf '%s\n' "$dns_ports" | grep -Eq "(0\.0\.0\.0|\[::\]):${dot_port}->"; then
+      pass "dns-resolver publishes DoT ${dot_port}"
+    else
+      fail "dns-resolver does not publish DoT ${dot_port} while SAFE_ZONE_DNS_DOT_ENABLED=true"
+    fi
+  else
+    if printf '%s\n' "$dns_ports" | grep -Eq "(0\.0\.0\.0|\[::\]):${dot_port}->"; then
+      fail "dns-resolver publishes DoT ${dot_port} while SAFE_ZONE_DNS_DOT_ENABLED=false"
+    else
+      pass "dns-resolver does not publish DoT ${dot_port}"
+    fi
+  fi
   if [ -z "$(docker port "$redis" 2>/dev/null | tr -d '[:space:]')" ]; then
     pass "redis publishes no ports"
   else
@@ -333,12 +415,16 @@ audit_docker_bindings() {
 }
 
 audit_dot_cert() {
+  if [ "$dot_enabled" != "true" ]; then
+    ok "DoT disabled; certificate check skipped"
+    return
+  fi
   if ! command -v openssl >/dev/null 2>&1; then
     warn "openssl missing; DoT cert unchecked"
     return
   fi
-  out="$(printf '' | openssl s_client -connect 127.0.0.1:853 -servername localhost 2>&1)" || {
-    warn "DoT handshake on 127.0.0.1:853 failed"
+  out="$(printf '' | openssl s_client -connect "127.0.0.1:${dot_port}" -servername localhost 2>&1)" || {
+    warn "DoT handshake on 127.0.0.1:${dot_port} failed"
     return
   }
   subject="$(printf '%s\n' "$out" | grep -m1 'subject=' || true)"
@@ -457,6 +543,23 @@ audit_remote_internal_port() {
   fi
 }
 
+audit_remote_closed_port() {
+  host="$1"
+  port="$2"
+  name="$(port_name "$port")"
+
+  if probe_port "$host" "$port"; then
+    critical "$name port $port is OPEN on $host but DoT is disabled"
+  else
+    status=$?
+    if [ "$status" -eq 2 ]; then
+      fail "No remote probing tool available. Install nc, nmap, bash+timeout, or telnet."
+    else
+      blocked "$name port $port is closed or filtered as expected"
+    fi
+  fi
+}
+
 run_remote_scan() {
   host="$1"
   section "Remote Port Scan: $host"
@@ -480,6 +583,11 @@ run_remote_scan() {
   for port in $public_ports; do
     audit_remote_public_port "$host" "$port"
   done
+
+  if [ "$dot_enabled" != "true" ]; then
+    section "Unexpected Public Ports"
+    audit_remote_closed_port "$host" "$dot_port"
+  fi
 
   section "Strictly Internal Ports"
   for port in $internal_ports; do

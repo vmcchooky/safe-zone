@@ -126,10 +126,12 @@ Follow this exact order:
 Before running the gate:
 
 - Choose the target edge mode: `production-edge` or `shared-host-edge`.
+- Use Docker Compose v2.24+ on the host: the shared-host overlay uses the
+  `!override` tag to keep the bundled Caddy disabled.
 - Choose the release version string.
 - Identify the commit SHA that will be released.
 - Confirm the last-known-good image tags and config snapshot for rollback.
-- Confirm whether the release exposes public DoT.
+- Confirm whether the release exposes public DoT. DoT is opt-in: when enabled, the deploy path must merge `ops/vps-edge/docker-compose.dot.yml`; otherwise `853` stays closed.
 - Confirm whether the release uses `sinkhole` block-page mode.
 
 Use the staging and production env examples under `ops/vps-edge/`:
@@ -191,11 +193,13 @@ scripts/ops/safe-zone.sh deploy
 3. Deploy with:
 
 ```sh
-docker compose \
-  -f docker-compose.yml \
-  -f ops/vps-edge/docker-compose.host-edge.yml \
-  up -d --build redis core-api dns-resolver
+scripts/ops/safe-zone.sh deploy
 ```
+
+The helper reads `SAFE_ZONE_DEPLOYMENT_TIER` from `.env` and merges
+`ops/vps-edge/docker-compose.host-edge.yml` automatically. It also merges the
+DoT overlay when `SAFE_ZONE_DNS_DOT_ENABLED=true`. `feed-syncd` stays part of
+this stack because the helper includes the production base.
 
 Use the image tags and commit from the preflight evidence for the final release record.
 
@@ -235,7 +239,7 @@ curl -fsS http://127.0.0.1:8081/v1/version
 curl -fsS "https://$SAFE_ZONE_PUBLIC_HOST/v1/analyze?domain=example.com"
 ```
 
-If shared host-edge staging is publicly routed, also record host-level Caddy verification and the external smoke output.
+If shared host-edge staging is publicly routed, also record host-level Caddy verification and the external smoke output. When DoT is enabled, run `scripts/ops/check-production-ports.sh --dot` and include the DoT handshake from `scripts/ops/public-edge-smoke.sh --dot`.
 
 ## 5. Production approval
 
@@ -270,11 +274,13 @@ scripts/ops/safe-zone.sh deploy
 3. Deploy with:
 
 ```sh
-docker compose \
-  -f docker-compose.yml \
-  -f ops/vps-edge/docker-compose.host-edge.yml \
-  up -d --build redis core-api dns-resolver
+scripts/ops/safe-zone.sh deploy
 ```
+
+The helper reads `SAFE_ZONE_DEPLOYMENT_TIER` from `.env`, merges
+`ops/vps-edge/docker-compose.host-edge.yml`, and includes the production base
+(feed-syncd plus production guards). The DoT overlay is merged automatically
+when `SAFE_ZONE_DNS_DOT_ENABLED=true`.
 
 ## 7. Post-release verification
 

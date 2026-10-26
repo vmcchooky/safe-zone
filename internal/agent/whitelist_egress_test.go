@@ -19,10 +19,13 @@ func TestWhitelistDownloadBlocksBadRedirect(t *testing.T) {
 	db := newTestDB(t)
 	wl := risk.NewWhitelist(db)
 
+	// RFC 1035 caps a hostname label at 63 bytes, so a 64-byte label is
+	// rejected by the resolver before any query. This keeps the failure
+	// deterministic even behind an ISP resolver that wildcards .invalid
+	// to a public address.
+	unresolvable := "no-such-host." + strings.Repeat("a", 64) + ".invalid"
 	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// RFC 2606 .invalid never resolves: the failure is deterministic
-		// with or without network access.
-		http.Redirect(w, r, "http://no-such-host.invalid/list.txt", http.StatusFound)
+		http.Redirect(w, r, "http://"+unresolvable+"/list.txt", http.StatusFound)
 	}))
 	defer redirector.Close()
 
