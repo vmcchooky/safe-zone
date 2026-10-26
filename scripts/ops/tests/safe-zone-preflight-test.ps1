@@ -314,3 +314,7 @@ SAFE_ZONE_DNS_DOT_ENABLED=false
 Write-Host ''
 Write-Host "$($script:Passed) passed, $($script:Failed) failed"
 if ($script:Failed -ne 0) { exit 1 }
+# The GitHub Actions PowerShell wrapper dot-sources this file. Without an
+# explicit success exit, a native command that failed inside a test can leave
+# $LASTEXITCODE=1 and fail the job even when every assertion passed.
+exit 0
