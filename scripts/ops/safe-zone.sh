@@ -2,7 +2,7 @@
 set -eu
 
 compose="${SAFE_ZONE_COMPOSE:-docker compose}"
-project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+project_dir="$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)"
 backup_dir="${SAFE_ZONE_BACKUP_DIR:-${project_dir}/backups}"
 stack="${SAFE_ZONE_STACK:-production}"
 tmp_dir="${project_dir}/tmp"
@@ -168,22 +168,29 @@ preflight_production() {
   log_info "Preflight: validating compose configuration..."
   # Intentional word splitting: production_compose_files returns a list of
   # relative paths without spaces, and POSIX sh has no arrays.
+  # shellcheck disable=SC2046
   if ! $compose $(production_compose_files) --profile production-edge config -q; then
     log_error "docker compose config failed for the file set above; fix the configuration before deploying"
     exit 2
   fi
 
   configured_env="$(env_value SAFE_ZONE_ENV || true)"
-  if [ "$configured_env" != "production" ]; then
-    log_error "SAFE_ZONE_ENV must be 'production' for a production deploy (found: '${configured_env:-<empty>}')"
-    exit 2
-  fi
+  configured_env="$(printf '%s' "$configured_env" | tr '[:upper:]' '[:lower:]')"
+  case "$configured_env" in
+    production|prod) ;;
+    *)
+      log_error "SAFE_ZONE_ENV must be 'production' (or the 'prod' alias) for a production deploy (found: '${configured_env:-<empty>}')"
+      exit 2
+      ;;
+  esac
 
   block_strategy="$(env_value SAFE_ZONE_DNS_BLOCK_STRATEGY || true)"
   [ -n "$block_strategy" ] || block_strategy="sinkhole"
+  block_strategy="$(printf '%s' "$block_strategy" | tr '[:upper:]' '[:lower:]')"
   if [ "$block_strategy" = "sinkhole" ]; then
     block_page_ip="$(env_value SAFE_ZONE_BLOCK_PAGE_IP || true)"
-    case "$block_page_ip" in
+    block_page_ip_lower="$(printf '%s' "$block_page_ip" | tr '[:upper:]' '[:lower:]')"
+    case "$block_page_ip_lower" in
       ''|replace-with-*)
         log_error "SAFE_ZONE_BLOCK_PAGE_IP is unset or a placeholder while SAFE_ZONE_DNS_BLOCK_STRATEGY=sinkhole; set the public IP of the block page host"
         exit 2
@@ -214,6 +221,7 @@ compose_stack() {
     production)
       # Intentional word splitting: production_compose_files returns a list
       # of relative paths without spaces, and POSIX sh has no arrays.
+      # shellcheck disable=SC2046
       $compose $(production_compose_files) "$@"
       ;;
     dev)
@@ -577,11 +585,11 @@ resolve_backup_dir() {
   src="${1:-}"
   if [ -n "$src" ]; then
     if [ -d "$src" ]; then
-      (CDPATH= cd -- "$src" && pwd)
+      (CDPATH='' cd -- "$src" && pwd)
       return 0
     fi
     if [ -f "$src" ]; then
-      (CDPATH= cd -- "$(dirname -- "$src")" && pwd)
+      (CDPATH='' cd -- "$(dirname -- "$src")" && pwd)
       return 0
     fi
     log_error "backup path not found: $src"

@@ -281,6 +281,28 @@ SAFE_ZONE_DNS_DOT_ENABLED=false
 '@ 'nocerts'
 
     Invoke-DeployOk $proj 'v2.39.2' 'nxdomain'
+
+    ### 9. The app accepts the "prod" alias, so preflight must too.
+
+    $proj = MakeProject @'
+SAFE_ZONE_ENV=prod
+SAFE_ZONE_BLOCK_PAGE_IP=93.184.216.34
+SAFE_ZONE_DNS_DOT_ENABLED=false
+'@ 'nocerts'
+
+    Invoke-DeployOk $proj 'v2.39.2' 'prod alias'
+
+    ### 10. Strategy and placeholder matching are case-insensitive, like the app.
+
+    $proj = MakeProject @'
+SAFE_ZONE_ENV=production
+SAFE_ZONE_BLOCK_PAGE_IP=REPLACE-WITH-vps-public-ip
+SAFE_ZONE_DNS_BLOCK_STRATEGY=SINKHOLE
+SAFE_ZONE_DNS_DOT_ENABLED=false
+'@ 'nocerts'
+
+    Invoke-DeployFail $proj 'v2.39.2' 'uppercase sinkhole placeholder'
+    Require-StderrContains 'SAFE_ZONE_BLOCK_PAGE_IP' 'uppercase sinkhole placeholder: error names the variable'
   } finally {
     Stop-Job $healthJob -ErrorAction SilentlyContinue
     Remove-Job $healthJob -Force -ErrorAction SilentlyContinue

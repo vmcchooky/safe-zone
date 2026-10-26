@@ -374,8 +374,11 @@ function Assert-ProductionPreflight {
   Invoke-Compose -SubCommandArgs @('config', '-q') -TargetStack 'production' -UseProductionProfile
 
   $configuredEnv = Get-DotEnvValue -Name 'SAFE_ZONE_ENV'
-  if ($configuredEnv -ne 'production') {
-    throw "SAFE_ZONE_ENV must be 'production' for a production deploy (found: '$configuredEnv')"
+  if ($configuredEnv) {
+    $configuredEnv = $configuredEnv.Trim().ToLowerInvariant()
+  }
+  if ($configuredEnv -notin @('production', 'prod')) {
+    throw "SAFE_ZONE_ENV must be 'production' (or the 'prod' alias) for a production deploy (found: '$configuredEnv')"
   }
 
   $blockStrategy = (Get-DotEnvValue -Name 'SAFE_ZONE_DNS_BLOCK_STRATEGY')

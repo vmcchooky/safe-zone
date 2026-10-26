@@ -3,11 +3,12 @@ set -eu
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/ops/public-edge-smoke.sh [--dot|--no-dot] <host>
+Usage: scripts/ops/public-edge-smoke.sh [--dot|--no-dot] [host]
 
 Checks public HTTPS, the analyze API, DoH, and (when DoT is enabled) the
-DoT handshake/query path. Without --dot/--no-dot, the script follows
-SAFE_ZONE_DNS_DOT_ENABLED from the environment or .env.
+DoT handshake/query path. Without a host argument, the script uses
+SAFE_ZONE_PUBLIC_HOST from the environment or .env. Without --dot/--no-dot,
+it follows SAFE_ZONE_DNS_DOT_ENABLED from the environment or .env.
 USAGE
 }
 
@@ -43,8 +44,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-project_dir="$(CDPATH= cd -- "$script_dir/../.." && pwd)"
+script_dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+project_dir="$(CDPATH='' cd -- "$script_dir/../.." && pwd)"
 
 env_value() {
   # printenv avoids eval-style dynamic expansion; unset keys fall through to
@@ -79,7 +80,9 @@ is_true() {
   esac
 }
 
-host="${host:-${SAFE_ZONE_PUBLIC_HOST:-}}"
+if [ -z "$host" ]; then
+  host="$(env_value SAFE_ZONE_PUBLIC_HOST || true)"
+fi
 dot_port="${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-}"
 if [ -z "$dot_port" ]; then
   dot_port="$(env_value SAFE_ZONE_DNS_DOT_PUBLISHED_PORT || true)"
@@ -118,19 +121,20 @@ printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\0
     --data-binary @- \
     "https://${host}/dns-query" \
     -o "$tmp_dns"
-[ -s "$tmp_dns" ]
 
-# A DNS message is at least a 12-byte header. The second header byte carries
-# QR (its high bit) and the RCODE lives in the low 4 bits of byte three, so a
-# truncated body or a proxy error page cannot pass as an answer. `od -An
-# -tu1 -N3` is the portable form across the minimal /bin/sh implementations
-# used by VPS images.
+# A DNS message is at least a 12-byte header. QR is the high bit of the third
+# header byte (the first flags byte); RCODE is the low nibble of the fourth
+# header byte (the second flags byte), so a truncated body or a proxy error
+# page cannot pass as an answer. `od -An -tu1 -N4` is the portable form
+# across the minimal /bin/sh implementations used by VPS images.
 validate_doh_response() {
   size="$(wc -c < "$tmp_dns" | awk '{print $1}')"
   if [ "$size" -lt 12 ]; then
     echo "ERROR: DoH response is not a DNS message: ${size} byte(s)" >&2
     exit 2
   fi
+  # Intentional word splitting: od prints four whitespace-separated bytes.
+  # shellcheck disable=SC2046
   set -- $(od -An -tu1 -N4 "$tmp_dns")
   if [ "$(( $3 / 128 ))" -ne 1 ]; then
     echo "ERROR: DoH response has QR=0; expected a DNS answer" >&2

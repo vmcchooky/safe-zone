@@ -9,7 +9,7 @@
 # certificates.
 set -euo pipefail
 
-script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+script_dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 source_safe_zone="${script_dir}/../safe-zone.sh"
 
 if [ ! -f "$source_safe_zone" ]; then
@@ -259,6 +259,24 @@ SAFE_ZONE_BLOCK_PAGE_IP=replace-with-vps-public-ip
 SAFE_ZONE_DNS_DOT_ENABLED=false' nocerts)"
 
 run_deploy_ok "$proj" v2.39.2 "nxdomain"
+
+### 9. The app accepts the "prod" alias, so preflight must too.
+
+proj="$(make_project 'SAFE_ZONE_ENV=prod
+SAFE_ZONE_BLOCK_PAGE_IP=93.184.216.34
+SAFE_ZONE_DNS_DOT_ENABLED=false' nocerts)"
+
+run_deploy_ok "$proj" v2.39.2 "prod alias"
+
+### 10. Strategy and placeholder matching are case-insensitive, like the app.
+
+proj="$(make_project 'SAFE_ZONE_ENV=production
+SAFE_ZONE_BLOCK_PAGE_IP=REPLACE-WITH-vps-public-ip
+SAFE_ZONE_DNS_BLOCK_STRATEGY=SINKHOLE
+SAFE_ZONE_DNS_DOT_ENABLED=false' nocerts)"
+
+run_deploy_fail "$proj" v2.39.2 "uppercase sinkhole placeholder"
+require_stderr_contains "SAFE_ZONE_BLOCK_PAGE_IP" "uppercase sinkhole placeholder: error names the variable"
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

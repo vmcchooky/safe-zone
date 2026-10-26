@@ -9,8 +9,13 @@ docker compose logs caddy --tail=200
 curl -Iv https://$SAFE_ZONE_PUBLIC_HOST/healthz
 # Daily cron can alert instead: exit 1 while any certificate is inside the
 # warning window (14 days by default, see SAFE_ZONE_CERT_WARN_DAYS).
+# An expired or unreadable certificate always exits 1, even without the flag.
 scripts/ops/monitor-certs.sh --fail-on-warning
 ```
+
+`monitor-certs.sh` checks `SAFE_ZONE_CERT_MONITOR_HOST` first, then
+`SAFE_ZONE_PUBLIC_HOST`, then `localhost`. Values in `.env` are used even when
+cron sources the file without exporting it.
 
 ## Common causes
 
@@ -34,9 +39,11 @@ DoT is opt-in. When `SAFE_ZONE_DNS_DOT_ENABLED=true`, the resolver reads:
 
 Outside production (`local`/`test`), an empty pair generates a temporary
 self-signed certificate. Production refuses to start without a configured
-pair. The production base Compose file does not publish `853`; the opt-in
-overlay `ops/vps-edge/docker-compose.dot.yml` adds both the port and the
-certificate mount.
+pair, and also refuses a pair that is expired or not yet valid; a pair inside
+the 14-day renewal window logs a warning. The production base Compose file
+does not publish `853`; the opt-in overlay
+`ops/vps-edge/docker-compose.dot.yml` adds both the port and the certificate
+mount.
 
 After a renewal, refresh the mounted DoT pair and recreate only the resolver:
 
