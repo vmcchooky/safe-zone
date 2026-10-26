@@ -47,8 +47,10 @@ script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 project_dir="$(CDPATH= cd -- "$script_dir/../.." && pwd)"
 
 env_value() {
+  # printenv avoids eval-style dynamic expansion; unset keys fall through to
+  # the .env file lookup below.
   key="$1"
-  eval "value=\${$key:-}"
+  value="$(printenv "$key")" || value=""
   if [ -n "${value:-}" ]; then
     printf '%s' "$value"
     return 0
@@ -117,6 +119,30 @@ printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\0
     "https://${host}/dns-query" \
     -o "$tmp_dns"
 [ -s "$tmp_dns" ]
+
+# A DNS message is at least a 12-byte header. The second header byte carries
+# QR (its high bit) and the RCODE lives in the low 4 bits of byte three, so a
+# truncated body or a proxy error page cannot pass as an answer. `od -An
+# -tu1 -N3` is the portable form across the minimal /bin/sh implementations
+# used by VPS images.
+validate_doh_response() {
+  size="$(wc -c < "$tmp_dns" | awk '{print $1}')"
+  if [ "$size" -lt 12 ]; then
+    echo "ERROR: DoH response is not a DNS message: ${size} byte(s)" >&2
+    exit 2
+  fi
+  set -- $(od -An -tu1 -N4 "$tmp_dns")
+  if [ "$(( $3 / 128 ))" -ne 1 ]; then
+    echo "ERROR: DoH response has QR=0; expected a DNS answer" >&2
+    exit 2
+  fi
+  rcode="$(( $4 % 16 ))"
+  if [ "$rcode" -ne 0 ]; then
+    echo "ERROR: DoH response has RCODE=${rcode}; expected 0 (NOERROR)" >&2
+    exit 2
+  fi
+}
+validate_doh_response
 
 if [ "$dot_enabled" = "true" ]; then
   if ! command -v openssl >/dev/null 2>&1; then

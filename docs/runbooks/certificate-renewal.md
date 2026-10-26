@@ -7,6 +7,9 @@ Caddy manages public HTTPS certificates automatically for `SAFE_ZONE_PUBLIC_HOST
 ```sh
 docker compose logs caddy --tail=200
 curl -Iv https://$SAFE_ZONE_PUBLIC_HOST/healthz
+# Daily cron can alert instead: exit 1 while any certificate is inside the
+# warning window (14 days by default, see SAFE_ZONE_CERT_WARN_DAYS).
+scripts/ops/monitor-certs.sh --fail-on-warning
 ```
 
 ## Common causes

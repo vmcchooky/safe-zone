@@ -112,21 +112,109 @@ host_edge_enabled() {
   esac
 }
 
+# production_compose_files prints the exact -f list a production deploy uses,
+# so config validation and up never disagree about the merged file set.
+production_compose_files() {
+  compose_files="-f docker-compose.yml -f docker-compose.production.yml"
+  if host_edge_enabled; then
+    compose_files="$compose_files -f ops/vps-edge/docker-compose.host-edge.yml"
+  fi
+  if dot_enabled; then
+    compose_files="$compose_files -f $dot_override"
+  fi
+  printf '%s' "$compose_files"
+}
+
+require_compose_v224() {
+  # docker-compose.production.yml uses !reset and the shared-host overlay
+  # uses !override; both YAML tags landed in Compose v2.24. Detect the gap
+  # before anything builds instead of failing with a YAML parse error after
+  # a full image build. An unreadable version is only a warning: the config
+  # validation that follows still fails fast on an unsupported Compose.
+  version="$($compose version --short 2>/dev/null || true)"
+  version="$(printf '%s' "$version" | tail -n 1 | tr -d '[:space:]')"
+  version="${version#v}"
+  version="${version#V}"
+  major="$(printf '%s' "$version" | cut -d. -f1)"
+  minor="$(printf '%s' "$version" | cut -d. -f2)"
+  case "$major" in
+    ''|*[!0-9]*)
+      log_warn "cannot parse Docker Compose version output; relying on config validation to catch an unsupported Compose"
+      return 0
+      ;;
+  esac
+  case "$minor" in
+    ''|*[!0-9]*)
+      log_warn "cannot parse Docker Compose version output; relying on config validation to catch an unsupported Compose"
+      return 0
+      ;;
+  esac
+  if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 24 ]; }; then
+    log_error "Docker Compose ${major}.${minor} does not support the !override/!reset YAML tags used by the production stack (docker-compose.production.yml, ops/vps-edge/docker-compose.host-edge.yml). Install Docker Compose v2.24 or newer and retry."
+    exit 2
+  fi
+}
+
+# preflight_production fails fast on every condition that would otherwise be
+# discovered mid-deploy: an unsupported Compose, a compose file set that does
+# not validate, and the production startup guards in the resolver that would
+# exit 1 after the images were already built. Best-effort checks that read
+# .env stay consistent with cmd/dns-resolver and the env examples; this is a
+# gate, not a second source of truth.
+preflight_production() {
+  log_info "Preflight: checking Docker Compose version (need v2.24+ for !override)..."
+  require_compose_v224
+
+  log_info "Preflight: validating compose configuration..."
+  # Intentional word splitting: production_compose_files returns a list of
+  # relative paths without spaces, and POSIX sh has no arrays.
+  if ! $compose $(production_compose_files) --profile production-edge config -q; then
+    log_error "docker compose config failed for the file set above; fix the configuration before deploying"
+    exit 2
+  fi
+
+  configured_env="$(env_value SAFE_ZONE_ENV || true)"
+  if [ "$configured_env" != "production" ]; then
+    log_error "SAFE_ZONE_ENV must be 'production' for a production deploy (found: '${configured_env:-<empty>}')"
+    exit 2
+  fi
+
+  block_strategy="$(env_value SAFE_ZONE_DNS_BLOCK_STRATEGY || true)"
+  [ -n "$block_strategy" ] || block_strategy="sinkhole"
+  if [ "$block_strategy" = "sinkhole" ]; then
+    block_page_ip="$(env_value SAFE_ZONE_BLOCK_PAGE_IP || true)"
+    case "$block_page_ip" in
+      ''|replace-with-*)
+        log_error "SAFE_ZONE_BLOCK_PAGE_IP is unset or a placeholder while SAFE_ZONE_DNS_BLOCK_STRATEGY=sinkhole; set the public IP of the block page host"
+        exit 2
+        ;;
+    esac
+  fi
+
+  if dot_enabled; then
+    dot_certs_dir="$(env_value SAFE_ZONE_DNS_DOT_CERTS_DIR || true)"
+    [ -n "$dot_certs_dir" ] || dot_certs_dir="./ops/certs/dot"
+    case "$dot_certs_dir" in
+      /*) ;;
+      *) dot_certs_dir="${project_dir}/${dot_certs_dir#./}" ;;
+    esac
+    if [ ! -f "${dot_certs_dir}/fullchain.pem" ] || [ ! -f "${dot_certs_dir}/privkey.pem" ]; then
+      log_error "DoT is enabled but ${dot_certs_dir} is missing fullchain.pem or privkey.pem; export the pair with scripts/ops/export-dot-cert.sh"
+      exit 2
+    fi
+  fi
+
+  log_info "Preflight passed."
+}
+
 compose_stack() {
   selected_stack="$1"
   shift
   case "$selected_stack" in
     production)
-      compose_files="-f docker-compose.yml -f docker-compose.production.yml"
-      if host_edge_enabled; then
-        compose_files="$compose_files -f ops/vps-edge/docker-compose.host-edge.yml"
-      fi
-      if dot_enabled; then
-        compose_files="$compose_files -f $dot_override"
-      fi
-      # Intentional word splitting: compose_files is a list of relative paths
-      # without spaces, and POSIX sh has no arrays.
-      $compose $compose_files "$@"
+      # Intentional word splitting: production_compose_files returns a list
+      # of relative paths without spaces, and POSIX sh has no arrays.
+      $compose $(production_compose_files) "$@"
       ;;
     dev)
       $compose -f docker-compose.yml -f docker-compose.dev.yml "$@"
@@ -706,6 +794,11 @@ case "$cmd" in
   deploy)
     set_build_metadata_env
     validate_ml_rollout_bundle
+    # Fails before anything builds: compose version/config problems, missing
+    # production env, placeholder sinkhole IP, or a DoT pair that is not
+    # mounted. The resolver's own startup guards would exit 1 anyway, but
+    # only after the images were built.
+    preflight_production
     # feed-syncd is part of the production stack (the production override
     # removes the developer profile), so a plain up starts it. The opt-out is
     # an explicit stop, not an omission that leaves the previous container

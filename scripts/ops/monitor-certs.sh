@@ -3,7 +3,7 @@ set -euo pipefail
 
 host="${SAFE_ZONE_CERT_MONITOR_HOST:-localhost}"
 warn_days="${SAFE_ZONE_CERT_WARN_DAYS:-14}"
-dot_port=""
+fail_on_warning="false"
 dot_flag=""
 
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
@@ -11,13 +11,14 @@ project_dir="$(CDPATH= cd -- "$script_dir/../.." && pwd)"
 
 usage() {
   cat <<'USAGE'
-Usage: scripts/ops/monitor-certs.sh [--dot|--no-dot]
+Usage: scripts/ops/monitor-certs.sh [--dot|--no-dot] [--fail-on-warning]
 
 Environment:
-  SAFE_ZONE_CERT_MONITOR_HOST   Hostname to check (default: localhost)
-  SAFE_ZONE_CERT_WARN_DAYS      Warning threshold in days (default: 14)
-  SAFE_ZONE_DNS_DOT_ENABLED     Check DoT when true
-  SAFE_ZONE_DNS_DOT_PUBLISHED_PORT  DoT host port (default: 853)
+  SAFE_ZONE_CERT_MONITOR_HOST       Hostname to check (default: localhost)
+  SAFE_ZONE_CERT_WARN_DAYS           Warning threshold in days (default: 14)
+  SAFE_ZONE_CERT_FAIL_ON_WARN=true   Same as --fail-on-warning (default: false)
+  SAFE_ZONE_DNS_DOT_ENABLED          Check DoT when true
+  SAFE_ZONE_DNS_DOT_PUBLISHED_PORT   DoT host port (default: 853)
 
 Without --dot/--no-dot, the script follows SAFE_ZONE_DNS_DOT_ENABLED from the
 environment or .env.
@@ -65,6 +66,10 @@ while [[ $# -gt 0 ]]; do
       dot_flag="false"
       shift
       ;;
+    --fail-on-warning)
+      fail_on_warning="true"
+      shift
+      ;;
     -h|--help)
       usage
       exit 0
@@ -88,6 +93,10 @@ elif is_true "$(env_value SAFE_ZONE_DNS_DOT_ENABLED || true)"; then
   dot_enabled="true"
 else
   dot_enabled="false"
+fi
+
+if [[ "$fail_on_warning" == "false" ]] && is_true "${SAFE_ZONE_CERT_FAIL_ON_WARN:-}"; then
+  fail_on_warning="true"
 fi
 
 dot_port="${SAFE_ZONE_DNS_DOT_PUBLISHED_PORT:-}"
@@ -142,19 +151,43 @@ check_cert() {
   echo "${label} certificate on ${host}:${port} expires in ${days_left} day(s)"
   if (( days_left < warn_days )); then
     echo "WARNING: Certificate expiring soon"
+    return 2
   fi
+  return 0
 }
 
 main() {
   require_command openssl
   require_command date
 
-  check_cert "HTTPS" 443
+  # check_cert returns 1 when the certificate cannot be read (always fatal),
+  # 2 when it is inside the warning window (fatal only with fail_on_warning).
+  local rc=0 warned=0
+  check_cert 'HTTPS' 443 || rc=$?
+  if [[ "$rc" -eq 1 ]]; then
+    exit 1
+  fi
+  if [[ "$rc" -eq 2 ]]; then
+    warned=1
+  fi
+
   if [[ "$dot_enabled" == "true" ]]; then
-    check_cert "DoT" "$dot_port"
+    rc=0
+    check_cert 'DoT' "$dot_port" || rc=$?
+    if [[ "$rc" -eq 1 ]]; then
+      exit 1
+    fi
+    if [[ "$rc" -eq 2 ]]; then
+      warned=1
+    fi
   else
     echo "DoT disabled; skipping DoT certificate check."
   fi
+
+  if [[ "$warned" -eq 1 && "$fail_on_warning" == "true" ]]; then
+    exit 1
+  fi
+  exit 0
 }
 
 main "$@"
