@@ -19,8 +19,9 @@ Environment:
   SAFE_ZONE_DNS_DOT_ENABLED         Check DoT when true
   SAFE_ZONE_DNS_DOT_PUBLISHED_PORT  DoT host port (default: 853)
 
-An expired or unreadable certificate always exits 1. --fail-on-warning also
-exits 1 while a certificate is inside the warning window.
+An expired, not-yet-valid or unreadable certificate always exits 1.
+--fail-on-warning also exits 1 while a certificate is inside the warning
+window.
 
 Without --dot/--no-dot, the script follows SAFE_ZONE_DNS_DOT_ENABLED from the
 environment or .env.
@@ -155,27 +156,37 @@ check_cert() {
   local label="$1"
   local port="$2"
   local server_name="$host"
-  local enddate raw_date expiry_epoch now_epoch seconds_left days_left
+  local dates raw_start raw_end start_epoch expiry_epoch now_epoch seconds_left days_left
 
   # Do not swallow a failed s_client/x509 read. With pipefail, either command
   # failing makes the assignment fail; an empty but successful output is
   # caught separately below.
-  if ! enddate="$(
+  if ! dates="$(
     openssl s_client -connect "${host}:${port}" -servername "${server_name}" </dev/null 2>/dev/null |
-      openssl x509 -noout -enddate 2>/dev/null
+      openssl x509 -noout -startdate -enddate 2>/dev/null
   )"; then
     echo "ERROR: unable to read certificate for ${label} on ${host}:${port}" >&2
     return 1
   fi
 
-  if [[ -z "$enddate" ]]; then
+  raw_start="$(printf '%s\n' "$dates" | sed -n 's/^notBefore=//p')"
+  raw_end="$(printf '%s\n' "$dates" | sed -n 's/^notAfter=//p')"
+  if [[ -z "$raw_start" || -z "$raw_end" ]]; then
     echo "ERROR: unable to read certificate for ${label} on ${host}:${port}" >&2
     return 1
   fi
 
-  raw_date="${enddate#notAfter=}"
-  expiry_epoch="$(epoch_from_openssl_date "$raw_date")"
+  start_epoch="$(epoch_from_openssl_date "$raw_start")"
+  expiry_epoch="$(epoch_from_openssl_date "$raw_end")"
   now_epoch="$(date -u +%s)"
+
+  # A certificate whose notBefore is still in the future is just as unusable
+  # as an expired one: clients reject it, so monitoring must fail on it too.
+  if (( now_epoch < start_epoch )); then
+    echo "ERROR: ${label} certificate on ${host}:${port} is not valid yet (notBefore=${raw_start})" >&2
+    return 1
+  fi
+
   seconds_left=$((expiry_epoch - now_epoch))
   days_left=$((seconds_left / 86400))
 
@@ -183,7 +194,7 @@ check_cert() {
   # broken public endpoint and must fail even when --fail-on-warning is not
   # passed. The warning window starts strictly before expiry.
   if (( seconds_left <= 0 )); then
-    echo "ERROR: ${label} certificate on ${host}:${port} has expired (notAfter=${raw_date})" >&2
+    echo "ERROR: ${label} certificate on ${host}:${port} has expired (notAfter=${raw_end})" >&2
     return 1
   fi
 

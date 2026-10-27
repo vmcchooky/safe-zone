@@ -155,6 +155,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck
           shellcheck \
+            scripts/ops/check-block-page.sh \
             scripts/ops/monitor-certs.sh \
             scripts/ops/public-edge-smoke.sh \
             scripts/ops/safe-zone.sh \

@@ -6,6 +6,7 @@
 # It covers the regressions that matter operationally:
 #   - settings come from .env even when cron did not export them
 #   - an expired certificate is fatal without --fail-on-warning
+#   - a certificate that is not valid yet is fatal
 #   - an unreadable certificate is fatal
 #   - the warning window and --fail-on-warning behave as documented
 set -euo pipefail
@@ -49,20 +50,26 @@ case "${SZ_STUB_OPENSSL_FAIL:-}" in
     ;;
 esac
 if [ "$1" = "x509" ]; then
-  # The monitor only asks for the end date; drain the certificate bytes.
+  # The monitor asks for both validity bounds; drain the certificate bytes.
   cat >/dev/null
-  printf 'notAfter=%s\n' "${SZ_STUB_ENDDATE:?}"
+  printf 'notBefore=%s\nnotAfter=%s\n' "${SZ_STUB_STARTDATE:?}" "${SZ_STUB_ENDDATE:?}"
 fi
 exit 0
 STUB
 chmod +x "$stub_openssl"
 
 # The monitor only uses "date -u +%s" and "date -u -d <openssl date> +%s".
-# Both are deterministic here so the suite never depends on the clock.
+# Both are deterministic here so the suite never depends on the clock. The
+# start/end dates are distinguished so notBefore is parsed independently.
 cat > "$stub_date" <<'STUB'
 #!/bin/sh
 case " $* " in
-  *" -d "*) printf '%s\n' "${SZ_STUB_EXPIRY_EPOCH:?}" ;;
+  *" -d "*)
+    case " $* " in
+      *"${SZ_STUB_STARTDATE:?}"*) printf '%s\n' "${SZ_STUB_START_EPOCH:?}" ;;
+      *) printf '%s\n' "${SZ_STUB_EXPIRY_EPOCH:?}" ;;
+    esac
+    ;;
   *) printf '%s\n' "${SZ_STUB_NOW_EPOCH:?}" ;;
 esac
 STUB
@@ -137,8 +144,10 @@ make_project() {
 }
 
 now_epoch=1000000000
+start_epoch=$((now_epoch - 86400))
 expiry_epoch=$((now_epoch + 30 * 86400))
-enddate="stub-cert-date"
+startdate="stub-start-date"
+enddate="stub-end-date"
 openssl_fail=""
 env_file_override=""
 
@@ -154,7 +163,9 @@ run_monitor() {
     export SAFE_ZONE_ENV_FILE="${env_file_override:-$proj/.env}"
     export SZ_STUB_OPENSSL_LOG="$openssl_log"
     export SZ_STUB_NOW_EPOCH="$now_epoch"
+    export SZ_STUB_START_EPOCH="$start_epoch"
     export SZ_STUB_EXPIRY_EPOCH="$expiry_epoch"
+    export SZ_STUB_STARTDATE="$startdate"
     export SZ_STUB_ENDDATE="$enddate"
     export SZ_STUB_OPENSSL_FAIL="$openssl_fail"
     bash "$proj/scripts/ops/monitor-certs.sh" "$@"
@@ -300,6 +311,17 @@ run_monitor "$proj" '--help without .env' 0 --help
 require_stdout_contains 'Usage:' '--help: prints usage'
 require_log_empty '--help: does not open a connection'
 env_file_override=""
+
+### 16. A certificate that is not valid yet is fatal, even without the flag.
+
+proj="$(make_project 'SAFE_ZONE_CERT_MONITOR_HOST=example.test
+SAFE_ZONE_CERT_WARN_DAYS=14
+SAFE_ZONE_DNS_DOT_ENABLED=false')"
+start_epoch=$((now_epoch + 86400))
+expiry_epoch=$((now_epoch + 30 * 86400))
+run_monitor "$proj" 'not-yet-valid certificate' 1
+require_stderr_contains 'is not valid yet' 'not-yet-valid: names the condition'
+start_epoch=$((now_epoch - 86400))
 
 printf '\n%s passed, %s failed\n' "$passed" "$failed"
 if [[ "$failed" -ne 0 ]]; then
