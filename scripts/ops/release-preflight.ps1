@@ -136,6 +136,17 @@ function Build-Image {
   & docker image inspect $imageRef | Out-File -FilePath $inspectFile -Encoding utf8
 }
 
+function Assert-UiBundle {
+  $bundleDir = Join-Path $RepoRoot 'internal/api/app/dist'
+  if (-not (Test-Path (Join-Path $bundleDir 'index.html') -PathType Leaf)) {
+    throw "embedded UI bundle is missing index.html: $bundleDir"
+  }
+  $map = Get-ChildItem -LiteralPath $bundleDir -Recurse -File -Filter '*.map' | Select-Object -First 1
+  if ($null -ne $map) {
+    throw "embedded UI bundle contains a source map: $($map.FullName)"
+  }
+}
+
 @"
 EDGE_MODE=$EdgeMode
 RELEASE_VERSION=$Version
@@ -157,6 +168,12 @@ EVIDENCE_DIR=$EvidenceDir
   "evidence_dir": "$EvidenceDir"
 }
 "@ | Out-File -FilePath (Join-Path $EvidenceDir 'metadata.json') -Encoding utf8
+
+# Rebuild the embedded UI from source before any Go build or test. Without
+# this, `go build` embeds whatever stale files happen to sit in
+# internal/api/app/dist, including source maps from an old local build.
+Invoke-AndCapture -Label 'ui-bundle' -Script { & (Join-Path $RepoRoot 'scripts/ops/ui.ps1') bundle }
+Assert-UiBundle
 
 Invoke-AndCapture -Label 'go-test' -Script { go test ./... }
 Invoke-AndCapture -Label 'go-build' -Script { go build ./... }
@@ -183,6 +200,7 @@ Source repo: $SourceRepo
 Artifacts:
 - $(Join-Path $EvidenceDir 'metadata.env')
 - $(Join-Path $EvidenceDir 'metadata.json')
+- $(Join-Path $EvidenceDir 'ui-bundle.txt')
 - $(Join-Path $EvidenceDir 'go-test.txt')
 - $(Join-Path $EvidenceDir 'go-build.txt')
 - $(Join-Path $EvidenceDir 'gosec.txt')

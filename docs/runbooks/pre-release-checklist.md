@@ -22,6 +22,7 @@ skip, the reason, where it will be verified instead, and an owner.
 ## Local preflight evidence
 
 - [ ] `scripts/ops/release-preflight.sh` or `scripts/ops/release-preflight.ps1` completed successfully.
+- [ ] The preflight rebuilt the embedded UI from source and the bundle contains no `.map` files.
 - [ ] `go test ./...` passed.
 - [ ] `go build ./...` passed.
 - [ ] `mise run ci` passed locally, including isolated React E2E on `/app/*`.
