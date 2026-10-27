@@ -300,10 +300,19 @@ jobs:
             ~/.cache/ms-playwright
           key: ui-${{ runner.os }}-${{ hashFiles('ui/package-lock.json') }}-${{ hashFiles('ui/package.json') }}
 
+      # Install the browser only. GitHub's ubuntu image already carries the
+      # Chromium runtime libraries (verified in the apt output on 2026-10-27:
+      # every required lib was "already the newest version"); the packages
+      # --with-deps still fetched were fonts, xvfb and libnss3-tools, none of
+      # which a headless run needs. That apt pass took 690-700s per shard
+      # because the Ubuntu mirror was slow, while the shard itself runs in
+      # 85-128s. A runner image that ever drops a real library fails at browser
+      # launch with the missing soname, so this cannot silently skip a
+      # requirement.
       - name: Install UI dependencies and Playwright Chromium
         run: |
           npm ci --prefix ui
-          npm --prefix ui exec -- playwright install --with-deps chromium
+          npm --prefix ui exec -- playwright install chromium
 
       - name: Run UI e2e shard
         env:
