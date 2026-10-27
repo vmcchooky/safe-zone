@@ -2,7 +2,6 @@ package risk
 
 import (
 	"context"
-	"path/filepath"
 	"testing"
 	"time"
 
@@ -33,7 +32,12 @@ import (
 
 func newDecisionPathService(t *testing.T) (*Service, *store.DB) {
 	t.Helper()
-	db, err := store.New(filepath.Join(t.TempDir(), "paths.db"), 30)
+	// In-memory SQLite: these scenarios only use the store through its API, and
+	// each scenario needs its own fresh database. A file-backed store spends
+	// ~300-500ms per open on migrations and fsyncs under -race, which four
+	// characterisation passes over eleven scenarios multiply into seconds.
+	// service_test.go already uses :memory: for the same reason.
+	db, err := store.New(":memory:", 30)
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
