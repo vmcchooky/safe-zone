@@ -36,8 +36,7 @@ func newAdblockExceptionService(t *testing.T, base Options, rules []domaintrie.R
 		t.Setenv(envAdblockExceptionsFile, "")
 	}
 
-	dbPath := filepath.Join(tempDir, "test.db")
-	storeDB, err := store.New(dbPath, 30)
+	storeDB, err := store.New(":memory:", 30)
 	if err != nil {
 		t.Fatalf("create store: %v", err)
 	}
@@ -375,16 +374,14 @@ func TestExceptionConfigValidationFailClosed(t *testing.T) {
 		} else {
 			t.Setenv(envAdblockExceptionsFile, filepath.Join(tempDir, "does-not-exist.json"))
 		}
-		dbPath := filepath.Join(tempDir, "test.db")
-		storeDB, err := store.New(dbPath, 30)
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = storeDB.Close() })
+		// This case is about the exception loader's fail-closed verdict, which
+		// never touches the store: AdblockExceptionStatus is in-memory state.
+		// Leaving Store nil keeps the matrix focused and avoids eighteen
+		// schema-migration runs under -race; the runtime case below still
+		// exercises a service with a real store.
 		return NewService(Options{
 			AnalysisConfig:     config.DefaultAnalysisConfig(),
 			RedisTimeout:       10 * time.Millisecond,
-			Store:              storeDB,
 			AdblockFileRoot:    tempDir,
 			PolicySemantics:    PolicySemanticsSeparated,
 			DisableAdblockSync: true,
