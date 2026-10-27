@@ -226,14 +226,22 @@ jobs:
       - name: Run Go gates
         run: mise run ci:go
 
-      # Only the Go gates job saves the cache. The UI e2e shards restore the
-      # same key read-only: when all four jobs saved it, the first one to
-      # finish won the reservation, so the archive often held a shard's
-      # core-api-only build instead of the full build + race-test cache this
-      # job produces. `cache-hit` is false on a restore-keys match, so a new
-      # go.mod still refreshes the exact key.
+      # Only the Go gates job saves the cache, and only on main. The UI e2e
+      # shards restore the same key read-only: when all four jobs saved it,
+      # the first one to finish won the reservation, so the archive often held
+      # a shard's core-api-only build instead of the full build + race-test
+      # cache this job produces. Pull requests restore main's archive through
+      # restore-keys; letting every PR save would add ~572 MiB per pull request
+      # to the repository's 10 GiB cache budget. `cache-hit` is false on a
+      # restore-keys match, so a new go.mod still refreshes the exact key on
+      # the next main run.
+      #
+      # The save is best-effort: two concurrent main pushes compute the same
+      # key, and the run that loses the reservation must not turn an otherwise
+      # green gate run red.
       - name: Save Go build and module cache
-        if: success() && steps.go-cache.outputs.cache-hit != 'true'
+        if: success() && github.ref == 'refs/heads/main' && steps.go-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
