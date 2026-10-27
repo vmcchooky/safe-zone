@@ -14,6 +14,10 @@ tmp
 node_modules
 ui/node_modules
 ui/dist
+# The backend embeds a fresh build copied from the ui-build stage. Excluding the
+# working copy keeps a developer's stale dist (which may contain source maps)
+# out of the image: COPY . . would otherwise copy it before the fresh overlay.
+internal/api/app/dist
 *.exe
 *.test
 *.out
