@@ -11,7 +11,7 @@ import {
   HardDrive,
 } from 'lucide-react';
 import { NavLink, useLocation } from 'react-router-dom';
-import logoImg from '../assets/logo.png';
+import logoImg from '../assets/logo.webp';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 
