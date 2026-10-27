@@ -2,8 +2,8 @@ package risk
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -218,7 +218,8 @@ func TestConcurrentRecordsScheduleOnePrune(t *testing.T) {
 // test hook: the store has a single connection and the prune is deleting every
 // row, so it genuinely occupies the connection while Close runs.
 func TestCloseCutsShortARunningPrune(t *testing.T) {
-	db, err := store.New(filepath.Join(t.TempDir(), "prune-close.db"), 30)
+	path := filepath.Join(t.TempDir(), "prune-close.db")
+	db, err := store.New(path, 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,18 +227,15 @@ func TestCloseCutsShortARunningPrune(t *testing.T) {
 
 	// Enough expired rows that the prune takes measurable time on the single
 	// connection, with a retention that makes every row eligible for deletion.
+	//
+	// Seed them in one statement over a side connection. UpsertURLFeedback is
+	// the production write path but commits per row, so 40k rows cost ~70s of
+	// fsyncs before the behaviour under test even starts. The prune below still
+	// runs through the real store API against the real table.
+	const rows = 20_000
+	seedExpiredURLFeedback(t, path, rows, time.Now().Add(-48*time.Hour))
+
 	ctx := context.Background()
-	const rows = 40_000
-	for i := range rows {
-		if err := db.UpsertURLFeedback(ctx, store.URLFeedbackRow{
-			Fingerprint:       "row-" + strconv.Itoa(i),
-			KeyVersion:        1,
-			ProbabilityBucket: 5,
-			RecordedAt:        time.Now().Add(-48 * time.Hour),
-		}); err != nil {
-			t.Fatalf("seed row %d: %v", i, err)
-		}
-	}
 
 	lifecycle, cancelLifecycle := context.WithCancel(context.Background())
 	feedback := newDurableURLFeedbackStore(lifecycle, db, URLMLFeedbackConfig{
@@ -260,5 +258,31 @@ func TestCloseCutsShortARunningPrune(t *testing.T) {
 	// has to sit below the prune timeout it is waiting on.
 	if elapsed > 10*time.Second {
 		t.Fatalf("waitForPrune took %v; shutdown does not reach a running prune", elapsed)
+	}
+}
+
+// seedExpiredURLFeedback writes rows straight into the feedback table in a
+// single statement. It is test scaffolding for tests that only need a large
+// expired table, not an exercise of the per-row write path.
+func seedExpiredURLFeedback(t *testing.T, path string, rows int, recordedAt time.Time) {
+	t.Helper()
+	conn, err := sql.Open("sqlite", path+"?_txlock=immediate")
+	if err != nil {
+		t.Fatalf("open seed connection: %v", err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	ts := recordedAt.UTC().Format(time.RFC3339Nano)
+	_, err = conn.Exec(`
+WITH RECURSIVE seq(i) AS (
+    SELECT 0
+    UNION ALL
+    SELECT i + 1 FROM seq WHERE i + 1 < ?
+)
+INSERT INTO url_ml_feedback
+    (fp, key_version, probability_bucket, would_promote, labeled, label_malicious, recorded_at, labeled_at)
+SELECT 'row-' || i, 1, 5, 0, 0, 0, ?, '' FROM seq`, rows, ts)
+	if err != nil {
+		t.Fatalf("seed %d rows: %v", rows, err)
 	}
 }
