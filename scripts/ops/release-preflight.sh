@@ -94,6 +94,19 @@ run_capture() {
   exit 1
 }
 
+assert_ui_bundle() {
+  bundle_dir="${project_dir}/internal/api/app/dist"
+  if [ ! -f "${bundle_dir}/index.html" ]; then
+    printf 'ERROR: embedded UI bundle is missing index.html: %s\n' "$bundle_dir" >&2
+    exit 1
+  fi
+  if find "$bundle_dir" -type f -name '*.map' | grep -q .; then
+    printf 'ERROR: embedded UI bundle contains a source map under %s\n' "$bundle_dir" >&2
+    find "$bundle_dir" -type f -name '*.map' >&2
+    exit 1
+  fi
+}
+
 build_binary() {
   service="$1"
   image_ref="safe-zone-${service}:${release_tag}"
@@ -163,6 +176,12 @@ cat >"${evidence_dir}/metadata.json" <<EOF
 }
 EOF
 
+# Rebuild the embedded UI from source before any Go build or test. Without
+# this, `go build` embeds whatever stale files happen to sit in
+# internal/api/app/dist, including source maps from an old local build.
+run_capture ui-bundle sh ./scripts/ops/ui.sh bundle
+assert_ui_bundle
+
 run_capture go-test go test ./...
 run_capture go-build go build ./...
 run_capture gosec go run github.com/securego/gosec/v2/cmd/gosec@v2.28.0 ./...
@@ -188,6 +207,7 @@ Source repo: ${source_repo}
 Artifacts:
 - ${evidence_dir}/metadata.env
 - ${evidence_dir}/metadata.json
+- ${evidence_dir}/ui-bundle.txt
 - ${evidence_dir}/go-test.txt
 - ${evidence_dir}/go-build.txt
 - ${evidence_dir}/gosec.txt

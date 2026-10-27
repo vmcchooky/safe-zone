@@ -161,10 +161,13 @@ pwsh ./scripts/ops/release-preflight.ps1 -EdgeMode production-edge -Version 0.1.
 
 For `shared-host-edge`, replace `production-edge` with `shared-host-edge`.
 
+The helper rebuilds the embedded UI from source before any Go build, then fails if the bundle is missing `index.html` or contains any `.map` file. This keeps a stale local `internal/api/app/dist` (and its source maps) out of release binaries.
+
 The helper must complete successfully and produce:
 
 - `metadata.env`
 - `metadata.json`
+- `ui-bundle.txt`
 - `go-test.txt`
 - `go-build.txt`
 - `gosec.txt`
