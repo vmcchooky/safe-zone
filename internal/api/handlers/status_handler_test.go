@@ -82,8 +82,12 @@ func TestStatusHandlerReportsFeedFailureCounters(t *testing.T) {
 	t.Cleanup(func() {
 		_ = riskService.Close()
 	})
-	// Kill Redis so the threat-feed read fails fast with connection refused.
-	server.Close()
+	// Make the feed key the wrong Redis type so the live read fails with
+	// WRONGTYPE on the first command. Tearing the server down instead would
+	// make go-redis burn its dial retry backoff on every later command.
+	if err := server.Set("safe-zone:threat:feed", "not-a-sorted-set"); err != nil {
+		t.Fatalf("seed wrong-type feed key: %v", err)
+	}
 	riskService.Analyze(context.Background(), "unreachable.test", risk.ClientInfo{})
 
 	handler := New(riskService, observability.NewRegistry(), Config{
