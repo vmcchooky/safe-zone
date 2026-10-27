@@ -187,22 +187,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # Restore before mise installs the Go-based scanners. `mise install`
+      # runs `go install` for gosec and govulncheck, which writes read-only
+      # files into GOMODCACHE. When the restore ran after that, tar aborted
+      # with "File exists" (12,801 entries across 31 scanner-only modules),
+      # actions/cache reported the whole restore as a miss, and every Go job
+      # kept compiling from scratch. Restoring first also lets the scanner
+      # install reuse the cached modules instead of re-downloading them.
+      - name: Restore Go build and module cache
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-v2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-v2-${{ runner.os }}-
+
       - name: Set up mise
         uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
         with:
           cache: true
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Restore Go build and module cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          restore-keys: |
-            go-${{ runner.os }}-
 
       - name: Restore golangci-lint cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -217,6 +225,21 @@ jobs:
       # govulncheck, the frozen decision evaluation, and the research CLI tests.
       - name: Run Go gates
         run: mise run ci:go
+
+      # Only the Go gates job saves the cache. The UI e2e shards restore the
+      # same key read-only: when all four jobs saved it, the first one to
+      # finish won the reservation, so the archive often held a shard's
+      # core-api-only build instead of the full build + race-test cache this
+      # job produces. `cache-hit` is false on a restore-keys match, so a new
+      # go.mod still refreshes the exact key.
+      - name: Save Go build and module cache
+        if: success() && steps.go-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-v2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
 
   ui-e2e:
     name: UI e2e (shard ${{ matrix.shard }})
@@ -235,24 +258,26 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # The webServer starts core-api with `go run`, so the shard needs the Go
+      # build cache even though it runs no Go gate. Restore before mise for the
+      # same GOMODCACHE reason as the go-gates job, and leave saving to that
+      # job so the shared archive always contains the full build cache.
+      - name: Restore Go build and module cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-v2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-v2-${{ runner.os }}-
+
       - name: Set up mise
         uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
         with:
           cache: true
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-
-      # The webServer starts core-api with `go run`, so the shard needs a Go
-      # build cache even though it runs no Go gate.
-      - name: Restore Go build and module cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
-          restore-keys: |
-            go-${{ runner.os }}-
 
       # npm's download cache and the Playwright browser payload, both keyed so a
       # lockfile or Playwright version change invalidates them. `npm ci` still
