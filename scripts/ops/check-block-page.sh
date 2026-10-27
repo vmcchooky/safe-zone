@@ -15,7 +15,7 @@ tmp_html="$(mktemp)"
 trap 'rm -f "$tmp_html"' EXIT INT TERM
 
 echo "Checking HTTP sinkhole block page..."
-curl -fsS \
+curl -fsS --connect-timeout 5 --max-time 15 \
   -H "Host: ${blocked_domain}" \
   "http://${public_ip}/" \
   -o "$tmp_html"
@@ -23,20 +23,20 @@ grep -q "Trang web đã bị chặn" "$tmp_html"
 grep -q "$blocked_domain" "$tmp_html"
 
 echo "Checking HTTP sinkhole block page assets..."
-curl -fsS \
+curl -fsS --connect-timeout 5 --max-time 15 \
   -H "Host: ${blocked_domain}" \
   "http://${public_ip}/assets/safe-zone.css" \
   -o "$tmp_html"
 grep -q "Quarantine Gate block page" "$tmp_html"
 
-curl -fsS \
+curl -fsS --connect-timeout 5 --max-time 15 \
   -H "Host: ${blocked_domain}" \
   "http://${public_ip}/assets/quorix.min.js" \
   -o "$tmp_html"
 grep -q "Quorix UI" "$tmp_html"
 
 echo "Checking HTTPS canonical block page..."
-curl -fsS \
+curl -fsS --connect-timeout 5 --max-time 15 \
   "https://${public_host}/block?domain=${blocked_domain}&path=%2F" \
   -o "$tmp_html"
 grep -q "Trang web đã bị chặn" "$tmp_html"

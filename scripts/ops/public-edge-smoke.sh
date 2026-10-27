@@ -106,16 +106,18 @@ tmp_dns="$(mktemp)"
 trap 'rm -f "$tmp_dns"' EXIT INT TERM
 
 echo "Checking public HTTPS health..."
-curl -fsS "https://${host}/healthz" >/dev/null
+curl -fsS --connect-timeout 5 --max-time 15 "https://${host}/healthz" >/dev/null
 
 echo "Checking public analyze API..."
-curl -fsS "https://${host}/v1/analyze?domain=example.com" >/dev/null
+curl -fsS --connect-timeout 5 --max-time 15 "https://${host}/v1/analyze?domain=example.com" >/dev/null
 
 echo "Checking public DoH endpoint..."
 # POSIX `sh` does not require printf's non-portable `\xNN` escape.  Keep the
 # probe runnable on the minimal `/bin/sh` implementations used by VPS images.
 printf '\022\064\001\000\000\001\000\000\000\000\000\000\007example\003com\000\000\001\000\001' |
   curl -fsS \
+    --connect-timeout 5 \
+    --max-time 15 \
     -H "accept: application/dns-message" \
     -H "content-type: application/dns-message" \
     --data-binary @- \
