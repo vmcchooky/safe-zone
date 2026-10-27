@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-project_dir="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+project_dir="$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)"
 bundle_root="${SAFE_ZONE_ML_BUNDLE_ROOT:-${project_dir}/deploy/model-bundle}"
 source_dir="${SAFE_ZONE_ML_BUNDLE_SOURCE:-${project_dir}/ml/models/v1}"
 version="${SAFE_ZONE_ML_BUNDLE_VERSION:-v1}"

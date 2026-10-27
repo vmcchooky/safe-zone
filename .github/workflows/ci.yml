@@ -150,16 +150,15 @@ jobs:
           bash scripts/ops/tests/monitor-certs-test.sh
           bash scripts/ops/tests/public-edge-smoke-test.sh
 
-      - name: ShellCheck changed ops scripts
+      # Lint every ops script, not a hand-maintained subset: the four scripts
+      # listed here used to grow one at a time, so bench.sh, coverage.sh and
+      # the other helpers were never checked. The glob also covers new files
+      # without another workflow edit.
+      - name: ShellCheck ops scripts
         run: |
           sudo apt-get update
           sudo apt-get install -y shellcheck
-          shellcheck \
-            scripts/ops/check-block-page.sh \
-            scripts/ops/monitor-certs.sh \
-            scripts/ops/public-edge-smoke.sh \
-            scripts/ops/safe-zone.sh \
-            scripts/ops/tests/*.sh
+          shellcheck scripts/ops/*.sh scripts/ops/tests/*.sh
 
   ops-scripts-windows:
     name: Ops script tests (Windows)

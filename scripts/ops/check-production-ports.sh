@@ -45,8 +45,8 @@ USAGE
       ;;
   esac
 done
-script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
-project_dir="$(CDPATH= cd -- "$script_dir/../.." && pwd)"
+script_dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+project_dir="$(CDPATH='' cd -- "$script_dir/../.." && pwd)"
 health_core="http://127.0.0.1:8080/healthz"
 health_dns="http://127.0.0.1:8081/healthz"
 internal_ports="8080 8081 6379 11434"

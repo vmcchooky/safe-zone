@@ -10,7 +10,7 @@
 # also rotates the in-memory session signing secret, so old sessions die.
 set -eu
 
-project_root="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+project_root="$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd)"
 cd "$project_root"
 
 env_file=".env"
@@ -64,7 +64,6 @@ get_key() {
   grep -E "^[[:space:]]*$1[[:space:]]*=" "$env_file" | tail -n 1 | sed -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//;s/[[:space:]]*$//;s/\r$//"
 }
 
-old_password="$(get_key SAFE_ZONE_ADMIN_PASSWORD || true)"
 old_key="$(get_key SAFE_ZONE_ADMIN_API_KEY || true)"
 
 if [ "$assume_yes" != "1" ]; then
