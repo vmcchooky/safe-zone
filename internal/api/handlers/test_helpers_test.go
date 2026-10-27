@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"safe-zone/internal/api/httputil"
 	"safe-zone/internal/auth"
 	"safe-zone/internal/config"
@@ -139,17 +141,35 @@ func (s *handlerTestServer) adminSessionCookieWithTTL(t *testing.T, ttl time.Dur
 var (
 	testAdminHashOnce sync.Once
 	testAdminHash     string
+	testGuestHashOnce sync.Once
+	testGuestHash     string
 )
 
 // testAdminPasswordHash computes the bcrypt hash for "adminpass1234" once
-// per test binary.
+// per test binary. It uses MinCost instead of the production cost: the cost is
+// carried inside the hash, so verification stays real, but the -race suite no
+// longer spends seconds per login inside instrumented Blowfish.
 func testAdminPasswordHash() string {
 	testAdminHashOnce.Do(func() {
-		hash, err := auth.HashPassword("adminpass1234")
+		hash, err := bcrypt.GenerateFromPassword([]byte("adminpass1234"), bcrypt.MinCost)
 		if err != nil {
 			panic(err)
 		}
-		testAdminHash = hash
+		testAdminHash = string(hash)
 	})
 	return testAdminHash
+}
+
+// testGuestPasswordHash is the MinCost counterpart for the fixed guest
+// password. Tests that need an authenticated guest seed it directly instead of
+// paying the production cost twice (hash on create, verify on login).
+func testGuestPasswordHash() string {
+	testGuestHashOnce.Do(func() {
+		hash, err := bcrypt.GenerateFromPassword([]byte("guestpass12"), bcrypt.MinCost)
+		if err != nil {
+			panic(err)
+		}
+		testGuestHash = string(hash)
+	})
+	return testGuestHash
 }

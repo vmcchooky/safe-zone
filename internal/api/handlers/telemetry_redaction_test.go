@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -23,25 +24,18 @@ type telemetryRecentResponse struct {
 }
 
 // enableGuestAccount provisions the optional read-only guest account and
-// returns a signed guest session cookie for it.
+// returns a signed guest session cookie for it. It seeds the persisted config
+// directly with a MinCost hash: the create endpoint's production-cost hashing
+// is covered by TestGuestAccessLifecycleAndPermissions, and repeating it here
+// would make every guest test pay for bcrypt twice under -race.
 func enableGuestAccount(t *testing.T, ts *handlerTestServer) *http.Cookie {
 	t.Helper()
 
-	body := strings.NewReader(`{"password":"guestpass12"}`)
-	req, err := http.NewRequest(http.MethodPost, ts.Server.URL+"/v1/settings/guest-access", body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	ts.addAdminBearer(req)
-
-	resp, err := ts.Client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("guest access create = %d, want 200", resp.StatusCode)
+	if err := ts.Handler.saveGuestAccessConfig(context.Background(), guestAccessConfig{
+		Enabled:      true,
+		PasswordHash: testGuestPasswordHash(),
+	}); err != nil {
+		t.Fatalf("seed guest access config: %v", err)
 	}
 
 	loginResp, err := ts.Client.Post(ts.Server.URL+"/v1/auth/login", "application/json",

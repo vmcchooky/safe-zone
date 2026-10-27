@@ -61,13 +61,9 @@ func TestListReportsHandlerReturnsFilteredTotalForPagination(t *testing.T) {
 
 func TestReportsQueueIsAdminOnly(t *testing.T) {
 	ts := newHandlerTestServer(t)
-	hash, err := auth.HashPassword("guestpass12")
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := ts.Handler.saveGuestAccessConfig(context.Background(), guestAccessConfig{
 		Enabled:      true,
-		PasswordHash: hash,
+		PasswordHash: testGuestPasswordHash(),
 	}); err != nil {
 		t.Fatal(err)
 	}

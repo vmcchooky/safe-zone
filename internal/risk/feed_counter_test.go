@@ -59,9 +59,12 @@ func TestDecisionPipelineStatusReportsFeedFailures(t *testing.T) {
 	t.Cleanup(func() {
 		_ = service.Close()
 	})
-	// Kill Redis: every subsequent feed read fails fast with connection
-	// refused instead of hanging to the timeout.
-	server.Close()
+	// Make the feed key the wrong Redis type so each live read fails with
+	// WRONGTYPE on the first command. Killing the server instead makes
+	// go-redis run its dial retry backoff for every unrelated command.
+	if err := server.Set(defaultThreatFeedKey, "not-a-sorted-set"); err != nil {
+		t.Fatalf("seed wrong-type feed key: %v", err)
+	}
 
 	service.feed.feedResult(context.Background(), "unreachable.test", nil)
 	service.feed.feedResult(context.Background(), "unreachable.test", nil)
