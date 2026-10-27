@@ -312,8 +312,12 @@ func TestAdblockStatusCountsAndMode(t *testing.T) {
 
 func TestSyncTickReloadsMatchMode(t *testing.T) {
 	tempDir := t.TempDir()
-	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "")
-	storeDB, err := store.New(filepath.Join(tempDir, "tick.db"), 30)
+	// An empty value is not "no sources": config.String treats it as unset and
+	// falls back to the StevenBlack URL, so a sync would make a real network
+	// request. A missing local file is deterministic, hermetic and still counts
+	// as an unreachable source for the assertion below.
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "missing-hosts-dead.txt")
+	storeDB, err := store.New(":memory:", 30)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -342,7 +346,7 @@ func TestSyncTickReloadsMatchMode(t *testing.T) {
 	}
 
 	// syncAdblockLists with no reachable sources still refreshes the mode.
-	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "")
+	t.Setenv("SAFE_ZONE_ADBLOCK_SOURCES", "missing-hosts-dead.txt")
 	service.adblock.syncAdblockLists(context.Background())
 	if v := service.adblock.adblockMatchMode.Load(); v != string(adblockMatchModeExact) {
 		t.Fatalf("expected mode to persist after sync, got %v", v)
