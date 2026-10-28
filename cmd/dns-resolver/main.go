@@ -74,6 +74,32 @@ func run() int {
 		return 1
 	}
 
+	// The in-process response cache is optional. It never caches policy
+	// verdicts: overrides, whitelist, group policy and CNAME uncloaking are
+	// evaluated on every query, so zero both disables it cleanly and is a
+	// supported operator choice for troubleshooting upstream behaviour.
+	cacheEntries := config.Int("SAFE_ZONE_DNS_CACHE_ENTRIES", resolver.DefaultDNSCacheEntries)
+	if cacheEntries < 0 || cacheEntries > 65536 {
+		logjson.Error("SAFE_ZONE_DNS_CACHE_ENTRIES out of valid range", map[string]any{
+			"service": "dns-resolver",
+			"value":   cacheEntries,
+			"min":     0,
+			"max":     65536,
+		})
+		return 1
+	}
+	if cacheEntries > 0 {
+		logjson.Info("dns response cache enabled", map[string]any{
+			"service":         "dns-resolver",
+			"entries":         cacheEntries,
+			"max_ttl_seconds": resolver.DNSCacheMaxTTLSeconds,
+		})
+	} else {
+		logjson.Info("dns response cache disabled", map[string]any{
+			"service": "dns-resolver",
+		})
+	}
+
 	blockStrategy := strings.ToLower(strings.TrimSpace(config.String("SAFE_ZONE_DNS_BLOCK_STRATEGY", resolver.BlockStrategySinkhole)))
 	if blockStrategy != resolver.BlockStrategySinkhole && blockStrategy != resolver.BlockStrategyNXDomain && blockStrategy != resolver.BlockStrategyRefused && blockStrategy != resolver.BlockStrategyNullIP {
 		logjson.Error("invalid SAFE_ZONE_DNS_BLOCK_STRATEGY", map[string]any{
@@ -207,10 +233,11 @@ func run() int {
 	}
 
 	res := resolver.New(riskService, metrics, upstreams, resolver.Config{
-		BlockPageIP:    blockPageIP,
-		BlockStrategy:  blockStrategy,
-		DNSTTL:         uint32(ttlVal), // #nosec G115 -- bounds validated above
-		DeploymentTier: config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
+		BlockPageIP:     blockPageIP,
+		BlockStrategy:   blockStrategy,
+		DNSTTL:          uint32(ttlVal), // #nosec G115 -- bounds validated above
+		DeploymentTier:  config.String("SAFE_ZONE_DEPLOYMENT_TIER", "budget-vps"),
+		DNSCacheEntries: cacheEntries,
 	}, dotLimiter)
 
 	mux := server.NewRouter(res, adminAPIKey, riskService.ReadinessChecks()...)

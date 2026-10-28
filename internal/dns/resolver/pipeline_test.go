@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -38,7 +39,12 @@ const (
 // để kiểm tra uncloaking.
 func echoUpstream(t *testing.T) *httptest.Server {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return httptest.NewServer(echoUpstreamHandler(t))
+}
+
+func echoUpstreamHandler(t *testing.T) http.Handler {
+	t.Helper()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wire, err := readAllLimited(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -69,7 +75,7 @@ func echoUpstream(t *testing.T) *httptest.Server {
 		}
 		w.Header().Set("Content-Type", doh.ContentTypeDNSMessage)
 		_, _ = w.Write(respWire)
-	}))
+	})
 }
 
 func readAllLimited(r *http.Request) ([]byte, error) {
@@ -107,6 +113,11 @@ func policyUpstream(t *testing.T, srv *httptest.Server) (string, *http.Client) {
 // mock upstream và block strategy sinkhole.
 func newPipelineResolver(t *testing.T, upstreamURL string, upstreamClient *http.Client) (*Resolver, *store.DB, *observability.Registry) {
 	t.Helper()
+	return newPipelineResolverWithCache(t, upstreamURL, upstreamClient, 0)
+}
+
+func newPipelineResolverWithCache(t *testing.T, upstreamURL string, upstreamClient *http.Client, cacheEntries int) (*Resolver, *store.DB, *observability.Registry) {
+	t.Helper()
 	storeDB, err := store.New(filepath.Join(t.TempDir(), "pipeline.db"), 30)
 	if err != nil {
 		t.Fatal(err)
@@ -121,10 +132,11 @@ func newPipelineResolver(t *testing.T, upstreamURL string, upstreamClient *http.
 	metrics := observability.NewRegistry()
 	upstreams := doh.NewUpstreamResolver(upstreamURL, upstreamClient)
 	resolverInstance := New(riskService, metrics, upstreams, Config{
-		BlockPageIP:    testBlockPageIP,
-		BlockStrategy:  BlockStrategySinkhole,
-		DNSTTL:         60,
-		DeploymentTier: "budget-vps",
+		BlockPageIP:     testBlockPageIP,
+		BlockStrategy:   BlockStrategySinkhole,
+		DNSTTL:          60,
+		DeploymentTier:  "budget-vps",
+		DNSCacheEntries: cacheEntries,
 	}, nil)
 	return resolverInstance, storeDB, metrics
 }
@@ -145,6 +157,111 @@ func TestResolveQueryForwardsAllowedDomain(t *testing.T) {
 	aRecord, ok := response.Answer[0].(*dns.A)
 	if !ok || aRecord.A.String() != testForwardedIP {
 		t.Fatalf("expected forwarded A %s, got %#v", testForwardedIP, response.Answer[0])
+	}
+}
+
+func TestResolveQueryServesRepeatedQuestionFromCache(t *testing.T) {
+	handler := echoUpstreamHandler(t)
+	var upstreamCalls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		handler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, _, metrics := newPipelineResolverWithCache(t, upstreamURL, upstreamClient, 16)
+
+	first := testPipelineQuery(t, "example.com")
+	first.Id = 100
+	if _, err := r.ResolveQuery(context.Background(), first, doh.ClientInfo{IP: "192.168.1.10"}); err != nil {
+		t.Fatalf("first resolve failed: %v", err)
+	}
+
+	second := testPipelineQuery(t, "example.com")
+	second.Id = 200
+	response, err := r.ResolveQuery(context.Background(), second, doh.ClientInfo{IP: "192.168.1.10"})
+	if err != nil {
+		t.Fatalf("cached resolve failed: %v", err)
+	}
+	if got := upstreamCalls.Load(); got != 1 {
+		t.Fatalf("upstream calls = %d; want 1", got)
+	}
+	if response.Id != second.Id {
+		t.Fatalf("cached response ID = %d; want %d", response.Id, second.Id)
+	}
+	if len(response.Answer) != 1 {
+		t.Fatalf("expected 1 answer, got %d", len(response.Answer))
+	}
+	if ttl := response.Answer[0].Header().Ttl; ttl > testAnswerTTL {
+		t.Fatalf("cached TTL = %d; want <= %d", ttl, testAnswerTTL)
+	}
+
+	counters := metrics.Snapshot().Counters
+	if counters["dns_cache_hits_total"] != 1 || counters["dns_cache_misses_total"] != 1 {
+		t.Fatalf("cache counters = hits %d, misses %d; want 1,1",
+			counters["dns_cache_hits_total"], counters["dns_cache_misses_total"])
+	}
+}
+
+func TestResolveQueryRechecksQuestionPolicyOnCacheHit(t *testing.T) {
+	handler := echoUpstreamHandler(t)
+	var upstreamCalls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		handler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, storeDB, _ := newPipelineResolverWithCache(t, upstreamURL, upstreamClient, 16)
+
+	if _, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "example.com"), doh.ClientInfo{IP: "192.168.1.10"}); err != nil {
+		t.Fatalf("first resolve failed: %v", err)
+	}
+	if err := storeDB.UpsertOverride(context.Background(), "example.com", "block", "added after cache"); err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "example.com"), doh.ClientInfo{IP: "192.168.1.10"})
+	if err != nil {
+		t.Fatalf("second resolve failed: %v", err)
+	}
+	aRecord, ok := response.Answer[0].(*dns.A)
+	if !ok || aRecord.A.String() != testBlockPageIP {
+		t.Fatalf("expected the new block policy on a cache hit, got %#v", response.Answer)
+	}
+	if got := upstreamCalls.Load(); got != 1 {
+		t.Fatalf("upstream calls = %d; want 1 (the second answer must come from cache)", got)
+	}
+}
+
+func TestResolveQueryRechecksCNAMEPolicyOnCacheHit(t *testing.T) {
+	handler := echoUpstreamHandler(t)
+	var upstreamCalls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls.Add(1)
+		handler.ServeHTTP(w, r)
+	}))
+	defer upstream.Close()
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, storeDB, _ := newPipelineResolverWithCache(t, upstreamURL, upstreamClient, 16)
+
+	if _, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "cname.example"), doh.ClientInfo{IP: "192.168.1.10"}); err != nil {
+		t.Fatalf("first resolve failed: %v", err)
+	}
+	if err := storeDB.UpsertOverride(context.Background(), "blocked-target.example", "block", "added after cache"); err != nil {
+		t.Fatal(err)
+	}
+
+	response, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "cname.example"), doh.ClientInfo{IP: "192.168.1.10"})
+	if err != nil {
+		t.Fatalf("second resolve failed: %v", err)
+	}
+	aRecord, ok := response.Answer[0].(*dns.A)
+	if !ok || aRecord.A.String() != testBlockPageIP {
+		t.Fatalf("expected CNAME uncloaking on a cache hit, got %#v", response.Answer)
+	}
+	if got := upstreamCalls.Load(); got != 1 {
+		t.Fatalf("upstream calls = %d; want 1 (the CNAME answer must come from cache)", got)
 	}
 }
 

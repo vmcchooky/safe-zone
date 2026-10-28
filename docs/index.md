@@ -16,7 +16,7 @@ The operator-facing production source of truth is [production-completion-checkli
 ## Current build
 
 - `core-api`: HTTP API for health checks, cached domain analysis, `/metrics`, and the self-hosted operator UI
-- `dns-resolver`: local policy service with DoH `/dns-query`, optional DoT, and `/metrics`
+- `dns-resolver`: local policy service with DoH `/dns-query`, optional DoT, a bounded in-process upstream response cache, and `/metrics`
 - `feed-syncd`: optional interval-based threat-feed sync daemon for scheduled updates
 - `redis`: optional local cache for analysis results and dashboard history
 - `internal/analysis`: deterministic lexical scoring foundation
