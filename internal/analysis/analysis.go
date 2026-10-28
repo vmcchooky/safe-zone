@@ -116,15 +116,15 @@ func ClassifyCategory(domain string) string {
 	}
 	adultKeywords := []string{"porn", "sex", "xvideos", "xnxx", "pornhub", "redtube", "onlyfans", "erotic", "hentai", "jav"}
 	for _, kw := range adultKeywords {
-		if strings.Contains(domain, kw) {
+		if categoryKeywordMatch(domain, kw) {
 			return "adult"
 		}
 	}
 
 	// 4. Gambling
-	gamblingKeywords := []string{"casino", "gamble", "lottery", "poker", "slot", "w88", "fun88", "m88", "188bet", "kubet", "bet88", "blackjack", "roulette"}
+	gamblingKeywords := []string{"casino", "gamble", "lottery", "poker", "slot", "slots", "w88", "w88vn", "fun88", "m88", "188bet", "kubet", "bet88", "blackjack", "roulette"}
 	for _, kw := range gamblingKeywords {
-		if strings.Contains(domain, kw) {
+		if categoryKeywordMatch(domain, kw) {
 			return "gambling"
 		}
 	}
@@ -149,6 +149,38 @@ func ClassifyCategory(domain string) string {
 	}
 
 	return "uncategorized"
+}
+
+// categoryKeywordMatch reports whether kw appears in domain as a complete DNS
+// label or as a complete "-"/"_" separated token inside one. Short keywords
+// ("sex", "jav", "slot") only match a whole token, so sussex.ac.uk, java.com
+// and sloth.com stay uncategorized. Keywords of five characters or more may
+// also match a prefix or suffix of a token, which keeps playpoker.net and
+// fun88vietnam.com classified without a domain-by-domain exception list.
+func categoryKeywordMatch(domain, kw string) bool {
+	for domain != "" {
+		label := domain
+		if i := strings.IndexByte(label, '.'); i >= 0 {
+			label, domain = label[:i], label[i+1:]
+		} else {
+			domain = ""
+		}
+		for label != "" {
+			token := label
+			if i := strings.IndexAny(token, "-_"); i >= 0 {
+				token, label = token[:i], label[i+1:]
+			} else {
+				label = ""
+			}
+			if token == kw {
+				return true
+			}
+			if len(kw) >= 5 && (strings.HasPrefix(token, kw) || strings.HasSuffix(token, kw)) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Analyze scores a domain using the analyzer's BrandStore. The store may
