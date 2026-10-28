@@ -150,3 +150,22 @@ func TestRunFailsOnInvalidLabelsByDefault(t *testing.T) {
 		t.Fatalf("expected invalid_label_rows=1, got %d", got.InvalidLabelRows)
 	}
 }
+
+func TestMatchSource(t *testing.T) {
+	domains := map[string]struct{}{"ads.example.com": {}}
+	if _, ok := matchSource("ads.example.com", domains); !ok {
+		t.Fatal("expected exact match")
+	}
+	if _, ok := matchSource("other.com", domains); ok {
+		t.Fatal("expected miss")
+	}
+	if _, ok := matchSource("ads.example.com", nil); ok {
+		t.Fatal("empty source set must not match")
+	}
+}
+
+func TestValidateProtocolRejectsMissingFields(t *testing.T) {
+	if err := validateProtocol(protocol{}); err == nil {
+		t.Fatal("empty protocol should be rejected")
+	}
+}
