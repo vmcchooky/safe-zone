@@ -296,3 +296,94 @@ func cacheTestAResponse(query *dns.Msg, ttl uint32) *dns.Msg {
 	})
 	return response
 }
+
+// RFC 8767: an expired entry stays available within the stale window for the
+// upstream-down path, with a short serve-stale TTL; entries past the window
+// are gone and fresh entries are not "stale".
+func TestResponseCacheGetStale(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	cache := newResponseCache(4, 60, func() time.Time { return now })
+	query := cacheTestQuery(1, "example.com")
+	response := cacheTestAResponse(query, 60)
+	cache.Put(query, response)
+
+	// Still fresh: not stale.
+	now = now.Add(30 * time.Second)
+	if got := cache.GetStale(query); got != nil {
+		t.Fatal("fresh entry must not be served as stale")
+	}
+	// Within TTL: Get still works.
+	if _, ok := cache.Get(query); !ok {
+		t.Fatal("expected fresh hit")
+	}
+
+	// Just past TTL: stale within window, TTL clamped, entry retained.
+	now = now.Add(40 * time.Second)
+	got := cache.GetStale(cacheTestQuery(2, "example.com"))
+	if got == nil {
+		t.Fatal("expected stale entry within window")
+	} else if got.Id != 2 {
+		t.Fatalf("stale response ID = %d; want caller ID 2", got.Id)
+	}
+	for _, rr := range got.Answer {
+		if rr.Header().Ttl != DNSCacheStaleTTL {
+			t.Fatalf("stale TTL = %d; want %d", rr.Header().Ttl, DNSCacheStaleTTL)
+		}
+	}
+	// The stale Get must not have evicted the entry.
+	if cache.GetStale(cacheTestQuery(3, "example.com")) == nil {
+		t.Fatal("stale read must retain the entry")
+	}
+
+	// Past the stale window: gone.
+	now = now.Add(2 * DNSCacheStaleWindow)
+	if got := cache.GetStale(cacheTestQuery(4, "example.com")); got != nil {
+		t.Fatal("entry past the stale window must not be served")
+	}
+}
+
+// Refresh-ahead: only popular (>= refreshAheadMinHits) and half-expired
+// entries qualify, and the refresh slot is single-flight.
+func TestResponseCacheShouldRefreshSingleFlight(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	cache := newResponseCache(4, 60, func() time.Time { return now })
+	query := cacheTestQuery(1, "example.com")
+	response := cacheTestAResponse(query, 60)
+	cache.Put(query, response)
+
+	now = now.Add(35 * time.Second) // > 50% of TTL consumed
+	if cache.ShouldRefresh(query) {
+		t.Fatal("low-hit entry must not refresh")
+	}
+	// reads 1..3 bump the hit counter
+	for i := 0; i < refreshAheadMinHits; i++ {
+		if _, ok := cache.Get(query); !ok {
+			t.Fatal("expected hit")
+		}
+	}
+	if !cache.ShouldRefresh(query) {
+		t.Fatal("hot half-expired entry should refresh")
+	}
+	if !cache.BeginRefresh(query) {
+		t.Fatal("first refresh claim should succeed")
+	}
+	if cache.BeginRefresh(query) {
+		t.Fatal("second concurrent refresh claim should be refused")
+	}
+	cache.EndRefresh(query)
+	if !cache.BeginRefresh(query) {
+		t.Fatal("refresh claim should succeed after release")
+	}
+
+	// Young entry: not eligible even when hot.
+	now2 := time.Unix(1_700_000_000, 0)
+	cache2 := newResponseCache(4, 60, func() time.Time { return now2 })
+	q2 := cacheTestQuery(1, "young.com")
+	cache2.Put(q2, cacheTestAResponse(q2, 60))
+	for i := 0; i < refreshAheadMinHits+1; i++ {
+		_, _ = cache2.Get(q2)
+	}
+	if cache2.ShouldRefresh(q2) {
+		t.Fatal("young entry must not refresh")
+	}
+}
