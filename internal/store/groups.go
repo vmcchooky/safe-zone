@@ -179,6 +179,11 @@ func (d *DB) DeleteGroup(ctx context.Context, id int64) error {
 		return fmt.Errorf("group not found: id %d", id)
 	}
 
+	// client_mappings.group_id is ON DELETE CASCADE, so this delete also
+	// removes the group's CIDR rows. Rebuild the in-memory index from the new
+	// state; leaving the stale entry behind makes every client in the deleted
+	// range resolve through a group that no longer exists.
+	d.reloadCIDRCache("delete_group")
 	return nil
 }
 
@@ -324,7 +329,7 @@ func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, group
 	}
 
 	if mappingType == "cidr" {
-		_ = d.loadCIDRCache()
+		d.reloadCIDRCache("add_mapping")
 	}
 
 	return lastID, nil
@@ -366,7 +371,7 @@ func (d *DB) DeleteMapping(ctx context.Context, id int64) error {
 		return fmt.Errorf("%w: id %d", ErrMappingNotFound, id)
 	}
 
-	_ = d.loadCIDRCache()
+	d.reloadCIDRCache("delete_mapping")
 	return nil
 }
 
@@ -611,6 +616,25 @@ func (d *DB) GetEffectiveOverride(ctx context.Context, groupID int64, domain str
 	}
 
 	return nil, nil
+}
+
+// reloadCIDRCache rebuilds the in-memory CIDR index after a mutation. The
+// mutation has already committed, so a reload failure must not be reported as
+// a failed write; it is logged loudly because the previous snapshot stays live
+// and clients covered by the changed range keep the old group until the next
+// successful reload or a process restart.
+func (d *DB) reloadCIDRCache(operation string) {
+	if !d.Enabled() {
+		return
+	}
+	if err := d.loadCIDRCache(); err != nil {
+		logjson.Error("cidr mapping cache reload failed; keeping the previous snapshot", map[string]any{
+			"service":     "store",
+			"operation":   operation,
+			"error":       err.Error(),
+			"consequence": "CIDR client-to-group changes may not take effect until the next successful reload or restart",
+		})
+	}
 }
 
 func (d *DB) loadCIDRCache() error {

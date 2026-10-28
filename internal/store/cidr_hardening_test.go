@@ -51,6 +51,40 @@ func TestAddMappingNormalizesV4MappedCIDR(t *testing.T) {
 	}
 }
 
+func TestDeleteGroupRefreshesCIDRCache(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+	grpID, err := db.CreateGroup(ctx, "contractor", "contractor devices", []string{}, false, false)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if _, err := db.AddMappingInt(ctx, "cidr", "10.20.0.0/16", grpID); err != nil {
+		t.Fatalf("add cidr mapping: %v", err)
+	}
+	got, err := db.GetGroupForClient(ctx, "10.20.1.5", "", false)
+	if err != nil {
+		t.Fatalf("resolve group before delete: %v", err)
+	}
+	if got == nil || got.ID != grpID {
+		t.Fatalf("GetGroupForClient(10.20.1.5) = %+v, want group %d", got, grpID)
+	}
+
+	// client_mappings.group_id is ON DELETE CASCADE, so deleting the group
+	// removes its CIDR row as well. The in-memory index must be rebuilt from
+	// that new state; otherwise it keeps matching a group that no longer
+	// exists and the lookup fails instead of falling back to default.
+	if err := db.DeleteGroup(ctx, grpID); err != nil {
+		t.Fatalf("delete group: %v", err)
+	}
+	got, err = db.GetGroupForClient(ctx, "10.20.1.5", "", false)
+	if err != nil {
+		t.Fatalf("resolve group after delete: %v", err)
+	}
+	if got == nil || got.Name != "default" {
+		t.Fatalf("GetGroupForClient(10.20.1.5) after delete = %+v, want default group", got)
+	}
+}
+
 func TestGetGroupForClientPrefersMostSpecificCIDR(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
