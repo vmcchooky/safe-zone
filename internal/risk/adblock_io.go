@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"safe-zone/internal/domaintrie"
 	"safe-zone/internal/logjson"
@@ -69,6 +70,42 @@ func (e *AdblockEngine) ensureAdblockSourceCacheRoot() error {
 		return err
 	}
 	return os.MkdirAll(e.adblockSourceCacheRoot(), 0o750)
+}
+
+// adblockTempSweepMinAge gates the orphan sweep so a temp file being written
+// by another process (core-api and dns-resolver share the data root) is never
+// mistaken for a crash orphan; a live writer finishes well inside this window.
+const adblockTempSweepMinAge = time.Hour
+
+// sweepAdblockTempFiles removes orphaned *.tmp-* files left behind when a
+// crash or kill landed inside replaceFile's remove-then-rename window. The
+// store-and-rename writers clean their own temp files on every error path, so
+// anything older than adblockTempSweepMinAge is a crash orphan. Returns the
+// number of files removed.
+func (e *AdblockEngine) sweepAdblockTempFiles() int {
+	if strings.TrimSpace(e.adblockDataRoot) == "" {
+		return 0
+	}
+	cutoff := time.Now().Add(-adblockTempSweepMinAge)
+	removed := 0
+	// #nosec G304 -- walking the internally-derived data root
+	_ = filepath.WalkDir(e.adblockDataRoot, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if !strings.Contains(d.Name(), ".tmp-") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil || info.ModTime().After(cutoff) {
+			return nil
+		}
+		if os.Remove(path) == nil {
+			removed++
+		}
+		return nil
+	})
+	return removed
 }
 
 func replaceFile(tmpPath, finalPath string) error {

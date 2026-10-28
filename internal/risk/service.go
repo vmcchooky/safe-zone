@@ -627,6 +627,13 @@ func NewService(options Options) *Service {
 		go svc.runConfigReloadReconciler()
 	}
 
+	// Clean crash orphans from replaceFile's remove-then-rename window before
+	// the sync goroutines start writing new temp files. Synchronous so the
+	// count is logged once at startup rather than racing the sync loop.
+	if removed := svc.adblock.sweepAdblockTempFiles(); removed > 0 {
+		logjson.Info("removed orphaned adblock temp files", map[string]any{"removed": removed})
+	}
+
 	if !options.DisableAdblockSync {
 		go svc.adblock.runAdblockSync(svc.lifecycleCtx)
 		go svc.adblock.runAdblockConfigSync(svc.lifecycleCtx, svc.store)
