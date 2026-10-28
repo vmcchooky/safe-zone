@@ -461,11 +461,20 @@ func mixedScripts(value string) bool {
 	return hasLatin && hasNonLatin
 }
 
+// suspiciousKeywordStats uses token-boundary matching (the same matcher the
+// category classifier is pinned by) instead of substring matching. A raw
+// strings.Contains turned every embedded occurrence into a hit — "sex" inside
+// "sussex", "update" inside "updated", "secure" inside "ssecure" — so an
+// unrelated domain could collect keyword penalties and, with two embedded
+// substrings, the multiple-keyword bonus. Tokens delimited by label, hyphen
+// or underscore boundaries still match, and keywords of five characters or
+// more also match as a token prefix/suffix, so "secure-login",
+// "nganhang247.com" and "myaccount-help" keep scoring.
 func (a *Analyzer) suspiciousKeywordStats(value string) (int, int) {
 	keywords := a.config.GetKeywords()
 	keywordCount := 0
 	for _, keyword := range keywords {
-		if strings.Contains(value, keyword) {
+		if categoryKeywordMatch(value, keyword) {
 			keywordCount++
 		}
 	}
