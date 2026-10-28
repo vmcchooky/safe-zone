@@ -42,6 +42,7 @@ func (r *Resolver) StatusHandler(w http.ResponseWriter, req *http.Request) {
 		"deployment_tier":        r.Config.DeploymentTier,
 		"upstream_doh":           r.Upstreams.PrimaryURL(),
 		"upstream_doh_resolvers": r.Upstreams.Status(),
+		"dns_cache":              r.Cache.Stats(),
 		"redis":                  r.Risk.Telemetry().CacheStatus(req.Context()),
 		"analysis_config_reload": r.Risk.AnalysisConfigReloadStatus(),
 		// The allow list lives in this process's RAM too. Publishing the

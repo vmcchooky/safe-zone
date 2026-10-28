@@ -70,6 +70,13 @@ func TestStatusHandlerRoot(t *testing.T) {
 	if payload["upstream_doh"] != "https://cloudflare-dns.com/dns-query" {
 		t.Fatalf("unexpected upstream_doh: %#v", payload["upstream_doh"])
 	}
+	cacheStatus, ok := payload["dns_cache"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected dns_cache object, got %#v", payload["dns_cache"])
+	}
+	if cacheStatus["enabled"] != false {
+		t.Fatalf("expected dns_cache.enabled=false without configured entries, got %#v", cacheStatus["enabled"])
+	}
 	if payload["time"] == "" {
 		t.Fatal("expected time in status response")
 	}

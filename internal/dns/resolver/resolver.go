@@ -42,6 +42,9 @@ type Config struct {
 	// aggregate from exhausting goroutines and upstream budget under a
 	// distributed flood. Zero means DefaultMaxConcurrentQueries.
 	MaxConcurrentQueries int
+	// DNSCacheEntries bounds the in-process upstream response cache. Zero
+	// disables it. New clamps nothing; callers validate operator input.
+	DNSCacheEntries int
 }
 
 // DefaultMaxConcurrentQueries caps simultaneous DNS evaluations. A
@@ -59,7 +62,10 @@ type Resolver struct {
 	// DotLimiter giới hạn tần suất riêng cho transport DoT; DoH đi qua
 	// TieredMiddleware ở cạnh HTTP.
 	DotLimiter *ratelimit.Limiter
-	inflight   atomic.Int64
+	// Cache is optional; nil disables upstream response caching. Policy is
+	// still evaluated on every hit, so the cache never serves a stale verdict.
+	Cache    *ResponseCache
+	inflight atomic.Int64
 }
 
 func New(riskService *risk.Service, metrics *observability.Registry, upstreams *doh.UpstreamResolver, cfg Config, dotLimiter *ratelimit.Limiter) *Resolver {
@@ -72,6 +78,7 @@ func New(riskService *risk.Service, metrics *observability.Registry, upstreams *
 		Upstreams:  upstreams,
 		Config:     cfg,
 		DotLimiter: dotLimiter,
+		Cache:      NewResponseCache(cfg.DNSCacheEntries),
 	}
 }
 
@@ -113,43 +120,46 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 		return r.BlockedDNSMessage(query)
 	}
 
-	wire, err := query.Pack()
-	if err != nil {
-		return nil, err
-	}
-
-	responseWire, err := r.ForwardDoH(ctx, wire)
-	if err != nil {
-		if r.Metrics != nil {
-			r.Metrics.IncCounter("upstream_doh_failures_total")
+	responseMsg, cacheHit := r.lookupCache(ctx, query, questionDomain)
+	if responseMsg == nil {
+		wire, err := query.Pack()
+		if err != nil {
+			return nil, err
 		}
-		logjson.Warn("upstream DoH failed", correlation.Fields(ctx, map[string]any{
-			"service": "dns-resolver",
-			"domain":  questionDomain,
-			"error":   err.Error(),
-		}))
-		return nil, err
-	}
 
-	responseMsg := new(dns.Msg)
-	if err := responseMsg.Unpack(responseWire); err != nil {
-		return nil, err
-	}
-
-	// The upstream reply is untrusted input. A response whose ID or question
-	// does not match what was asked is either a misbehaving resolver or an
-	// attempt to slip an answer past the policy check that follows, and neither
-	// is something to forward to the client.
-	if err := validateUpstreamResponse(query, responseMsg); err != nil {
-		if r.Metrics != nil {
-			r.Metrics.IncCounter("upstream_doh_mismatched_total")
+		responseWire, err := r.ForwardDoH(ctx, wire)
+		if err != nil {
+			if r.Metrics != nil {
+				r.Metrics.IncCounter("upstream_doh_failures_total")
+			}
+			logjson.Warn("upstream DoH failed", correlation.Fields(ctx, map[string]any{
+				"service": "dns-resolver",
+				"domain":  questionDomain,
+				"error":   err.Error(),
+			}))
+			return nil, err
 		}
-		logjson.Warn("upstream DoH response did not match the query", correlation.Fields(ctx, map[string]any{
-			"service": "dns-resolver",
-			"domain":  questionDomain,
-			"error":   err.Error(),
-		}))
-		return nil, err
+
+		responseMsg = new(dns.Msg)
+		if err := responseMsg.Unpack(responseWire); err != nil {
+			return nil, err
+		}
+
+		// The upstream reply is untrusted input. A response whose ID or question
+		// does not match what was asked is either a misbehaving resolver or an
+		// attempt to slip an answer past the policy check that follows, and neither
+		// is something to forward to the client.
+		if err := validateUpstreamResponse(query, responseMsg); err != nil {
+			if r.Metrics != nil {
+				r.Metrics.IncCounter("upstream_doh_mismatched_total")
+			}
+			logjson.Warn("upstream DoH response did not match the query", correlation.Fields(ctx, map[string]any{
+				"service": "dns-resolver",
+				"domain":  questionDomain,
+				"error":   err.Error(),
+			}))
+			return nil, err
+		}
 	}
 
 	// CNAME uncloaking: the policy has to be applied to the final target of a
@@ -181,7 +191,52 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 		}
 	}
 
+	if !cacheHit {
+		r.storeCache(query, responseMsg)
+	}
 	return responseMsg, nil
+}
+
+// lookupCache serves a validated upstream answer from the in-process cache.
+// A stored entry is revalidated against the caller's query before it is
+// counted as a hit; a mismatch is treated as a miss so a corrupt entry cannot
+// be forwarded or pin the cache forever.
+func (r *Resolver) lookupCache(ctx context.Context, query *dns.Msg, domain string) (*dns.Msg, bool) {
+	if r.Cache == nil || !r.Cache.Cacheable(query) {
+		return nil, false
+	}
+	response, ok := r.Cache.Get(query)
+	if !ok {
+		if r.Metrics != nil {
+			r.Metrics.IncCounter("dns_cache_misses_total")
+		}
+		return nil, false
+	}
+	if err := validateUpstreamResponse(query, response); err != nil {
+		if r.Metrics != nil {
+			r.Metrics.IncCounter("dns_cache_invalid_total")
+			r.Metrics.IncCounter("dns_cache_misses_total")
+		}
+		logjson.Warn("cached DNS response did not match the query", correlation.Fields(ctx, map[string]any{
+			"service": "dns-resolver",
+			"domain":  domain,
+			"error":   err.Error(),
+		}))
+		return nil, false
+	}
+	if r.Metrics != nil {
+		r.Metrics.IncCounter("dns_cache_hits_total")
+	}
+	return response, true
+}
+
+func (r *Resolver) storeCache(query, response *dns.Msg) {
+	if r.Cache == nil {
+		return
+	}
+	if _, evicted := r.Cache.Put(query, response); evicted && r.Metrics != nil {
+		r.Metrics.IncCounter("dns_cache_evictions_total")
+	}
 }
 
 // validateUpstreamResponse checks that a reply belongs to the query that was

@@ -144,6 +144,16 @@ Upstream DoH failure count:
 curl -fsS http://127.0.0.1:8081/metrics | jq '.upstream_doh.failures_total'
 ```
 
+DNS response cache occupancy and hit/miss counters:
+
+```sh
+curl -fsS http://127.0.0.1:8081/metrics \
+  | jq '{cache: .dns_cache, hits: .metrics.counters.dns_cache_hits_total, misses: .metrics.counters.dns_cache_misses_total}'
+```
+
+Set `SAFE_ZONE_DNS_CACHE_ENTRIES=0` to bypass the cache while diagnosing an
+upstream or policy problem.
+
 Runtime memory status (request counters; heap internals are not public —
 see the section above):
 
