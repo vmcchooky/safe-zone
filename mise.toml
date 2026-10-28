@@ -196,6 +196,11 @@ run = [
 
 [tasks."go:security"]
 description = "Run the Go security scans used in CI"
+# Same embed race as go:lint: gosec and govulncheck typecheck
+# internal/api/app, whose //go:embed all:dist fails while ui:bundle is
+# wiping and re-copying dist/. Main CI hit this on 2026-10-28 after the
+# bundle task raced gosec on a fresh runner.
+depends = ["ui:bundle"]
 run = [
   "gosec ./...",
   "govulncheck ./...",
