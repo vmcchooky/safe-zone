@@ -230,6 +230,20 @@ type Service struct {
 	overrideLastFailureUnix     atomic.Int64
 	overrideLastSuccessUnix     atomic.Int64
 
+	// groupLookupFailures counts client-group resolution reads that failed.
+	// The fallback to the built-in default group is deliberate: a store error
+	// must not block every client, but it silently moved that client to a
+	// different policy group. Counting and publishing the failure is what
+	// turns "the wrong policy applied" into something an operator can see.
+	//
+	// groupConsecutiveFailures and the timestamps mirror the override
+	// counters: the consecutive value resets on the first successful read, so
+	// it distinguishes an active outage from historical blips.
+	groupLookupFailures      atomic.Int64
+	groupConsecutiveFailures atomic.Int64
+	groupLastFailureUnix     atomic.Int64
+	groupLastSuccessUnix     atomic.Int64
+
 	// closeMu and closed make Close idempotent; a second call would otherwise
 	// panic on the already-closed enrichDone channel.
 	closeMu sync.Mutex

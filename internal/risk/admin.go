@@ -130,6 +130,16 @@ type DecisionPipelineStatus struct {
 	// corresponding event has happened at least once.
 	LastFailureAt string `json:"last_failure_at,omitempty"`
 	LastSuccessAt string `json:"last_success_at,omitempty"`
+	// GroupLookupFailures counts client-group lookups that failed since
+	// start-up. Each one means the client was evaluated under the built-in
+	// default group instead of the policy group mapped to its IP, because
+	// failing closed would block that client entirely. Zero is healthy.
+	GroupLookupFailures int64 `json:"group_lookup_failures"`
+	// GroupConsecutiveFailures resets on the first successful lookup and is
+	// therefore the field to alert on for an active store problem.
+	GroupConsecutiveFailures int64  `json:"group_consecutive_failures"`
+	GroupLastFailureAt       string `json:"group_last_failure_at,omitempty"`
+	GroupLastSuccessAt       string `json:"group_last_success_at,omitempty"`
 	// OutboundProxyEnabled reports whether the address guard has been
 	// deliberately switched off. With a proxy configured, netguard validates
 	// the proxy's address instead of the destination's, so every outbound
@@ -153,6 +163,8 @@ func (s *Service) DecisionPipelineStatus() DecisionPipelineStatus {
 	status := DecisionPipelineStatus{
 		OverrideLookupFailures:      s.overrideLookupFailures.Load(),
 		OverrideConsecutiveFailures: s.overrideConsecutiveFailures.Load(),
+		GroupLookupFailures:         s.groupLookupFailures.Load(),
+		GroupConsecutiveFailures:    s.groupConsecutiveFailures.Load(),
 		OutboundProxyEnabled:        netguard.OutboundProxyEnabled(),
 		FeedLookupFailures:          s.FeedLookupFailures(),
 		FeedConsecutiveFailures:     s.FeedConsecutiveLookupFailures(),
@@ -165,6 +177,12 @@ func (s *Service) DecisionPipelineStatus() DecisionPipelineStatus {
 	}
 	if unix := s.overrideLastSuccessUnix.Load(); unix > 0 {
 		status.LastSuccessAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)
+	}
+	if unix := s.groupLastFailureUnix.Load(); unix > 0 {
+		status.GroupLastFailureAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)
+	}
+	if unix := s.groupLastSuccessUnix.Load(); unix > 0 {
+		status.GroupLastSuccessAt = time.Unix(unix, 0).UTC().Format(time.RFC3339)
 	}
 	return status
 }

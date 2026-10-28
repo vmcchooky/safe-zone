@@ -510,6 +510,13 @@ func (d *DB) GetGroupForClient(ctx context.Context, clientIP, clientID string, c
 		if err == nil {
 			return d.GetGroup(ctx, groupID)
 		}
+		// A plain miss means this client has no client_id mapping. Anything
+		// else is an I/O failure, and continuing would resolve the client
+		// under the default group as if the mapping did not exist — a silent
+		// policy downgrade. Surface it so the caller can fail open loudly.
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("resolve client_id mapping: %w", err)
+		}
 	}
 
 	// 2. Check exact IP mapping
@@ -520,6 +527,9 @@ func (d *DB) GetGroupForClient(ctx context.Context, clientIP, clientID string, c
 			clientIP).Scan(&groupID)
 		if err == nil {
 			return d.GetGroup(ctx, groupID)
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("resolve ip mapping: %w", err)
 		}
 	}
 

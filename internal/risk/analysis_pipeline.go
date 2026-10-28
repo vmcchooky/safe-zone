@@ -35,6 +35,11 @@ type resolvedLayer struct {
 // Client-supplied identifiers (DoH client_id) are unauthenticated, so policy is
 // derived from the trusted client IP only. The request context bounds this lookup
 // so a disconnected caller stops consuming database work.
+//
+// A failed lookup still returns the built-in default group: failing closed would
+// block every client on a transient store error. But the client is then judged
+// under a different policy than the one configured for it, so the failure is
+// counted, logged and published rather than swallowed.
 func (s *Service) resolveClientGroup(ctx context.Context, client ClientInfo, t *layerTimer) *store.ClientGroup {
 	var group *store.ClientGroup
 	if s.store != nil && s.store.Enabled() {
@@ -43,7 +48,10 @@ func (s *Service) resolveClientGroup(ctx context.Context, client ClientInfo, t *
 		t.measure(LayerClientGroup, func() {
 			g, groupErr = s.store.GetGroupForClient(ctx, client.IP, client.ClientID, false)
 		})
-		if groupErr == nil {
+		if groupErr != nil {
+			s.recordGroupLookupFailure(client, groupErr)
+		} else {
+			s.recordGroupLookupSuccess()
 			group = g
 		}
 	}
@@ -51,6 +59,34 @@ func (s *Service) resolveClientGroup(ctx context.Context, client ClientInfo, t *
 		group = &store.ClientGroup{ID: 1, Name: "default", StrictMalware: true}
 	}
 	return group
+}
+
+// recordGroupLookupFailure makes a fail-open group resolution observable.
+//
+// The client_id is deliberately not logged: it is unauthenticated, attacker
+// controlled, and ignored by this lookup anyway. The trusted IP is what selected
+// (or failed to select) the group.
+func (s *Service) recordGroupLookupFailure(client ClientInfo, err error) {
+	s.groupLookupFailures.Add(1)
+	s.groupConsecutiveFailures.Add(1)
+	s.groupLastFailureUnix.Store(time.Now().Unix())
+	logjson.Warn("client group lookup failed; using the built-in default group", map[string]any{
+		"service":     "risk",
+		"client_ip":   client.IP,
+		"error":       err.Error(),
+		"fail_open":   true,
+		"consecutive": s.groupConsecutiveFailures.Load(),
+	})
+}
+
+// recordGroupLookupSuccess resets the consecutive-failure streak on the first
+// successful read. The total is left untouched: historical failures are still
+// part of the record, and the last-success stamp only changes on recovery.
+func (s *Service) recordGroupLookupSuccess() {
+	if s.groupConsecutiveFailures.Load() > 0 {
+		s.groupConsecutiveFailures.Store(0)
+		s.groupLastSuccessUnix.Store(time.Now().Unix())
+	}
 }
 
 // resolveOverride consults the administrative override chain. It returns nil when

@@ -138,6 +138,20 @@ After at least one successful sync, `active_entries` must stay above zero. A
 `status` of `missing` indicates lost or fully expired feed coverage and pages
 the operator independently of ordinary freshness warnings.
 
+Decision-pipeline fail-open counters:
+
+```sh
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status \
+  | jq '.decision_pipeline | {override_lookup_failures, override_consecutive_failures, group_lookup_failures, group_consecutive_failures}'
+```
+
+`override_lookup_failures` counts admin-override reads that failed: the domain
+was evaluated normally instead of using the operator's block. A non-zero
+`group_consecutive_failures` means client-group resolution is failing right now,
+so clients mapped to a non-default group are being evaluated under the built-in
+default group until the store recovers. The consecutive fields reset on the
+first success; the totals keep the historical count.
+
 Upstream DoH failure count:
 
 ```sh
