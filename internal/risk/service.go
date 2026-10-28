@@ -30,7 +30,7 @@ const threatFeedReason = "matched local threat feed"
 // contextual evidence (FP-guard 2026-09, M7): the host was reported, but a
 // whole CDN apex is never host-blocked on that alone.
 const sharedFeedApexReason = "shared infrastructure host in threat feed (contextual, needs corroboration)"
-const analysisAlgorithmRevision = "2026-10-dga-bigram-v1"
+const analysisAlgorithmRevision = "2026-10-tr39-skeleton-v1"
 const geminiKeySyncCooldown = 10 * time.Second
 const defaultAnalysisConfigReloadPollInterval = 30 * time.Second
 const analysisConfigReloadBackoffFloor = 250 * time.Millisecond
