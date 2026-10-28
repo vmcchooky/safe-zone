@@ -176,12 +176,15 @@ func TestProductionFPLexicalVerdicts(t *testing.T) {
 	}
 	// Spot-check the exact scores behind the 7-day telemetry rows.
 	spots := map[string]int{
-		"update.intl.miui.com":                          25,
-		"accounts.zoho.com":                             25,
-		"dualstack.video.twitter.map.fastly.net":        25,
-		"msgacs-lazada-sg.m.taobao.com":                 15,
-		"zshopee.v.baishan-cloud.net":                   25,
-		"v45.gpm.byteoversea.net":                       35,
+		"update.intl.miui.com":                   25,
+		"accounts.zoho.com":                      25,
+		"dualstack.video.twitter.map.fastly.net": 25,
+		"msgacs-lazada-sg.m.taobao.com":          15,
+		"zshopee.v.baishan-cloud.net":            25,
+		// 35 came from the old entropy-only DGA flag (entropy 3.03, a hair
+		// over threshold). The bigram gate reads "byteoversea" as
+		// English-like (ratio 0.8), so the label no longer scores.
+		"v45.gpm.byteoversea.net":                       0,
 		"acs-m.lazada.sg":                               0,
 		"img.lazcdn.com":                                0,
 		"acs-lazada-sg.m.taobao.com.gds.alibabadns.com": 15,
