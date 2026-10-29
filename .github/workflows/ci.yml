@@ -205,6 +205,13 @@ jobs:
           bash scripts/ops/tests/monitor-certs-test.sh
           bash scripts/ops/tests/public-edge-smoke-test.sh
 
+      # The OpenAPI document is contract-checked by the Go parity test in
+      # internal/openapi; this validates that it is a structurally valid
+      # OpenAPI 3.1 document. Pinned version; errors fail the job, warnings
+      # do not.
+      - name: Validate OpenAPI spec
+        run: npx --yes @redocly/cli@1.34.2 lint docs/openapi/safe-zone.yaml
+
       # Lint every ops script, not a hand-maintained subset: the four scripts
       # listed here used to grow one at a time, so bench.sh, coverage.sh and
       # the other helpers were never checked. The glob also covers new files
