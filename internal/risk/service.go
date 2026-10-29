@@ -30,7 +30,7 @@ const threatFeedReason = "matched local threat feed"
 // contextual evidence (FP-guard 2026-09, M7): the host was reported, but a
 // whole CDN apex is never host-blocked on that alone.
 const sharedFeedApexReason = "shared infrastructure host in threat feed (contextual, needs corroboration)"
-const analysisAlgorithmRevision = "2026-09-cdn-fp-guard-v2"
+const analysisAlgorithmRevision = "2026-10-tr39-skeleton-v1"
 const geminiKeySyncCooldown = 10 * time.Second
 const defaultAnalysisConfigReloadPollInterval = 30 * time.Second
 const analysisConfigReloadBackoffFloor = 250 * time.Millisecond
@@ -63,10 +63,15 @@ const (
 	// A rollback publishes it so a separate dns-resolver process reloads
 	// immediately; the poll reconciler covers Redis being disabled.
 	whitelistConfigReloadEventType = "whitelist_updated"
-	configReloadSourceStartup      = "startup"
-	configReloadSourceLocalWrite   = "local_write"
-	configReloadSourcePubSub       = "pubsub"
-	configReloadSourceReconcile    = "reconcile"
+	// clientMappingsReloadEventType shares the config reload channel too. A
+	// client mapping change bumps the durable revision; dns-resolver keeps its
+	// own CIDR index, so core-api publishes this to make it rebuild now
+	// instead of waiting for the poll reconciler or a restart.
+	clientMappingsReloadEventType = "client_mappings_updated"
+	configReloadSourceStartup     = "startup"
+	configReloadSourceLocalWrite  = "local_write"
+	configReloadSourcePubSub      = "pubsub"
+	configReloadSourceReconcile   = "reconcile"
 )
 
 var replaceFileLocks sync.Map

@@ -53,12 +53,10 @@
     },
     "benign-005": {
       "verdict": "SAFE",
-      "score": 35,
+      "score": 0,
       "policy": "allow",
       "decision": "",
-      "reasons": [
-        "high_entropy_dga_suspected"
-      ]
+      "reasons": null
     },
     "benign-006": {
       "verdict": "SAFE",
@@ -255,12 +253,10 @@
     },
     "pol-002": {
       "verdict": "SAFE",
-      "score": 35,
+      "score": 0,
       "policy": "block",
       "decision": "block|content|unknown",
-      "reasons": [
-        "high_entropy_dga_suspected"
-      ]
+      "reasons": null
     },
     "pol-003": {
       "verdict": "SAFE",

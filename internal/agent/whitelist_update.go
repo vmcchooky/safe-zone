@@ -93,7 +93,7 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 		"task":    "whitelist_update",
 		"source":  t.config.SourceURL,
 	}))
-	_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_started", "", "Download and import started")
+	recordAgentEventBestEffort(context.Background(), t.store, "whitelist_update", "whitelist_update_started", "", "Download and import started")
 
 	start := time.Now()
 	domains, err := t.downloadAndParse(ctx)
@@ -105,7 +105,7 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 			"error":   err.Error(),
 		}))
 		details := fmt.Sprintf(`{"error":%q}`, err.Error())
-		_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_failed", "", details)
+		recordAgentEventBestEffort(context.Background(), t.store, "whitelist_update", "whitelist_update_failed", "", details)
 		return err
 	}
 
@@ -126,7 +126,7 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 			"error":   err.Error(),
 		}))
 		details := fmt.Sprintf(`{"error":%q}`, err.Error())
-		_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_failed", "", details)
+		recordAgentEventBestEffort(context.Background(), t.store, "whitelist_update", "whitelist_update_failed", "", details)
 		return fmt.Errorf("snapshot allow list: %w", err)
 	}
 
@@ -138,7 +138,7 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 			"error":   err.Error(),
 		}))
 		details := fmt.Sprintf(`{"error":%q}`, err.Error())
-		_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_failed", "", details)
+		recordAgentEventBestEffort(context.Background(), t.store, "whitelist_update", "whitelist_update_failed", "", details)
 		return fmt.Errorf("update sqlite: %w", err)
 	}
 
@@ -156,7 +156,7 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 			"error":   err.Error(),
 		}))
 		details := fmt.Sprintf(`{"error":%q}`, err.Error())
-		_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_failed", "", details)
+		recordAgentEventBestEffort(context.Background(), t.store, "whitelist_update", "whitelist_update_failed", "", details)
 		// The durable set was replaced but the RAM index was not rebuilt, so
 		// the two disagree. Put the previous set back.
 		t.restoreSnapshot(ctx, snapshotID)
@@ -169,7 +169,7 @@ func (t *WhitelistUpdateTask) Run(ctx context.Context) error {
 		"elapsed_ms":    elapsed.Milliseconds(),
 	}
 	statsJSON, _ := json.Marshal(stats)
-	_ = t.store.RecordAgentEvent(context.Background(), "whitelist_update", "whitelist_update_completed", "", string(statsJSON))
+	recordAgentEventBestEffort(context.Background(), t.store, "whitelist_update", "whitelist_update_completed", "", string(statsJSON))
 
 	logjson.Info("agent whitelist update completed", correlation.Fields(ctx, map[string]any{
 		"service":     "core-api",

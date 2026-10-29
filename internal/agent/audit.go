@@ -336,7 +336,7 @@ func (t *AuditTask) Run(ctx context.Context) error {
 
 	details := fmt.Sprintf(`{"audited":%d,"auto_blocked":%d,"proposed":%d,"skipped":%d,"errors":%d}`,
 		result.Audited, result.AutoBlocked, result.Proposed, result.Skipped, result.Errors)
-	_ = t.store.RecordAgentEvent(ctx, "audit", "audit_completed", "", details)
+	recordAgentEventBestEffort(ctx, t.store, "audit", "audit_completed", "", details)
 
 	logjson.Info("agent audit completed", correlation.Fields(ctx, map[string]any{
 		"service":      "core-api",
@@ -454,9 +454,9 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 			"cache_invalidation": cacheInvalidated,
 		})
 		if err == nil {
-			_ = t.store.RecordAgentEvent(ctx, "audit", "auto_block", domain, string(details))
+			recordAgentEventBestEffort(ctx, t.store, "audit", "auto_block", domain, string(details))
 		} else {
-			_ = t.store.RecordAgentEvent(ctx, "audit", "auto_block", domain,
+			recordAgentEventBestEffort(ctx, t.store, "audit", "auto_block", domain,
 				fmt.Sprintf(`{"score":%d,"confidence":%.2f,"cache_invalidation":%q}`, score, confidence, cacheInvalidated))
 		}
 
@@ -465,7 +465,7 @@ func (t *AuditTask) auditDomain(ctx context.Context, domain string) (string, err
 
 	// Reviewed but no action.
 	details := fmt.Sprintf(`{"score":%d,"confidence":%.2f,"verdict":%q}`, score, confidence, verdict)
-	_ = t.store.RecordAgentEvent(ctx, "audit", "reviewed", domain, details)
+	recordAgentEventBestEffort(ctx, t.store, "audit", "reviewed", domain, details)
 
 	return "reviewed", nil
 }
@@ -505,7 +505,7 @@ func (t *AuditTask) proposeBlock(ctx context.Context, domain string, score int, 
 	if err != nil {
 		return "", fmt.Errorf("create proposal: %w", err)
 	}
-	_ = t.store.RecordAgentEvent(ctx, "audit", "proposal_created", domain,
+	recordAgentEventBestEffort(ctx, t.store, "audit", "proposal_created", domain,
 		fmt.Sprintf(`{"proposal_id":%d,"score":%d,"confidence":%.2f}`, created.ID, score, confidence))
 	return "proposed", nil
 }
