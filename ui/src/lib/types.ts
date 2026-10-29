@@ -174,3 +174,16 @@ export interface WhitelistSnapshotsResponse {
   snapshots: WhitelistSnapshot[];
   last_rollback: WhitelistRollbackRecord | null;
 }
+
+export interface Brand {
+  id?: number;
+  name: string;
+  official_domain: string;
+  alt_domains: string[];
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface BrandListResponse {
+  items: Brand[];
+}

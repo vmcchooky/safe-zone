@@ -17,6 +17,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { InfoTooltip } from '../components/InfoTooltip';
+import { BrandsCard } from '../components/BrandsCard';
 import { useDialog } from '../components/DialogContext';
 import { READ_ONLY_HINT, useCanMutate } from '../auth/AuthProvider';
 
@@ -369,6 +370,8 @@ export function OverridesPage() {
           </>
         )}
       </section>
+
+      <BrandsCard />
     </motion.div>
   );
 }
