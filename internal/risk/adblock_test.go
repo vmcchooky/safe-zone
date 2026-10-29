@@ -2,10 +2,10 @@ package risk
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
-	"errors"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
@@ -529,6 +529,62 @@ func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
 	}
 	if !loadedTrie.Match("ads.concurrent.test") {
 		t.Fatal("expected concurrent cache write to persist domain entry")
+	}
+}
+
+func TestSweepAdblockTempFilesRemovesOldOrphans(t *testing.T) {
+	tempDir := t.TempDir()
+	engine := &AdblockEngine{adblockDataRoot: tempDir}
+
+	old := filepath.Join(tempDir, "adblock_cache.txt.tmp-123")
+	if err := os.WriteFile(old, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	staleStamp := time.Now().Add(-2 * adblockTempSweepMinAge)
+	if err := os.Chtimes(old, staleStamp, staleStamp); err != nil {
+		t.Fatal(err)
+	}
+	nested := filepath.Join(tempDir, "adblock_sources", "hash.txt.tmp-456")
+	if err := os.MkdirAll(filepath.Dir(nested), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(nested, []byte("stale"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(nested, staleStamp, staleStamp); err != nil {
+		t.Fatal(err)
+	}
+
+	fresh := filepath.Join(tempDir, "adblock_cache.txt.tmp-789")
+	if err := os.WriteFile(fresh, []byte("live"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	kept := filepath.Join(tempDir, "adblock_cache.txt")
+	if err := os.WriteFile(kept, []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if removed := engine.sweepAdblockTempFiles(); removed != 2 {
+		t.Fatalf("expected 2 orphaned temp files removed, got %d", removed)
+	}
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected stale temp file removed, got err=%v", err)
+	}
+	if _, err := os.Stat(nested); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected nested stale temp file removed, got err=%v", err)
+	}
+	if _, err := os.Stat(fresh); err != nil {
+		t.Fatalf("expected fresh temp file kept, got err=%v", err)
+	}
+	if _, err := os.Stat(kept); err != nil {
+		t.Fatalf("expected non-temp file kept, got err=%v", err)
+	}
+}
+
+func TestSweepAdblockTempFilesEmptyRoot(t *testing.T) {
+	engine := &AdblockEngine{}
+	if removed := engine.sweepAdblockTempFiles(); removed != 0 {
+		t.Fatalf("expected empty data root to sweep nothing, got %d", removed)
 	}
 }
 
