@@ -198,3 +198,11 @@ func (h *Handler) LogsExportHandler(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte("Store DB is disabled or unavailable.\n"))
 	}
 }
+
+// MetricsPrometheusHandler serves the same request-summary surface as
+// MetricsHandler in the Prometheus text exposition format, for scrapers that
+// speak it natively. The route keeps the RequireAdmin gate the JSON /metrics
+// handler has: the label set is identical, so it leaks the same API surface.
+func (h *Handler) MetricsPrometheusHandler(w http.ResponseWriter, r *http.Request) {
+	h.Metrics.PrometheusHandler()(w, r)
+}
