@@ -130,6 +130,22 @@ func TestHandlerPaddedBase64Rejected(t *testing.T) {
 	}
 }
 
+func TestHandlerPOSTAcceptsContentTypeParameters(t *testing.T) {
+	// RFC 8484 §4.2 sends the bare media type, but mime.Parse semantics mean
+	// a conforming client that appends `; charset=` must not be rejected.
+	backend := &stubBackend{response: testAAnswer("example.com", "93.184.216.34", 120)}
+	handler := NewHandler(backend)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, dohRequest(t, http.MethodPost, "/dns-query",
+		wireOf(t, testQuery(t, "example.com", dns.TypeA)),
+		ContentTypeDNSMessage+"; charset=utf-8"))
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected 200 for content type with parameters, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+}
+
 func TestHandlerProtocolErrors(t *testing.T) {
 	validWire := wireOf(t, testQuery(t, "example.com", dns.TypeA))
 
