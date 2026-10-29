@@ -93,7 +93,7 @@ func (e *AdblockEngine) sweepAdblockTempFiles() int {
 	if err != nil {
 		return 0
 	}
-	defer root.Close()
+	defer func() { _ = root.Close() }()
 
 	cutoff := time.Now().Add(-adblockTempSweepMinAge)
 	removed := 0
