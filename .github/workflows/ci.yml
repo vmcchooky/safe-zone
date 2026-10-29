@@ -304,6 +304,44 @@ jobs:
             ~/go/pkg/mod
           key: go-v2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
 
+  # Every fuzz target gets a 20-second budget on each PR. The seed corpus and
+  # any crash found before also run as plain unit tests inside go:test, so a
+  # failure here means a genuinely new finding; long-horizon runs belong to a
+  # nightly workflow, not to every push. -parallel=1 keeps each run cheap and
+  # deterministic. The dns and risk packages do not import the embedded UI
+  # bundle, so this job needs no npm and no mise tasks beyond the toolchain.
+  fuzz-smoke:
+    name: Fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Restore Go build and module cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-v2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-v2-${{ runner.os }}-
+
+      - name: Set up mise
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
+        with:
+          cache: true
+          cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run fuzz smoke
+        run: |
+          go test -run='^$' -fuzz='^FuzzDoHServer$' -fuzztime=20s -parallel=1 ./internal/dns/doh/
+          go test -run='^$' -fuzz='^FuzzResponseCache$' -fuzztime=20s -parallel=1 ./internal/dns/resolver/
+          go test -run='^$' -fuzz='^FuzzUpstreamResponse$' -fuzztime=20s -parallel=1 ./internal/dns/resolver/
+          go test -run='^$' -fuzz='^FuzzPolicyMatch$' -fuzztime=20s -parallel=1 ./internal/risk/
+
   ui-e2e:
     name: UI e2e (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
