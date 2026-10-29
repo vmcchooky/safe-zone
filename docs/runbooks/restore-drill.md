@@ -38,6 +38,7 @@ Notes:
 The backup helpers now capture:
 
 - Redis RDB snapshot
+- Redis AOF bundle (`redis-aof.tar.gz`, authoritative for `--appendonly yes` deployments)
 - SQLite backup
 - `.env` snapshot
 - Caddy snapshot
@@ -56,6 +57,54 @@ Windows helper:
 ```powershell
 pwsh ./scripts/ops/safe-zone.ps1 backup
 ```
+
+## Automated drill
+
+The manual procedure above is automated in
+`scripts/ops/tests/restore-drill-test.sh` and runs as the `Restore drill` CI
+job on every pull request and push to `main`. It boots an isolated
+developer stack (its own compose project name, so no shared volume is
+touched), seeds three brand rules and one analysis-cache entry through the
+admin API, takes a backup through `scripts/ops/safe-zone.sh backup`, verifies
+the bundle's SHA-256 manifest, deletes the seeded brands, restores, and then
+asserts all of the following:
+
+- the restored SQLite file's checksum equals the backup's,
+- the seeded analysis-cache entry survived in Redis,
+- the live API serves the backup's brand list (baseline count + 3) after
+  core-api is healthy again.
+
+Run it locally against a running Docker daemon:
+
+```sh
+bash scripts/ops/tests/restore-drill-test.sh
+```
+
+Failures write `docker compose ps`, full logs, and the seeded/observed API
+state to `tmp/restore-drill/` (uploaded as a CI artifact) and always tear the
+stack down with `down -v --remove-orphans`.
+
+### Findings recorded 2026-10-29
+
+The first automated runs caught a real restore defect in both
+`scripts/ops/safe-zone.sh` and `scripts/ops/safe-zone.ps1`. Redis runs with
+`--appendonly yes`, and restoring the RDB snapshot alone did not restore
+Redis:
+
+- the AOF in the volume replayed over the copied `dump.rdb`, resurrecting
+  every command committed **after** the backup — a stale Redis-cached brand
+  list then shadowed the restored SQLite state for one cache TTL (300s);
+- conversely, after purging the AOF, Redis 7 ignored `dump.rdb` entirely and
+  started from an empty dataset ("Creating AOF base file … on server start").
+
+The helpers now treat Redis persistence explicitly: `backup_redis` rewrites
+the AOF (`BGREWRITEAOF`) and archives the whole `appendonlydir` as
+`redis-aof.tar.gz` in the bundle (the RDB snapshot is still produced), and
+`restore_redis` purges the destination persistence files and restores the AOF
+bundle when present — falling back to the RDB copy for pre-AOF-aware backups
+with a loud warning that an appendonly deployment will start empty in that
+case. The automated drill asserts the fix end to end; re-run it whenever the
+Redis persistence layout changes.
 
 ## Drill procedure
 

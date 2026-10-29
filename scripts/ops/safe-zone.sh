@@ -370,6 +370,32 @@ backup_redis() {
     log_warn "Redis SAVE command failed, attempting to copy current dump anyway"
   fi
   docker cp "${container_id}:/data/dump.rdb" "${target}/redis-dump.rdb" || log_warn "Failed to copy Redis snapshot"
+
+  # The RDB snapshot alone does not describe the restored state when the
+  # container runs with --appendonly yes: on start Redis replays the AOF over
+  # dump.rdb, and with no AOF present it starts from an empty dataset
+  # entirely (both found by the restore drill, 2026-10-29). Capture the AOF
+  # files as the authoritative snapshot: rewrite first so the bundle is
+  # compact and complete, then archive the whole appendonlydir. The bundle is
+  # a regular file so the checksum manifest and the empty-artifact check see
+  # it. Skipped when AOF is disabled — BGREWRITEAOF refuses and there is no
+  # directory to copy.
+  if compose_stack "$stack" exec -T redis redis-cli BGREWRITEAOF >/dev/null 2>&1; then
+    rewrite_done=0
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30; do
+      pending="$(compose_stack "$stack" exec -T redis redis-cli info persistence 2>/dev/null | grep -c 'aof_rewrite_in_progress:1' || true)"
+      if [ "${pending:-0}" = "0" ]; then
+        rewrite_done=1
+        break
+      fi
+      sleep 1
+    done
+    if [ "$rewrite_done" = "1" ] && docker cp "${container_id}:/data/appendonlydir" - | gzip >"${target}/redis-aof.tar.gz"; then
+      log_info "Captured Redis AOF bundle (authoritative for appendonly deployments)"
+    else
+      log_warn "Could not capture the Redis AOF bundle; an appendonly deployment cannot fully restore from this backup's RDB alone"
+    fi
+  fi
 }
 
 backup_sqlite() {
@@ -653,8 +679,42 @@ restore_redis() {
     return 0
   fi
 
-  docker cp "$src_rdb" "${container_id}:/data/dump.rdb"
-  log_info "Restored Redis snapshot from ${src_rdb}"
+  # Redis persistence decides what a restored snapshot means:
+  #   appendonly yes: on start Redis replays the AOF over dump.rdb — and with
+  #     no AOF present it starts from an EMPTY dataset, ignoring the copied
+  #     RDB entirely (found by the restore drill, 2026-10-29).
+  #   appendonly no: dump.rdb is loaded directly.
+  # The backup captures the AOF directory as redis-aof.tar.gz whenever AOF is
+  # enabled, so that bundle is the authoritative state and is restored into
+  # the volume instead. The destination is purged either way, because a
+  # surviving AOF resurrects every command committed after the backup and
+  # silently undoes the restore (a stale Redis-cached list shadowing the
+  # restored SQLite for one cache TTL was the drill's first finding).
+  # The service container is stopped here; the purge and the extraction both
+  # run through one-off containers.
+  if ! compose_stack "$stack" run --rm redis sh -c 'rm -rf /data/appendonlydir /data/appendonly.aof /data/dump.rdb'; then
+    log_warn "Could not purge the previous Redis persistence files; the restored snapshot may be overridden on start"
+  fi
+
+  if [ -f "${src_dir}/redis-aof.tar.gz" ]; then
+    unpacked="$(mktemp -d "${TMPDIR:-/tmp}/safe-zone-redis-aof.XXXXXX")"
+    if tar -xzf "${src_dir}/redis-aof.tar.gz" -C "$unpacked" &&
+      docker cp "${unpacked}/appendonlydir" "${container_id}:/data/appendonlydir"; then
+      log_info "Restored Redis AOF bundle from ${src_dir}/redis-aof.tar.gz"
+    else
+      log_error "Redis AOF bundle restore failed; the RDB snapshot alone cannot restore an appendonly deployment"
+      rm -rf "$unpacked"
+      return 1
+    fi
+    rm -rf "$unpacked"
+  else
+    # No AOF bundle in the backup: pre-AOF-aware backups, or AOF-disabled
+    # deployments. For an appendonly deployment this starts Redis empty (see
+    # above), so say so instead of implying the RDB was restored into place.
+    docker cp "$src_rdb" "${container_id}:/data/dump.rdb"
+    log_warn "Backup has no Redis AOF bundle; if this deployment runs with appendonly yes, Redis will start empty — take a fresh backup with the updated helper and re-run the restore"
+    log_info "Restored Redis RDB snapshot from ${src_rdb}"
+  fi
 }
 
 restore_env_notice() {

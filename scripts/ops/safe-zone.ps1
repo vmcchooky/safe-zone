@@ -467,6 +467,41 @@ function Backup-Redis {
     if ($LASTEXITCODE -ne 0) {
       Write-Warn 'docker cp failed while exporting the Redis snapshot'
     }
+
+    # The RDB snapshot alone does not describe the restored state when the
+    # container runs with --appendonly yes: on start Redis replays the AOF
+    # over dump.rdb, and with no AOF present it starts from an empty dataset
+    # entirely (both found by the restore drill, 2026-10-29). Capture the AOF
+    # files as the authoritative snapshot — rewritten first so the bundle is
+    # compact and complete, archived through docker cp's tar stream. Skipped
+    # when AOF is disabled; see Restore-Redis for the matching restore path.
+    $aofMode = Invoke-ComposeCommand -ComposeArgs @(
+      'exec', '-T', 'redis', 'redis-cli', 'config', 'get', 'appendonly'
+    ) | Select-Object -Last 1
+    if ("$aofMode".Trim() -eq 'yes') {
+      Invoke-ComposeBestEffort -SubCommandArgs @('exec', '-T', 'redis', 'redis-cli', 'BGREWRITEAOF')
+      $rewriteDone = $false
+      for ($i = 0; $i -lt 30; $i++) {
+        $pending = Invoke-ComposeCommand -ComposeArgs @(
+          'exec', '-T', 'redis', 'redis-cli', 'info', 'persistence'
+        ) | Select-String -SimpleMatch 'aof_rewrite_in_progress:1'
+        if (-not $pending) {
+          $rewriteDone = $true
+          break
+        }
+        Start-Sleep -Seconds 1
+      }
+      $aofBundle = Join-Path $TargetDir 'redis-aof.tar.gz'
+      Invoke-ComposeCommand -ComposeArgs @(
+        'cp', "${containerId}:/data/appendonlydir", '-'
+      ) | gzip.exe > $aofBundle
+      if ($rewriteDone -and $LASTEXITCODE -eq 0 -and (Get-Item $aofBundle).Length -gt 100) {
+        Write-Host 'Captured Redis AOF bundle (authoritative for appendonly deployments)'
+      } else {
+        Write-Warn 'Could not capture the Redis AOF bundle; an appendonly deployment cannot fully restore from this backup RDB alone'
+        Remove-Item $aofBundle -ErrorAction SilentlyContinue
+      }
+    }
   } catch {
     Write-Warn "Failed to trigger Redis SAVE or copy dump: $_"
   }
@@ -755,11 +790,49 @@ function Restore-Redis {
     return
   }
 
-  & docker cp $sourceRdb "${containerId}:/data/dump.rdb"
-  if ($LASTEXITCODE -ne 0) {
-    throw 'docker cp failed while restoring the Redis snapshot'
+  # Redis persistence decides what a restored snapshot means:
+  #   appendonly yes: on start Redis replays the AOF over dump.rdb — and with
+  #     no AOF present it starts from an EMPTY dataset, ignoring the copied
+  #     RDB entirely (found by the restore drill, 2026-10-29).
+  #   appendonly no: dump.rdb is loaded directly.
+  # The backup captures the AOF directory as redis-aof.tar.gz whenever AOF is
+  # enabled, so that bundle is the authoritative state and is restored into
+  # the volume instead. The destination is purged either way, because a
+  # surviving AOF resurrects every command committed after the backup and
+  # silently undoes the restore. The service container is stopped here; the
+  # purge and the extraction both run through one-off containers.
+  Invoke-ComposeBestEffort -SubCommandArgs @(
+    'run', '--rm', 'redis', 'sh', '-c', 'rm -rf /data/appendonlydir /data/appendonly.aof /data/dump.rdb'
+  )
+
+  $aofBundle = Join-Path $BackupDir 'redis-aof.tar.gz'
+  if (Test-Path $aofBundle -PathType Leaf) {
+    $unpacked = Join-Path ([System.IO.Path]::GetTempPath()) ("safe-zone-redis-aof-" + [System.Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $unpacked | Out-Null
+    try {
+      tar -xzf $aofBundle -C $unpacked
+      if ($LASTEXITCODE -ne 0) {
+        throw 'tar failed while unpacking the Redis AOF bundle'
+      }
+      & docker cp (Join-Path $unpacked 'appendonlydir') "${containerId}:/data/appendonlydir"
+      if ($LASTEXITCODE -ne 0) {
+        throw 'docker cp failed while restoring the Redis AOF bundle'
+      }
+      Write-Host "Restored Redis AOF bundle from $aofBundle"
+    } finally {
+      Remove-Item $unpacked -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  } else {
+    # No AOF bundle in the backup: pre-AOF-aware backups, or AOF-disabled
+    # deployments. For an appendonly deployment this starts Redis empty (see
+    # above), so say so instead of implying the RDB was restored into place.
+    & docker cp $sourceRdb "${containerId}:/data/dump.rdb"
+    if ($LASTEXITCODE -ne 0) {
+      throw 'docker cp failed while restoring the Redis snapshot'
+    }
+    Write-Warn 'Backup has no Redis AOF bundle; if this deployment runs with appendonly yes, Redis will start empty — take a fresh backup with the updated helper and re-run the restore'
+    Write-Host "Restored Redis RDB snapshot from $sourceRdb"
   }
-  Write-Host "Restored Redis snapshot from $sourceRdb"
 }
 
 function Restore-EnvNotice {

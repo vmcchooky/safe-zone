@@ -349,6 +349,37 @@ jobs:
           go test -run='^$' -fuzz='^FuzzUpstreamResponse$' -fuzztime=20s -parallel=1 ./internal/dns/resolver/
           go test -run='^$' -fuzz='^FuzzPolicyMatch$' -fuzztime=20s -parallel=1 ./internal/risk/
 
+  # Restore is the least-tested critical path: this boots an isolated stack,
+  # seeds state through the admin API, backs it up with the ops entrypoint,
+  # destroys the state, restores, and verifies data came back (see
+  # docs/runbooks/restore-drill.md). It found a real defect on its first run:
+  # the Redis AOF replayed over the restored RDB snapshot and undid the
+  # restore for cached state.
+  restore-drill:
+    name: Restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run restore drill
+        run: bash scripts/ops/tests/restore-drill-test.sh
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: restore-drill-diagnostics
+          path: tmp/restore-drill/
+          if-no-files-found: ignore
+
+      # The drill tears its own stack down in an EXIT trap; this step only
+      # matters if the runner died before that trap was installed.
+      - name: Tear down drill stack
+        if: always()
+        run: docker compose -p restore-drill -f docker-compose.yml -f docker-compose.dev.yml down -v --remove-orphans
+
   ui-e2e:
     name: UI e2e (shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
