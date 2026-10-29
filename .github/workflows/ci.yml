@@ -222,6 +222,33 @@ jobs:
           sudo apt-get install -y shellcheck
           shellcheck scripts/ops/*.sh scripts/ops/tests/*.sh
 
+  # The docs site must keep building and the in-tree Markdown links must keep
+  # resolving: the checklist and the runbooks are operational instruments, so
+  # a broken anchor or a theme regression fails the PR like any other gate.
+  # Links from docs/ to source/evidence outside docs/ resolve on GitHub and
+  # are reported as info by the site build (see mkdocs.yml validation).
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.13"
+
+      - name: Install mkdocs-material
+        run: pip install "mkdocs-material==9.6.14"
+
+      - name: Check internal documentation links
+        run: python scripts/ops/check_docs_links.py .
+
+      - name: Build documentation (strict)
+        run: mkdocs build --strict
+
   ops-scripts-windows:
     name: Ops script tests (Windows)
     runs-on: windows-latest
