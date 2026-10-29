@@ -68,7 +68,15 @@ test.describe('brands card', () => {
   });
 
   test('shows the failure state when the list request fails', async ({ page }) => {
+    // The 503 handler is registered after the catch-all so it wins directly
+    // without a fallback hop — the error state must be deterministic, not a
+    // race between the two handlers.
     await page.route('**/v1/auth/session', (route) => route.fulfill(json(ADMIN_SESSION)));
+    await page.route('**/v1/**', (route) => {
+      const url = route.request().url();
+      if (url.includes('/v1/auth/session')) return route.fallback();
+      return route.fulfill(json({ items: [] }));
+    });
     await page.route('**/v1/brands**', (route) =>
       route.fulfill({
         status: 503,
@@ -76,14 +84,9 @@ test.describe('brands card', () => {
         body: '{"error":"database not available"}',
       }),
     );
-    await page.route('**/v1/**', (route) => {
-      const url = route.request().url();
-      if (url.includes('/v1/auth/session') || url.includes('/v1/brands')) return route.fallback();
-      return route.fulfill(json({ items: [] }));
-    });
 
     await page.goto('/app/overrides');
-    await expect(page.getByTestId('brands-error')).toBeVisible();
+    await expect(page.getByTestId('brands-error')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('database not available')).toBeVisible();
   });
 

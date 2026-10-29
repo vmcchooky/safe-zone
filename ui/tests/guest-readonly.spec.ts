@@ -61,10 +61,15 @@ test('a read-only session cannot use the mutation controls', async ({ page, requ
   expect(sessionPayload.read_only).toBe(true);
   expect(sessionPayload.can_mutate).toBe(false);
 
-  // Overrides: the add form and the delete control must be disabled.
+  // Overrides: the add form and the delete control must be disabled. The
+  // locator is scoped to the override form section — the page also carries
+  // the brands card (OZ-12) with its own Add button.
   await page.goto('/app/overrides');
   await expect(page.getByRole('heading', { name: 'Add New Override' })).toBeVisible();
-  const addButton = page.getByRole('button', { name: 'Add', exact: true });
+  const overrideSection = page
+    .locator('section', { has: page.getByRole('heading', { name: 'Add New Override' }) })
+    .first();
+  const addButton = overrideSection.getByRole('button', { name: 'Add', exact: true });
   await expect(addButton).toBeDisabled();
 
   // System: flushing the cache and downloading the logs are admin-only.
