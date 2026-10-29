@@ -51,24 +51,35 @@ func (e *AdblockEngine) refreshAdblockEnabled(st *store.DB) {
 // does: an operator switching the mode at runtime must not have it silently
 // reverted by the next refresh. A read error keeps the current value rather
 // than reverting to the environment.
+//
+// A mode change is not just a flag flip: every rule's effective scope
+// (suffix vs exact) is decided at trie-rebuild time. The stored value is
+// picked up here within one 30s config tick even in a process that did not
+// make the change, so this path also requests a rebuild — without it, the
+// non-writer process kept the old scope until the 12h source-rebuild ticker
+// fired (found in the 2026-10-29 cache-invalidation audit,
+// docs/architecture/cache-invalidation.md).
 func (e *AdblockEngine) refreshAdblockMatchMode(st *store.DB) {
+	previous, _ := e.adblockMatchMode.Load().(string)
+	next := ""
 	if st == nil || !st.Enabled() {
-		e.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
-		return
-	}
-	val, err := st.GetSystemConfig(context.Background(), systemConfigAdblockMatchMode)
-	if err != nil {
+		next = string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix))))
+	} else if val, err := st.GetSystemConfig(context.Background(), systemConfigAdblockMatchMode); err != nil {
 		logjson.Warn("adblock match mode refresh failed; keeping the mode in force", map[string]any{
 			"service": "risk",
 			"error":   err.Error(),
 		})
 		return
+	} else if val == "" {
+		next = string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix))))
+	} else {
+		next = string(parseAdblockMatchMode(val))
 	}
-	if val == "" {
-		e.adblockMatchMode.Store(string(parseAdblockMatchMode(config.String(envAdblockMatchMode, string(adblockMatchModeSuffix)))))
+	if next == previous {
 		return
 	}
-	e.adblockMatchMode.Store(string(parseAdblockMatchMode(val)))
+	e.adblockMatchMode.Store(next)
+	e.RequestAdblockResync()
 }
 
 // runAdblockConfigSync periodically refreshes the adblock_enabled flag and
