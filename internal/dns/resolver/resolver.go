@@ -7,6 +7,7 @@ import (
 	"net"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"github.com/miekg/dns"
 
@@ -129,6 +130,13 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 
 		responseWire, err := r.ForwardDoH(ctx, wire)
 		if err != nil {
+			// RFC 8767 serve-stale: an expired-but-recent cached answer is
+			// better than SERVFAIL during an upstream outage. The answer
+			// still runs through the policy checks below, and its records
+			// carry a short TTL so clients re-ask soon.
+			if stale := r.lookupStale(query, questionDomain); stale != nil {
+				return stale, nil
+			}
 			if r.Metrics != nil {
 				r.Metrics.IncCounter("upstream_doh_failures_total")
 			}
@@ -227,7 +235,76 @@ func (r *Resolver) lookupCache(ctx context.Context, query *dns.Msg, domain strin
 	if r.Metrics != nil {
 		r.Metrics.IncCounter("dns_cache_hits_total")
 	}
+	r.maybeRefreshAhead(query, domain)
 	return response, true
+}
+
+// maybeRefreshAhead launches a single-flight background re-query for a
+// popular, half-expired cache entry (BIND-style prefetch). The current
+// answer is still served from cache, so the client never waits on the
+// refresh; a failure simply leaves the entry to expire normally.
+func (r *Resolver) maybeRefreshAhead(query *dns.Msg, domain string) {
+	if !r.Cache.ShouldRefresh(query) || !r.Cache.BeginRefresh(query) {
+		return
+	}
+	go func() {
+		defer r.Cache.EndRefresh(query)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		wire, err := query.Pack()
+		if err != nil {
+			return
+		}
+		responseWire, err := r.ForwardDoH(ctx, wire)
+		if err != nil {
+			if r.Metrics != nil {
+				r.Metrics.IncCounter("dns_cache_refresh_failures_total")
+			}
+			return
+		}
+		response := new(dns.Msg)
+		if err := response.Unpack(responseWire); err != nil {
+			if r.Metrics != nil {
+				r.Metrics.IncCounter("dns_cache_refresh_failures_total")
+			}
+			return
+		}
+		if err := validateUpstreamResponse(query, response); err != nil {
+			if r.Metrics != nil {
+				r.Metrics.IncCounter("dns_cache_refresh_failures_total")
+			}
+			return
+		}
+		if r.Metrics != nil {
+			r.Metrics.IncCounter("dns_cache_refreshes_total")
+		}
+		r.storeCache(query, response)
+	}()
+}
+
+// lookupStale serves an RFC 8767 stale answer when the upstream is down.
+// The stale message is revalidated against the query exactly like a fresh
+// hit, so a mismatched entry is never forwarded.
+func (r *Resolver) lookupStale(query *dns.Msg, domain string) *dns.Msg {
+	stale := r.Cache.GetStale(query)
+	if stale == nil {
+		return nil
+	}
+	if err := validateUpstreamResponse(query, stale); err != nil {
+		if r.Metrics != nil {
+			r.Metrics.IncCounter("dns_cache_invalid_total")
+		}
+		return nil
+	}
+	if r.Metrics != nil {
+		r.Metrics.IncCounter("dns_cache_stale_served_total")
+	}
+	logjson.Warn("serving stale DNS answer; upstream unavailable", correlation.Fields(context.Background(), map[string]any{
+		"service": "dns-resolver",
+		"domain":  domain,
+	}))
+	return stale
 }
 
 func (r *Resolver) storeCache(query, response *dns.Msg) {
