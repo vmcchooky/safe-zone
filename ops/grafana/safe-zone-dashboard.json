@@ -309,7 +309,7 @@
           "source": "url",
           "type": "json",
           "uql": "parse-json | extend stale_flag = iff(feed_sync.status == \"stale\", 1, 0) | project stale_flag",
-          "url": "${safe_zone_base}/"
+          "url": "${safe_zone_base}/v1/status"
         }
       ],
       "title": "Feed Freshness",
@@ -511,7 +511,7 @@
       },
       "id": 10,
       "options": {
-        "content": "This template expects the Grafana Infinity datasource (`yesoreyeram-infinity-datasource`) and a dashboard variable `safe_zone_base` such as `http://127.0.0.1:8080` or `https://safe.example.com`. Panels read JSON directly from `/metrics`, `/`, `/v1/telemetry/stats`, and `/v1/telemetry/recent`.\n\n**Authentication required (core-api changed 2026-09-29, dns-resolver 2026-09-27).** When `safe_zone_base` points at `core-api`, every panel URL is behind authentication. Add the admin API key to the Infinity datasource as an HTTP header, or the panels will show a 401:\n\n- Header name: `Authorization`\n- Header value: `Bearer <SAFE_ZONE_ADMIN_API_KEY>`\n\nConfigure this in Grafana under **Connections → Data sources → Infinity → Additional headers** (requires an Infinity datasource version that supports custom headers; on older versions put a header-injecting reverse proxy in front of `safe_zone_base`).\n\nThe same header now also covers `dns-resolver` (`:8081`) for `/metrics`. Its `/` (status) and `/healthz` stay unauthenticated, so a liveness check needs no header. With `SAFE_ZONE_ADMIN_API_KEY` unset, dns-resolver `/metrics` returns 401 rather than falling open. `/v1/telemetry/recent` returns per-client IP and client id only for administrators; a guest or unauthenticated scraper receives those fields omitted.",
+        "content": "This template expects the Grafana Infinity datasource (`yesoreyeram-infinity-datasource`) and a dashboard variable `safe_zone_base` such as `http://127.0.0.1:8080` or `https://safe.example.com`. Panels read JSON directly from `/metrics`, `/v1/status`, `/v1/telemetry/stats`, and `/v1/telemetry/recent`. (The Feed Freshness panel moved off the root `/` when the operator UI took over that route — 2026-10-29.)\n\n**Authentication required (core-api changed 2026-09-29, dns-resolver 2026-09-27).** When `safe_zone_base` points at `core-api`, every panel URL is behind authentication. Add the admin API key to the Infinity datasource as an HTTP header, or the panels will show a 401:\n\n- Header name: `Authorization`\n- Header value: `Bearer <SAFE_ZONE_ADMIN_API_KEY>`\n\nConfigure this in Grafana under **Connections → Data sources → Infinity → Additional headers** (requires an Infinity datasource version that supports custom headers; on older versions put a header-injecting reverse proxy in front of `safe_zone_base`).\n\nThe same header now also covers `dns-resolver` (`:8081`) for `/metrics`. On dns-resolver, its `/` (status) and `/healthz` stay unauthenticated, so a liveness check needs no header; the core-api status surface that the panels read lives at `/v1/status` behind the same header. With `SAFE_ZONE_ADMIN_API_KEY` unset, dns-resolver `/metrics` returns 401 rather than falling open. `/v1/telemetry/recent` returns per-client IP and client id only for administrators; a guest or unauthenticated scraper receives those fields omitted.",
         "mode": "markdown"
       },
       "title": "Import Notes",
