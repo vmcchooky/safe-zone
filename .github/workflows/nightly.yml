@@ -1,0 +1,116 @@
+name: Nightly
+
+# Long-horizon verification that must not slow down or block pull requests:
+# the fuzz targets get minutes instead of seconds, and the runtime gates
+# (compose smoke, restore drill) re-run against the current main without
+# depending on any PR state. Failures surface here and in notifications; a
+# red nightly never blocks a PR merge.
+on:
+  schedule:
+    # Daily at 02:17 UTC (off-peak for the operator's timezone), matching the
+    # security workflow's off-peak cadence style.
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One nightly at a time: a manual dispatch supersedes a still-running
+  # scheduled run instead of competing for runners.
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  fuzz-nightly:
+    name: Fuzz (5m per target)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Restore Go build and module cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-v2-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}
+          restore-keys: |
+            go-v2-${{ runner.os }}-
+
+      - name: Set up mise
+        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
+        with:
+          cache: true
+          cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The PR smoke runs 20s per target; the nightly gives each target five
+      # minutes so the corpus built across nights keeps growing in depth.
+      # Crash inputs are written to the package's testdata/fuzz directory by
+      # the tooling and appear in this job's log.
+      - name: Run nightly fuzz targets
+        run: |
+          go test -run='^$' -fuzz='^FuzzDoHServer$' -fuzztime=5m -parallel=1 ./internal/dns/doh/
+          go test -run='^$' -fuzz='^FuzzResponseCache$' -fuzztime=5m -parallel=1 ./internal/dns/resolver/
+          go test -run='^$' -fuzz='^FuzzUpstreamResponse$' -fuzztime=5m -parallel=1 ./internal/dns/resolver/
+          go test -run='^$' -fuzz='^FuzzPolicyMatch$' -fuzztime=5m -parallel=1 ./internal/risk/
+
+      - name: Upload fuzz corpus growth
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-fuzz-corpus
+          path: |
+            internal/dns/doh/testdata/fuzz/
+            internal/dns/resolver/testdata/fuzz/
+            internal/risk/testdata/fuzz/
+          if-no-files-found: ignore
+
+  compose-smoke-nightly:
+    name: Compose smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run compose smoke
+        run: bash scripts/ops/compose-smoke.sh
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-compose-smoke-diagnostics
+          path: tmp/compose-smoke/
+          if-no-files-found: ignore
+
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v --remove-orphans
+
+  restore-drill-nightly:
+    name: Restore drill
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run restore drill
+        run: bash scripts/ops/tests/restore-drill-test.sh
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-restore-drill-diagnostics
+          path: tmp/restore-drill/
+          if-no-files-found: ignore
+
+      - name: Tear down drill stack
+        if: always()
+        run: docker compose -p restore-drill -f docker-compose.yml -f docker-compose.dev.yml down -v --remove-orphans
