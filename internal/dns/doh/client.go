@@ -3,6 +3,7 @@ package doh
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -31,7 +32,11 @@ func Exchange(ctx context.Context, client *http.Client, upstreamURL string, wire
 		return nil, fmt.Errorf("blocked upstream DoH host: %w", err)
 	}
 	if client == nil {
-		client = http.DefaultClient
+		// Pre-flight validation has passed for a public URL here, but the
+		// dial below would run on an unguarded client that re-resolves DNS,
+		// opening a rebinding window between validation and connection.
+		// Every caller must hand over the guarded client it was given.
+		return nil, errors.New("nil upstream client would bypass the guarded dial path")
 	}
 	// Shallow-copy so the redirect policy is enforced without mutating a
 	// client that may be shared with the caller.
