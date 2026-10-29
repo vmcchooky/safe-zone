@@ -86,6 +86,15 @@ func (e *AdblockEngine) sweepAdblockTempFiles() int {
 	if strings.TrimSpace(e.adblockDataRoot) == "" {
 		return 0
 	}
+	// Remove through an os.Root so a symlink swapped into the data root
+	// between the walk and the unlink cannot redirect the removal outside
+	// the directory this process owns (gosec G122).
+	root, err := os.OpenRoot(e.adblockDataRoot)
+	if err != nil {
+		return 0
+	}
+	defer root.Close()
+
 	cutoff := time.Now().Add(-adblockTempSweepMinAge)
 	removed := 0
 	// #nosec G304 -- walking the internally-derived data root
@@ -100,7 +109,11 @@ func (e *AdblockEngine) sweepAdblockTempFiles() int {
 		if err != nil || info.ModTime().After(cutoff) {
 			return nil
 		}
-		if os.Remove(path) == nil {
+		rel, err := filepath.Rel(e.adblockDataRoot, path)
+		if err != nil || rel == "." {
+			return nil
+		}
+		if root.Remove(rel) == nil {
 			removed++
 		}
 		return nil
