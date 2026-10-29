@@ -10,10 +10,35 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  # Superseded pull-request runs are cancelled so rapid pushes to one PR do
+  # not queue a fleet of obsolete runners. Pushes (including to main) always
+  # run to completion: a cancelled main run would leave required checks
+  # pending until a re-run is requested.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  workflow-lint:
+    name: Workflow lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # actionlint validates workflow syntax, expression types, and the shell
+      # inside run blocks (the image bundles shellcheck and pyflakes). Pinned
+      # by digest like every third-party dependency here.
+      - name: Lint GitHub Actions workflows
+        run: >
+          docker run --rm -v "$PWD:/repo" -w /repo
+          rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9
+
   build-metadata:
     name: Build metadata
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       build_time: ${{ steps.meta.outputs.build_time }}
     steps:
@@ -375,6 +400,7 @@ jobs:
   docker-build:
     name: Docker build (${{ matrix.service }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs:
       - go-gates
       - ui-e2e
