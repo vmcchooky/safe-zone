@@ -24,6 +24,7 @@ import { apiFetch } from '../lib/api';
 import type { AgentStatus, CoreStatus, MetricsResponse } from '../lib/types';
 import { InfoTooltip } from '../components/InfoTooltip';
 import { globalLoader } from '../App';
+import { WhitelistSnapshotsCard } from '../components/WhitelistSnapshotsCard';
 import { useDialog } from '../components/DialogContext';
 
 function requestOutcome(endpoint: string, status: number) {
@@ -497,6 +498,8 @@ function SystemPageContent() {
           </table>
         </div>
       </motion.section>
+
+      <WhitelistSnapshotsCard />
     </motion.div>
   );
 }
