@@ -176,9 +176,12 @@ type DB struct {
 	closed       atomic.Bool
 	wg           sync.WaitGroup
 
-	// CIDR Cache
-	cidrMu    sync.RWMutex
-	cidrCache []cidrMapping
+	// CIDR Cache. cidrRevision records the durable client_mappings revision
+	// the cache was built from, so a second process sharing the same SQLite
+	// file can detect that its snapshot is stale and reload it.
+	cidrMu       sync.RWMutex
+	cidrCache    []cidrMapping
+	cidrRevision int64
 }
 
 const schema = `
