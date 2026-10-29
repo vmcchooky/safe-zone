@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 
 	"safe-zone/internal/analysis"
@@ -18,6 +19,13 @@ import (
 // The sqlite.go breakup is complete: lifecycle/schema stay in sqlite.go;
 // domains live in groups, telemetry, whitelist, reports, retention and
 // overrides (same package, no API change).
+
+// clientMappingsRevisionKey is the system_config row bumped in the same
+// transaction as every successful client_mappings change. core-api and
+// dns-resolver share the SQLite file but keep separate in-process CIDR
+// indexes, so the revision is how the second process notices that its cache
+// snapshot is stale (immediately via pub/sub, or on the poll reconciler).
+const clientMappingsRevisionKey = "client_mappings_revision"
 
 // ClientGroup represents a policy group for clients.
 type ClientGroup struct {
@@ -169,7 +177,13 @@ func (d *DB) DeleteGroup(ctx context.Context, id int64) error {
 		return fmt.Errorf("cannot delete default policy group")
 	}
 
-	res, err := d.db.ExecContext(ctx, "DELETE FROM client_groups WHERE id = ?", id)
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin group delete transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, "DELETE FROM client_groups WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete group id %d: %w", id, err)
 	}
@@ -177,6 +191,13 @@ func (d *DB) DeleteGroup(ctx context.Context, id int64) error {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("group not found: id %d", id)
+	}
+
+	if _, err := bumpClientMappingsRevision(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit group delete transaction: %w", err)
 	}
 
 	// client_mappings.group_id is ON DELETE CASCADE, so this delete also
@@ -315,7 +336,13 @@ func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, group
 		value = normalizeCIDRForStorage(ipNet)
 	}
 
-	res, err := d.db.ExecContext(ctx, `
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin mapping transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, `
 		INSERT INTO client_mappings (mapping_type, value, group_id)
 		VALUES (?, ?, ?)`,
 		mappingType, value, groupID)
@@ -326,6 +353,15 @@ func (d *DB) AddMappingInt(ctx context.Context, mappingType, value string, group
 	lastID, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
+	}
+
+	// Bump the durable revision in the same transaction as the row, so no
+	// reader can observe one without the other.
+	if _, err := bumpClientMappingsRevision(ctx, tx); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit mapping transaction: %w", err)
 	}
 
 	if mappingType == "cidr" {
@@ -361,7 +397,13 @@ func (d *DB) DeleteMapping(ctx context.Context, id int64) error {
 		return ErrDisabled
 	}
 
-	res, err := d.db.ExecContext(ctx, "DELETE FROM client_mappings WHERE id = ?", id)
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin mapping delete transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.ExecContext(ctx, "DELETE FROM client_mappings WHERE id = ?", id)
 	if err != nil {
 		return fmt.Errorf("delete mapping id %d: %w", id, err)
 	}
@@ -369,6 +411,13 @@ func (d *DB) DeleteMapping(ctx context.Context, id int64) error {
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("%w: id %d", ErrMappingNotFound, id)
+	}
+
+	if _, err := bumpClientMappingsRevision(ctx, tx); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit mapping delete transaction: %w", err)
 	}
 
 	d.reloadCIDRCache("delete_mapping")
@@ -628,6 +677,92 @@ func (d *DB) GetEffectiveOverride(ctx context.Context, groupID int64, domain str
 	return nil, nil
 }
 
+// bumpClientMappingsRevision increments the durable client_mappings revision
+// inside the caller's transaction and returns the new value.
+func bumpClientMappingsRevision(ctx context.Context, tx *sql.Tx) (int64, error) {
+	var raw string
+	err := tx.QueryRowContext(ctx, `SELECT value FROM system_config WHERE key = ?`, clientMappingsRevisionKey).Scan(&raw)
+	var current int64
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// First change: start at 1 so zero always means "never changed".
+	case err != nil:
+		return 0, fmt.Errorf("read client mappings revision: %w", err)
+	default:
+		current, err = strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil || current < 0 {
+			return 0, fmt.Errorf("parse stored client mappings revision %q", raw)
+		}
+	}
+
+	next := current + 1
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO system_config (key, value, updated_at)
+		VALUES (?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+	`, clientMappingsRevisionKey, strconv.FormatInt(next, 10)); err != nil {
+		return 0, fmt.Errorf("bump client mappings revision: %w", err)
+	}
+	return next, nil
+}
+
+// GetClientMappingsRevision returns the durable client_mappings revision. A
+// store that has never changed a mapping reports zero.
+func (d *DB) GetClientMappingsRevision(ctx context.Context) (int64, error) {
+	if !d.Enabled() {
+		return 0, ErrDisabled
+	}
+	raw, err := d.GetSystemConfig(ctx, clientMappingsRevisionKey)
+	if err != nil {
+		return 0, err
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+	revision, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || revision < 0 {
+		return 0, fmt.Errorf("parse client mappings revision %q", raw)
+	}
+	return revision, nil
+}
+
+// CIDRMappingRevision returns the client_mappings revision the in-process
+// CIDR index was built from.
+func (d *DB) CIDRMappingRevision() int64 {
+	if d == nil {
+		return 0
+	}
+	d.cidrMu.RLock()
+	defer d.cidrMu.RUnlock()
+	return d.cidrRevision
+}
+
+// ReconcileCIDRMappings rebuilds the in-memory CIDR index when the durable
+// revision differs from the one this process loaded. core-api and
+// dns-resolver share the SQLite file but not the cache, so without this a
+// mapping written through core-api only reached the resolver after a restart.
+// Returns whether the cache was rebuilt.
+func (d *DB) ReconcileCIDRMappings(ctx context.Context) (bool, error) {
+	if !d.Enabled() {
+		return false, ErrDisabled
+	}
+	revision, err := d.GetClientMappingsRevision(ctx)
+	if err != nil {
+		return false, err
+	}
+	d.cidrMu.RLock()
+	current := d.cidrRevision
+	d.cidrMu.RUnlock()
+	if revision == current {
+		return false, nil
+	}
+	if err := d.loadCIDRCache(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // reloadCIDRCache rebuilds the in-memory CIDR index after a mutation. The
 // mutation has already committed, so a reload failure must not be reported as
 // a failed write; it is logged loudly because the previous snapshot stays live
@@ -637,7 +772,7 @@ func (d *DB) reloadCIDRCache(operation string) {
 	if !d.Enabled() {
 		return
 	}
-	if err := d.loadCIDRCache(); err != nil {
+	if _, err := d.ReconcileCIDRMappings(context.Background()); err != nil {
 		logjson.Error("cidr mapping cache reload failed; keeping the previous snapshot", map[string]any{
 			"service":     "store",
 			"operation":   operation,
@@ -650,6 +785,15 @@ func (d *DB) reloadCIDRCache(operation string) {
 func (d *DB) loadCIDRCache() error {
 	if !d.Enabled() {
 		return ErrDisabled
+	}
+
+	// Read the revision before the rows. A mutation committed between the two
+	// queries makes the rows newer than the revision, so the next reconcile
+	// reloads; recording a newer revision against an older snapshot would hide
+	// the change until the following mutation.
+	revision, err := d.GetClientMappingsRevision(context.Background())
+	if err != nil {
+		return err
 	}
 
 	rows, err := d.db.QueryContext(context.Background(), "SELECT group_id, value FROM client_mappings WHERE mapping_type = 'cidr'")
@@ -703,6 +847,7 @@ func (d *DB) loadCIDRCache() error {
 
 	d.cidrMu.Lock()
 	d.cidrCache = cache
+	d.cidrRevision = revision
 	d.cidrMu.Unlock()
 	return nil
 }
