@@ -117,6 +117,9 @@ func (h *Handler) GroupsHandler(w http.ResponseWriter, r *http.Request) {
 			httputil.WriteStoreError(w, r, err, "failed to delete group")
 			return
 		}
+		// The cascade removed the group's CIDR rows; tell dns-resolver to
+		// rebuild so the range stops resolving through a deleted group.
+		publishClientMappingsReload(r.Context(), h, db)
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 	default:

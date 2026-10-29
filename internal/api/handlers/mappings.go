@@ -58,6 +58,7 @@ func (h *Handler) MappingsHandler(w http.ResponseWriter, r *http.Request) {
 			httputil.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		publishClientMappingsReload(r.Context(), h, db)
 		httputil.WriteJSON(w, http.StatusCreated, map[string]any{"id": id, "status": "created"})
 
 	case http.MethodDelete:
@@ -79,6 +80,7 @@ func (h *Handler) MappingsHandler(w http.ResponseWriter, r *http.Request) {
 			httputil.WriteStoreError(w, r, err, "failed to delete mapping")
 			return
 		}
+		publishClientMappingsReload(r.Context(), h, db)
 		httputil.WriteJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 
 	default:

@@ -474,6 +474,53 @@ var homoglyphMap = map[rune]rune{
 	'χ': 'x',
 }
 
+// tr39Confusables is parsed from the generated tr39ConfusablePairs table at
+// init. It supersedes the hand-written homoglyphMap for the lexical scoring
+// path; ToSkeleton keeps the v1 map because the frozen ML feature contract
+// pins its outputs (features.go reads it for brand-distance features).
+var tr39Confusables = buildTR39Confusables()
+
+func buildTR39Confusables() map[rune]rune {
+	pairs := []rune(tr39ConfusablePairs)
+	m := make(map[rune]rune, len(pairs)/2)
+	for i := 0; i+1 < len(pairs); i += 2 {
+		m[pairs[i]] = pairs[i+1]
+	}
+	return m
+}
+
+// ToSkeletonExtended maps Unicode confusables (Unicode TR39) plus the v1
+// homoglyph set into their ASCII skeletons. TR39 entries win where both
+// tables define a mapping. Only the lexical brand-spoof path uses this —
+// the ML feature path must keep calling ToSkeleton so frozen feature
+// values stay stable.
+func ToSkeletonExtended(s string) string {
+	runes := []rune(s)
+	n := len(runes)
+
+	ptr := runeSlicePool.Get().(*[]rune)
+	skeleton := *ptr
+	if cap(skeleton) < n {
+		skeleton = make([]rune, n)
+	} else {
+		skeleton = skeleton[:n]
+	}
+	defer func() {
+		*ptr = skeleton
+		runeSlicePool.Put(ptr)
+	}()
+	for i, r := range runes {
+		if mapped, ok := tr39Confusables[r]; ok {
+			skeleton[i] = mapped
+		} else if mapped, ok := homoglyphMap[r]; ok {
+			skeleton[i] = mapped
+		} else {
+			skeleton[i] = r
+		}
+	}
+	return string(skeleton)
+}
+
 var keyboardAdjacency = map[rune]string{
 	'a': "qwsz", 'b': "vghn", 'c': "xdfv", 'd': "ersfxc",
 	'e': "wsdr34", 'f': "rtgvcd", 'g': "tyhbvf", 'h': "yujnbg",
@@ -1084,8 +1131,8 @@ func CheckBrandSpoofingWithBrands(domain string, brandSpoofingScore int, brands 
 		tld = rootParts[len(rootParts)-1]
 	}
 
-	skeletonDomain := ToSkeleton(unicodeDomain)
-	skeletonRootDomain := ToSkeleton(getRootDomain(unicodeDomain))
+	skeletonDomain := ToSkeletonExtended(unicodeDomain)
+	skeletonRootDomain := ToSkeletonExtended(getRootDomain(unicodeDomain))
 	skeletonLabels := strings.Split(skeletonDomain, ".")
 
 	isHomoglyphSpoof := skeletonDomain != unicodeDomain
