@@ -9,6 +9,7 @@ require (
 	github.com/dmitryikh/leaves v0.0.0-20230708180554-25d19a787328
 	github.com/miekg/dns v1.1.73
 	github.com/redis/go-redis/v9 v9.23.0
+	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.58.0
 	golang.org/x/net v0.61.0
 	golang.org/x/sys v0.49.0

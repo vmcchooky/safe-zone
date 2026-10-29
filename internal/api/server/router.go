@@ -7,14 +7,18 @@ import (
 	"safe-zone/internal/agent"
 	apiapp "safe-zone/internal/api/app"
 	"safe-zone/internal/api/handlers"
-	"safe-zone/internal/serve"
 )
 
 // NewRouter constructs a new ServeMux with all the routes registered.
+//
+// API routes come from the table in routes.go, which is the single source of
+// truth for paths and auth wrappers and the contract the OpenAPI parity test
+// asserts against docs/openapi/safe-zone.yaml. The "/" catch-all and the
+// static/operator-UI mounts below are presentation concerns and stay outside
+// that table.
 func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, appFS fs.FS) *http.ServeMux {
 	mux := http.NewServeMux()
 
-	// System & Health
 	var rootHandler http.HandlerFunc
 	if appFS != nil {
 		rootHandler = apiapp.RedirectPublicRoot
@@ -23,85 +27,8 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 		rootHandler = h.RequireAuthFunc(h.StatusHandler)
 	}
 	mux.HandleFunc("/", rootHandler)
-	mux.HandleFunc("/v1/status", h.RequireAuthFunc(h.StatusHandler))
-	mux.HandleFunc("/healthz", handlers.HealthHandler("core-api"))
-	mux.HandleFunc("/readyz", serve.ReadinessHandler("core-api", h.Metrics, h.Risk.ReadinessChecks()...))
-	mux.HandleFunc("/v1/version", h.VersionHandler)
-	// /metrics is admin-only. It exposes the per-endpoint request summary
-	// (method, path, status, counts, latency), which lets any authenticated
-	// caller fingerprint the API surface and read 401/403/429 rates — a
-	// brute-force progress signal. RequireAuthFunc is not enough here: the
-	// read-only guest role passes it. Scrapers must send the admin API key as
-	// a bearer token; see ops/alerts/safe-zone-alert-rules.yaml and
-	// ops/grafana/safe-zone-dashboard.json.
-	mux.HandleFunc("/metrics", h.RequireAdminFunc(h.MetricsHandler))
-	mux.HandleFunc("/metrics/prometheus", h.RequireAdminFunc(h.MetricsPrometheusHandler))
-	mux.HandleFunc("/v1/cache/flush", h.RequireAdminForMutationFunc(h.CacheFlushHandler))
-	mux.HandleFunc("/v1/logs/export", h.RequireAdminFunc(h.LogsExportHandler))
 
-	// Block Pages
-	mux.HandleFunc("/block", h.BlockPageHandler)
-	mux.HandleFunc("/block/report", h.BlockReportHandler)
-
-	// Authentication
-	mux.HandleFunc("/v1/auth/login", h.AuthLoginHandler)
-	// Logout is wrapped so the CSRF gate runs: it revokes the persisted
-	// session, so a cross-site POST must not be able to force a revocation.
-	mux.HandleFunc("/v1/auth/logout", h.RequireAuthFunc(h.AuthLogoutHandler))
-	mux.HandleFunc("/v1/auth/session", h.RequireAuthFunc(h.AuthSessionHandler))
-
-	// Analysis & OSINT
-	// /v1/analyze stays public, but AttachAuthIdentity annotates authed
-	// callers so AnalyzeHandler can gate force_osint (outbound OSINT)
-	// on authentication instead of any anonymous client.
-	mux.HandleFunc("/v1/analyze", h.AttachAuthIdentityFunc(h.AnalyzeHandler))
-	mux.HandleFunc("/v1/url-ml/feedback", h.RequireAuthFunc(h.URLMLFeedbackHandler))
-	mux.HandleFunc("/v1/analyze/raw", h.RequireAuthFunc(h.RawDataHandler))
-	mux.HandleFunc("/v1/osint/evidence", h.RequireAuthFunc(h.OsintEvidenceHandler))
-	mux.HandleFunc("/v1/analysis/recent", h.RequireAuthFunc(h.RecentAnalysisHandler))
-
-	// Admin / Overrides
-	mux.HandleFunc("/v1/overrides", h.RequireAdminForMutationFunc(h.OverridesHandler))
-	mux.HandleFunc("/v1/overrides/review-false-positive", h.RequireAdminFunc(h.ReviewFalsePositiveHandler))
-
-	// Reports
-	mux.HandleFunc("/v1/reports", h.RequireAdminFunc(h.ListReportsHandler))
-	mux.HandleFunc("/v1/reports/status", h.RequireAdminFunc(h.UpdateReportStatusHandler))
-
-	// Brands
-	mux.HandleFunc("/v1/brands", h.RequireAdminForMutationFunc(serve.BrandHandler(h.Risk)))
-
-	// Telemetry
-	mux.HandleFunc("/v1/telemetry/recent", h.RequireAuthFunc(h.TelemetryRecentHandler))
-	mux.HandleFunc("/v1/telemetry/stats", h.RequireAuthFunc(h.TelemetryStatsHandler))
-
-	// Agent & System control
-	mux.HandleFunc("/v1/agent/status", h.RequireAuthFunc(h.AgentStatusHandler(agentEngine)))
-	mux.HandleFunc("/v1/agent/trigger", h.RequireAdminFunc(handlers.AgentTriggerHandler(agentEngine)))
-	mux.HandleFunc("/v1/agent/proposals", h.RequireAdminForMutationFunc(h.AgentProposalsHandler))
-
-	// Whitelist rollback. The allow list is replaced wholesale by an import,
-	// so the operator needs a way to inspect the rollback copies and to undo
-	// a bad one. Both endpoints are admin-only: a rollback changes what the
-	// resolver answers with.
-	mux.HandleFunc("/v1/whitelist/snapshots", h.RequireAdminFunc(h.WhitelistSnapshotHandler))
-	mux.HandleFunc("/v1/whitelist/rollback", h.RequireAdminFunc(h.WhitelistRollbackHandler))
-
-	// Groups & Mappings
-	mux.HandleFunc("/v1/groups", h.RequireAdminForMutationFunc(h.GroupsHandler))
-	mux.HandleFunc("/v1/mappings", h.RequireAdminForMutationFunc(h.MappingsHandler))
-	mux.HandleFunc("/v1/group-overrides", h.RequireAdminForMutationFunc(h.GroupOverridesHandler))
-
-	// Settings & Testing
-	mux.HandleFunc("/v1/settings", h.RequireAdminFunc(h.SettingsHandler))
-	mux.HandleFunc("/v1/settings/bundle", h.RequireAdminFunc(h.SettingsBundleHandler))
-	mux.HandleFunc("/v1/settings/test-ai", h.RequireAdminFunc(h.TestAIHandler))
-	mux.HandleFunc("/v1/settings/test-alert", h.RequireAdminFunc(h.TestAlertHandler))
-	mux.HandleFunc("/v1/settings/guest-access", h.RequireAdminFunc(h.GuestAccessHandler))
-
-	// Config
-	mux.HandleFunc("/v1/config/analysis", h.RequireAdminFunc(h.AnalysisConfigHandler))
-	mux.HandleFunc("/v1/config/analysis/reset", h.RequireAdminFunc(h.AnalysisConfigResetHandler))
+	registerAPIRoutes(mux, h, agentEngine)
 
 	// Static Assets & Operator UI
 	if assetsFS != nil {

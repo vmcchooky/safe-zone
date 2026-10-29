@@ -1,30 +1,254 @@
 openapi: 3.1.0
 info:
   title: Safe Zone API
-  version: 0.1.0
-  description: Local-first anti-phishing API for domain analysis, policy checks, telemetry, and administration.
+  version: 0.2.0
+  description: |
+    Local-first anti-phishing API for domain analysis, policy checks, telemetry, and administration.
+
+    One document covers both services. core-api serves every `/v1/*` path below except
+    `/v1/policy` and `/dns-query`, which belong to dns-resolver (published on 127.0.0.1:8081
+    in the developer stack, fronted by Caddy in production). The parity between this
+    document and the registered routes is asserted by `go test ./internal/openapi/`,
+    which diffs the route tables in `internal/api/server/routes.go` and
+    `internal/dns/server/routes.go` against these paths.
+
+    Authentication: dashboard sessions use the `admin_session` cookie (CSRF-checked for
+    state-changing requests); machine callers send `Authorization: Bearer
+    <SAFE_ZONE_ADMIN_API_KEY>`. Read-only guest sessions may read any endpoint that only
+    requires authentication; writes additionally require the admin role.
 servers:
   - url: https://{host}
     variables:
       host:
         default: safezone.example.com
   - url: http://localhost:8080
+tags:
+  - name: System
+    description: Health, readiness, version, status, metrics, and log export.
+  - name: Analysis
+    description: Domain analysis pipeline, raw data, OSINT evidence, cache control.
+  - name: Auth
+    description: Dashboard session lifecycle.
+  - name: Overrides
+    description: Operator allow/block overrides and false-positive review.
+  - name: Reports
+    description: User-submitted block reports.
+  - name: Brands
+    description: Trusted brand rules for typosquat detection.
+  - name: Groups
+    description: Policy groups, client mappings, and group overrides.
+  - name: Settings
+    description: Runtime settings, guest access, and connectivity tests.
+  - name: Config
+    description: Lexical analysis configuration.
+  - name: Agent
+    description: Background agent status, triggers, and reviewable proposals.
+  - name: Whitelist
+    description: Whitelist snapshots and rollback.
+  - name: Telemetry
+    description: Analysis telemetry for the dashboard.
+  - name: BlockPage
+    description: Public block page and report submission.
+  - name: DNS
+    description: dns-resolver endpoints (DNS-over-HTTPS and the policy decision).
 paths:
+  /:
+    get:
+      tags: [DNS]
+      operationId: getResolverStatus
+      security: []
+      summary: Resolver status snapshot (served by dns-resolver)
+      description: |
+        Service-local status for the resolver: cache occupancy, upstream pool
+        health and pipeline counters. core-api has no equivalent free-form
+        root route; its status lives at /v1/status.
+      responses:
+        "200":
+          description: Resolver status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
   /healthz:
     get:
-      summary: Health check
+      tags: [System]
+      operationId: getHealthz
+      security: []
+      summary: Health check (liveness)
+      description: Served by both core-api (8080) and dns-resolver (8081); pure liveness, no dependency checks.
       responses:
         "200":
           description: Service is healthy
+  /readyz:
+    get:
+      tags: [System]
+      operationId: getReadyz
+      security: []
+      summary: Readiness check
+      description: Served by both services; returns 503 while the service cannot do its job (dependencies down, ML bundle required but missing).
+      responses:
+        "200":
+          description: Service is ready
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /metrics:
+    get:
+      tags: [System]
+      operationId: getMetrics
+      summary: Internal JSON metrics (admin only)
+      description: |
+        Per-endpoint request summary (method, path, status, counts, latency) plus cache and
+        pipeline counters. Admin-only on both services: the summary lets a caller
+        fingerprint the API surface and read 401/403/429 rates. dns-resolver gates this
+        with the bearer admin key only (no session cookies) and fails closed when no key
+        is configured.
+      security:
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Metrics snapshot
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /metrics/prometheus:
+    get:
+      tags: [System]
+      operationId: getMetricsPrometheus
+      summary: Prometheus exposition of the same metrics (admin only, core-api)
+      security:
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Prometheus text exposition
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/status:
+    get:
+      tags: [System]
+      operationId: getStatus
+      summary: Aggregated service status for the dashboard
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Pipeline, cache, feed, adblock and agent status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatusResponse"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/version:
+    get:
+      tags: [System]
+      operationId: getVersion
+      security: []
+      summary: Build metadata
+      description: Served by both services.
+      responses:
+        "200":
+          description: Version, commit, build time
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  version: {type: string}
+                  git_commit: {type: string}
+                  build_time: {type: string}
+  /v1/cache/flush:
+    post:
+      tags: [Analysis]
+      operationId: flushCaches
+      summary: Flush the analysis caches (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Cache flush accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/logs/export:
+    get:
+      tags: [System]
+      operationId: exportLogs
+      summary: Export recent request logs (admin)
+      security:
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Log lines as a text/plain attachment
+          content:
+            text/plain:
+              schema:
+                type: string
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/analyze:
     get:
+      tags: [Analysis]
+      operationId: analyzeDomain
+      security: []
       summary: Analyze a domain
+      description: Public; authentication is optional and only gates force_osint (outbound OSINT evidence).
       parameters:
         - name: domain
           in: query
           required: true
           schema:
             type: string
+        - name: include_evidence
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1"]
+        - name: force_osint
+          in: query
+          description: Requires authentication; ignored for anonymous callers.
+          schema:
+            type: string
+            enum: ["0", "1"]
       responses:
         "200":
           description: Analysis result
@@ -32,8 +256,26 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Analysis"
+        "400":
+          description: Missing or invalid domain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
+      tags: [Analysis]
+      operationId: analyzeDomainBody
       summary: Analyze a domain from JSON body
+      security:
+        - {}
+        - cookieAuth: []
+        - apiKeyAuth: []
       requestBody:
         required: true
         content:
@@ -44,6 +286,21 @@ paths:
               properties:
                 domain:
                   type: string
+                requested_url:
+                  type: string
+                redirect_chain:
+                  type: array
+                  items:
+                    type: string
+                event_id:
+                  type: string
+                  description: Opaque caller-generated correlation ID for privacy-safe label feedback.
+                caller_class:
+                  type: string
+                  enum: [ui, sdk, extension, proxy, other]
+                force_osint:
+                  type: boolean
+                  description: Requires authentication; ignored for anonymous callers.
       responses:
         "200":
           description: Analysis result
@@ -51,14 +308,192 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Analysis"
+        "400":
+          description: Invalid JSON body or domain
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/analyze/raw:
+    get:
+      tags: [Analysis]
+      operationId: getRawAnalysisData
+      summary: Raw analysis pipeline data for one domain
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Raw pipeline layers (feed, lexical, overrides, groups, ML)
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/osint/evidence:
+    get:
+      tags: [Analysis]
+      operationId: getOsintEvidence
+      summary: Public OSINT evidence for one domain
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Evidence entries from the configured OSINT sources
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/analysis/recent:
     get:
+      tags: [Analysis]
+      operationId: getRecentAnalyses
       summary: List recent analysis results
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
       responses:
         "200":
           description: Recent analysis entries
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/url-ml/feedback:
+    post:
+      tags: [Analysis]
+      operationId: submitUrlMLFeedback
+      summary: Submit a URL-ML label for feedback
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                event_id:
+                  type: string
+                label:
+                  type: string
+                url:
+                  type: string
+      responses:
+        "200":
+          description: Feedback accepted
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/auth/login:
+    post:
+      tags: [Auth]
+      operationId: login
+      security: []
+      summary: Login to dashboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [password]
+              properties:
+                username:
+                  type: string
+                  description: Admin username; defaults to `admin`.
+                password:
+                  type: string
+      responses:
+        "200":
+          description: Login successful; sets the admin_session cookie
+        "401":
+          description: Invalid username or password
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Too many login attempts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/auth/logout:
+    post:
+      tags: [Auth]
+      operationId: logout
+      summary: Logout from dashboard
+      description: Revokes the persisted session; CSRF-checked when called with the session cookie.
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Logout successful
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/auth/session:
+    get:
+      tags: [Auth]
+      operationId: getSession
+      summary: Inspect the current session
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Session role and expiry
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role:
+                    type: string
+                    enum: [admin, guest]
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/overrides:
     get:
+      tags: [Overrides]
+      operationId: listOverrides
       summary: List global overrides
       security:
         - cookieAuth: []
@@ -72,8 +507,16 @@ paths:
       responses:
         "200":
           description: Override list
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     post:
-      summary: Create or update a global override
+      tags: [Overrides]
+      operationId: upsertOverride
+      summary: Create or update a global override (admin)
       security:
         - cookieAuth: []
         - apiKeyAuth: []
@@ -86,8 +529,22 @@ paths:
       responses:
         "200":
           description: Override saved
+        "400":
+          description: Invalid override
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
     delete:
-      summary: Delete a global override
+      tags: [Overrides]
+      operationId: deleteOverride
+      summary: Delete a global override (admin)
       security:
         - cookieAuth: []
         - apiKeyAuth: []
@@ -100,9 +557,17 @@ paths:
       responses:
         "200":
           description: Override deleted
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/overrides/review-false-positive:
     post:
-      summary: Resolve a false positive by converting a domain to an allow override
+      tags: [Overrides]
+      operationId: reviewFalsePositive
+      summary: Resolve a false positive by converting a domain to an allow override (admin)
       security:
         - cookieAuth: []
         - apiKeyAuth: []
@@ -136,7 +601,9 @@ paths:
           description: Queue report domain does not match the requested domain
   /v1/reports:
     get:
-      summary: List false-positive reports for operator review
+      tags: [Reports]
+      operationId: listReports
+      summary: List false-positive reports for operator review (admin)
       description: Admin-only because report contact and note fields may contain personal data.
       security:
         - cookieAuth: []
@@ -189,7 +656,9 @@ paths:
           description: Authenticated user is not an admin
   /v1/reports/status:
     post:
-      summary: Resolve or reject a false-positive report without creating an override
+      tags: [Reports]
+      operationId: updateReportStatus
+      summary: Resolve or reject a false-positive report without creating an override (admin)
       security:
         - cookieAuth: []
         - apiKeyAuth: []
@@ -215,8 +684,762 @@ paths:
           description: Operator decision and audit event committed
         "404":
           description: Queue report was not found
+  /v1/brands:
+    get:
+      tags: [Brands]
+      operationId: listBrands
+      summary: List trusted brand rules
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: When present, return that single brand instead of the list.
+      responses:
+        "200":
+          description: Brand list (or a single brand when id is given)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/BrandList"
+                  - $ref: "#/components/schemas/Brand"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Brands]
+      operationId: createBrand
+      summary: Create a brand rule (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Brand"
+      responses:
+        "201":
+          description: Brand created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Brand"
+        "400":
+          description: Invalid brand
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Brands]
+      operationId: updateBrand
+      summary: Update a brand rule (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Brand"
+      responses:
+        "200":
+          description: Brand updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Brand"
+        "404":
+          description: Brand not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Brands]
+      operationId: deleteBrand
+      summary: Delete a brand rule (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Brand deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: {type: string}
+                  id: {type: integer}
+        "404":
+          description: Brand not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/groups:
+    get:
+      tags: [Groups]
+      operationId: listGroups
+      summary: List policy groups
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Group list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Groups]
+      operationId: createGroup
+      summary: Create a policy group (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Group"
+      responses:
+        "201":
+          description: Group created
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Groups]
+      operationId: updateGroup
+      summary: Update a policy group (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Group updated
+        "404":
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Groups]
+      operationId: deleteGroup
+      summary: Delete a policy group (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Group deleted
+        "404":
+          description: Group not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/mappings:
+    get:
+      tags: [Groups]
+      operationId: listMappings
+      summary: List client mappings (IP or client_id to group)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Mapping list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MappingList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Groups]
+      operationId: createMapping
+      summary: Create a client mapping (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClientMapping"
+      responses:
+        "201":
+          description: Mapping created
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Groups]
+      operationId: deleteMapping
+      summary: Delete a client mapping (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Mapping deleted
+        "404":
+          description: Mapping not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/group-overrides:
+    get:
+      tags: [Groups]
+      operationId: listGroupOverrides
+      summary: List per-group domain overrides
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Group override list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GroupOverrideList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Groups]
+      operationId: createGroupOverride
+      summary: Create a group override (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GroupOverride"
+      responses:
+        "201":
+          description: Group override created
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Groups]
+      operationId: updateGroupOverride
+      summary: Update a group override (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Group override updated
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Groups]
+      operationId: deleteGroupOverride
+      summary: Delete a group override (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Group override deleted
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/settings:
+    get:
+      tags: [Settings]
+      operationId: getSettings
+      summary: Read runtime settings (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Settings document
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      tags: [Settings]
+      operationId: saveSettings
+      summary: Save runtime settings (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Settings saved
+        "400":
+          description: Invalid settings document
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/settings/bundle:
+    get:
+      tags: [Settings]
+      operationId: getSettingsBundle
+      summary: Export the full settings bundle (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Settings bundle
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/settings/test-ai:
+    post:
+      tags: [Settings]
+      operationId: testAI
+      summary: Test the configured AI provider connectivity (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Provider reachability result
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/settings/test-alert:
+    post:
+      tags: [Settings]
+      operationId: testAlert
+      summary: Send a test alert through the configured channel (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Alert delivery result
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/settings/guest-access:
+    get:
+      tags: [Settings]
+      operationId: getGuestAccess
+      summary: Read the guest access configuration (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Guest access configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled: {type: boolean}
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Settings]
+      operationId: enableGuestAccess
+      summary: Enable guest access (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Guest access configuration saved
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    put:
+      tags: [Settings]
+      operationId: updateGuestAccess
+      summary: Update the guest access password/role (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Guest access configuration saved
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      tags: [Settings]
+      operationId: disableGuestAccess
+      summary: Disable guest access (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Guest access disabled
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/config/analysis:
+    get:
+      tags: [Config]
+      operationId: getAnalysisConfig
+      summary: Get active lexical analysis configuration (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Active analysis configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalysisConfig"
+    put:
+      tags: [Config]
+      operationId: putAnalysisConfig
+      summary: Validate, persist, and hot-reload lexical analysis configuration (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisConfig"
+      responses:
+        "200":
+          description: Updated analysis configuration
+        "400":
+          description: Invalid configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/config/analysis/reset:
+    post:
+      tags: [Config]
+      operationId: resetAnalysisConfig
+      summary: Reset lexical analysis configuration to defaults (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Default analysis configuration
+  /v1/agent/status:
+    get:
+      tags: [Agent]
+      operationId: getAgentStatus
+      summary: Background agent task status
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Agent engine status including per-task state
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/agent/trigger:
+    post:
+      tags: [Agent]
+      operationId: triggerAgent
+      summary: Trigger an agent task cycle (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Trigger accepted
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/agent/proposals:
+    get:
+      tags: [Agent]
+      operationId: listAgentProposals
+      summary: List reviewable agent proposals
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Proposal list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentProposalList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      tags: [Agent]
+      operationId: decideAgentProposal
+      summary: Approve or reject an agent proposal (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id, decision]
+              properties:
+                id: {type: integer}
+                decision:
+                  type: string
+                  enum: [approve, reject]
+                reason: {type: string}
+      responses:
+        "200":
+          description: Decision applied
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/whitelist/snapshots:
+    get:
+      tags: [Whitelist]
+      operationId: listWhitelistSnapshots
+      summary: List automatic whitelist rollback snapshots (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      responses:
+        "200":
+          description: Snapshot list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhitelistSnapshotList"
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /v1/whitelist/rollback:
+    post:
+      tags: [Whitelist]
+      operationId: rollbackWhitelist
+      summary: Roll the whitelist back to a snapshot (admin)
+      security:
+        - cookieAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: {type: string}
+      responses:
+        "200":
+          description: Rollback applied and published
+        "404":
+          description: Snapshot not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Authenticated user is not an admin
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/telemetry/recent:
     get:
+      tags: [Telemetry]
+      operationId: getTelemetryRecent
       summary: List telemetry entries
       security:
         - cookieAuth: []
@@ -236,8 +1459,16 @@ paths:
       responses:
         "200":
           description: Telemetry entries
+        "401":
+          description: Missing or invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/telemetry/stats:
     get:
+      tags: [Telemetry]
+      operationId: getTelemetryStats
       summary: Get telemetry stats
       security:
         - cookieAuth: []
@@ -251,68 +1482,63 @@ paths:
       responses:
         "200":
           description: Telemetry stats
-  /v1/config/analysis:
-    get:
-      summary: Get active lexical analysis configuration
-      security:
-        - cookieAuth: []
-        - apiKeyAuth: []
-      responses:
-        "200":
-          description: Active analysis configuration
+        "401":
+          description: Missing or invalid credentials
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AnalysisConfig"
-    put:
-      summary: Validate, persist, and hot-reload lexical analysis configuration
-      security:
-        - cookieAuth: []
-        - apiKeyAuth: []
+                $ref: "#/components/schemas/Error"
+  /block:
+    get:
+      tags: [BlockPage]
+      operationId: getBlockPage
+      security: []
+      summary: Render the block page for a blocked domain
+      description: Public; the DNS sinkhole points blocked clients here.
+      parameters:
+        - name: domain
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: HTML block page
+          content:
+            text/html:
+              schema:
+                type: string
+  /block/report:
+    post:
+      tags: [BlockPage]
+      operationId: submitBlockReport
+      summary: Submit a false-positive report from the block page
+      security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/AnalysisConfig"
+              $ref: "#/components/schemas/BlockReportRequest"
       responses:
         "200":
-          description: Updated analysis configuration
-  /v1/config/analysis/reset:
-    post:
-      summary: Reset lexical analysis configuration to defaults
-      security:
-        - cookieAuth: []
-        - apiKeyAuth: []
-      responses:
-        "200":
-          description: Default analysis configuration
-  /v1/auth/login:
-    post:
-      summary: Login to dashboard
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [password]
-              properties:
-                password:
-                  type: string
-      responses:
-        "200":
-          description: Login successful
-  /v1/auth/logout:
-    post:
-      summary: Logout from dashboard
-      security:
-        - cookieAuth: []
-      responses:
-        "200":
-          description: Logout successful
+          description: Report queued for operator review
+        "400":
+          description: Invalid report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /v1/policy:
     get:
+      tags: [DNS]
+      operationId: getPolicy
+      security: []
       summary: Evaluate the DNS policy for a domain (served by dns-resolver)
       description: >
         Returns the policy action plus the security verdict assessed
@@ -341,6 +1567,9 @@ paths:
                 $ref: "#/components/schemas/PolicyResponse"
   /dns-query:
     get:
+      tags: [DNS]
+      operationId: dohQueryGet
+      security: []
       summary: DNS-over-HTTPS query using RFC 8484 GET
       parameters:
         - name: dns
@@ -348,6 +1577,13 @@ paths:
           required: true
           schema:
             type: string
+          description: Base64url-encoded DNS wire-format message (RFC 8484 §4.1).
+        - name: client_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional per-client policy identity; the /dns-query/{client_id} path form is equivalent.
       responses:
         "200":
           description: DNS wire-format response
@@ -356,7 +1592,14 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: Missing dns parameter or malformed message
+        "415":
+          description: Unsupported media type (POST only)
     post:
+      tags: [DNS]
+      operationId: dohQueryPost
+      security: []
       summary: DNS-over-HTTPS query using RFC 8484 POST
       requestBody:
         required: true
@@ -373,6 +1616,12 @@ paths:
               schema:
                 type: string
                 format: binary
+        "400":
+          description: Empty or malformed message
+        "413":
+          description: DNS message exceeds 65535 bytes
+        "415":
+          description: Content-Type must be application/dns-message
 components:
   securitySchemes:
     cookieAuth:
@@ -384,6 +1633,13 @@ components:
       scheme: bearer
       description: Use `Bearer <SAFE_ZONE_ADMIN_API_KEY>`.
   schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+      description: Plain-text error payload returned by non-2xx JSON responses.
     Analysis:
       type: object
       properties:
@@ -407,6 +1663,154 @@ components:
         analyzed_at:
           type: string
           format: date-time
+    StatusResponse:
+      type: object
+      description: Aggregated dashboard status; fields are additive and service-dependent.
+      properties:
+        service: {type: string}
+        cache:
+          type: object
+          description: Redis connectivity and eviction-safety state.
+        feed:
+          type: object
+          description: Threat feed freshness and member counts.
+        adblock:
+          type: object
+          description: Adblock trie state, match mode, and per-source fingerprints.
+        decision_pipeline:
+          type: object
+          description: Pipeline counters including outbound_proxy_enabled.
+        agent:
+          type: object
+          description: Background agent task summary.
+      additionalProperties: true
+    Brand:
+      type: object
+      required: [name, official_domain]
+      properties:
+        id: {type: integer}
+        name:
+          type: string
+          example: google
+        official_domain:
+          type: string
+          example: google.com
+        alt_domains:
+          type: array
+          items:
+            type: string
+          example: ["google.com.vn", "google.co.uk"]
+        created_at: {type: string}
+        updated_at: {type: string}
+    BrandList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Brand"
+    Group:
+      type: object
+      required: [name]
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        description: {type: string}
+        block_categories:
+          type: array
+          items:
+            type: string
+        strict_phishing: {type: boolean}
+        strict_malware: {type: boolean}
+    GroupList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Group"
+    ClientMapping:
+      type: object
+      required: [mapping_type, value, group_id]
+      properties:
+        id: {type: integer}
+        mapping_type:
+          type: string
+          enum: [ip, cidr, client_id]
+        value:
+          type: string
+          description: IP address, CIDR range, or client identifier.
+        group_id: {type: integer}
+    MappingList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ClientMapping"
+    GroupOverride:
+      type: object
+      required: [group_id, domain, action]
+      properties:
+        id: {type: integer}
+        group_id: {type: integer}
+        domain: {type: string}
+        action:
+          type: string
+          enum: [allow, block]
+        reason: {type: string}
+    GroupOverrideList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/GroupOverride"
+    AgentProposal:
+      type: object
+      properties:
+        id: {type: integer}
+        domain: {type: string}
+        action:
+          type: string
+          enum: [block, allow]
+        status:
+          type: string
+          enum: [pending, approved, rejected, expired]
+        confidence: {type: number}
+        reasons:
+          type: array
+          items:
+            type: string
+        created_at: {type: string}
+        decided_at: {type: string}
+    AgentProposalList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentProposal"
+    WhitelistSnapshot:
+      type: object
+      properties:
+        id: {type: string}
+        created_at: {type: string}
+        entry_count: {type: integer}
+        reason: {type: string}
+    WhitelistSnapshotList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhitelistSnapshot"
     PolicyDecision:
       type: object
       required: [action]
@@ -461,43 +1865,6 @@ components:
             Operator-configured scoped content exception that suppressed the
             adblock match. Present only on adblock_exception decisions; the
             config reason behind it is never exposed.
-    Policy:
-      type: object
-      description: risk.Policy — the DNS policy decision plus the security verdict.
-      properties:
-        domain:
-          type: string
-        policy:
-          type: string
-          enum: [allow, block]
-        result:
-          type: object
-          description: Security verdict assessed independently of the policy action.
-          properties:
-            domain:
-              type: string
-            verdict:
-              type: string
-              enum: [INVALID, SAFE, SUSPICIOUS, MALICIOUS]
-            confidence:
-              type: number
-            score:
-              type: integer
-            reasons:
-              type: array
-              items:
-                type: string
-            category:
-              type: string
-        decision:
-          description: >
-            Content/DNS policy decision, separate from the security verdict.
-            Present on paths that adopt the separated decision model (e.g.
-            adblock blocks under SAFE_ZONE_POLICY_SEMANTICS=separated); null
-            or absent on legacy paths.
-          $ref: "#/components/schemas/PolicyDecision"
-        cache_hit:
-          type: boolean
     PolicyResponse:
       type: object
       description: dns-resolver GET /v1/policy response (service + risk.Policy + meta).
@@ -564,6 +1931,13 @@ components:
         resolution_action:
           type: string
           enum: ["", allow, resolve, reject]
+    BlockReportRequest:
+      type: object
+      required: [domain]
+      properties:
+        domain: {type: string}
+        contact: {type: string}
+        note: {type: string}
     BlockReportStatusCounts:
       type: object
       required: [pending, resolved, rejected]
