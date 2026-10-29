@@ -5,7 +5,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"errors"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -527,5 +529,45 @@ func TestAdblockSourceCacheWritesUseUniqueTempFiles(t *testing.T) {
 	}
 	if !loadedTrie.Match("ads.concurrent.test") {
 		t.Fatal("expected concurrent cache write to persist domain entry")
+	}
+}
+
+func TestReplaceFileRenameFailureLeavesFinalMissing(t *testing.T) {
+	tempDir := t.TempDir()
+	finalPath := filepath.Join(tempDir, "cache.txt")
+	if err := os.WriteFile(finalPath, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A missing temp path forces the rename to fail after the final file has
+	// already been removed — the remove-then-rename window replaceFile is
+	// deliberately not atomic across.
+	err := replaceFile(filepath.Join(tempDir, "does-not-exist.tmp-1"), finalPath)
+	if err == nil {
+		t.Fatal("expected rename failure to propagate")
+	}
+	if _, statErr := os.Stat(finalPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("expected final path removed when rename fails, got err=%v", statErr)
+	}
+}
+
+func TestReplaceFileSuccessReplacesContent(t *testing.T) {
+	tempDir := t.TempDir()
+	finalPath := filepath.Join(tempDir, "cache.txt")
+	if err := os.WriteFile(finalPath, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tmpPath := filepath.Join(tempDir, "cache.txt.tmp-1")
+	if err := os.WriteFile(tmpPath, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := replaceFile(tmpPath, finalPath); err != nil {
+		t.Fatalf("expected replace to succeed, got %v", err)
+	}
+	data, err := os.ReadFile(finalPath)
+	if err != nil || string(data) != "new" {
+		t.Fatalf("expected final file to hold new content, got %q err=%v", data, err)
+	}
+	if _, err := os.Stat(tmpPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected temp file consumed by rename, got err=%v", err)
 	}
 }
