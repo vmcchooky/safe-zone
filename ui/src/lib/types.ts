@@ -151,3 +151,26 @@ export interface MetricsResponse {
   status: string;
   metrics: MetricsSnapshot;
 }
+
+export interface WhitelistSnapshot {
+  id: number;
+  created_at: string;
+  source: string;
+  entry_count: number;
+  sha256: string;
+}
+
+export interface WhitelistRollbackRecord {
+  audit_id: number;
+  created_at: string;
+  snapshot_id: number;
+  entries: number;
+  actor: string;
+  reason: string;
+  revision: number;
+}
+
+export interface WhitelistSnapshotsResponse {
+  snapshots: WhitelistSnapshot[];
+  last_rollback: WhitelistRollbackRecord | null;
+}
