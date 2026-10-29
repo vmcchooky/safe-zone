@@ -2,6 +2,7 @@
   "dependencies": {
     "puppeteer": "^25.16.0",
     "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2"
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "lodash": "4.17.15"
   }
 }
