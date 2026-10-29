@@ -1,5 +1,7 @@
 # Walkthrough: Safe Zone Enhancements
 
+> **Correction (2026-10-29):** `GetGroupForClient` only honours a client-supplied `client_id` for trusted callers; on the DNS/API paths `resolveClientGroup` always passes `clientIDTrusted=false`, so a client's policy group comes from its **trusted IP** (exact IP → CIDR → default). An unauthenticated `client_id` cannot select a group. See `docs/architecture/policy-precedence.md`.
+
 Hệ thống Safe Zone hiện đã hoàn thành hai cấu phần cốt lõi nâng cao:
 1. **SQLite Integration (Telemetry & Local Overrides)** — Lưu trữ dữ liệu lâu dài và quản lý domain tùy chỉnh.
 2. **AI Engine & Agent Workflow** — Kiến trúc, provider, task catalog, cấu hình và vận hành đã được hợp nhất tại [`../safe-zone-ai-plan.md`](../safe-zone-ai-plan.md).

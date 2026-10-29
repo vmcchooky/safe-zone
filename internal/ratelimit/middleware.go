@@ -67,6 +67,14 @@ func (tm *TieredMiddleware) Wrap(next http.Handler) http.Handler {
 	})
 }
 
+// LimiterFor returns the Limiter for the given path (first prefix match),
+// falling back to the default limiter. Exported for the tier-table
+// regression test in cmd/core-api and for ops diagnostics that need to
+// answer "which tier governs this path".
+func (tm *TieredMiddleware) LimiterFor(path string) *Limiter {
+	return tm.limiterFor(path)
+}
+
 // limiterFor returns the Limiter for the given path (first prefix match).
 func (tm *TieredMiddleware) limiterFor(path string) *Limiter {
 	for _, t := range tm.tiers {
