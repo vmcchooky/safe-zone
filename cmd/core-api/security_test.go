@@ -150,3 +150,119 @@ func TestLoadRuntimeSecurityLocalGeneratesFallbacks(t *testing.T) {
 		t.Fatal("expected generated admin api key in local secrets file")
 	}
 }
+
+func readGeneratedAdminSecrets(t *testing.T) map[string]string {
+	t.Helper()
+	content, err := os.ReadFile(localAdminSecretsFile)
+	if err != nil {
+		t.Fatalf("read local admin secrets file: %v", err)
+	}
+	secrets := map[string]string{}
+	for _, line := range strings.Split(string(content), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if ok && value != "" {
+			secrets[key] = value
+		}
+	}
+	return secrets
+}
+
+func TestLoadRuntimeSecurityLocalReusesGeneratedSecrets(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("SAFE_ZONE_ENV", "local")
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD", "")
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD_FILE", "")
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY", "")
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY_FILE", "")
+
+	first, err := loadRuntimeSecurity()
+	if err != nil {
+		t.Fatalf("first start: %v", err)
+	}
+	stored := readGeneratedAdminSecrets(t)
+	storedPassword := stored[localAdminPasswordKey]
+	if storedPassword == "" || stored[localAdminAPIKeyKey] == "" {
+		t.Fatalf("first start must persist both generated secrets, got %d keys", len(stored))
+	}
+
+	second, err := loadRuntimeSecurity()
+	if err != nil {
+		t.Fatalf("second start: %v", err)
+	}
+	if second.adminAPIKey != first.adminAPIKey {
+		t.Fatal("api key must not rotate when the generated secrets file survives")
+	}
+	if err := auth.VerifyPasswordHash(second.adminPasswordHash, storedPassword); err != nil {
+		t.Fatalf("second start must keep the generated password: %v", err)
+	}
+}
+
+func TestLoadRuntimeSecurityLocalPreservesReusedSecretWhenGeneratingTheOther(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("SAFE_ZONE_ENV", "local")
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD", "")
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD_FILE", "")
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY", "")
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY_FILE", "")
+
+	const storedPassword = "0123456789abcdef0123456789abcdef"
+	if err := os.MkdirAll(localAdminSecretsDir, 0o750); err != nil {
+		t.Fatalf("create secrets dir: %v", err)
+	}
+	seed := localAdminPasswordKey + "=" + storedPassword + "\n"
+	if err := os.WriteFile(localAdminSecretsFile, []byte(seed), 0o600); err != nil {
+		t.Fatalf("seed secrets file: %v", err)
+	}
+
+	security, err := loadRuntimeSecurity()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := auth.VerifyPasswordHash(security.adminPasswordHash, storedPassword); err != nil {
+		t.Fatalf("stored password must remain effective: %v", err)
+	}
+
+	stored := readGeneratedAdminSecrets(t)
+	if stored[localAdminPasswordKey] != storedPassword {
+		t.Fatal("rewriting the secrets file must preserve the reused password")
+	}
+	if stored[localAdminAPIKeyKey] == "" || stored[localAdminAPIKeyKey] != security.adminAPIKey {
+		t.Fatal("secrets file must contain the newly generated api key")
+	}
+}
+
+func TestLoadRuntimeSecurityLocalHonoursExplicitSecretFile(t *testing.T) {
+	t.Chdir(t.TempDir())
+	dir := t.TempDir()
+	passwordFile := filepath.Join(dir, "admin_password")
+	if err := os.WriteFile(passwordFile, nil, 0o600); err != nil {
+		t.Fatalf("write empty password file: %v", err)
+	}
+
+	const storedPassword = "0123456789abcdef0123456789abcdef"
+	if err := os.MkdirAll(localAdminSecretsDir, 0o750); err != nil {
+		t.Fatalf("create secrets dir: %v", err)
+	}
+	seed := localAdminPasswordKey + "=" + storedPassword + "\n"
+	if err := os.WriteFile(localAdminSecretsFile, []byte(seed), 0o600); err != nil {
+		t.Fatalf("seed secrets file: %v", err)
+	}
+
+	t.Setenv("SAFE_ZONE_ENV", "local")
+	t.Setenv("SAFE_ZONE_SECRET_FILE_ROOT", dir)
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD", "")
+	t.Setenv("SAFE_ZONE_ADMIN_PASSWORD_FILE", passwordFile)
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY", "")
+	t.Setenv("SAFE_ZONE_ADMIN_API_KEY_FILE", "")
+
+	security, err := loadRuntimeSecurity()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if auth.VerifyPasswordHash(security.adminPasswordHash, storedPassword) == nil {
+		t.Fatal("an explicitly configured password file must not fall back to the generated secret")
+	}
+	if stored := readGeneratedAdminSecrets(t); stored[localAdminPasswordKey] == storedPassword {
+		t.Fatal("the generated secrets file must not keep advertising a superseded password")
+	}
+}

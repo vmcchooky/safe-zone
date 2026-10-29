@@ -126,6 +126,9 @@ services:
       SAFE_ZONE_AGENT_OSINT_LOOKBACK_SECONDS: ${SAFE_ZONE_AGENT_OSINT_LOOKBACK_SECONDS:-86400}
     volumes:
       - app-data:/app/data
+      # Generated local-only admin credentials live in /app/tmp. Persist them
+      # so recreating core-api does not rotate the API key and password.
+      - app-tmp:/app/tmp
       - ./ops/secrets:/app/ops/secrets:ro
       - ${SAFE_ZONE_ML_BUNDLE_HOST_DIR:-./deploy/model-bundle/current}:/app/models/safe-zone/current:ro
       - ./ml/models/url-v1:/app/models/safe-zone/url-v1:ro
@@ -165,7 +168,12 @@ services:
     environment:
       SAFE_ZONE_HEALTHCHECK_PORT: "8081"
       SAFE_ZONE_HEALTHCHECK_PATH: ${SAFE_ZONE_HEALTHCHECK_PATH:-/readyz}
-      SAFE_ZONE_DNS_RESOLVER_ADDR: ${SAFE_ZONE_DNS_RESOLVER_ADDR:-:8081}
+      # Bind all interfaces *inside the container*. Docker publishes the port
+      # on 127.0.0.1 of the host (docker-compose.dev.yml) and DNATs to the
+      # container IP, so a loopback-only listener would reset every published
+      # connection. .env.example keeps 127.0.0.1 for binaries run directly on
+      # a host; containment for Compose comes from the host-side mapping.
+      SAFE_ZONE_DNS_RESOLVER_ADDR: ":8081"
       SAFE_ZONE_REDIS_ADDR: ${SAFE_ZONE_REDIS_ADDR:-redis:6379}
       SAFE_ZONE_REDIS_PASSWORD: ${SAFE_ZONE_REDIS_PASSWORD:-}
       SAFE_ZONE_REDIS_DB: ${SAFE_ZONE_REDIS_DB:-0}
@@ -303,5 +311,6 @@ services:
 volumes:
   redis-data:
   app-data:
+  app-tmp:
   caddy-data:
   caddy-config:
