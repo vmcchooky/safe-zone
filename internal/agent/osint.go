@@ -128,7 +128,7 @@ func (t *OSINTTask) Run(ctx context.Context) error {
 	}
 
 	summary := fmt.Sprintf(`{"checked":%d,"promoted":%d,"skipped":%d,"promotion_failures":%d}`, checked, promoted, skipped, failed)
-	_ = t.store.RecordAgentEvent(ctx, "osint-audit", "osint_audit_completed", "", summary)
+	recordAgentEventBestEffort(ctx, t.store, "osint-audit", "osint_audit_completed", "", summary)
 	if promoted > 0 {
 		// PR-08a/M2 parent-child coherence: threat-feed matching walks
 		// parents at read time, but a cached SAFE verdict on a *child*
@@ -157,11 +157,11 @@ func (t *OSINTTask) bumpFeedRevision(ctx context.Context, promoted int) {
 			"promoted": promoted,
 			"error":    err.Error(),
 		}))
-		_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_revision_bump_failed", "",
+		recordAgentEventBestEffort(ctx, t.store, "osint-audit", "threat_feed_revision_bump_failed", "",
 			fmt.Sprintf(`{"promoted":%d,"error":%q}`, promoted, err.Error()))
 		return
 	}
-	_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_revision_bump", "",
+	recordAgentEventBestEffort(ctx, t.store, "osint-audit", "threat_feed_revision_bump", "",
 		fmt.Sprintf(`{"promoted":%d,"revision":%d}`, promoted, revision))
 }
 
@@ -178,7 +178,7 @@ func (t *OSINTTask) preflightThreatKey(ctx context.Context) error {
 	case "", "none", "zset":
 		return nil
 	default:
-		_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_key_wrong_type", "",
+		recordAgentEventBestEffort(ctx, t.store, "osint-audit", "threat_feed_key_wrong_type", "",
 			fmt.Sprintf(`{"key":%q,"type":%q}`, t.config.ThreatKey, keyType))
 		logjson.Error("threat feed key has incompatible type; OSINT promotion disabled", correlation.Fields(ctx, map[string]any{
 			"service":  "core-api",
@@ -211,7 +211,7 @@ func (t *OSINTTask) promote(ctx context.Context, domain string, evidence int) bo
 			"domain":  normalized,
 			"reason":  "feed_admission_policy",
 		}))
-		_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_promote_refused", normalized, err.Error())
+		recordAgentEventBestEffort(ctx, t.store, "osint-audit", "threat_feed_promote_refused", normalized, err.Error())
 		return false
 	}
 	expiryScore := float64(time.Now().Add(feed.MemberTTL(normalized, t.config.TTL, t.config.ChurnTTL)).Unix())
@@ -226,7 +226,7 @@ func (t *OSINTTask) promote(ctx context.Context, domain string, evidence int) bo
 		t.logPromotionFailure(ctx, normalized, "cache_invalidate", err)
 		return false
 	}
-	_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_promote", normalized,
+	recordAgentEventBestEffort(ctx, t.store, "osint-audit", "threat_feed_promote", normalized,
 		fmt.Sprintf(`{"evidence":%d,"ttl_seconds":%d}`, evidence, int(t.config.TTL.Seconds())))
 	return true
 }
@@ -239,6 +239,6 @@ func (t *OSINTTask) logPromotionFailure(ctx context.Context, domain, stage strin
 		"stage":   stage,
 		"error":   err.Error(),
 	}))
-	_ = t.store.RecordAgentEvent(ctx, "osint-audit", "threat_feed_promote_failed", domain,
+	recordAgentEventBestEffort(ctx, t.store, "osint-audit", "threat_feed_promote_failed", domain,
 		fmt.Sprintf(`{"stage":%q,"error":%q}`, stage, err.Error()))
 }

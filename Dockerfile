@@ -50,9 +50,12 @@ ARG IMAGE_TAG=unreleased
 ARG SOURCE_REPO=unknown
 
 WORKDIR /app
+# Local mode writes generated admin secrets to ./tmp; without this the
+# non-root app user cannot create the directory under root-owned /app.
 RUN apk upgrade --no-cache && \
     addgroup -S app && adduser -S app -G app && \
-    mkdir -p /app/data && chown -R app:app /app/data
+    mkdir -p /app/data && chown -R app:app /app/data && \
+    install -d -m 0750 -o app -g app /app/tmp
 
 LABEL org.opencontainers.image.title="safe-zone-${SERVICE}" \
   org.opencontainers.image.version="${VERSION}" \

@@ -299,7 +299,7 @@ func (t *AlertTask) Run(ctx context.Context) error {
 		if len(failures) > 0 {
 			// The page was not delivered everywhere: the cursor stays on it
 			// so the next cycle replays the whole page (at-least-once).
-			_ = t.store.RecordAgentEvent(ctx, "alert", "alert_failed", "",
+			recordAgentEventBestEffort(ctx, t.store, "alert", "alert_failed", "",
 				fmt.Sprintf(`{"run_id":%q,"last_event_id":%d,"failures":[%s]}`, runID, lastEvent.ID, joinQuoted(failures)))
 			return fmt.Errorf("send alert failures: %s", strings.Join(failures, "; "))
 		}
@@ -308,7 +308,7 @@ func (t *AlertTask) Run(ctx context.Context) error {
 		deliveredPages++
 		deliveredEvents += len(events)
 
-		_ = t.store.RecordAgentEvent(ctx, "alert", "alert_sent", "",
+		recordAgentEventBestEffort(ctx, t.store, "alert", "alert_sent", "",
 			fmt.Sprintf(`{"run_id":%q,"page":%d,"events_count":%d,"last_event_id":%d}`, runID, deliveredPages, len(events), lastEvent.ID))
 
 		if len(events) < alertEventPageSize {

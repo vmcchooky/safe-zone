@@ -47,6 +47,7 @@ type responseCacheEntry struct {
 	message  *dns.Msg
 	storedAt time.Time
 	ttl      uint32
+	hits     int
 }
 
 // ResponseCache is a bounded LRU cache for validated upstream DNS responses.
@@ -60,6 +61,7 @@ type ResponseCache struct {
 	now        func() time.Time
 	entries    map[responseCacheKey]*list.Element
 	lru        *list.List
+	refreshing map[responseCacheKey]bool
 }
 
 // ResponseCacheStats is the operator-facing view of the cache. It reports
@@ -104,6 +106,7 @@ func newResponseCache(maxEntries int, maxTTL uint32, now func() time.Time) *Resp
 		now:        now,
 		entries:    make(map[responseCacheKey]*list.Element, maxEntries),
 		lru:        list.New(),
+		refreshing: make(map[responseCacheKey]bool),
 	}
 }
 
@@ -144,6 +147,7 @@ func (c *ResponseCache) Get(query *dns.Msg) (*dns.Msg, bool) {
 		delete(c.entries, key)
 		return nil, false
 	}
+	entry.hits++
 	c.lru.MoveToFront(element)
 
 	response := entry.message.Copy()
@@ -347,4 +351,124 @@ func ageRecordTTL(rr dns.RR, age uint32) {
 		ttl -= age
 	}
 	rr.Header().Ttl = ttl
+}
+
+// Stale window constants for RFC 8767-style serve-stale. A capped window
+// keeps very old entries from masking a long upstream outage as "success".
+const (
+	// DNSCacheStaleWindow is how long past TTL an entry may still be served
+	// when the upstream is unreachable.
+	DNSCacheStaleWindow = time.Hour
+	// DNSCacheStaleTTL is the short TTL stamped onto a stale answer so
+	// clients re-ask soon instead of pinning possibly-stale data.
+	DNSCacheStaleTTL = 30
+	// refreshAheadFraction is the consumed-lifetime fraction past which a
+	// popular entry becomes eligible for a background refresh.
+	refreshAheadFraction = 0.5
+	// refreshAheadMinHits guards refresh-ahead to entries that are actually
+	// hot; one-off queries refresh lazily as before.
+	refreshAheadMinHits = 3
+)
+
+// GetStale returns an expired-but-within-window entry for query, with record
+// TTLs clamped to DNSCacheStaleTTL per RFC 8767 §5.1. The entry is kept in
+// the cache (unlike Get) so the next successful upstream answer replaces it.
+// A nil result means no stale data is available.
+func (c *ResponseCache) GetStale(query *dns.Msg) *dns.Msg {
+	if c == nil || c.maxEntries <= 0 {
+		return nil
+	}
+	key, ok := responseCacheKeyFor(query)
+	if !ok {
+		return nil
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	element, ok := c.entries[key]
+	if !ok {
+		return nil
+	}
+	entry := element.Value.(*responseCacheEntry)
+	now := c.now()
+	age := now.Sub(entry.storedAt)
+	if age < 0 {
+		age = 0
+	}
+	if age < time.Duration(entry.ttl)*time.Second || age > time.Duration(entry.ttl)*time.Second+DNSCacheStaleWindow {
+		return nil
+	}
+
+	response := entry.message.Copy()
+	response.Id = query.Id
+	response.Question[0].Name = query.Question[0].Name
+	for _, section := range [][]dns.RR{response.Answer, response.Ns, response.Extra} {
+		for _, rr := range section {
+			rr.Header().Ttl = DNSCacheStaleTTL
+		}
+	}
+	return response
+}
+
+// ShouldRefresh reports whether the entry for query is popular enough and old
+// enough to warrant a refresh-ahead lookup (BIND-style prefetch): more than
+// refreshAheadMinHits hits and over half its TTL consumed.
+func (c *ResponseCache) ShouldRefresh(query *dns.Msg) bool {
+	if c == nil || c.maxEntries <= 0 {
+		return false
+	}
+	key, ok := responseCacheKeyFor(query)
+	if !ok {
+		return false
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	element, ok := c.entries[key]
+	if !ok {
+		return false
+	}
+	entry := element.Value.(*responseCacheEntry)
+	if entry.hits < refreshAheadMinHits {
+		return false
+	}
+	age := c.now().Sub(entry.storedAt)
+	if age < 0 {
+		return false
+	}
+	return age >= time.Duration(float64(entry.ttl)*refreshAheadFraction)*time.Second
+}
+
+// BeginRefresh claims the refresh slot for query so concurrent requests for
+// the same name do not stampede the upstream. It reports whether the caller
+// owns the refresh.
+func (c *ResponseCache) BeginRefresh(query *dns.Msg) bool {
+	if c == nil {
+		return false
+	}
+	key, ok := responseCacheKeyFor(query)
+	if !ok {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.refreshing[key] {
+		return false
+	}
+	c.refreshing[key] = true
+	return true
+}
+
+// EndRefresh releases the refresh slot claimed by BeginRefresh.
+func (c *ResponseCache) EndRefresh(query *dns.Msg) {
+	if c == nil {
+		return
+	}
+	if key, ok := responseCacheKeyFor(query); ok {
+		c.mu.Lock()
+		delete(c.refreshing, key)
+		c.mu.Unlock()
+	}
 }
