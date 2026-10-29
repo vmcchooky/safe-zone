@@ -145,3 +145,4 @@ ml/data/derived/
 
 # Agent tooling, skills, and session metadata are local-only
 .agents/
+site/

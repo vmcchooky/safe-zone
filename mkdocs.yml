@@ -36,4 +36,13 @@ markdown_extensions:
   - pymdownx.superfences
   - admonition
   - pymdownx.details
-  - pymdownx.superfences
+
+# In-tree Markdown links are enforced by scripts/ops/check_docs_links.py
+# in CI (both files and anchors). Docs legitimately reference source and
+# evidence files outside docs/ (ui/, ml/, ops/, .github/) that resolve on
+# GitHub but not inside the built site, so the site build reports those as
+# info instead of failing --strict on them.
+validation:
+  links:
+    not_found: info
+    unrecognized_links: info

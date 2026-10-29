@@ -1,5 +1,13 @@
 # Safe Zone Production-Ready Gap Analysis & AI Execution Roadmap
 
+> **SUPERSEDED (2026-10-29).** This roadmap was reconciled against the repository on 2026-08-23 and
+> still references the legacy `dashboard.html` UI and `internal/api/views/` assets that the React
+> operator UI (`ui/`, embedded at `/app/`) replaced. Several items it lists — Brands CRUD, alert
+> webhook settings, whitelist statistics, and the OpenAPI contract — have since landed. Do not
+> execute the prompts below; use `docs/production-completion-checklist.md` (the live operational
+> checklist) and `docs/openapi/safe-zone.yaml` (the contract-checked API surface) instead. This file
+> remains as historical provenance only.
+
 This document serves as the master checklist and execution roadmap to transition **Safe Zone** from its current local-first state to a fully-matured, "perfect production" deployment on a single budget VPS. 
 
 It lists all functional gaps, UI/UX mismatches, and operational checklist items, and outlines a structured sequence of highly precise prompts for AI coding agents to address each gap sequentially.

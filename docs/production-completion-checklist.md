@@ -1,6 +1,6 @@
 # Safe Zone Production Completion Checklist
 
-Date: 2026-09-20 (main `7a4cb6f`; production runs `f87f923`, post-gate deploy pending ~25/09)
+Date: 2026-10-29 (reconciled against main `8a9112f`; production still runs the 2026-09-20 gate `f87f923` — no deploy has been performed since, and nothing in this pass changes that)
 
 This file is the single operational/release checklist for moving Safe Zone from the current repository state to production-ready, and then to "perfect production". For AI Engine, the only detailed technical source is `docs/specs/safe-zone-ai-plan.md`; all AI release evidence and completion status are tracked here.
 
@@ -28,7 +28,7 @@ These are already present and should be treated as the project foundation.
 - `[x]` Panic recovery exists for HTTP handlers and DoT handler.
 - `[x]` Dockerfile and Docker Compose exist.
 - `[x]` Production edge foundation exists: Caddy, `production-edge` Compose profile, production Compose override, DuckDNS update script, production cron example.
-- `[x]` OpenAPI file exists at `docs/openapi/safe-zone.yaml`.
+- `[x]` OpenAPI file exists at `docs/openapi/safe-zone.yaml` and is contract-checked: every registered route on both services must stay documented (`go test ./internal/openapi/`), and the document is validated in CI with a pinned Redocly version.
 - `[x]` Runbooks exist for production edge, Redis outage, feed staleness, and certificate renewal; AI/ML/Agent incident response is consolidated in `docs/specs/safe-zone-ai-plan.md`.
 - `[x]` Local benchmarks exist for core analysis paths.
 - `[x]` CI/build validation exists through GitHub Actions.
@@ -139,11 +139,11 @@ Goal: operators can understand incidents without reading raw container logs by h
 - `[x]` `/metrics` exists on `core-api` and `dns-resolver`.
 - `[x]` `/readyz` reports `ok`/`degraded` as HTTP 200 and `not_ready` as HTTP 503, returns only `ok`/`unavailable` per check, logs the raw error, and increments per-check counters.
 - `[x]` In-memory request counts, bytes, duration, and status summaries exist.
-- `[x]` Metrics intentionally stay JSON-only for the single-VPS MVP; the alert baseline consumes JSON snapshots.
+- `[x]` Metrics are JSON-first for the single-VPS MVP and the alert baseline consumes JSON snapshots; an admin-gated Prometheus exposition also exists at `/metrics/prometheus` (added 2026-10).
 - `[x]` Webhook/Slack/Telegram/email alerting exists through agent tasks, and baseline production alert rules are documented.
 - `[x]` Structured JSON logging exists across HTTP request logs, panic recovery, agent runtime events, and lower-level cache/store/risk helpers.
 - `[x]` HTTP responses and request logs carry `X-Request-ID`, and scheduled/background jobs emit shared `run_id` values for correlation.
-- `[x]` Explicitly stay JSON-only for metrics in MVP instead of adding Prometheus right now.
+- `[x]` Prometheus exposition added behind the admin gate instead of a public scrape surface; JSON remains the default alerting path.
 - `[x]` Add alert rules for service down, Redis unavailable, feed stale, high 5xx rate, DoH upstream failure, and high latency.
 - `[x]` Add log retention policy for Docker JSON logs, not only files under `/opt/safe-zone/logs/*.log`.
 
@@ -151,7 +151,7 @@ Steps:
 
 1. Keep new runtime logs on the same JSON schema and preserve `request_id` / `run_id` fields in future handlers and jobs.
 2. Reuse the shared `run_id` pattern for any new scheduled or asynchronous production task.
-3. Revisit Prometheus only if the single-VPS JSON metrics path stops being sufficient.
+3. Keep `/metrics/prometheus` admin-gated; do not expose it publicly without an authenticated scrape path.
 4. Keep the alert rules file aligned with `/metrics` and `/` response contracts.
 5. Verify Docker log rotation and alert checks in the real production environment.
 
