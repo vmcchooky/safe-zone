@@ -66,6 +66,7 @@ func newHandlerTestServer(t *testing.T) *handlerTestServer {
 	mux.HandleFunc("/", handler.StatusHandler)
 	mux.HandleFunc("/v1/status", handler.StatusHandler)
 	mux.HandleFunc("/metrics", handler.RequireAdminFunc(handler.MetricsHandler))
+	mux.HandleFunc("/metrics/prometheus", handler.RequireAdminFunc(handler.MetricsPrometheusHandler))
 	mux.HandleFunc("/v1/version", handler.VersionHandler)
 	mux.HandleFunc("/block", handler.BlockPageHandler)
 	mux.HandleFunc("/block/report", handler.BlockReportHandler)
