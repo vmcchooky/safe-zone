@@ -63,10 +63,15 @@ const (
 	// A rollback publishes it so a separate dns-resolver process reloads
 	// immediately; the poll reconciler covers Redis being disabled.
 	whitelistConfigReloadEventType = "whitelist_updated"
-	configReloadSourceStartup      = "startup"
-	configReloadSourceLocalWrite   = "local_write"
-	configReloadSourcePubSub       = "pubsub"
-	configReloadSourceReconcile    = "reconcile"
+	// clientMappingsReloadEventType shares the config reload channel too. A
+	// client mapping change bumps the durable revision; dns-resolver keeps its
+	// own CIDR index, so core-api publishes this to make it rebuild now
+	// instead of waiting for the poll reconciler or a restart.
+	clientMappingsReloadEventType = "client_mappings_updated"
+	configReloadSourceStartup     = "startup"
+	configReloadSourceLocalWrite  = "local_write"
+	configReloadSourcePubSub      = "pubsub"
+	configReloadSourceReconcile   = "reconcile"
 )
 
 var replaceFileLocks sync.Map

@@ -146,6 +146,7 @@ func (s *Service) runConfigReloadReconciler() {
 		case <-ticker.C:
 			s.reconcileAnalysisConfig()
 			s.reconcileWhitelist()
+			s.reconcileClientMappings()
 		}
 	}
 }
@@ -169,6 +170,8 @@ func (s *Service) handleConfigReloadMessage(raw string) {
 		s.handleAnalysisConfigReloadEvent(event)
 	case whitelistConfigReloadEventType:
 		s.handleWhitelistConfigReloadEvent(event)
+	case clientMappingsReloadEventType:
+		s.handleClientMappingsReloadEvent(event)
 	}
 }
 
@@ -258,6 +261,60 @@ func (s *Service) handleWhitelistConfigReloadEvent(event analysisConfigReloadEve
 	}
 
 	logjson.Info("whitelist reload applied", map[string]any{
+		"service":       "risk",
+		"channel":       s.configReloadChan,
+		"old_revision":  oldRevision,
+		"new_revision":  newRevision,
+		"event_source":  event.Source,
+		"event_time":    event.UpdatedAt,
+		"reload_source": configReloadSourcePubSub,
+		"node_role":     s.nodeRole,
+	})
+}
+
+func (s *Service) handleClientMappingsReloadEvent(event analysisConfigReloadEvent) {
+	revision, err := strconv.ParseInt(strings.TrimSpace(event.Revision), 10, 64)
+	if err != nil || revision <= 0 {
+		logjson.Warn("client mappings reload event has an invalid revision", map[string]any{
+			"service":        "risk",
+			"channel":        s.configReloadChan,
+			"event_revision": event.Revision,
+			"error":          "revision must be a positive integer",
+		})
+		return
+	}
+	if s.store == nil || !s.store.Enabled() {
+		return
+	}
+	if current := s.store.CIDRMappingRevision(); revision == current {
+		logjson.Info("client mappings reload ignored", map[string]any{
+			"service":          "risk",
+			"channel":          s.configReloadChan,
+			"event_revision":   revision,
+			"current_revision": current,
+			"event_source":     event.Source,
+			"ignore_reason":    "duplicate_or_self_loop",
+			"node_role":        s.nodeRole,
+		})
+		return
+	}
+
+	oldRevision, newRevision, applied, err := s.reloadClientMappingsFromStore()
+	if err != nil {
+		logjson.Warn("client mappings reload from store failed", map[string]any{
+			"service":        "risk",
+			"channel":        s.configReloadChan,
+			"event_revision": revision,
+			"event_source":   event.Source,
+			"error":          err.Error(),
+		})
+		return
+	}
+	if !applied {
+		return
+	}
+
+	logjson.Info("client mappings reload applied", map[string]any{
 		"service":       "risk",
 		"channel":       s.configReloadChan,
 		"old_revision":  oldRevision,
@@ -387,6 +444,65 @@ func (s *Service) reloadWhitelistFromStore() (int64, int64, bool, error) {
 	return current, s.whitelist.Revision(), true, nil
 }
 
+// reconcileClientMappings compares the durable client_mappings revision with
+// the one this process's CIDR index was built from. core-api and dns-resolver
+// share the SQLite file but not the cache, so this is the path that applies a
+// mapping written by the other process when Redis is disabled.
+func (s *Service) reconcileClientMappings() {
+	if s == nil {
+		return
+	}
+
+	oldRevision, newRevision, applied, err := s.reloadClientMappingsFromStore()
+	if err != nil {
+		logjson.Warn("client mappings reconciliation failed", map[string]any{
+			"service":       "risk",
+			"poll_interval": configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval).String(),
+			"error":         err.Error(),
+			"node_role":     s.nodeRole,
+		})
+		return
+	}
+	if !applied {
+		return
+	}
+
+	logjson.Info("client mappings reconciliation applied", map[string]any{
+		"service":       "risk",
+		"old_revision":  oldRevision,
+		"new_revision":  newRevision,
+		"poll_interval": configDuration(s.configReloadPoll, defaultAnalysisConfigReloadPollInterval).String(),
+		"reload_source": configReloadSourceReconcile,
+		"node_role":     s.nodeRole,
+	})
+}
+
+// reloadClientMappingsFromStore rebuilds the in-process CIDR index when the
+// durable revision is ahead of the loaded one. A failed rebuild leaves the
+// previous index and revision in place, so the next tick retries.
+func (s *Service) reloadClientMappingsFromStore() (int64, int64, bool, error) {
+	if s == nil || s.store == nil || !s.store.Enabled() {
+		return 0, 0, false, store.ErrDisabled
+	}
+
+	current := s.store.CIDRMappingRevision()
+	revision, err := s.store.GetClientMappingsRevision(context.Background())
+	if err != nil {
+		return current, 0, false, err
+	}
+	if revision == current {
+		return current, revision, false, nil
+	}
+
+	if _, err := s.store.ReconcileCIDRMappings(context.Background()); err != nil {
+		return current, revision, false, err
+	}
+	// The reload records the revision it actually read, which can be newer
+	// than the one this call compared against if another mutation committed
+	// in flight; report the applied value.
+	return current, s.store.CIDRMappingRevision(), true, nil
+}
+
 // PublishWhitelistReload tells the other process to reload its allow list.
 //
 // It returns whether a message was actually published. Redis being disabled is
@@ -434,6 +550,60 @@ func (s *Service) PublishWhitelistReload(ctx context.Context, revision int64) (b
 	}
 
 	logjson.Info("whitelist reload published", correlation.Fields(ctx, map[string]any{
+		"service":      "risk",
+		"channel":      channel,
+		"revision":     revision,
+		"event_source": eventSource,
+		"node_role":    s.nodeRole,
+	}))
+	return true, nil
+}
+
+// PublishClientMappingsReload tells the other process to rebuild its CIDR
+// index. It returns whether a message was actually published; Redis being
+// disabled is not an error because the poll reconciler is the fallback.
+func (s *Service) PublishClientMappingsReload(ctx context.Context, revision int64) (bool, error) {
+	if s == nil || revision <= 0 {
+		return false, nil
+	}
+	if s.redis == nil || !s.redis.Enabled() {
+		return false, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	channel := s.configReloadChan
+	if channel == "" {
+		channel = defaultAnalysisConfigReloadChannel
+	}
+	eventSource := configReloadSourceLocalWrite
+	if s.nodeRole != "" {
+		eventSource = s.nodeRole
+	}
+
+	event := analysisConfigReloadEvent{
+		Type:      clientMappingsReloadEventType,
+		Revision:  strconv.FormatInt(revision, 10),
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano),
+		Source:    eventSource,
+	}
+	err := s.withRedis(ctx, func(redisCtx context.Context) error {
+		return s.redis.PublishJSON(redisCtx, channel, event)
+	})
+	if err != nil {
+		if errors.Is(err, cache.ErrDisabled) {
+			return false, nil
+		}
+		logjson.Warn("client mappings reload publish failed", correlation.Fields(ctx, map[string]any{
+			"service":  "risk",
+			"channel":  channel,
+			"revision": revision,
+			"error":    err.Error(),
+		}))
+		return false, err
+	}
+
+	logjson.Info("client mappings reload published", correlation.Fields(ctx, map[string]any{
 		"service":      "risk",
 		"channel":      channel,
 		"revision":     revision,
