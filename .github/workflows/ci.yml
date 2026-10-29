@@ -133,6 +133,36 @@ jobs:
             exit 1
           fi
 
+  # Boot the developer stack for real. compose-config only renders YAML; the
+  # published-port DoH regression and the admin-secret rotation regression that
+  # shipped past it are both invisible without running containers, so this job
+  # builds the images and exercises the stack end to end. Diagnostics are
+  # uploaded on failure; the stack is torn down in every outcome.
+  compose-smoke:
+    name: Compose smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run compose smoke
+        run: bash scripts/ops/compose-smoke.sh
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: compose-smoke-diagnostics
+          path: tmp/compose-smoke/
+          if-no-files-found: ignore
+
+      # The script tears the stack down in its own EXIT trap; this step only
+      # matters if the runner died before that trap was installed.
+      - name: Tear down stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml down -v --remove-orphans
+
   # The deploy helper and the two optional monitoring scripts have no Go
   # package to hang tests off. Run their shell suites here, and run the
   # PowerShell parity suite on Windows because its compose stub is a .cmd.
