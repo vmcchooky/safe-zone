@@ -130,7 +130,19 @@ func replaceFile(tmpPath, finalPath string) error {
 	if err := os.Remove(finalPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	return os.Rename(tmpPath, finalPath)
+	if err := os.Rename(tmpPath, finalPath); err != nil {
+		// The final path is already gone at this point: the next reader sees
+		// a missing file rather than a stale one. Callers treat that as
+		// "rebuild from source", so log the consequence instead of letting a
+		// bare rename error hide why the cache appeared to vanish.
+		logjson.Warn("adblock cache replace failed after removing final file", map[string]any{
+			"final_path":  finalPath,
+			"error":       err.Error(),
+			"consequence": "next reader rebuilds from source instead of using the old cache",
+		})
+		return err
+	}
+	return nil
 }
 
 func createReplaceTempFile(finalPath string) (*os.File, string, error) {

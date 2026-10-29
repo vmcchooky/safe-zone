@@ -35,6 +35,7 @@ func NewRouter(h *handlers.Handler, agentEngine *agent.Engine, assetsFS fs.FS, a
 	// a bearer token; see ops/alerts/safe-zone-alert-rules.yaml and
 	// ops/grafana/safe-zone-dashboard.json.
 	mux.HandleFunc("/metrics", h.RequireAdminFunc(h.MetricsHandler))
+	mux.HandleFunc("/metrics/prometheus", h.RequireAdminFunc(h.MetricsPrometheusHandler))
 	mux.HandleFunc("/v1/cache/flush", h.RequireAdminForMutationFunc(h.CacheFlushHandler))
 	mux.HandleFunc("/v1/logs/export", h.RequireAdminFunc(h.LogsExportHandler))
 

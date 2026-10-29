@@ -118,12 +118,10 @@
     },
     "fp-013": {
       "verdict": "SAFE",
-      "score": 35,
+      "score": 0,
       "policy": "allow",
       "decision": "",
-      "reasons": [
-        "high_entropy_dga_suspected"
-      ]
+      "reasons": null
     },
     "fp-014": {
       "verdict": "SAFE",

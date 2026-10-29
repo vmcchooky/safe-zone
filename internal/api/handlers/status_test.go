@@ -435,3 +435,33 @@ func TestHealthHandler(t *testing.T) {
 		t.Fatal("expected health body")
 	}
 }
+
+// /metrics/prometheus serves the identical label set as /metrics in the
+// Prometheus text format, so it inherits the exact same gate: anonymous 401,
+// guest 403, admin only.
+func TestMetricsPrometheusEndpointRequiresAuth(t *testing.T) {
+	ts := newHandlerTestServer(t)
+
+	anonResp, err := ts.Client.Get(ts.Server.URL + "/metrics/prometheus")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = anonResp.Body.Close()
+	if anonResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("anonymous /metrics/prometheus = %d, want 401", anonResp.StatusCode)
+	}
+
+	guestReq, err := http.NewRequest(http.MethodGet, ts.Server.URL+"/metrics/prometheus", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	guestReq.AddCookie(enableGuestAccount(t, ts))
+	guestResp, err := ts.Client.Do(guestReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = guestResp.Body.Close()
+	if guestResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("guest /metrics/prometheus = %d, want 403", guestResp.StatusCode)
+	}
+}

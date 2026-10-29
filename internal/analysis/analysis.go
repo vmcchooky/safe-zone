@@ -277,7 +277,12 @@ func (a *Analyzer) analyzeWithBrands(input string, brands []Brand) Result {
 		reasons = append(reasons, reason)
 	}
 
-	// 8. Shannon Entropy Analysis (DGA detection)
+	// 8. DGA detection: Shannon entropy combined with English bigram
+	// likelihood. Entropy alone flags legitimate brandable names ("zoom",
+	// "flickr") whose character spread happens to be uniform; their letter
+	// pairs stay English-like, so requiring irregular bigram pairs too keeps
+	// the flag on genuinely algorithmic labels. The soft branch extends the
+	// same evidence below the operator threshold for small-alphabet DGAs.
 	rootDomain := getRootDomain(domain)
 	mainLabel := getMainLabel(domain)
 	if len(mainLabel) >= 10 &&
@@ -287,8 +292,7 @@ func (a *Analyzer) analyzeWithBrands(input string, brands []Brand) Result {
 		// suppression; only the delegated subset receives CDN FP/TLS caps.
 		!IsSharedHostingRoot(rootDomain) &&
 		!IsTrustedBrandSuffix(domain, brands) {
-		entropy := ShannonEntropy(mainLabel)
-		if entropy > a.config.EntropyThreshold {
+		if isDGASuspected(mainLabel, a.config.EntropyThreshold) {
 			score += a.config.EntropyScore
 			reasons = append(reasons, highEntropyDGAReason)
 		}
