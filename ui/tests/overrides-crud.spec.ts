@@ -93,13 +93,16 @@ test.describe('overrides page', () => {
 
     await page.goto('/app/overrides');
     await expect(page.getByText('existing.example')).toBeVisible();
+    const overrideForm = page
+      .locator('section', { has: page.getByRole('heading', { name: 'Add New Override' }) })
+      .first();
 
     // The action control is a toggle button showing the current action
     // ("Block" by default); click it once to submit an allow override.
     await page.getByPlaceholder('e.g., trusted-domain.com').fill('new-rule.example');
     await page.getByPlaceholder('Reason for override...').fill('allowlisted by ops');
     await page.getByRole('button', { name: 'Block', exact: true }).click();
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await overrideForm.getByRole('button', { name: 'Add', exact: true }).click();
 
     await expect.poll(() => created !== null).toBe(true);
     const body = JSON.parse((created as { body: string }).body);
@@ -122,9 +125,12 @@ test.describe('overrides page', () => {
     });
 
     await page.goto('/app/overrides');
+    const overrideForm = page
+      .locator('section', { has: page.getByRole('heading', { name: 'Add New Override' }) })
+      .first();
     await page.getByPlaceholder('e.g., trusted-domain.com').fill('bad..domain');
     await page.getByPlaceholder('Reason for override...').fill('testing failure path');
-    await page.getByRole('button', { name: 'Add', exact: true }).click();
+    await overrideForm.getByRole('button', { name: 'Add', exact: true }).click();
 
     await expect(page.getByText('invalid domain')).toBeVisible();
   });
