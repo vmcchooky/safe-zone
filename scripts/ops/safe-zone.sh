@@ -662,8 +662,10 @@ restore_redis() {
     src_rdb="${src_dir}/dump.rdb"
   fi
 
-  if [ ! -f "$src_rdb" ]; then
-    log_warn "No redis-dump.rdb or dump.rdb found in ${src_dir}; skipping Redis restore"
+  # The AOF bundle is the authoritative snapshot for appendonly deployments;
+  # an AOF-only bundle must restore even when the RDB copy is absent.
+  if [ ! -f "$src_rdb" ] && [ ! -f "${src_dir}/redis-aof.tar.gz" ]; then
+    log_warn "No redis-dump.rdb, dump.rdb or redis-aof.tar.gz found in ${src_dir}; skipping Redis restore"
     return 0
   fi
 

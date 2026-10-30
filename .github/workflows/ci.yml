@@ -261,6 +261,10 @@ jobs:
         shell: pwsh
         run: ./scripts/ops/tests/safe-zone-preflight-test.ps1
 
+      - name: Run PowerShell backup/restore contract tests
+        shell: pwsh
+        run: ./scripts/ops/tests/safe-zone-backup-restore-test.ps1
+
   # Each gate group gets its own runner. Measured on a single quality runner,
   # all of these ran against the same vCPUs: the task graph was 656s wall-clock
   # for 2671s of task time, i.e. saturated at ~4x parallelism. Splitting does not

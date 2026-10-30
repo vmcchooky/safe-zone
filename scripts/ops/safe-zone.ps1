@@ -14,12 +14,33 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
+# SAFE_ZONE_BACKUP_DIR is the sh helper's override; honour it here too so a
+# Windows drill or an operator with backups on another volume gets the same
+# contract from both entrypoints. Relative paths resolve from the repo root,
+# like every other path the helper reads.
 $BackupsRoot = Join-Path $RepoRoot 'backups'
+if ($env:SAFE_ZONE_BACKUP_DIR) {
+  $configuredBackupDir = $env:SAFE_ZONE_BACKUP_DIR.Trim()
+  if ($configuredBackupDir) {
+    if ([System.IO.Path]::IsPathRooted($configuredBackupDir)) {
+      $BackupsRoot = $configuredBackupDir
+    } else {
+      $BackupsRoot = Join-Path $RepoRoot $configuredBackupDir
+    }
+  }
+}
 $TmpRoot = Join-Path $RepoRoot 'tmp'
 $SqliteContainerPath = '/app/data/safe-zone.db'
 
-if (-not $PSBoundParameters.ContainsKey('Stack') -and $env:SAFE_ZONE_SCRIPT_STACK) {
-  $Stack = $env:SAFE_ZONE_SCRIPT_STACK
+if (-not $PSBoundParameters.ContainsKey('Stack')) {
+  # SAFE_ZONE_SCRIPT_STACK is the internal variable mise forwards; SAFE_ZONE_STACK
+  # is the public one the sh helper documents. A drill that sets only the
+  # latter used to run the production file set against a dev stack.
+  if ($env:SAFE_ZONE_SCRIPT_STACK) {
+    $Stack = $env:SAFE_ZONE_SCRIPT_STACK
+  } elseif ($env:SAFE_ZONE_STACK) {
+    $Stack = $env:SAFE_ZONE_STACK
+  }
 }
 if (-not $PSBoundParameters.ContainsKey('BackupPath') -and $env:SAFE_ZONE_SCRIPT_BACKUP_PATH) {
   $BackupPath = $env:SAFE_ZONE_SCRIPT_BACKUP_PATH
@@ -247,7 +268,14 @@ function Get-ComposeContainerId {
     $composeArgs += @('ps', '-q', $ServiceName)
   }
 
-  $rawOutput = & docker compose @composeArgs
+  # Use the same SAFE_ZONE_COMPOSE-aware runner as every other compose call.
+  # Calling `docker compose` directly made an override invisible here, so a
+  # drill or wrapper project looked up containers in the wrong project.
+  $rawOutput = Invoke-ComposeCommand -ComposeArgs $composeArgs
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warn "docker compose ps failed with exit code $LASTEXITCODE while looking up $ServiceName"
+    return $null
+  }
   if ($rawOutput -is [array]) {
     $rawOutput = $rawOutput -join "`n"
   }
@@ -491,15 +519,34 @@ function Backup-Redis {
         }
         Start-Sleep -Seconds 1
       }
+      # Archive to a regular file with tar rather than piping `docker cp` into
+      # gzip. gzip.exe is not present on a stock Windows install (it only
+      # arrives with Git for Windows), while tar ships with Windows 10+.
+      # docker cp writes the directory into a staging directory; tar then
+      # packs it, so the bundle format is unchanged for the restore path.
       $aofBundle = Join-Path $TargetDir 'redis-aof.tar.gz'
-      Invoke-ComposeCommand -ComposeArgs @(
-        'cp', "${containerId}:/data/appendonlydir", '-'
-      ) | gzip.exe > $aofBundle
-      if ($rewriteDone -and $LASTEXITCODE -eq 0 -and (Get-Item $aofBundle).Length -gt 100) {
-        Write-Host 'Captured Redis AOF bundle (authoritative for appendonly deployments)'
-      } else {
-        Write-Warn 'Could not capture the Redis AOF bundle; an appendonly deployment cannot fully restore from this backup RDB alone'
+      $aofStage = Join-Path ([System.IO.Path]::GetTempPath()) ("safe-zone-redis-aof-" + [guid]::NewGuid().ToString('N'))
+      New-Item -ItemType Directory -Force -Path $aofStage | Out-Null
+      try {
+        & docker cp "${containerId}:/data/appendonlydir" $aofStage
+        if ($LASTEXITCODE -ne 0) {
+          throw 'docker cp failed while exporting the Redis AOF directory'
+        }
+        & tar -czf $aofBundle -C $aofStage 'appendonlydir'
+        if ($LASTEXITCODE -ne 0) {
+          throw 'tar failed while archiving the Redis AOF directory'
+        }
+        if ($rewriteDone -and (Test-Path $aofBundle -PathType Leaf) -and (Get-Item $aofBundle).Length -gt 100) {
+          Write-Host 'Captured Redis AOF bundle (authoritative for appendonly deployments)'
+        } else {
+          Write-Warn 'Could not capture the Redis AOF bundle; an appendonly deployment cannot fully restore from this backup RDB alone'
+          Remove-Item $aofBundle -ErrorAction SilentlyContinue
+        }
+      } catch {
+        Write-Warn "Could not capture the Redis AOF bundle: $_"
         Remove-Item $aofBundle -ErrorAction SilentlyContinue
+      } finally {
+        Remove-Item $aofStage -Recurse -Force -ErrorAction SilentlyContinue
       }
     }
   } catch {
@@ -772,9 +819,11 @@ function Restore-Redis {
   if (-not (Test-Path $sourceRdb -PathType Leaf)) {
     $sourceRdb = Join-Path $BackupDir 'dump.rdb'
   }
+  $aofBundle = Join-Path $BackupDir 'redis-aof.tar.gz'
+  $hasAofBundle = Test-Path $aofBundle -PathType Leaf
 
-  if (-not (Test-Path $sourceRdb -PathType Leaf)) {
-    Write-Warn "No redis-dump.rdb or dump.rdb found in $BackupDir; skipping Redis restore"
+  if (-not (Test-Path $sourceRdb -PathType Leaf) -and -not $hasAofBundle) {
+    Write-Warn "No redis-dump.rdb, dump.rdb or redis-aof.tar.gz found in $BackupDir; skipping Redis restore"
     return
   }
 
@@ -805,8 +854,7 @@ function Restore-Redis {
     'run', '--rm', 'redis', 'sh', '-c', 'rm -rf /data/appendonlydir /data/appendonly.aof /data/dump.rdb'
   )
 
-  $aofBundle = Join-Path $BackupDir 'redis-aof.tar.gz'
-  if (Test-Path $aofBundle -PathType Leaf) {
+  if ($hasAofBundle) {
     $unpacked = Join-Path ([System.IO.Path]::GetTempPath()) ("safe-zone-redis-aof-" + [System.Guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $unpacked | Out-Null
     try {

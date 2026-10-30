@@ -80,9 +80,24 @@ Run it locally against a running Docker daemon:
 bash scripts/ops/tests/restore-drill-test.sh
 ```
 
+Windows operators can run the same drill against Docker Desktop:
+
+```powershell
+pwsh ./scripts/ops/tests/restore-drill-test.ps1
+```
+
+It mirrors the shell drill (isolated Compose project, seeded brands and
+analysis cache, checksum verification, mutation, restore, live API checks) and
+drives `scripts/ops/safe-zone.ps1` end to end, so a parity regression in the
+Windows helper fails the drill instead of only the stub contract test. The CI
+`Restore drill` job stays on Linux because GitHub's Windows runners cannot run
+Linux containers; the `Ops script tests (Windows)` job runs the stub-based
+`safe-zone-backup-restore-test.ps1` contract test on every pull request.
+
 Failures write `docker compose ps`, full logs, and the seeded/observed API
-state to `tmp/restore-drill/` (uploaded as a CI artifact) and always tear the
-stack down with `down -v --remove-orphans`.
+state to `tmp/restore-drill/` (or `tmp/restore-drill-win/` on Windows; uploaded
+as a CI artifact) and always tear the stack down with
+`down -v --remove-orphans`.
 
 ### Findings recorded 2026-10-29
 
