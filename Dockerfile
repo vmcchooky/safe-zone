@@ -1,4 +1,4 @@
-FROM node:24-alpine AS ui-build
+FROM node:25-alpine AS ui-build
 # Node is pinned by mise.toml [tools] node (24); keep this image in sync so CI,
 # local builds and release images compile the UI with the same toolchain.
 
