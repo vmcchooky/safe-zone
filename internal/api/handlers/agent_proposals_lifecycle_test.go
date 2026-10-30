@@ -133,6 +133,33 @@ func TestAgentProposalsRejectThenApproveCreatesNoOverride(t *testing.T) {
 	}
 }
 
+func TestAgentProposalsGroupOverrideConflictReturns409(t *testing.T) {
+	ts := newHandlerTestServer(t)
+	id := seedProposal(t, ts, "group-policy.test")
+	groupID, err := ts.Store.CreateGroup(context.Background(), "family", "", nil, false, true)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := ts.Store.UpsertGroupOverride(context.Background(), groupID, "group-policy.test", "allow", "family allow"); err != nil {
+		t.Fatalf("upsert group override: %v", err)
+	}
+
+	code, data := doProposalAdmin(t, ts, http.MethodPost, "/v1/agent/proposals",
+		`{"id":`+strconv.FormatInt(id, 10)+`,"decision":"approve","reason":"late"}`)
+	if code != http.StatusConflict {
+		t.Fatalf("group-policy conflict = %d, want 409: %s", code, data)
+	}
+	if !strings.Contains(string(data), "group override") {
+		t.Fatalf("conflict body should name the group override: %s", data)
+	}
+	if override, _ := ts.Store.GetOverride(context.Background(), "group-policy.test"); override != nil {
+		t.Fatalf("refused approval created an override: %+v", override)
+	}
+	if pending, err := ts.Store.GetAgentProposal(context.Background(), id); err != nil || pending.Status != store.AgentProposalPending {
+		t.Fatalf("proposal mutated by refused approval: %+v (%v)", pending, err)
+	}
+}
+
 func TestAgentProposalsDecisionsRecordAuditEvents(t *testing.T) {
 	ts := newHandlerTestServer(t)
 	approveID := seedProposal(t, ts, "audited-approve.test")

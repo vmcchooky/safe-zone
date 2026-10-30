@@ -133,28 +133,39 @@ func (d *DB) CreateAgentProposal(ctx context.Context, p AgentProposal) (AgentPro
 	return d.GetAgentProposal(ctx, id)
 }
 
-// GetAgentProposal returns a single proposal by id.
-func (d *DB) GetAgentProposal(ctx context.Context, id int64) (AgentProposal, error) {
+// agentProposalScanner is satisfied by *sql.Row and *sql.Rows. The same
+// projection is read inside and outside a transaction, so the scan and the
+// reasons decoding live in one place.
+type agentProposalScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanAgentProposal(row agentProposalScanner) (AgentProposal, error) {
 	var p AgentProposal
-	if !d.Enabled() {
-		return p, ErrDisabled
-	}
 	var reasonsJSON string
-	err := d.db.QueryRowContext(ctx, `
-		SELECT id, task_name, domain, action, score, confidence, reasons, evidence,
-		       actor, scope, status, expires_at,
-		       COALESCE(reviewer, ''), COALESCE(created_at, ''), COALESCE(updated_at, '')
-		FROM agent_proposals WHERE id = ?`, id).
-		Scan(&p.ID, &p.TaskName, &p.Domain, &p.Action, &p.Score, &p.Confidence,
-			&reasonsJSON, &p.Evidence, &p.Actor, &p.Scope, &p.Status,
-			&p.ExpiresAt, &p.Reviewer, &p.CreatedAt, &p.UpdatedAt)
-	if err != nil {
+	if err := row.Scan(&p.ID, &p.TaskName, &p.Domain, &p.Action, &p.Score, &p.Confidence,
+		&reasonsJSON, &p.Evidence, &p.Actor, &p.Scope, &p.Status,
+		&p.ExpiresAt, &p.Reviewer, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return AgentProposal{}, err
 	}
 	if err := json.Unmarshal([]byte(reasonsJSON), &p.Reasons); err != nil {
 		return AgentProposal{}, fmt.Errorf("decode proposal reasons: %w", err)
 	}
 	return p, nil
+}
+
+const agentProposalColumns = `
+		SELECT id, task_name, domain, action, score, confidence, reasons, evidence,
+		       actor, scope, status, expires_at,
+		       COALESCE(reviewer, ''), COALESCE(created_at, ''), COALESCE(updated_at, '')
+		FROM agent_proposals`
+
+// GetAgentProposal returns a single proposal by id.
+func (d *DB) GetAgentProposal(ctx context.Context, id int64) (AgentProposal, error) {
+	if !d.Enabled() {
+		return AgentProposal{}, ErrDisabled
+	}
+	return scanAgentProposal(d.db.QueryRowContext(ctx, agentProposalColumns+` WHERE id = ?`, id))
 }
 
 // ListAgentProposals returns proposals filtered by status (empty means
@@ -234,24 +245,43 @@ var ErrAgentProposalConflict = errors.New("agent proposal was reviewed concurren
 // resource and safe to echo; only the sentinel decides the status code.
 var ErrProposalNotReviewable = errors.New("agent proposal is not reviewable")
 
-// ReviewAgentProposal transitions a pending, unexpired proposal to
-// approved or rejected. Expired rows report AgentProposalExpired without
-// mutating, so reviewers can distinguish stale evidence from rejection.
+// ErrProposalGroupOverride reports that an approval would overwrite explicit
+// group policy created after the proposal was queued. The proposal stays
+// pending: the operator can remove the group override and retry, or reject the
+// proposal. It is distinct from a store failure so the HTTP layer can answer
+// 409 instead of 500.
+var ErrProposalGroupOverride = errors.New("agent proposal conflicts with an existing group override")
+
+// ReviewAgentProposal transitions a pending, unexpired proposal to approved or
+// rejected.
 //
-// The read, the expiry check and the write are not one operation, so the
-// UPDATE carries `AND status = 'pending'` and the affected row count is
-// checked. Without that check a caller that asked to reject a proposal that
-// another reviewer approved a moment earlier got no error at all: its UPDATE
-// matched zero rows, and the GetAgentProposal that followed returned the
-// winner's row — so a rejection was reported back to the operator as a success
-// carrying someone else's approval.
+// Approval also writes the local override, and both the group-policy re-check
+// and the override write happen in the same transaction as the status change.
+// They used to be separate calls from the HTTP handler: the proposal was
+// committed as approved first, and an override failure left it approved but
+// unenforced — while a retry was rejected because the proposal was no longer
+// pending. One transaction makes the pair atomic, and a failed transaction
+// leaves the proposal pending and retryable.
+//
+// Expiry is evaluated against expires_at at review time, so no background
+// sweeper is required. Expired rows report ErrProposalNotReviewable without
+// mutating, so reviewers can distinguish stale evidence from rejection.
 func (d *DB) ReviewAgentProposal(ctx context.Context, id int64, approve bool, reviewer, reason string) (AgentProposal, error) {
-	p, err := d.GetAgentProposal(ctx, id)
+	if !d.Enabled() {
+		return AgentProposal{}, ErrDisabled
+	}
+	tx, err := d.db.BeginTx(ctx, nil)
+	if err != nil {
+		return AgentProposal{}, fmt.Errorf("begin proposal review transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	p, err := scanAgentProposal(tx.QueryRowContext(ctx, agentProposalColumns+` WHERE id = ?`, id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return AgentProposal{}, fmt.Errorf("%w: proposal %d does not exist", ErrProposalNotReviewable, id)
 		}
-		return AgentProposal{}, err
+		return AgentProposal{}, fmt.Errorf("read proposal %d: %w", id, err)
 	}
 	if p.Status != AgentProposalPending {
 		return AgentProposal{}, fmt.Errorf("%w: proposal %d is %s, only pending proposals are reviewable",
@@ -260,11 +290,32 @@ func (d *DB) ReviewAgentProposal(ctx context.Context, id int64, approve bool, re
 	if expired, err := time.Parse(time.RFC3339Nano, p.ExpiresAt); err != nil || !time.Now().Before(expired) {
 		return AgentProposal{}, fmt.Errorf("%w: proposal %d is expired", ErrProposalNotReviewable, id)
 	}
+
 	next := AgentProposalRejected
 	if approve {
+		// Group policy can appear between queueing and review. Re-check inside
+		// the transaction so an approval cannot silently overwrite it.
+		grouped, err := hasGroupOverrideForDomain(ctx, tx, p.Domain)
+		if err != nil {
+			return AgentProposal{}, fmt.Errorf("check group overrides for %s: %w", p.Domain, err)
+		}
+		if grouped {
+			return AgentProposal{}, fmt.Errorf("%w: proposal %d for %s", ErrProposalGroupOverride, id, p.Domain)
+		}
 		next = AgentProposalApproved
+		overrideReason := fmt.Sprintf("approved agent proposal #%d", id)
+		if detail := strings.TrimSpace(reason); detail != "" {
+			overrideReason += ": " + detail
+		}
+		if name := strings.TrimSpace(reviewer); name != "" {
+			overrideReason += " (reviewer: " + name + ")"
+		}
+		if err := upsertOverride(ctx, tx, p.Domain, p.Action, overrideReason); err != nil {
+			return AgentProposal{}, err
+		}
 	}
-	result, err := d.db.ExecContext(ctx, `
+
+	result, err := tx.ExecContext(ctx, `
 		UPDATE agent_proposals
 		SET status = ?, reviewer = ?, review_reason = ?, reviewed_at = datetime('now'),
 		    updated_at = datetime('now')
@@ -276,11 +327,27 @@ func (d *DB) ReviewAgentProposal(ctx context.Context, id int64, approve bool, re
 	if affected, rowsErr := result.RowsAffected(); rowsErr != nil {
 		return AgentProposal{}, fmt.Errorf("review proposal rows affected: %w", rowsErr)
 	} else if affected == 0 {
-		// Someone else transitioned it between the read above and this write.
-		// Report the conflict instead of returning their row as our result.
+		// The transaction serialises writers, so this is defensive: if the row
+		// stopped being pending despite the read above, report the conflict
+		// instead of returning another reviewer's row as our result.
 		return AgentProposal{}, fmt.Errorf("%w: proposal %d", ErrAgentProposalConflict, id)
 	}
-	return d.GetAgentProposal(ctx, id)
+
+	reviewed, err := scanAgentProposal(tx.QueryRowContext(ctx, agentProposalColumns+` WHERE id = ?`, id))
+	if err != nil {
+		return AgentProposal{}, fmt.Errorf("read reviewed proposal %d: %w", id, err)
+	}
+	if err := tx.Commit(); err != nil {
+		return AgentProposal{}, fmt.Errorf("commit proposal review: %w", err)
+	}
+	return reviewed, nil
+}
+
+// groupOverrideQueryer is the read subset shared by *sql.DB and *sql.Tx. The
+// approval path must do this lookup on its transaction; using d.db there would
+// wait forever for the single connection the transaction already holds.
+type groupOverrideQueryer interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
 // HasGroupOverrideForDomain reports whether any client group holds an
@@ -294,6 +361,10 @@ func (d *DB) HasGroupOverrideForDomain(ctx context.Context, domain string) (bool
 		// stop them. Fail closed instead.
 		return false, ErrDisabled
 	}
+	return hasGroupOverrideForDomain(ctx, d.db, domain)
+}
+
+func hasGroupOverrideForDomain(ctx context.Context, q groupOverrideQueryer, domain string) (bool, error) {
 	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
 	// Stop at the registrable label (eTLD+1): a row keyed on a public suffix
 	// would report "already overridden" for every domain in that namespace,
@@ -304,7 +375,7 @@ func (d *DB) HasGroupOverrideForDomain(ctx context.Context, domain string) (bool
 	for i := 0; i < len(parts) && i <= floor; i++ {
 		candidate := strings.Join(parts[i:], ".")
 		var id int64
-		err := d.db.QueryRowContext(ctx,
+		err := q.QueryRowContext(ctx,
 			`SELECT id FROM group_overrides WHERE domain = ? LIMIT 1`, candidate).Scan(&id)
 		if err == nil {
 			return true, nil

@@ -79,11 +79,22 @@ func (d *DB) ListOverrides(ctx context.Context, action string) ([]Override, erro
 	return overrides, rows.Err()
 }
 
+// overrideExecer is the subset of *sql.DB and *sql.Tx needed to write an
+// override. Keeping the write in a helper lets proposal approval apply the
+// override in the same transaction that transitions the proposal.
+type overrideExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
 // UpsertOverride creates or updates an override for a domain.
 func (d *DB) UpsertOverride(ctx context.Context, domain, action, reason string) error {
 	if !d.Enabled() {
 		return ErrDisabled
 	}
+	return upsertOverride(ctx, d.db, domain, action, reason)
+}
+
+func upsertOverride(ctx context.Context, exec overrideExecer, domain, action, reason string) error {
 	if action != "allow" && action != "block" {
 		return fmt.Errorf("invalid action %q: must be 'allow' or 'block'", action)
 	}
@@ -98,7 +109,7 @@ func (d *DB) UpsertOverride(ctx context.Context, domain, action, reason string) 
 	if !analysis.IsRegistrableDomain(domain) {
 		return fmt.Errorf("override domain %q is a public suffix or has no registrable label; use a domain you control such as example.com", domain)
 	}
-	_, err := d.db.ExecContext(ctx, `
+	_, err := exec.ExecContext(ctx, `
 		INSERT INTO local_overrides (domain, action, reason, updated_at)
 		VALUES (?, ?, ?, datetime('now'))
 		ON CONFLICT(domain) DO UPDATE SET

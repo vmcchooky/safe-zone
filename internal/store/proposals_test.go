@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -64,6 +66,139 @@ func TestAgentProposalLifecycle(t *testing.T) {
 	pending, err = db.ListAgentProposals(ctx, AgentProposalPending, 10)
 	if err != nil || len(pending) != 0 {
 		t.Fatalf("expected 0 pending after approval, got %d (%v)", len(pending), err)
+	}
+}
+
+func TestApprovingAProposalAppliesTheOverride(t *testing.T) {
+	db, err := New(":memory:", 30)
+	if err != nil {
+		t.Fatalf("create test store: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+
+	created, err := db.CreateAgentProposal(ctx, AgentProposal{
+		Domain: "approved-atomic.test", Action: "block", Score: 90, Confidence: 0.9,
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	reviewed, err := db.ReviewAgentProposal(ctx, created.ID, true, "alice", "confirmed phishing kit")
+	if err != nil {
+		t.Fatalf("approve proposal: %v", err)
+	}
+	if reviewed.Status != AgentProposalApproved {
+		t.Fatalf("status = %q, want approved", reviewed.Status)
+	}
+
+	override, err := db.GetOverride(ctx, "approved-atomic.test")
+	if err != nil {
+		t.Fatalf("read applied override: %v", err)
+	}
+	if override == nil || override.Action != "block" {
+		t.Fatalf("approval did not apply a block override: %+v", override)
+	}
+	for _, want := range []string{"approved agent proposal #" + strconv.FormatInt(created.ID, 10), "confirmed phishing kit", "reviewer: alice"} {
+		if !strings.Contains(override.Reason, want) {
+			t.Fatalf("override reason %q does not contain %q", override.Reason, want)
+		}
+	}
+}
+
+func TestApprovalRefusesAConflictingGroupOverride(t *testing.T) {
+	db, err := New(":memory:", 30)
+	if err != nil {
+		t.Fatalf("create test store: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+
+	created, err := db.CreateAgentProposal(ctx, AgentProposal{
+		Domain: "sub.conflict.test", Action: "block", Score: 90, Confidence: 0.9,
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	groupID, err := db.CreateGroup(ctx, "family", "", nil, false, true)
+	if err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if err := db.UpsertGroupOverride(ctx, groupID, "conflict.test", "allow", "family allow"); err != nil {
+		t.Fatalf("upsert group override: %v", err)
+	}
+
+	_, err = db.ReviewAgentProposal(ctx, created.ID, true, "alice", "late approval")
+	if !errors.Is(err, ErrProposalGroupOverride) {
+		t.Fatalf("approval over group policy = %v, want ErrProposalGroupOverride", err)
+	}
+	pending, err := db.GetAgentProposal(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("re-read proposal: %v", err)
+	}
+	if pending.Status != AgentProposalPending {
+		t.Fatalf("status = %q after refused approval, want pending", pending.Status)
+	}
+	if override, err := db.GetOverride(ctx, "sub.conflict.test"); err != nil || override != nil {
+		t.Fatalf("refused approval wrote an override: %+v (%v)", override, err)
+	}
+
+	// Rejection is still allowed: group policy blocks enforcement, not triage.
+	if _, err := db.ReviewAgentProposal(ctx, created.ID, false, "alice", "group policy wins"); err != nil {
+		t.Fatalf("reject proposal with group override: %v", err)
+	}
+}
+
+func TestApprovalFailureLeavesTheProposalPendingAndRetryable(t *testing.T) {
+	db, err := New(":memory:", 30)
+	if err != nil {
+		t.Fatalf("create test store: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	ctx := context.Background()
+
+	created, err := db.CreateAgentProposal(ctx, AgentProposal{
+		Domain: "retry-override.test", Action: "block", Score: 90, Confidence: 0.9,
+	})
+	if err != nil {
+		t.Fatalf("create proposal: %v", err)
+	}
+	// Inject the old failure mode: the override write fails after the proposal
+	// transition would have been committed by the previous two-step handler.
+	if _, err := db.db.ExecContext(ctx, `
+		CREATE TRIGGER fail_override_insert BEFORE INSERT ON local_overrides
+		WHEN NEW.domain = 'retry-override.test'
+		BEGIN
+			SELECT RAISE(ABORT, 'injected override failure');
+		END`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	if _, err := db.ReviewAgentProposal(ctx, created.ID, true, "alice", "first attempt"); err == nil {
+		t.Fatal("expected the injected override failure to abort the approval")
+	}
+	pending, err := db.GetAgentProposal(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("re-read proposal: %v", err)
+	}
+	if pending.Status != AgentProposalPending {
+		t.Fatalf("status = %q after failed approval, want pending", pending.Status)
+	}
+	if override, err := db.GetOverride(ctx, "retry-override.test"); err != nil || override != nil {
+		t.Fatalf("failed approval wrote an override: %+v (%v)", override, err)
+	}
+
+	if _, err := db.db.ExecContext(ctx, `DROP TRIGGER fail_override_insert`); err != nil {
+		t.Fatalf("drop failure trigger: %v", err)
+	}
+	reviewed, err := db.ReviewAgentProposal(ctx, created.ID, true, "alice", "retry")
+	if err != nil {
+		t.Fatalf("retry after the failure was not accepted: %v", err)
+	}
+	if reviewed.Status != AgentProposalApproved {
+		t.Fatalf("status = %q after retry, want approved", reviewed.Status)
+	}
+	if override, err := db.GetOverride(ctx, "retry-override.test"); err != nil || override == nil {
+		t.Fatalf("retry did not apply the override: %+v (%v)", override, err)
 	}
 }
 

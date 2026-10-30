@@ -19,9 +19,10 @@ type proposalReviewRequest struct {
 
 // AgentProposalsHandler lists agent enforcement proposals and records
 // human approve/reject decisions. Reads are available to authenticated
-// users; decisions require admin (wired in the router). Approving a block
-// proposal creates a normal operator-owned override through the existing
-// override path, so it stays revocable like any manual block.
+// users; decisions require admin (wired in the router). Approving a proposal
+// writes a normal operator-owned override in the same store transaction as the
+// status change, so an approval is never reported without its enforcement and
+// stays revocable like any manual override.
 func (h *Handler) AgentProposalsHandler(w http.ResponseWriter, r *http.Request) {
 	db := h.Risk.StoreDB()
 	if db == nil || !db.Enabled() {
@@ -64,12 +65,15 @@ func (h *Handler) AgentProposalsHandler(w http.ResponseWriter, r *http.Request) 
 		}
 		proposal, err := db.ReviewAgentProposal(r.Context(), req.ID, decision == "approve", reviewer, req.Reason)
 		if err != nil {
-			// Two distinct outcomes that used to share one branch. A proposal that
-			// is decided, expired, or absent is a conflict the operator can act on,
-			// and its detail names the proposal's own status, so it is echoed.
-			// Everything else came out of the store and is not the caller's to see.
+			// These outcomes are the operator's to act on: the proposal is
+			// decided, expired, absent, or conflicts with newer group policy.
+			// Their detail names the proposal's own resource state, so it is
+			// echoed. Everything else came out of the store and is not the
+			// caller's to see.
 			switch {
-			case errors.Is(err, store.ErrProposalNotReviewable), errors.Is(err, store.ErrAgentProposalConflict):
+			case errors.Is(err, store.ErrProposalNotReviewable),
+				errors.Is(err, store.ErrAgentProposalConflict),
+				errors.Is(err, store.ErrProposalGroupOverride):
 				httputil.WriteError(w, http.StatusConflict, err.Error())
 			default:
 				httputil.WriteStoreError(w, r, err, "failed to review proposal")
@@ -77,17 +81,6 @@ func (h *Handler) AgentProposalsHandler(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if decision == "approve" {
-			reason := "approved agent proposal #" + strconv.FormatInt(proposal.ID, 10)
-			if strings.TrimSpace(req.Reason) != "" {
-				reason += ": " + strings.TrimSpace(req.Reason)
-			}
-			if reviewer != "" {
-				reason += " (reviewer: " + reviewer + ")"
-			}
-			if err := h.Risk.UpsertOverride(r.Context(), proposal.Domain, proposal.Action, reason); err != nil {
-				httputil.WriteStoreError(w, r, err, "failed to apply the reviewed override")
-				return
-			}
 			_ = db.RecordAgentEvent(r.Context(), "audit", "proposal_approved", proposal.Domain,
 				`{"proposal_id":`+strconv.FormatInt(proposal.ID, 10)+`}`)
 		} else {

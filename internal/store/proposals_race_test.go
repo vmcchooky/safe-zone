@@ -4,19 +4,14 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 )
 
-// A late review is rejected by the pre-check, so the conflict path is only
-// reachable in a genuine interleaving: both reviewers read the row while it is
-// still pending, and one UPDATE wins.
-//
-// The store is opened with a single connection, so goroutines sharing one handle
-// barely interleave and the race would stay hidden. Two handles on the same
-// file is both the reliable reproduction and the more faithful model: this is
-// what two processes, or a service and a CLI, actually do.
+// Reviews now run in one immediate transaction, so concurrent reviewers are
+// serialised: the second transaction starts after the first commits and reads a
+// decided row. Two handles on the same file model what two processes, or a
+// service and a CLI, actually do; one handle cannot expose the lock behaviour.
 func newTwoHandleDB(t *testing.T) (*DB, *DB) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "race.db")
@@ -46,65 +41,70 @@ func seedRaceProposal(t *testing.T, db *DB) int64 {
 	return created.ID
 }
 
-// The core regression: a reviewer that lost the update must be told, not handed
-// the winner's row. The UPDATE already carried "AND status = 'pending'", but the
-// affected row count was discarded, so the loser saw no error and the
-// GetAgentProposal that followed returned the winner's state — a request to
-// reject a proposal was answered with someone else's approval.
-func TestReviewAgentProposalReportsALostUpdate(t *testing.T) {
+// The core regression: a reviewer that lost the transition must be told, not
+// handed the winner's row. Before the transaction the loser's UPDATE matched
+// zero rows and its follow-up read returned the winner's state, so a request to
+// reject a proposal could be reported as a success carrying an approval.
+func TestConcurrentReviewsHaveExactlyOneWinner(t *testing.T) {
 	writer, other := newTwoHandleDB(t)
 	id := seedRaceProposal(t, writer)
 	ctx := context.Background()
 
 	const rounds = 40
-	conflicts, wins := 0, 0
+	wins := 0
 	for range rounds {
 		// Reset to pending so each round is a fresh race.
 		if _, err := writer.db.ExecContext(ctx,
 			`UPDATE agent_proposals SET status = 'pending', reviewer = NULL, reviewed_at = NULL WHERE id = ?`, id); err != nil {
 			t.Fatal(err)
 		}
+		if _, err := writer.db.ExecContext(ctx, `DELETE FROM local_overrides WHERE domain = 'phish.example'`); err != nil {
+			t.Fatal(err)
+		}
 
 		var wg sync.WaitGroup
 		errs := make([]error, 2)
+		reviews := make([]AgentProposal, 2)
 		start := make(chan struct{})
 		for i, db := range []*DB{writer, other} {
 			wg.Add(1)
 			go func(index int, handle *DB) {
 				defer wg.Done()
 				<-start
-				_, errs[index] = handle.ReviewAgentProposal(ctx, id, index == 0, "reviewer", "racing")
+				reviews[index], errs[index] = handle.ReviewAgentProposal(ctx, id, index == 0, "reviewer", "racing")
 			}(i, db)
 		}
 		close(start)
 		wg.Wait()
 
 		successes := 0
-		for _, err := range errs {
+		for i, err := range errs {
 			switch {
 			case err == nil:
 				successes++
 				wins++
-			case errors.Is(err, ErrAgentProposalConflict):
-				conflicts++
-			case strings.Contains(err.Error(), "only pending proposals are reviewable"):
-				// The pre-check caught it: the read happened after the write.
+				final, readErr := writer.GetAgentProposal(ctx, id)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if final.Status != reviews[i].Status || final.Reviewer != "reviewer" {
+					t.Fatalf("winner's review was not persisted: got %+v, returned %+v", final, reviews[i])
+				}
+			case errors.Is(err, ErrProposalNotReviewable):
+				// The transaction waited for the winner's commit and then saw
+				// a decided proposal. This is the expected losing path.
 			default:
 				t.Fatalf("unexpected error: %v", err)
 			}
 		}
-		if successes > 1 {
-			t.Fatalf("%d reviewers reported success on one proposal; at most one may", successes)
+		if successes != 1 {
+			t.Fatalf("%d reviewers reported success on one proposal; exactly one may", successes)
 		}
 	}
 
-	if conflicts == 0 {
-		t.Fatalf("no round produced ErrAgentProposalConflict in %d attempts, so the interleaving was never reached and this test proves nothing", rounds)
-	}
-	if wins < rounds {
+	if wins != rounds {
 		t.Fatalf("only %d of %d rounds produced a successful review; the fixture is not exercising the race", wins, rounds)
 	}
-	t.Logf("wins=%d conflicts=%d", wins, conflicts)
 }
 
 // The refresh-or-insert contract has to hold under concurrency. It is now one
