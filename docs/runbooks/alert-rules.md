@@ -31,6 +31,10 @@ Safe Zone keeps `/metrics` as JSON for the single-VPS MVP. The baseline alert ru
 - URL ML distribution drift after an operational baseline exists
 - URL ML context coverage drop (Vòng 4: gates canary conclusions)
 - URL ML operational baseline unavailable (fail-open, drift non-operational)
+- decision-pipeline override, group and feed lookup failures on both core-api and dns-resolver
+- adblock exception reload failure and whitelist load failure on both services
+- DNS cache invalid entries, background refresh failures, and stale answers served
+- mandatory SQLite and whitelist readiness-check failures on both services
 
 ## Data sources
 
@@ -138,19 +142,45 @@ After at least one successful sync, `active_entries` must stay above zero. A
 `status` of `missing` indicates lost or fully expired feed coverage and pages
 the operator independently of ordinary freshness warnings.
 
-Decision-pipeline fail-open counters:
+Decision-pipeline fail-open counters (core-api and dns-resolver each keep their
+own):
 
 ```sh
 curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status \
-  | jq '.decision_pipeline | {override_lookup_failures, override_consecutive_failures, group_lookup_failures, group_consecutive_failures}'
+  | jq '.decision_pipeline | {override_lookup_failures, override_consecutive_failures, group_lookup_failures, group_consecutive_failures, feed_lookup_failures, feed_consecutive_failures}'
+curl -fsS http://127.0.0.1:8081/ \
+  | jq '.decision_pipeline | {override_consecutive_failures, group_consecutive_failures, feed_consecutive_failures}'
 ```
 
 `override_lookup_failures` counts admin-override reads that failed: the domain
 was evaluated normally instead of using the operator's block. A non-zero
 `group_consecutive_failures` means client-group resolution is failing right now,
 so clients mapped to a non-default group are being evaluated under the built-in
-default group until the store recovers. The consecutive fields reset on the
+default group until the store recovers. `feed_consecutive_failures` means the
+IOC layer was blind for those evaluations. The consecutive fields reset on the
 first success; the totals keep the historical count.
+
+Whitelist and adblock exception state:
+
+```sh
+curl -fsS http://127.0.0.1:8081/ | jq '{whitelist, exceptions: .adblock.exceptions}'
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/v1/status \
+  | jq '{whitelist, exceptions: .adblock.exceptions}'
+```
+
+`whitelist.loaded == false` means the most recent load failed and the previous
+index is still in effect, so the allow list is not the operator's current
+configuration. `adblock.exceptions.configured == true` with
+`last_reload_ok == false` means the content-exception set is not being applied.
+
+Readiness counters are exposed through the authenticated metrics envelope:
+
+```sh
+curl -fsS -H "$AUTH_HEADER" http://127.0.0.1:8080/metrics \
+  | jq '.metrics.counters | with_entries(select(.key | startswith("readiness_check_")))'
+curl -fsS http://127.0.0.1:8081/metrics \
+  | jq '.metrics.counters | with_entries(select(.key | startswith("readiness_check_")))'
+```
 
 Upstream DoH failure count:
 
@@ -161,9 +191,17 @@ curl -fsS http://127.0.0.1:8081/metrics | jq '.upstream_doh.failures_total'
 DNS response cache occupancy and hit/miss counters:
 
 ```sh
+curl -fsS http://127.0.0.1:8081/ \
+  | jq '.dns_cache'
 curl -fsS http://127.0.0.1:8081/metrics \
-  | jq '{cache: .dns_cache, hits: .metrics.counters.dns_cache_hits_total, misses: .metrics.counters.dns_cache_misses_total}'
+  | jq '.metrics.counters | {hits: .dns_cache_hits_total, misses: .dns_cache_misses_total, invalid: .dns_cache_invalid_total, refresh_failures: .dns_cache_refresh_failures_total, stale_served: .dns_cache_stale_served_total}'
 ```
+
+A growing `dns_cache_invalid_total` means a cached response failed validation
+and was dropped. `dns_cache_refresh_failures_total` means a popular entry could
+not be refreshed ahead of expiry. `dns_cache_stale_served_total` means an
+upstream failure was masked by an RFC 8767 stale answer, so clients are getting
+older data than normal.
 
 Set `SAFE_ZONE_DNS_CACHE_ENTRIES=0` to bypass the cache while diagnosing an
 upstream or policy problem.
