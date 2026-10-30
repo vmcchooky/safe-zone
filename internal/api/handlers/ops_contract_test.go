@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
+	"safe-zone/internal/dns/resolver"
 	"safe-zone/internal/observability"
 )
 
@@ -37,6 +38,14 @@ var requiredAlertIDs = []string{
 	"url-ml-invalid-context-rate", "url-ml-high-latency",
 	"url-ml-operational-drift", "url-ml-context-coverage-drop",
 	"url-ml-operational-baseline-unavailable",
+	"core-api-override-lookup-failing", "dns-resolver-override-lookup-failing",
+	"core-api-group-lookup-failing", "dns-resolver-group-lookup-failing",
+	"core-api-feed-lookup-failing", "dns-resolver-feed-lookup-failing",
+	"core-api-adblock-exceptions-reload-failing", "dns-resolver-adblock-exceptions-reload-failing",
+	"core-api-whitelist-not-loaded", "dns-resolver-whitelist-not-loaded",
+	"dns-cache-invalid-entries", "dns-cache-refresh-failing", "dns-cache-serving-stale",
+	"core-api-readiness-sqlite-failing", "dns-resolver-readiness-sqlite-failing",
+	"core-api-readiness-whitelist-failing", "dns-resolver-readiness-whitelist-failing",
 }
 
 type alertRule struct {
@@ -179,13 +188,21 @@ func TestAlertRulesMatchRuntimeShape(t *testing.T) {
 		"ml.url.error_histogram": {"prediction_error", "invalid_url_context"},
 	}
 
-	// dns-resolver shapes live in another package; the paths the rules
-	// reference there are pinned by internal/dns/resolver's own metrics
-	// tests, so the checker only needs their top-level contract.
-	resolverMetricPaths := map[string]bool{
+	// The resolver status handler now serializes a typed StatusResponse, so
+	// its field paths are checked against the same Go shape the runtime emits
+	// instead of being skipped as an untyped map.
+	resolverStatusPaths := map[string]bool{}
+	collectJSONPaths(reflect.TypeOf(resolver.StatusResponse{}), "", resolverStatusPaths)
+	normalizedResolverStatus := normalizeAll(resolverStatusPaths)
+
+	// Both metrics envelopes wrap the same observability.Snapshot. The
+	// checker needs the keys of that envelope, not just the snapshot's own
+	// fields.
+	metricsEnvelopePaths := map[string]bool{
 		"upstream_doh":                              true,
 		"upstream_doh.failures_total":               true,
 		"metrics":                                   true,
+		"metrics.counters":                          true,
 		"metrics.request_summary":                   true,
 		"metrics.request_summary.total_duration_ms": true,
 		"metrics.request_summary.count":             true,
@@ -194,9 +211,6 @@ func TestAlertRulesMatchRuntimeShape(t *testing.T) {
 	for _, rule := range doc.Rules {
 		for _, match := range pathToken.FindAllStringSubmatch(rule.Condition, -1) {
 			source, rawPath := match[1], match[2]
-			if source == "dns_resolver_status" {
-				continue // meta http_status only; the resolver root is public
-			}
 			normalized := stripBrackets(rawPath)
 			var ok bool
 			switch source {
@@ -215,8 +229,10 @@ func TestAlertRulesMatchRuntimeShape(t *testing.T) {
 						}
 					}
 				}
+			case "dns_resolver_status":
+				ok = normalizedResolverStatus[normalized]
 			case "core_api_metrics", "dns_resolver_metrics":
-				ok = normalizedSnapshot[normalized] || resolverMetricPaths[normalized]
+				ok = normalizedSnapshot[normalized] || metricsEnvelopePaths[normalized]
 			}
 			if !ok {
 				t.Errorf("rule %s references %s.json.%s, which the runtime shape does not emit", rule.ID, source, rawPath)

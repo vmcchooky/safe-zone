@@ -152,3 +152,107 @@ rules:
     severity: warning
     condition: core_api_status.json.ml.url.operational_baseline.loaded == false and core_api_status.json.ml.url.enabled == true for 30m
     action: check SAFE_ZONE_URL_ML_BASELINE_PATH mount and artifact checksum; runtime stays fail-open but drift monitoring is non-operational until restored
+
+  # Decision-pipeline fail-open counters. Each process keeps its own counters,
+  # so core-api and dns-resolver are alerted separately: a shared SQLite fault
+  # affects both, but a process-local fault must not be inferred from the other.
+  #
+  # override_consecutive_failures is the field to alert on, not the lifetime
+  # total: it resets on the first success, so a non-zero value for a sustained
+  # period means an operator block is not being applied right now.
+  - id: core-api-override-lookup-failing
+    severity: critical
+    condition: core_api_status.json.decision_pipeline.override_consecutive_failures > 0 for 10m
+    action: inspect SQLite health and the core-api logs; operator blocks are failing open and the domain is evaluated normally
+
+  - id: dns-resolver-override-lookup-failing
+    severity: critical
+    condition: dns_resolver_status.json.decision_pipeline.override_consecutive_failures > 0 for 10m
+    action: inspect SQLite health and the dns-resolver logs; operator blocks are failing open and the domain is evaluated normally
+
+  - id: core-api-group-lookup-failing
+    severity: warning
+    condition: core_api_status.json.decision_pipeline.group_consecutive_failures > 0 for 10m
+    action: inspect SQLite health; clients are evaluated under the built-in default group until group lookup recovers
+
+  - id: dns-resolver-group-lookup-failing
+    severity: warning
+    condition: dns_resolver_status.json.decision_pipeline.group_consecutive_failures > 0 for 10m
+    action: inspect SQLite health; clients are evaluated under the built-in default group until group lookup recovers
+
+  - id: core-api-feed-lookup-failing
+    severity: warning
+    condition: core_api_status.json.decision_pipeline.feed_consecutive_failures > 0 for 15m
+    action: inspect Redis feed key and connectivity; the IOC layer is blind for affected evaluations
+
+  - id: dns-resolver-feed-lookup-failing
+    severity: warning
+    condition: dns_resolver_status.json.decision_pipeline.feed_consecutive_failures > 0 for 15m
+    action: inspect Redis feed key and connectivity; the IOC layer is blind for affected DNS evaluations
+
+  # A configured exception set that failed its last reload is not in effect.
+  # The last_reload_ok field is false until the first successful reload, so the
+  # 15m window avoids paging during a normal start-up.
+  - id: core-api-adblock-exceptions-reload-failing
+    severity: warning
+    condition: core_api_status.json.adblock.exceptions.configured == true and core_api_status.json.adblock.exceptions.last_reload_ok == false for 15m
+    action: inspect the exception file/store and last_error_class; content exceptions are not being applied
+
+  - id: dns-resolver-adblock-exceptions-reload-failing
+    severity: warning
+    condition: dns_resolver_status.json.adblock.exceptions.configured == true and dns_resolver_status.json.adblock.exceptions.last_reload_ok == false for 15m
+    action: inspect the exception file/store and last_error_class; content exceptions are not being applied on the DNS path
+
+  # loaded=false is only set after a failed load attempt. The previous index is
+  # retained, so the service works, but the allow list is not the operator's
+  # current configuration and allowlisted domains can be scored and blocked.
+  - id: core-api-whitelist-not-loaded
+    severity: warning
+    condition: core_api_status.json.whitelist.loaded == false for 10m
+    action: inspect the whitelist load error in the logs and confirm the durable revision; the previous allow list remains in effect
+
+  - id: dns-resolver-whitelist-not-loaded
+    severity: warning
+    condition: dns_resolver_status.json.whitelist.loaded == false for 10m
+    action: inspect the whitelist load error in the logs and confirm the durable revision; the previous allow list remains in effect
+
+  # DNS cache corruption and refresh failures are not request-level noise: a
+  # failed validation drops the entry, and a stale answer means the upstream is
+  # unavailable and RFC 8767 fallback is masking it.
+  - id: dns-cache-invalid-entries
+    severity: warning
+    condition: dns_resolver_metrics.json.metrics.counters["dns_cache_invalid_total"] increases by > 0 over 15m
+    action: inspect cached response validation logs; a corrupt or mismatched entry is being dropped instead of served
+
+  - id: dns-cache-refresh-failing
+    severity: warning
+    condition: dns_resolver_metrics.json.metrics.counters["dns_cache_refresh_failures_total"] increases by > 0 over 15m
+    action: inspect upstream DoH health; background refresh failures leave popular entries to expire without replacement
+
+  - id: dns-cache-serving-stale
+    severity: warning
+    condition: dns_resolver_metrics.json.metrics.counters["dns_cache_stale_served_total"] increases by > 0 over 10m
+    action: inspect upstream DoH reachability; clients are receiving stale answers because the upstream lookup failed
+
+  # Readiness counters increment only when /readyz is probed, which both Compose
+  # healthchecks do. The mandatory SQLite check failing means the service cannot
+  # enforce operator policy, even though the HTTP layer may still answer.
+  - id: core-api-readiness-sqlite-failing
+    severity: critical
+    condition: core_api_metrics.json.metrics.counters["readiness_check_sqlite_failures_total"] increases by > 0 over 10m
+    action: inspect SQLite health and disk space; core-api is reporting not_ready and operator policy is not being enforced
+
+  - id: dns-resolver-readiness-sqlite-failing
+    severity: critical
+    condition: dns_resolver_metrics.json.metrics.counters["readiness_check_sqlite_failures_total"] increases by > 0 over 10m
+    action: inspect SQLite health and disk space; dns-resolver is reporting not_ready and operator policy is not being enforced
+
+  - id: core-api-readiness-whitelist-failing
+    severity: warning
+    condition: core_api_metrics.json.metrics.counters["readiness_check_whitelist_failures_total"] increases by > 0 over 15m
+    action: inspect the whitelist load path; core-api readiness is degraded and allowlisted domains may be scored
+
+  - id: dns-resolver-readiness-whitelist-failing
+    severity: warning
+    condition: dns_resolver_metrics.json.metrics.counters["readiness_check_whitelist_failures_total"] increases by > 0 over 15m
+    action: inspect the whitelist load path; dns-resolver readiness is degraded and allowlisted domains may be scored
