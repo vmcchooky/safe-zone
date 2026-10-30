@@ -17,6 +17,8 @@ This document defines how long Safe Zone should keep telemetry and cache-derived
 | Recent dashboard analysis list | Redis | Short operator convenience cache | 24 hours and max 25 entries by default | `SAFE_ZONE_RECENT_ANALYSIS_TTL_SECONDS`, `SAFE_ZONE_DASHBOARD_RECENT_LIMIT` |
 | Threat-feed domain set | Redis | Threat intelligence matching | Until next feed refresh or explicit replacement | feed sync process |
 | OSINT cached evidence | Redis / SQLite evidence store | Public warning evidence for suspicious domains | Redis cache TTL defaults to 6 hours; SQLite evidence should only hold non-expired items | `SAFE_ZONE_OSINT_CACHE_TTL_SECONDS` plus expiry timestamps |
+| Agent proposals | SQLite | Review queue and evidence for proposed enforcement | 90 days after a decision or TTL lapse; pending, unexpired rows are never auto-deleted | `SAFE_ZONE_AGENT_PROPOSAL_RETENTION_DAYS` |
+| Agent audit events | SQLite | Explain what the agent and reviewers did | 365 days | `SAFE_ZONE_AGENT_AUDIT_RETENTION_DAYS` |
 
 ## SQLite policy
 
@@ -36,9 +38,11 @@ URL ML feedback retention & privacy policy:
 
 Operational data policy:
 
-- Overrides, client groups, mappings, brands, and audit events are operational records, not short-lived telemetry.
-- Keep them until changed, deleted, or replaced by operators.
-- If a customer or environment requires stricter audit retention, define that separately from telemetry retention.
+- Overrides, client groups, mappings, and brands are operator policy. Keep them until changed, deleted, or replaced by operators.
+- Agent proposals are reviewable evidence, not policy. A decided proposal is pruned after `SAFE_ZONE_AGENT_PROPOSAL_RETENTION_DAYS` (default 90); a pending proposal whose TTL lapsed is pruned on the same window. Pending, unexpired proposals are the review queue and are never auto-deleted.
+- `agent_audit_log` events are pruned after `SAFE_ZONE_AGENT_AUDIT_RETENTION_DAYS` (default 365), deliberately longer than proposals so an approval can still be explained after its proposal row is gone.
+- Approving a proposal creates a normal operator-owned override. The proposal row ages out, but the override remains until an operator removes or changes it.
+- If a customer or environment requires stricter audit retention, lower the audit window explicitly instead of relying on telemetry retention.
 
 ## Redis policy
 
@@ -69,6 +73,8 @@ Therefore:
 | Setting | Recommended value | Purpose |
 | --- | --- | --- |
 | `SAFE_ZONE_TELEMETRY_RETENTION_DAYS` | `30` | Telemetry row retention |
+| `SAFE_ZONE_AGENT_PROPOSAL_RETENTION_DAYS` | `90` | Decided or lapsed agent proposal retention |
+| `SAFE_ZONE_AGENT_AUDIT_RETENTION_DAYS` | `365` | Agent audit event retention (keep >= proposal window) |
 | `SAFE_ZONE_TELEMETRY_WRITE_PERCENT` | `5` (override down to `1`) | Production write sampling percentage |
 | `SAFE_ZONE_URL_ML_FEEDBACK_RETENTION_HOURS` | `168` | Durable feedback TTL (7 days) |
 | `SAFE_ZONE_URL_ML_FEEDBACK_MAX_ROWS` | `65536` | Table row ceiling for feedback |
@@ -81,6 +87,7 @@ Therefore:
 ## Deletion expectations
 
 - SQLite telemetry cleanup runs automatically based on retention days.
+- Decided and lapsed agent proposals, and old agent audit events, are pruned by the same hourly cleanup using their own windows. Pending, unexpired proposals are not pruned.
 - Redis analysis cache and recent dashboard entries should age out automatically by TTL.
 - Operators should purge old backup sets according to the backup retention policy and ensure encrypted artifacts are used for offsite copies.
 

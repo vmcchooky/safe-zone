@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -12,6 +14,46 @@ import (
 // Retention cleanup, incremental vacuum and the vacuum-conversion flag live here.
 // The sqlite.go breakup is complete: lifecycle/schema stay in sqlite.go; domains live
 // in groups, telemetry, whitelist, reports, retention and overrides.
+
+// Agent artifacts need their own windows. A decided proposal is reviewable
+// evidence, but it is not operator policy: the override it created survives
+// until an operator changes it. Audit events outlive proposals so an approval
+// can still be explained after the proposal row is gone.
+const (
+	DefaultAgentProposalRetentionDays = 90
+	DefaultAgentAuditRetentionDays    = 365
+)
+
+// agentRetentionDaysFromEnv reads one retention window. An unset or malformed
+// value falls back to the documented default; an out-of-range value is clamped
+// to the same ceiling as telemetry, because a cutoff so old would silently
+// match nothing and retention would stop.
+func agentRetentionDaysFromEnv(name string, fallback int) int {
+	raw := strings.TrimSpace(os.Getenv(name))
+	if raw == "" {
+		return fallback
+	}
+	days, err := strconv.Atoi(raw)
+	if err != nil || days < MinRetentionDays {
+		logjson.Warn("agent retention is invalid; using the default", map[string]any{
+			"service": "store",
+			"setting": name,
+			"given":   raw,
+			"applied": fallback,
+		})
+		return fallback
+	}
+	if days > MaxRetentionDays {
+		logjson.Warn("agent retention is above the ceiling; clamped", map[string]any{
+			"service": "store",
+			"setting": name,
+			"given":   days,
+			"applied": MaxRetentionDays,
+		})
+		return MaxRetentionDays
+	}
+	return days
+}
 
 func (d *DB) cleanupLoop() {
 	defer d.wg.Done()
@@ -80,6 +122,51 @@ func (d *DB) cleanup() {
 			"removed": n,
 		})
 	}
+	// Agent proposals are reviewable evidence, not operator policy: the
+	// override an approval created lives in local_overrides until an operator
+	// changes it. Prune a proposal only once it is decided, or once its TTL
+	// has lapsed while still pending. Pending, unexpired rows are the review
+	// queue and are never deleted here.
+	proposalCutoff := time.Now().AddDate(0, 0, -d.proposalRetentionDays).UTC().Format("2006-01-02 15:04:05")
+	if result, err := d.db.ExecContext(context.Background(), `
+		DELETE FROM agent_proposals
+		WHERE (status = ? AND datetime(expires_at) < datetime(?))
+		   OR (status IN (?, ?, ?) AND datetime(updated_at) < datetime(?))`,
+		AgentProposalPending, proposalCutoff,
+		AgentProposalApproved, AgentProposalRejected, AgentProposalExpired, proposalCutoff); err != nil {
+		logjson.Error("agent proposal cleanup failed", map[string]any{
+			"service": "store",
+			"cutoff":  proposalCutoff,
+			"error":   err.Error(),
+		})
+	} else if n, _ := result.RowsAffected(); n > 0 {
+		logjson.Info("agent proposal cleanup removed decided or expired entries", map[string]any{
+			"service": "store",
+			"cutoff":  proposalCutoff,
+			"removed": n,
+		})
+	}
+
+	// Audit events describe what the agent and its reviewers did. They are kept
+	// longer than proposals so the reasoning survives after the proposal row is
+	// pruned, but they are not kept forever: created_at uses the SQLite space
+	// timestamp format, matched by the cutoff above.
+	auditCutoff := time.Now().AddDate(0, 0, -d.auditRetentionDays).UTC().Format("2006-01-02 15:04:05")
+	if result, err := d.db.ExecContext(context.Background(),
+		`DELETE FROM agent_audit_log WHERE datetime(created_at) < datetime(?)`, auditCutoff); err != nil {
+		logjson.Error("agent audit cleanup failed", map[string]any{
+			"service": "store",
+			"cutoff":  auditCutoff,
+			"error":   err.Error(),
+		})
+	} else if n, _ := result.RowsAffected(); n > 0 {
+		logjson.Info("agent audit cleanup removed old events", map[string]any{
+			"service": "store",
+			"cutoff":  auditCutoff,
+			"removed": n,
+		})
+	}
+
 	// Return a bounded number of freelist pages to the OS. Unlike a full
 	// VACUUM this never rewrites the whole file, so retention deletes do
 	// not grow the database file without bound.

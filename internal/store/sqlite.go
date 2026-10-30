@@ -165,6 +165,11 @@ type DB struct {
 	dbPath        string
 	telemetryCh   chan TelemetryEntry
 	retentionDays int
+	// Agent artifacts age out separately: decided proposals are useful for
+	// review but not forever, and the audit trail must outlive them for
+	// security review. Both are fixed at startup and never mutated.
+	proposalRetentionDays int
+	auditRetentionDays    int
 	// writePercent controls what fraction of analysis telemetry entries are
 	// actually persisted (0-100). Defaults to 100 so behavior is unchanged;
 	// high-traffic deployments can lower it to bound SQLite growth.
@@ -657,13 +662,20 @@ func New(path string, retentionDays int) (*DB, error) {
 		}
 	}
 
+	proposalRetentionDays := agentRetentionDaysFromEnv(
+		"SAFE_ZONE_AGENT_PROPOSAL_RETENTION_DAYS", DefaultAgentProposalRetentionDays)
+	auditRetentionDays := agentRetentionDaysFromEnv(
+		"SAFE_ZONE_AGENT_AUDIT_RETENTION_DAYS", DefaultAgentAuditRetentionDays)
+
 	d := &DB{
-		db:            sqlDB,
-		dbPath:        path,
-		telemetryCh:   make(chan TelemetryEntry, telemetryBufferSize),
-		retentionDays: retentionDays,
-		writePercent:  int32(writePercent),
-		done:          make(chan struct{}),
+		db:                    sqlDB,
+		dbPath:                path,
+		telemetryCh:           make(chan TelemetryEntry, telemetryBufferSize),
+		retentionDays:         retentionDays,
+		proposalRetentionDays: proposalRetentionDays,
+		auditRetentionDays:    auditRetentionDays,
+		writePercent:          int32(writePercent),
+		done:                  make(chan struct{}),
 	}
 
 	if err := d.SeedDefaultBrands(context.Background()); err != nil {
@@ -696,10 +708,12 @@ func New(path string, retentionDays int) (*DB, error) {
 	go d.cleanupLoop()
 
 	logjson.Info("sqlite store opened", map[string]any{
-		"service":        "store",
-		"path":           path,
-		"retention_days": retentionDays,
-		"write_percent":  writePercent,
+		"service":                 "store",
+		"path":                    path,
+		"retention_days":          retentionDays,
+		"proposal_retention_days": proposalRetentionDays,
+		"audit_retention_days":    auditRetentionDays,
+		"write_percent":           writePercent,
 	})
 	return d, nil
 }
