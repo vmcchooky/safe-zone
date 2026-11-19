@@ -3,6 +3,15 @@
 Notable changes to Safe Zone. Dates are UTC. Entries land here when their
 PR merges to `main`, oldest batch first.
 
+## [Unreleased]
+
+### Security
+- The Go toolchain moves to 1.26.11 across `mise.toml`, `go.mod`, the
+  `Dockerfile`, and the documented prerequisite. `govulncheck` flagged
+  GO-2026-6859 (HTTP/1 server crash from a `MaxBytesReader` header race in
+  `net/http`), fixed in Go 1.26.11. The release preflight fails on the
+  vulnerable toolchain, so this is a release-gate fix, not a routine bump.
+
 ## [1.10.21] - 2026-10-21
 
 ### Security

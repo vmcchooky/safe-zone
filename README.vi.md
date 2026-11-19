@@ -107,7 +107,7 @@ regression, không phải FPR đại diện cho toàn bộ population. Nhãn c�
 <a id="quickstart"></a>
 ## Bắt đầu nhanh
 
-Yêu cầu: Go 1.26.10+ hoặc Docker. `mise` là tùy chọn cho bộ kiểm tra đầy đủ.
+Yêu cầu: Go 1.26.11+ hoặc Docker. `mise` là tùy chọn cho bộ kiểm tra đầy đủ.
 Các lệnh dưới đây dùng shell Unix; ghi chú Windows được thêm ở những chỗ khác
 biệt.
 
