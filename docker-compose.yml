@@ -259,6 +259,11 @@ services:
       - redis
     volumes:
       - ./ops/secrets:/app/ops/secrets:ro
+    # feed-syncd is a worker, not an HTTP server. The image-level /readyz
+    # healthcheck would therefore report it unhealthy forever even after a
+    # successful sync. Liveness is visible through /v1/status and the sync log.
+    healthcheck:
+      disable: true
     # Same containment as core-api; the daemon only writes feed state to Redis.
     security_opt:
       - no-new-privileges:true
@@ -295,6 +300,10 @@ services:
       - redis
     volumes:
       - ./ops/secrets:/app/ops/secrets:ro
+    # The one-shot sync exits after writing feed state; the HTTP healthcheck
+    # inherited from the image does not apply to it either.
+    healthcheck:
+      disable: true
     # Same containment as core-api; the one-shot sync only writes feed state
     # to Redis.
     security_opt:

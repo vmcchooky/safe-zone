@@ -13,6 +13,12 @@ PR merges to `main`, oldest batch first.
   vulnerable toolchain, so this is a release-gate fix, not a routine bump.
 
 ### Fixed
+- `feed-syncd` is no longer reported unhealthy after a successful sync. The
+  image-level `/readyz` healthcheck applies to the HTTP services; the feed
+  daemon is a worker with no HTTP listener, so the production Compose stack
+  now disables that inherited check for `feed-syncd` and the one-shot
+  `feed-sync` job. Liveness remains visible through `/v1/status` and the sync
+  log.
 - The `production-free` and `production-vn` feed presets no longer point at
   the retired anonymous URLhaus downloads. Every
   `https://urlhaus.abuse.ch/downloads/` path now returns HTTP 410, which left a
