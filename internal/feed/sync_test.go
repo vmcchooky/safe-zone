@@ -648,11 +648,39 @@ func TestResolveProductionVNPreset(t *testing.T) {
 	if len(sources) != 4 {
 		t.Fatalf("expected 4 production-vn sources, got %d", len(sources))
 	}
-	if !strings.Contains(strings.Join(sources, "\n"), "phishdestroy/destroylist") {
+	joined := strings.Join(sources, "\n")
+	if !strings.Contains(joined, "phishdestroy/destroylist") {
 		t.Fatal("expected production-vn preset to include PhishDestroy")
 	}
-	if !strings.Contains(strings.Join(sources, "\n"), "Phishing-Database/Phishing.Database") {
+	if !strings.Contains(joined, "Phishing-Database/Phishing.Database") {
 		t.Fatal("expected production-vn preset to include Phishing.Database")
+	}
+	assertNoRetiredURLHausFeed(t, joined)
+}
+
+// TestProductionPresetsDoNotUseRetiredURLHausFeed pins the replacement for the
+// anonymous URLhaus downloads: every /downloads/ path returns HTTP 410, so a
+// preset that still points there leaves the feed stale on a fresh deploy.
+func TestProductionPresetsDoNotUseRetiredURLHausFeed(t *testing.T) {
+	for _, preset := range []string{ProductionFreePreset, ProductionVNPreset} {
+		sources, err := ResolveSources("", preset)
+		if err != nil {
+			t.Fatalf("%s: %v", preset, err)
+		}
+		if len(sources) < 2 {
+			t.Fatalf("%s: expected at least two sources, got %d", preset, len(sources))
+		}
+		assertNoRetiredURLHausFeed(t, strings.Join(sources, "\n"))
+	}
+}
+
+func assertNoRetiredURLHausFeed(t *testing.T, sources string) {
+	t.Helper()
+	if strings.Contains(sources, "urlhaus.abuse.ch/downloads/") {
+		t.Fatal("preset still references the retired anonymous URLhaus downloads")
+	}
+	if !strings.Contains(sources, "phishing-filter-domains.txt") {
+		t.Fatal("expected preset to include the phishing-filter domain feed")
 	}
 }
 

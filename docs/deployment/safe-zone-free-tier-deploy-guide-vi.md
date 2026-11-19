@@ -638,7 +638,7 @@ Nếu `TcpTestSucceeded: True` là port đã mở.
 Production env template bật preset `production-free` (URLhaus + OpenPhish):
 
 ```env
-SAFE_ZONE_THREAT_FEED_SOURCE=https://urlhaus.abuse.ch/downloads/csv_recent/,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
+SAFE_ZONE_THREAT_FEED_SOURCE=https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
 SAFE_ZONE_AGENT_FEED_PRESET=production-free
 SAFE_ZONE_AGENT_FEED_SOURCES=
 ```
@@ -1183,7 +1183,7 @@ SAFE_ZONE_DNS_DOT_ENABLED=false
 SAFE_ZONE_DUCKDNS_DOMAIN=
 SAFE_ZONE_DUCKDNS_TOKEN=
 
-SAFE_ZONE_THREAT_FEED_SOURCE=https://urlhaus.abuse.ch/downloads/csv_recent/,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
+SAFE_ZONE_THREAT_FEED_SOURCE=https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
 SAFE_ZONE_AGENT_FEED_PRESET=production-free
 SAFE_ZONE_AGENT_FEED_SOURCES=
 ```

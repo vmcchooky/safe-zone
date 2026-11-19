@@ -1073,7 +1073,7 @@ function Resolve-FeedSources {
 
   if ($env:SAFE_ZONE_AGENT_FEED_PRESET -eq 'production-free') {
     return @(
-      'https://urlhaus.abuse.ch/downloads/csv_recent/',
+      'https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt',
       'https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt'
     )
   }

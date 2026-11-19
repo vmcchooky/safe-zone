@@ -803,7 +803,7 @@ resolve_feed_sources() {
 
   case "${SAFE_ZONE_AGENT_FEED_PRESET:-}" in
     production-free)
-      printf '%s' "https://urlhaus.abuse.ch/downloads/csv_recent/,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt"
+      printf '%s' "https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt"
       return 0
       ;;
   esac

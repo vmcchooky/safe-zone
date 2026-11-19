@@ -127,8 +127,17 @@ SAFE_ZONE_AGENT_FEED_ADMISSION_MODE=corroborated-url-host-shadow
 
 That preset currently expands to:
 
-- `https://urlhaus.abuse.ch/downloads/csv_recent/`
 - `https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt`
+- `https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt`
+
+URLhaus is no longer in the first-class presets. Its anonymous
+`/downloads/` endpoints return HTTP 410, and the replacement exports require a
+free abuse.ch Auth-Key embedded in the URL. Operators who have a key can add
+the authenticated export through `SAFE_ZONE_THREAT_FEED_SOURCE`:
+
+```text
+https://urlhaus-api.abuse.ch/v2/files/exports/<AUTH-KEY>/recent.csv
+```
 
 `REScure` is not in the first-class preset because `https://rescure.me/` currently serves a temporary-closure page as of 2026-05-21.
 

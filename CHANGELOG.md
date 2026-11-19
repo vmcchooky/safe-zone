@@ -12,6 +12,15 @@ PR merges to `main`, oldest batch first.
   `net/http`), fixed in Go 1.26.11. The release preflight fails on the
   vulnerable toolchain, so this is a release-gate fix, not a routine bump.
 
+### Fixed
+- The `production-free` and `production-vn` feed presets no longer point at
+  the retired anonymous URLhaus downloads. Every
+  `https://urlhaus.abuse.ch/downloads/` path now returns HTTP 410, which left a
+  fresh deployment with `feed_sync.status=stale` and one permanently failing
+  source. The presets use the open `phishing-filter-domains.txt` list instead.
+  URLhaus still works through its authenticated export URL, documented in
+  `docs/runbooks/feed-staleness.md`, for operators who obtain an Auth-Key.
+
 ## [1.10.21] - 2026-10-21
 
 ### Security
