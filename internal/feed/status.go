@@ -21,14 +21,20 @@ const (
 	defaultCacheInvalidationWrites = int64(1)
 )
 
+// URLhaus retired its anonymous /downloads/ endpoints: every path there now
+// returns HTTP 410 and the replacement exports require a free abuse.ch
+// Auth-Key embedded in the URL. The sync client does not carry per-source
+// secrets, so the first-class presets use feeds that remain anonymously
+// downloadable. Operators with a URLhaus key can still add the authenticated
+// export URL through SAFE_ZONE_THREAT_FEED_SOURCE.
 var productionFreeSources = []string{
-	"https://urlhaus.abuse.ch/downloads/csv_recent/",
 	"https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+	"https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt",
 }
 
 var productionVNSources = []string{
-	"https://urlhaus.abuse.ch/downloads/csv_recent/",
 	"https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt",
+	"https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt",
 	"https://raw.githubusercontent.com/phishdestroy/destroylist/main/rootlist/formats/primary_active/domains.txt",
 	"https://raw.githubusercontent.com/Phishing-Database/Phishing.Database/master/phishing-domains-ACTIVE.txt",
 }

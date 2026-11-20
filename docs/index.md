@@ -101,7 +101,7 @@ For the first-class free production preset, set:
 SAFE_ZONE_AGENT_FEED_PRESET=production-free
 ```
 
-That preset currently expands to URLhaus recent CSV plus the OpenPhish community feed. `core-api` exposes feed freshness, stale warnings, parser-drift warnings, and feed revision metadata on `/v1/status` and `/metrics` when Redis is enabled.
+That preset currently expands to the OpenPhish community feed plus the `malware-filter` phishing domain list. URLhaus was removed on 2026-11-19 because its anonymous `/downloads/` endpoints return HTTP 410; its authenticated export can still be added explicitly. `core-api` exposes feed freshness, stale warnings, parser-drift warnings, and feed revision metadata on `/v1/status` and `/metrics` when Redis is enabled.
 
 For a broader phishing/scam set suited to Vietnamese deployments, use
 `SAFE_ZONE_AGENT_FEED_PRESET=production-vn`. It adds PhishDestroy Primary

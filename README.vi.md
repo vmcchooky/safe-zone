@@ -230,7 +230,7 @@ cấu hình ví dụ; kiểm tra `.env` trước khi deploy.
 | Chức năng | Mặc định trong ví dụ | Dữ liệu ra ngoài | Cách kiểm soát |
 |---|---|---|---|
 | DNS forwarding | Pool DoH công khai: Cloudflare, Google, Quad9 và AdGuard (`SAFE_ZONE_UPSTREAM_DOH_URLS`) | Query được forward sẽ đi tới một trong các upstream DoH đã cấu hình. | Trỏ tới upstream của bạn hoặc provider tin cậy. |
-| Threat feed | `feed-syncd` tải `SAFE_ZONE_THREAT_FEED_SOURCE` (URLhaus + OpenPhish trong ví dụ) | Feed provider thấy request từ host của bạn. | Dùng nguồn đã duyệt hoặc local; theo dõi độ tươi. |
+| Threat feed | `feed-syncd` tải `SAFE_ZONE_THREAT_FEED_SOURCE` (OpenPhish + malware-filter phishing domains trong ví dụ) | Feed provider thấy request từ host của bạn. | Dùng nguồn đã duyệt hoặc local; theo dõi độ tươi. |
 | Danh sách adblock | Bật; tải StevenBlack hosts trong ví dụ | Nguồn host-list thấy request từ host của bạn. | Đặt `SAFE_ZONE_ADBLOCK_ENABLED=false` hoặc dùng nguồn của bạn. |
 | TLS/WHOIS enrichment | Bật (`SAFE_ZONE_ENRICH_ENABLED=true`) | Kết nối outbound tới host đích và dịch vụ WHOIS. | Tắt hoặc giới hạn nếu không chấp nhận outbound. |
 | OSINT | Bật trong ví dụ (`SAFE_ZONE_OSINT_ENABLED=true`) | Có thể truy vấn nguồn OSINT đã cấu hình. | Đặt `SAFE_ZONE_OSINT_ENABLED=false` và review nguồn. |
@@ -306,7 +306,7 @@ nguyên tham khảo, không phải cam kết giá:
 | `SAFE_ZONE_PUBLIC_HOST` | `safezone.example.com` trong ví dụ | Hostname công khai cho Caddy TLS và DoH. |
 | `SAFE_ZONE_ADMIN_PASSWORD` / `SAFE_ZONE_ADMIN_API_KEY` | tự sinh local | Bắt buộc ở production, hoặc dùng đường dẫn `*_FILE`. |
 | `SAFE_ZONE_WHITELIST_PATH` | trống (DB-only mode) | Nạp allow-list ban đầu (tùy chọn); đường dẫn được cấu hình nhưng không đọc được là lỗi nghiêm trọng ở production. |
-| `SAFE_ZONE_THREAT_FEED_SOURCE` | URLhaus + OpenPhish trong `.env.example` | Nguồn feed cho `feed-syncd`; nhiều nguồn cách nhau bằng dấu phẩy. |
+| `SAFE_ZONE_THREAT_FEED_SOURCE` | OpenPhish + malware-filter phishing domains trong `.env.example` | Nguồn feed cho `feed-syncd`; nhiều nguồn cách nhau bằng dấu phẩy. |
 | `SAFE_ZONE_DNS_BLOCK_STRATEGY` | `sinkhole` | `sinkhole`, `nxdomain`, `refused` hoặc `nullip`. |
 | `SAFE_ZONE_BLOCK_PAGE_IP` | `127.0.0.1` | IPv4 công khai cho trang chặn sinkhole; được validate lúc start. |
 | `SAFE_ZONE_DNS_DOT_ENABLED` | `false` | DoT opt-in; cần overlay DoT và certificate/key tin cậy. |
@@ -354,11 +354,13 @@ Dùng helper nếu bạn đang dựa vào `SAFE_ZONE_SCRIPT_FEED_SYNC=0`; chạy
 
 Safe Zone là bản ứng viên phát hành (release candidate). Tag mới nhất là
 [v1.10.21](https://github.com/vmcchooky/safe-zone/releases/tag/v1.10.21)
-(2026-10-21), và commit được gắn tag đã vượt qua các cổng phát hành. Xác thực
-trên VPS staging và production, gồm smoke test DoH/DoT/block-page, diễn tập khôi
-phục và bằng chứng hiệu năng, vẫn đang chờ;
+(2026-10-21), và commit được gắn tag đã vượt qua các cổng phát hành. Ngày
+2026-11-19, kiểm chứng local trên stack production-like đã đạt: smoke test DoH và
+block page, kiểm tra cổng public, diễn tập khôi phục trên stack cô lập (3,42
+phút) và các bài tải có giới hạn. Xác thực trên VPS đích — gồm DoT và bằng chứng
+công suất — vẫn đang chờ;
 [ghi chú phát hành v1.10.21](https://github.com/vmcchooky/safe-zone/releases/tag/v1.10.21)
-ghi các miễn trừ (waiver) này.
+ghi các miễn trừ (waiver) trước đó.
 
 ML là tùy chọn và mặc định tắt. URL-ML vẫn shadow-only và không phải enforcement
 signal trong bản này.
@@ -366,6 +368,7 @@ signal trong bản này.
 - Checklist operator: [production-completion-checklist.md](docs/production-completion-checklist.md)
 - Release gate: [release-gate.md](docs/runbooks/release-gate.md)
 - Bằng chứng phát hành: [v1.10.21](https://github.com/vmcchooky/safe-zone/releases/tag/v1.10.21)
+- Bằng chứng Gate A local: [local-release-gate-2026-11-19.md](docs/deployment/local-release-gate-2026-11-19.md)
 - Round-5 manifest lịch sử: [release-manifest-r5.md](docs/deployment/release-manifest-r5.md) (2026-09-20; giữ để tham khảo lịch sử)
 
 <a id="limitations"></a>

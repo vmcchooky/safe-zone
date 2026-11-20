@@ -227,7 +227,7 @@ the example configuration; verify your `.env` before deployment.
 | Function | Default in the example | External data | Control |
 |---|---|---|---|
 | DNS forwarding | Public DoH pool: Cloudflare, Google, Quad9, and AdGuard (`SAFE_ZONE_UPSTREAM_DOH_URLS`) | Forwarded queries go to one of the configured upstream DoH providers. | Point to your own upstream or providers you trust. |
-| Threat feeds | `feed-syncd` downloads `SAFE_ZONE_THREAT_FEED_SOURCE` (URLhaus + OpenPhish in the example) | The feed provider sees requests from your host. | Use approved or local sources; monitor feed freshness. |
+| Threat feeds | `feed-syncd` downloads `SAFE_ZONE_THREAT_FEED_SOURCE` (OpenPhish + malware-filter phishing domains in the example) | The feed provider sees requests from your host. | Use approved or local sources; monitor feed freshness. |
 | Adblock lists | Enabled; downloads StevenBlack hosts in the example | The host-list source sees requests from your host. | Set `SAFE_ZONE_ADBLOCK_ENABLED=false` or use your own source. |
 | TLS/WHOIS enrichment | Enabled (`SAFE_ZONE_ENRICH_ENABLED=true`) | Outbound connections to target hosts and WHOIS services. | Disable or restrict if outbound enrichment is not acceptable. |
 | OSINT | Enabled in the example (`SAFE_ZONE_OSINT_ENABLED=true`) | May query configured OSINT sources. | Set `SAFE_ZONE_OSINT_ENABLED=false` and review sources. |
@@ -298,7 +298,7 @@ price guarantee: [Safe Zone OPEX estimate](docs/deployment/Safe_Zone_OPEX_Estima
 | `SAFE_ZONE_PUBLIC_HOST` | `safezone.example.com` in the example | Public hostname for Caddy TLS and DoH. |
 | `SAFE_ZONE_ADMIN_PASSWORD` / `SAFE_ZONE_ADMIN_API_KEY` | generated locally | Required in production, or provide a `*_FILE` path. |
 | `SAFE_ZONE_WHITELIST_PATH` | empty (DB-only mode) | Optional allow-list seed; a configured but unreadable path is fatal in production. |
-| `SAFE_ZONE_THREAT_FEED_SOURCE` | URLhaus + OpenPhish in `.env.example` | Feed source(s) for `feed-syncd`; comma-separated for several. |
+| `SAFE_ZONE_THREAT_FEED_SOURCE` | OpenPhish + malware-filter phishing domains in `.env.example` | Feed source(s) for `feed-syncd`; comma-separated for several. |
 | `SAFE_ZONE_DNS_BLOCK_STRATEGY` | `sinkhole` | `sinkhole`, `nxdomain`, `refused`, or `nullip`. |
 | `SAFE_ZONE_BLOCK_PAGE_IP` | `127.0.0.1` | Public IPv4 for sinkhole block pages; validated at startup. |
 | `SAFE_ZONE_DNS_DOT_ENABLED` | `false` | Opt-in DoT listener; requires the DoT overlay and a trusted cert/key. |
@@ -344,11 +344,13 @@ direct `docker compose up` recreates `feed-syncd`.
 
 Safe Zone is a release candidate. The latest tag is
 [v1.10.21](https://github.com/vmcchooky/safe-zone/releases/tag/v1.10.21)
-(2026-10-21), and the tagged commit passed the release gates. Staging and
-production VPS validation, including DoH/DoT/block-page smoke tests, the restore
-drill, and performance proof, is still pending; the
+(2026-10-21), and the tagged commit passed the release gates. Local
+production-like staging validation passed on 2026-11-19: DoH and block-page
+smoke tests, published-port checks, an isolated-stack restore drill (3.42
+minutes), and bounded load checks. Target VPS validation, including DoT and
+capacity proof, is still pending; the
 [v1.10.21 release notes](https://github.com/vmcchooky/safe-zone/releases/tag/v1.10.21)
-record these waivers.
+record the earlier waivers.
 
 ML is optional and disabled by default. URL-ML remains shadow-only and is not an
 enforcement signal in this release.
@@ -356,6 +358,7 @@ enforcement signal in this release.
 - Operator checklist: [production-completion-checklist.md](docs/production-completion-checklist.md)
 - Release gate: [release-gate.md](docs/runbooks/release-gate.md)
 - Release evidence: [v1.10.21](https://github.com/vmcchooky/safe-zone/releases/tag/v1.10.21)
+- Local Gate A evidence: [local-release-gate-2026-11-19.md](docs/deployment/local-release-gate-2026-11-19.md)
 - Historical round-5 manifest: [release-manifest-r5.md](docs/deployment/release-manifest-r5.md) (2026-09-20; kept for history)
 
 <a id="limitations"></a>

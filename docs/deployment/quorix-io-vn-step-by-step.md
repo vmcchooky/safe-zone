@@ -407,11 +407,11 @@ Note:
 
 ## Step 16: review free threat feeds
 
-The production env template enables the `production-free` preset (URLhaus plus
-the OpenPhish community feed):
+The production env template enables the `production-free` preset (OpenPhish
+plus the malware-filter phishing domain list):
 
 ```env
-SAFE_ZONE_THREAT_FEED_SOURCE=https://urlhaus.abuse.ch/downloads/csv_recent/,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
+SAFE_ZONE_THREAT_FEED_SOURCE=https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt
 SAFE_ZONE_AGENT_FEED_PRESET=production-free
 SAFE_ZONE_AGENT_FEED_SOURCES=
 ```
