@@ -105,7 +105,7 @@ check, not a population-level FPR estimate. Labels require provenance, and
 
 ## Quickstart
 
-Prerequisites: Go 1.26.10+ or Docker. `mise` is optional for the full
+Prerequisites: Go 1.26.11+ or Docker. `mise` is optional for the full
 verification suite. The commands below assume a Unix shell; Windows notes are
 included where they differ.
 
