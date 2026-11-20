@@ -635,7 +635,7 @@ Nếu `TcpTestSucceeded: True` là port đã mở.
 
 ## 20. Kiểm tra threat feeds miễn phí sau khi base stack ổn
 
-Production env template bật preset `production-free` (URLhaus + OpenPhish):
+Production env template bật preset `production-free` (OpenPhish + malware-filter phishing domains):
 
 ```env
 SAFE_ZONE_THREAT_FEED_SOURCE=https://malware-filter.gitlab.io/malware-filter/phishing-filter-domains.txt,https://raw.githubusercontent.com/openphish/public_feed/refs/heads/main/feed.txt

@@ -6,7 +6,10 @@ phishing or malware blocking.
 
 ## Built-In Presets
 
-- `production-free`: URLhaus recent CSV and OpenPhish community feed.
+- `production-free`: OpenPhish community feed and the `malware-filter`
+  phishing-domain list. URLhaus was removed from the presets on 2026-11-19
+  because its anonymous `/downloads/` endpoints return HTTP 410; operators with
+  an abuse.ch Auth-Key can add the authenticated export explicitly.
 - `production-vn`: `production-free` plus PhishDestroy Primary Active and
   Phishing.Database Active. These are global phishing feeds, not
   Vietnam-specific sources. The preset name means it is the recommended

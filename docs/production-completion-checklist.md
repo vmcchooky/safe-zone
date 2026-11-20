@@ -97,7 +97,7 @@ Goal: make free feed ingestion repeatable, observable, and safe when sources fai
 - `[x]` Generic `feed-sync` supports local files, HTTP(S), CSV/TXT, and gzip.
 - `[x]` `feed-syncd` exists for scheduled sync and is part of the canonical production Compose stack; the developer stack keeps it opt-in behind the `feed-sync` profile. CI asserts both shapes with `docker compose config`.
 - `[x]` Agent multi-source additive feed sync exists.
-- `[x]` A first-class `production-free` preset exists in code and ops helpers. It currently resolves to URLhaus plus OpenPhish community feed.
+- `[x]` A first-class `production-free` preset exists in code and ops helpers. It currently resolves to the OpenPhish community feed plus the `malware-filter` phishing domain list. URLhaus was removed on 2026-11-19 because its anonymous `/downloads/` endpoints return HTTP 410; the authenticated export remains documented for operators with an abuse.ch Auth-Key.
 - `[x]` Feed staleness runbook exists, and stale-feed policy is enforced by code through `feed_sync` status metadata.
 - `[x]` Add official production preset for free threat feeds. `REScure` is intentionally excluded because `https://rescure.me/` shows a temporary-closure page as of 2026-05-21.
 - `[x]` Add feed freshness metadata and stale-feed warning status.
@@ -469,7 +469,7 @@ Safe Zone can be called production MVP when all of these are true:
 - `[x]` DoT uses a trusted certificate path or documented client trust model, and configured TLS key failures now fail fast.
 - `[x]` Block page and configurable DNS blocking strategies work for blocked DNS answers.
 - `[x]` Threat feeds sync from the official preset and stale status is visible.
-- `[~]` Backups can be copied offsite and restored by scripts; a scheduled restore drill still needs to be recorded.
+- `[~]` Backups can be copied offsite and restored by scripts. An isolated-stack restore drill passed on 2026-11-19 (backup → mutate → restore → verify, 3.42 minutes against a 60-minute RTO; evidence in `docs/deployment/local-release-gate-2026-11-19.md`). A clean-machine/clean-VM drill remains to be recorded.
 - `[x]` Structured logs and request IDs exist.
 - `[x]` Alerts exist for the main failure modes.
 - `[!]` Performance target is proven on the target VPS. Local capacity benchmark closed with `LOCAL_CAPACITY_PASS_BELOW_200K` ([docs/benchmarks/local-capacity-loadtest-20260827.md](benchmarks/local-capacity-loadtest-20260827.md)); reduced verification pending on target VPS ([docs/runbooks/vps-load-test.md](runbooks/vps-load-test.md)).

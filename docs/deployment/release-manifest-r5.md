@@ -143,3 +143,54 @@ python ml/src/check_v10_url_rollback.py --base-url http://127.0.0.1:8080
 # 3. Khôi phục shadow mode có kiểm soát (kèm seed):
 docker compose -f docker-compose.yml -f docker-compose.production.yml -f docker-compose.canary.yml up -d --force-recreate core-api
 ```
+
+---
+
+## 8. Addendum Thực Thi Gate A — 2026-11-19 (Release Candidate 1.10.22-rc.2)
+
+> Chi tiết bằng chứng: [local-release-gate-2026-11-19.md](local-release-gate-2026-11-19.md)
+
+Đợt thực thi này chạy trên **local production-like staging** (Windows 11 +
+Docker Desktop/WSL2), không phải VPS đích. Vì vậy trạng thái tổng thể của Gate A
+vẫn là `PENDING_VPS`; addendum chỉ ghi nhận các gate đã có bằng chứng thực thi
+và các blocker còn lại.
+
+### Thay đổi release candidate
+
+| Commit | Nội dung | Lý do |
+|---|---|---|
+| `be1a54c` | Go `1.26.10` → `1.26.11` | `govulncheck` chặn `GO-2026-6859`; release preflight fail trên toolchain cũ. PR [#260](https://github.com/vmcchooky/safe-zone/pull/260), CI xanh toàn bộ check bắt buộc. |
+| `68d6bc1` | Bỏ URLhaus khỏi preset `production-free` / `production-vn`, thay bằng `malware-filter/phishing-filter-domains.txt` | Toàn bộ endpoint ẩn danh `urlhaus.abuse.ch/downloads/` trả HTTP 410, làm feed mới deploy bị `stale`. |
+| `0fe544e` | Tắt healthcheck `/readyz` kế thừa trên `feed-syncd` và job `feed-sync` | Worker không có HTTP listener nên luôn bị báo `unhealthy` dù sync thành công. |
+
+### Kết quả đã chạy
+
+| Hạng mục | Kết quả |
+|---|---|
+| Release preflight `production-edge` | PASS trên rc.2 tại commit `69a4618`: UI bundle, go test/build, gosec, govulncheck, 2 Go binary + 4 Docker image build. Evidence `tmp/release-gate/20261120-075115_production-edge/`; lần chạy rc.1 phát hiện GO-2026-6859 tại `tmp/release-gate/20261119-142420_production-edge/` |
+| Stack production-like (`caddy`, `core-api`, `dns-resolver`, `feed-syncd`, `redis`) | healthy; `/healthz`, `/readyz`, `/v1/version`, `/v1/analyze`, `/app/`, dashboard login/session đạt |
+| Feed sync | `status=ok`, `stale=false`, revision 2, 17.312 entry; cả hai source `ok` |
+| Public edge smoke (`--no-dot`) | PASS |
+| Block page HTTP + canonical HTTPS | PASS |
+| Remote port scan | 80/443 mở; 8080/8081/6379/11434/853 đóng |
+| Restore drill cô lập | PASS, 3,42 phút (RTO 60 phút); SQLite checksum khớp, Redis entry sống sót, API state khớp |
+| Health load | 3.000 RPS và 10.000 RPS, 0 lỗi; p99 lần lượt 6,8 ms và 15,1 ms |
+| Analyze load | 2.500 RPS bị `GENERATOR_LIMITED` (20.373 queue drops); 1.500 RPS còn 202 drops; soak 1.200 RPS / 5 phút 0 drops, 0 lỗi |
+
+### Gate còn mở
+
+- **RB-1 / A3:** chưa có bằng chứng trên VPS đích. Ngày 2026-11-19 và
+  2026-11-20, SSH cổng 22 và HTTPS 443 tới `85.211.194.199` đều timeout; máy
+  trạm không có Azure CLI. `safe-zone.duckdns.org` hiện phân giải tới
+  `93.127.213.60`, nơi cổng 80 trả nginx 403 không liên quan và 22/443 đóng —
+  không phải edge Safe Zone.
+- **A6:** chưa chạy runbook rút gọn trên VPS class đích; số liệu local là
+  generator-limited, không phải `VPS_CAPACITY_PASS`.
+- **RB-2:** restore drill local đã PASS nhưng chưa chạy trên máy sạch (fresh
+  OS/Docker, không cache image, không checkout sẵn).
+- **RB-4:** DoT không nằm trong đợt chạy này (`--no-dot`); vẫn cần cert/key cấu
+  hình và bằng chứng handshake.
+
+**Kết luận:** Gate A giữ nguyên `PENDING_VPS`. Bề mặt deterministic đã được kiểm
+chứng executable ở local; phát hành công khai vẫn chờ bằng chứng trên môi trường
+đích.
