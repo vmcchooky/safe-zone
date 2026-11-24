@@ -36,8 +36,9 @@ spelling is restored on the reply.
 
 | Rule | Behaviour | Test |
 |---|---|---|
-| Serve-stale window | When the upstream is unreachable, an entry up to 1 hour past its TTL (`DNSCacheStaleWindow`) is served with record TTLs clamped to 30s (`DNSCacheStaleTTL`) so clients re-ask soon; the entry is retained and replaced by the next successful upstream answer. | `TestResponseCacheGetStale` |
-| Refresh-ahead | An entry with ≥3 hits (`refreshAheadMinHits`) and more than half its TTL consumed is eligible for a single-flight background refresh (`BeginRefresh`/`EndRefresh` claim the slot); one-off queries refresh lazily as before. | `TestResponseCacheShouldRefreshSingleFlight` |
+| Serve-stale window | When the upstream is unreachable, an entry up to 1 hour past its TTL (`DNSCacheStaleWindow`) is served with record TTLs clamped to 30s (`DNSCacheStaleTTL`) so clients re-ask soon; the entry is retained and replaced by the next successful upstream answer. `Get` must keep an expired entry through this window, because every lookup calls `Get` before the upstream-down path calls `GetStale`. | `TestResponseCacheGetStale`, `TestResponseCacheGetRetainsEntryForStaleWindow` |
+| Stale policy | A stale answer re-runs CNAME uncloaking like a fresh cache hit and is not re-stored with the 30-second stale TTL. The OPT/TSIG TTL fields are never rewritten. | `TestResolveQueryRechecksCNAMEPolicyOnStaleAnswer`, `TestResponseCacheGetStalePreservesEDNSFlags` |
+| Refresh-ahead | An entry with ≥3 hits (`refreshAheadMinHits`) and more than half its TTL consumed is eligible for a single-flight background refresh (`BeginRefreshIfDue` checks eligibility and claims the slot under one lock; `EndRefresh` releases it); one-off queries refresh lazily as before. | `TestResponseCacheShouldRefreshSingleFlight` |
 | Window bound | Entries past TTL + 1h are gone, not served — very old data must not mask a long outage as success. | `TestResponseCacheGetStale` |
 
 ## CNAME uncloaking
@@ -46,8 +47,8 @@ CNAME chains are followed by the resolver pipeline (not the cache) and every
 target is policy-checked up to a hard cap
 (`TestResolveQueryUncloaksBlockedCNAMETargetWithinCap`,
 `TestResolveQueryCNAMEFloodFailsClosed`,
-`TestResolveQueryCNAMEAtCapEvaluates`). Cached answers still re-run uncloaking
-on every hit.
+`TestResolveQueryCNAMEAtCapEvaluates`). Cached answers and RFC 8767 stale
+answers still re-run uncloaking on every hit.
 
 ## Concurrency and fuzzing
 
