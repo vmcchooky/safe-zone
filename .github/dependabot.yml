@@ -40,6 +40,24 @@ updates:
       - dependencies
       - ci
 
+  # Python ML dependencies. GitHub's dependency graph already opens alerts
+  # for ml/pyproject.toml; without this entry Dependabot never proposes the
+  # patched version, so an alert sits open until someone edits the pins by
+  # hand.
+  - package-ecosystem: pip
+    directory: "/ml"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+      - python
+
   # Dockerfile base images
   - package-ecosystem: docker
     directory: "/"
