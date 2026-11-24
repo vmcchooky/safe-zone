@@ -17,6 +17,12 @@ PR merges to `main`, oldest batch first.
   stayed reachable for the whole stale window. Stale answers now follow the
   same policy path as fresh cache hits, and they are not re-stored with the
   short stale TTL.
+- The ML test and training environment no longer pins three published
+  vulnerabilities: `pyarrow` 19.0.0 (use-after-free when reading an IPC file,
+  patched in 23.0.1), `lightgbm` 4.5.0 (remote code execution, patched in
+  4.6.0) and `pytest` 8.3.4 (temporary-directory handling, patched in 9.0.3).
+  Dependabot now watches `ml/pyproject.toml` through the pip ecosystem, so the
+  next advisory produces a patch PR instead of an alert nobody owns.
 
 ### Performance
 - Metric counters are per-key atomics instead of one registry mutex. The DNS
