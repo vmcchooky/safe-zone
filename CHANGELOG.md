@@ -11,8 +11,32 @@ PR merges to `main`, oldest batch first.
   GO-2026-6859 (HTTP/1 server crash from a `MaxBytesReader` header race in
   `net/http`), fixed in Go 1.26.11. The release preflight fails on the
   vulnerable toolchain, so this is a release-gate fix, not a routine bump.
+- Serve-stale DNS answers are re-checked through CNAME uncloaking before they
+  are returned. The upstream-down path used to return the cached message
+  directly, so a CNAME target that became blocked after the answer was cached
+  stayed reachable for the whole stale window. Stale answers now follow the
+  same policy path as fresh cache hits, and they are not re-stored with the
+  short stale TTL.
+
+### Performance
+- Metric counters are per-key atomics instead of one registry mutex. The DNS
+  hot path increments several counters per query, so every resolver goroutine
+  used to serialize behind the same lock; `Counter(name)` also lets status
+  handlers read one value without copying the whole registry.
+- A cache hit builds the response key twice instead of four times: `Lookup`
+  combines the cacheability decision with the fetch, and
+  `BeginRefreshIfDue` combines the refresh-eligibility check with the
+  single-flight claim under one lock.
 
 ### Fixed
+- RFC 8767 serve-stale now works in practice. A normal lookup always calls
+  `Get` before the upstream-down path, and `Get` deleted an expired entry on
+  the first miss, so the stale window was empty by the time `GetStale` ran.
+  Expired entries are now retained until the stale window itself expires.
+- A stale answer no longer rewrites the EDNS OPT TTL field (which carries the
+  DO flag) or a TSIG TTL to the serve-stale TTL.
+- The response cache restores the caller's 0x20 spelling in stale answers,
+  matching the fresh-hit path.
 - `feed-syncd` is no longer reported unhealthy after a successful sync. The
   image-level `/readyz` healthcheck applies to the HTTP services; the feed
   daemon is a worker with no HTTP listener, so the production Compose stack

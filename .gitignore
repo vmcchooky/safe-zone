@@ -76,6 +76,7 @@ htmlcov/
 .idea/
 .vscode/
 .opencode/
+.zcode/
 .gemini/
 .claude/
 .cursor/

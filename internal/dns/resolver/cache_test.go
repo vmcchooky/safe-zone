@@ -342,6 +342,62 @@ func TestResponseCacheGetStale(t *testing.T) {
 	}
 }
 
+// A lookup always passes through Get before the upstream-down path calls
+// GetStale. Get must not evict an entry that is still inside the stale window,
+// or serve-stale can never fire in practice.
+func TestResponseCacheGetRetainsEntryForStaleWindow(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	cache := newResponseCache(4, 60, func() time.Time { return now })
+	query := cacheTestQuery(1, "example.com")
+	cache.Put(query, cacheTestAResponse(query, 60))
+
+	now = now.Add(61 * time.Second)
+	if _, ok := cache.Get(query); ok {
+		t.Fatal("an expired entry must not be served as a fresh hit")
+	}
+	if cache.GetStale(query) == nil {
+		t.Fatal("Get must retain the expired entry for the stale window")
+	}
+
+	now = now.Add(DNSCacheStaleWindow + time.Second)
+	if _, ok := cache.Get(query); ok {
+		t.Fatal("an entry past the stale window must not be a hit")
+	}
+	if cache.GetStale(query) != nil {
+		t.Fatal("an entry past the stale window must not be served stale")
+	}
+	if got := cache.Stats().Entries; got != 0 {
+		t.Fatalf("entry past the stale window must be evicted, got %d entries", got)
+	}
+}
+
+// The OPT TTL field carries EDNS flags, not a record lifetime. Rewriting it to
+// the serve-stale TTL would clear the DO bit a DNSSEC-aware client asked for.
+func TestResponseCacheGetStalePreservesEDNSFlags(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	cache := newResponseCache(4, 60, func() time.Time { return now })
+	query := cacheTestQuery(1, "example.com")
+	response := cacheTestAResponse(query, 60)
+	response.SetEdns0(4096, true)
+	cache.Put(query, response)
+
+	now = now.Add(61 * time.Second)
+	stale := cache.GetStale(query)
+	if stale == nil {
+		t.Fatal("expected a stale answer")
+	}
+	opt := stale.IsEdns0()
+	if opt == nil {
+		t.Fatal("stale answer lost its OPT record")
+	}
+	if !opt.Do() {
+		t.Fatal("stale rewrite cleared the EDNS DO flag")
+	}
+	if got := stale.Answer[0].Header().Ttl; got != DNSCacheStaleTTL {
+		t.Fatalf("answer TTL = %d; want %d", got, DNSCacheStaleTTL)
+	}
+}
+
 // Refresh-ahead: only popular (>= refreshAheadMinHits) and half-expired
 // entries qualify, and the refresh slot is single-flight.
 func TestResponseCacheShouldRefreshSingleFlight(t *testing.T) {
@@ -371,9 +427,13 @@ func TestResponseCacheShouldRefreshSingleFlight(t *testing.T) {
 		t.Fatal("second concurrent refresh claim should be refused")
 	}
 	cache.EndRefresh(query)
-	if !cache.BeginRefresh(query) {
-		t.Fatal("refresh claim should succeed after release")
+	if !cache.BeginRefreshIfDue(query) {
+		t.Fatal("combined refresh claim should succeed after release")
 	}
+	if cache.BeginRefreshIfDue(query) {
+		t.Fatal("combined refresh claim must be single-flight")
+	}
+	cache.EndRefresh(query)
 
 	// Young entry: not eligible even when hot.
 	now2 := time.Unix(1_700_000_000, 0)
@@ -385,5 +445,27 @@ func TestResponseCacheShouldRefreshSingleFlight(t *testing.T) {
 	}
 	if cache2.ShouldRefresh(q2) {
 		t.Fatal("young entry must not refresh")
+	}
+	if cache2.BeginRefreshIfDue(q2) {
+		t.Fatal("young entry must not claim a refresh")
+	}
+}
+
+func TestResponseCacheLookupReportsCacheability(t *testing.T) {
+	cache := newResponseCache(4, 60, time.Now)
+	query := cacheTestQuery(1, "example.com")
+
+	if _, cacheable, hit := cache.Lookup(query); !cacheable || hit {
+		t.Fatalf("empty cache Lookup = cacheable %v, hit %v; want true, false", cacheable, hit)
+	}
+	cache.Put(query, cacheTestAResponse(query, 60))
+	if _, cacheable, hit := cache.Lookup(query); !cacheable || !hit {
+		t.Fatalf("populated cache Lookup = cacheable %v, hit %v; want true, true", cacheable, hit)
+	}
+
+	uncacheable := cacheTestQuery(2, "example.com")
+	uncacheable.Response = true
+	if _, cacheable, hit := cache.Lookup(uncacheable); cacheable || hit {
+		t.Fatalf("uncacheable Lookup = cacheable %v, hit %v; want false, false", cacheable, hit)
 	}
 }

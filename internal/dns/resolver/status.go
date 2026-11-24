@@ -96,7 +96,7 @@ func (r *Resolver) MetricsHandler(w http.ResponseWriter, req *http.Request) {
 
 	upstreamFailures := int64(0)
 	if r.Metrics != nil {
-		upstreamFailures = r.Metrics.Snapshot().Counters["upstream_doh_failures_total"]
+		upstreamFailures = r.Metrics.Counter("upstream_doh_failures_total")
 	}
 
 	httputil.WriteJSON(w, http.StatusOK, map[string]any{

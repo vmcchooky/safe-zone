@@ -122,6 +122,7 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 	}
 
 	responseMsg, cacheHit := r.lookupCache(ctx, query, questionDomain)
+	staleServed := false
 	if responseMsg == nil {
 		wire, err := query.Pack()
 		if err != nil {
@@ -132,25 +133,27 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 		if err != nil {
 			// RFC 8767 serve-stale: an expired-but-recent cached answer is
 			// better than SERVFAIL during an upstream outage. The answer
-			// still runs through the policy checks below, and its records
-			// carry a short TTL so clients re-ask soon.
+			// still runs through the CNAME policy checks below, and its
+			// records carry a short TTL so clients re-ask soon.
 			if stale := r.lookupStale(query, questionDomain); stale != nil {
-				return stale, nil
+				responseMsg = stale
+				staleServed = true
+			} else {
+				if r.Metrics != nil {
+					r.Metrics.IncCounter("upstream_doh_failures_total")
+				}
+				logjson.Warn("upstream DoH failed", correlation.Fields(ctx, map[string]any{
+					"service": "dns-resolver",
+					"domain":  questionDomain,
+					"error":   err.Error(),
+				}))
+				return nil, err
 			}
-			if r.Metrics != nil {
-				r.Metrics.IncCounter("upstream_doh_failures_total")
+		} else {
+			responseMsg = new(dns.Msg)
+			if err := responseMsg.Unpack(responseWire); err != nil {
+				return nil, err
 			}
-			logjson.Warn("upstream DoH failed", correlation.Fields(ctx, map[string]any{
-				"service": "dns-resolver",
-				"domain":  questionDomain,
-				"error":   err.Error(),
-			}))
-			return nil, err
-		}
-
-		responseMsg = new(dns.Msg)
-		if err := responseMsg.Unpack(responseWire); err != nil {
-			return nil, err
 		}
 
 		// The upstream reply is untrusted input. A response whose ID or question
@@ -199,7 +202,10 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 		}
 	}
 
-	if !cacheHit {
+	// A stale answer is already a cache entry; re-storing it would replace the
+	// original lifetime with the 30-second stale TTL and cut the RFC 8767
+	// window short on the next outage.
+	if !cacheHit && !staleServed {
 		r.storeCache(query, responseMsg)
 	}
 	return responseMsg, nil
@@ -210,10 +216,13 @@ func (r *Resolver) ResolveQuery(ctx context.Context, query *dns.Msg, client doh.
 // counted as a hit; a mismatch is treated as a miss so a corrupt entry cannot
 // be forwarded or pin the cache forever.
 func (r *Resolver) lookupCache(ctx context.Context, query *dns.Msg, domain string) (*dns.Msg, bool) {
-	if r.Cache == nil || !r.Cache.Cacheable(query) {
+	if r.Cache == nil {
 		return nil, false
 	}
-	response, ok := r.Cache.Get(query)
+	response, cacheable, ok := r.Cache.Lookup(query)
+	if !cacheable {
+		return nil, false
+	}
 	if !ok {
 		if r.Metrics != nil {
 			r.Metrics.IncCounter("dns_cache_misses_total")
@@ -244,7 +253,7 @@ func (r *Resolver) lookupCache(ctx context.Context, query *dns.Msg, domain strin
 // answer is still served from cache, so the client never waits on the
 // refresh; a failure simply leaves the entry to expire normally.
 func (r *Resolver) maybeRefreshAhead(query *dns.Msg, domain string) {
-	if !r.Cache.ShouldRefresh(query) || !r.Cache.BeginRefresh(query) {
+	if !r.Cache.BeginRefreshIfDue(query) {
 		return
 	}
 	go func() {
