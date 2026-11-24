@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,7 +20,10 @@ type Registry struct {
 	startedAt time.Time
 	mu        sync.Mutex
 	requests  map[string]*RequestSummary
-	counters  map[string]int64
+	// counters is a lock-free map of monotonically increasing counters. The
+	// DNS hot path increments several counters per query; a single registry
+	// mutex serialized every resolver goroutine behind the same lock.
+	counters sync.Map // map[string]*atomic.Int64
 }
 
 type RequestSummary struct {
@@ -41,7 +45,6 @@ func NewRegistry() *Registry {
 	return &Registry{
 		startedAt: time.Now().UTC(),
 		requests:  make(map[string]*RequestSummary),
-		counters:  make(map[string]int64),
 	}
 }
 
@@ -61,7 +64,7 @@ func (r *Registry) Observe(method, path string, statusCode int, bytesWritten int
 	if !ok && len(r.requests) >= maxRequestSeries-1 {
 		key = overflowRequestSeriesKey
 		summary, ok = r.requests[key]
-		r.counters[requestSeriesOverflowCounter]++
+		r.IncCounter(requestSeriesOverflowCounter)
 	}
 	if !ok {
 		summary = &RequestSummary{}
@@ -126,10 +129,12 @@ func (r *Registry) Snapshot() Snapshot {
 	for key, value := range r.requests {
 		requestSummary[key] = *value
 	}
-	counters := make(map[string]int64, len(r.counters))
-	for key, value := range r.counters {
-		counters[key] = value
-	}
+
+	counters := make(map[string]int64)
+	r.counters.Range(func(key, value any) bool {
+		counters[key.(string)] = value.(*atomic.Int64).Load()
+		return true
+	})
 
 	return Snapshot{
 		StartedAt:      r.startedAt.Format(time.RFC3339Nano),
@@ -143,8 +148,25 @@ func (r *Registry) IncCounter(name string) {
 	if r == nil || name == "" {
 		return
 	}
+	r.counter(name).Add(1)
+}
 
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.counters[name]++
+// Counter returns one counter without copying the whole registry. Status
+// handlers use it on request paths where a full Snapshot would be wasteful.
+func (r *Registry) Counter(name string) int64 {
+	if r == nil || name == "" {
+		return 0
+	}
+	if value, ok := r.counters.Load(name); ok {
+		return value.(*atomic.Int64).Load()
+	}
+	return 0
+}
+
+func (r *Registry) counter(name string) *atomic.Int64 {
+	if value, ok := r.counters.Load(name); ok {
+		return value.(*atomic.Int64)
+	}
+	value, _ := r.counters.LoadOrStore(name, new(atomic.Int64))
+	return value.(*atomic.Int64)
 }

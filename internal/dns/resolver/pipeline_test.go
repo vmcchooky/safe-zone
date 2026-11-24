@@ -265,6 +265,82 @@ func TestResolveQueryRechecksCNAMEPolicyOnCacheHit(t *testing.T) {
 	}
 }
 
+func TestResolveQueryRechecksCNAMEPolicyOnStaleAnswer(t *testing.T) {
+	var upstreamCalls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if upstreamCalls.Add(1) > 1 {
+			http.Error(w, "upstream down", http.StatusBadGateway)
+			return
+		}
+		wire, err := readAllLimited(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		query := new(dns.Msg)
+		if err := query.Unpack(wire); err != nil {
+			http.Error(w, "invalid dns message", http.StatusBadRequest)
+			return
+		}
+		response := new(dns.Msg)
+		response.SetReply(query)
+		response.Answer = append(response.Answer, &dns.CNAME{
+			Hdr: dns.RR_Header{
+				Name:   query.Question[0].Name,
+				Rrtype: dns.TypeCNAME,
+				Class:  dns.ClassINET,
+				Ttl:    1,
+			},
+			Target: "blocked-target.example.",
+		})
+		respWire, err := response.Pack()
+		if err != nil {
+			t.Errorf("pack upstream response: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", doh.ContentTypeDNSMessage)
+		_, _ = w.Write(respWire)
+	}))
+	defer upstream.Close()
+	upstreamURL, upstreamClient := policyUpstream(t, upstream)
+	r, storeDB, metrics := newPipelineResolverWithCache(t, upstreamURL, upstreamClient, 16)
+
+	first, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "stale-cname.example"), doh.ClientInfo{IP: "192.168.1.10"})
+	if err != nil {
+		t.Fatalf("first resolve failed: %v", err)
+	}
+	if len(first.Answer) != 1 {
+		t.Fatalf("expected the CNAME answer, got %d records", len(first.Answer))
+	}
+	if err := storeDB.UpsertOverride(context.Background(), "blocked-target.example", "block", "blocked after cache"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Move the cache clock past the one-second TTL without sleeping. Get must
+	// retain the expired entry so the upstream-down path can serve it stale.
+	base := time.Now()
+	r.Cache.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	response, err := r.ResolveQuery(context.Background(), testPipelineQuery(t, "stale-cname.example"), doh.ClientInfo{IP: "192.168.1.10"})
+	if err != nil {
+		t.Fatalf("stale resolve failed: %v", err)
+	}
+	aRecord, ok := response.Answer[0].(*dns.A)
+	if !ok || aRecord.A.String() != testBlockPageIP {
+		t.Fatalf("expected CNAME uncloaking on a stale answer, got %#v", response.Answer)
+	}
+	if got := upstreamCalls.Load(); got != 2 {
+		t.Fatalf("upstream calls = %d; want 2", got)
+	}
+	counters := metrics.Snapshot().Counters
+	if got := counters["dns_cache_stale_served_total"]; got != 1 {
+		t.Fatalf("expected dns_cache_stale_served_total=1, got %d", got)
+	}
+	if got := counters["upstream_doh_failures_total"]; got != 0 {
+		t.Fatalf("stale recovery must not count as an upstream failure, got %d", got)
+	}
+}
+
 func TestResolveQueryBlocksOverriddenDomain(t *testing.T) {
 	upstream := echoUpstream(t)
 	defer upstream.Close()

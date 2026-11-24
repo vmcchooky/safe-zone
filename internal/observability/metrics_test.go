@@ -3,6 +3,7 @@ package observability
 import (
 	"fmt"
 	"net/http"
+	"sync"
 	"testing"
 	"time"
 )
@@ -43,6 +44,31 @@ func TestRegistryCapsRequestSeries(t *testing.T) {
 	}
 	if got := snapshot.Counters[requestSeriesOverflowCounter]; got != 51 {
 		t.Fatalf("expected 51 overflow observations, got %d", got)
+	}
+}
+
+func TestRegistryCountersAreSafeForConcurrentUse(t *testing.T) {
+	registry := NewRegistry()
+	var workers sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for j := 0; j < 100; j++ {
+				registry.IncCounter("dns_cache_hits_total")
+			}
+		}()
+	}
+	workers.Wait()
+
+	if got := registry.Counter("dns_cache_hits_total"); got != 3200 {
+		t.Fatalf("Counter = %d; want 3200", got)
+	}
+	if got := registry.Snapshot().Counters["dns_cache_hits_total"]; got != 3200 {
+		t.Fatalf("Snapshot counter = %d; want 3200", got)
+	}
+	if got := registry.Counter("missing_counter"); got != 0 {
+		t.Fatalf("missing Counter = %d; want 0", got)
 	}
 }
 

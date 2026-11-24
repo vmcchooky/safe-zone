@@ -119,14 +119,26 @@ func (c *ResponseCache) Cacheable(query *dns.Msg) bool {
 }
 
 // Get returns a copy of the cached response for query with the caller's ID and
-// question spelling restored, and record TTLs reduced by the entry's age.
+// question spelling restored, and record TTLs reduced by the entry's age. An
+// expired entry is retained inside the RFC 8767 stale window so GetStale can
+// still use it; past that window it is evicted.
 func (c *ResponseCache) Get(query *dns.Msg) (*dns.Msg, bool) {
+	response, _, hit := c.Lookup(query)
+	return response, hit
+}
+
+// Lookup is Get with the cacheability decision exposed. The resolver's hot
+// path uses it to avoid building the cache key twice: once to decide whether
+// the query is cacheable and again to fetch the entry. The second return value
+// is false for a query that can never be cached (so it must not be counted as
+// a miss), and the third reports whether an entry was actually served.
+func (c *ResponseCache) Lookup(query *dns.Msg) (*dns.Msg, bool, bool) {
 	if c == nil || c.maxEntries <= 0 {
-		return nil, false
+		return nil, false, false
 	}
 	key, ok := responseCacheKeyFor(query)
 	if !ok {
-		return nil, false
+		return nil, false, false
 	}
 
 	c.mu.Lock()
@@ -134,7 +146,7 @@ func (c *ResponseCache) Get(query *dns.Msg) (*dns.Msg, bool) {
 
 	element, ok := c.entries[key]
 	if !ok {
-		return nil, false
+		return nil, true, false
 	}
 	entry := element.Value.(*responseCacheEntry)
 	now := c.now()
@@ -143,9 +155,16 @@ func (c *ResponseCache) Get(query *dns.Msg) (*dns.Msg, bool) {
 		age = 0
 	}
 	if age >= time.Duration(entry.ttl)*time.Second {
-		c.lru.Remove(element)
-		delete(c.entries, key)
-		return nil, false
+		// RFC 8767 serve-stale needs the expired entry to survive until the
+		// upstream-down path asks for it. Deleting it here made GetStale
+		// unreachable in practice: every lookup first passes through Get, so
+		// the stale window was always emptied before it could be used. Keep
+		// the entry until it is older than TTL + stale window, then evict it.
+		if age > time.Duration(entry.ttl)*time.Second+DNSCacheStaleWindow {
+			c.lru.Remove(element)
+			delete(c.entries, key)
+		}
+		return nil, true, false
 	}
 	entry.hits++
 	c.lru.MoveToFront(element)
@@ -165,7 +184,7 @@ func (c *ResponseCache) Get(query *dns.Msg) (*dns.Msg, bool) {
 			ageRecordTTL(rr, ageSeconds)
 		}
 	}
-	return response, true
+	return response, true, true
 }
 
 // Put stores a copy of response. It returns whether the response was stored
@@ -402,9 +421,22 @@ func (c *ResponseCache) GetStale(query *dns.Msg) *dns.Msg {
 
 	response := entry.message.Copy()
 	response.Id = query.Id
+	cachedName := entry.message.Question[0].Name
 	response.Question[0].Name = query.Question[0].Name
 	for _, section := range [][]dns.RR{response.Answer, response.Ns, response.Extra} {
 		for _, rr := range section {
+			switch rr.(type) {
+			case *dns.OPT, *dns.TSIG:
+				// The OPT TTL field carries EDNS flags (including DO), and a
+				// TSIG TTL must stay zero. Rewriting either to the stale TTL
+				// would corrupt the message a client is about to parse.
+				continue
+			}
+			// A 0x20 client expects its own spelling in the reply, while the
+			// cached answer carries the first caller's spelling.
+			if strings.EqualFold(rr.Header().Name, cachedName) {
+				rr.Header().Name = query.Question[0].Name
+			}
 			rr.Header().Ttl = DNSCacheStaleTTL
 		}
 	}
@@ -430,15 +462,45 @@ func (c *ResponseCache) ShouldRefresh(query *dns.Msg) bool {
 	if !ok {
 		return false
 	}
-	entry := element.Value.(*responseCacheEntry)
+	return refreshDue(element.Value.(*responseCacheEntry), c.now())
+}
+
+func refreshDue(entry *responseCacheEntry, now time.Time) bool {
 	if entry.hits < refreshAheadMinHits {
 		return false
 	}
-	age := c.now().Sub(entry.storedAt)
+	age := now.Sub(entry.storedAt)
 	if age < 0 {
 		return false
 	}
 	return age >= time.Duration(float64(entry.ttl)*refreshAheadFraction)*time.Second
+}
+
+// BeginRefreshIfDue combines ShouldRefresh and BeginRefresh under one lock and
+// one cache-key construction. The resolver calls it on every cache hit, so the
+// combined form removes two key builds and two lock round-trips from that path.
+func (c *ResponseCache) BeginRefreshIfDue(query *dns.Msg) bool {
+	if c == nil || c.maxEntries <= 0 {
+		return false
+	}
+	key, ok := responseCacheKeyFor(query)
+	if !ok {
+		return false
+	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	element, ok := c.entries[key]
+	if !ok {
+		return false
+	}
+	entry := element.Value.(*responseCacheEntry)
+	if !refreshDue(entry, c.now()) || c.refreshing[key] {
+		return false
+	}
+	c.refreshing[key] = true
+	return true
 }
 
 // BeginRefresh claims the refresh slot for query so concurrent requests for
