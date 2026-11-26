@@ -12,7 +12,8 @@ PR merges to `main`, oldest batch first.
   while the `Dockerfile` built release images with 1.27.4 and 26, so the gates
   did not exercise the compiler and runtime that ship. `golangci-lint` moves
   to 2.15.0 because 2.12.2 is built with Go 1.26 and refuses a module that
-  targets a newer Go.
+  targets a newer Go. `gosec` moves to 2.30.0 for the same reason: 2.28.0's
+  `go/packages` cannot decode Go 1.27 export data and fails the scan.
 
 ### Security
 - The Go toolchain moves to 1.26.11 across `mise.toml`, `go.mod`, the
