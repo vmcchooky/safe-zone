@@ -1,10 +1,10 @@
 [tools]
 # Single source of truth for the Go toolchain. go.mod (go + toolchain
 # directives) and Dockerfile (golang: image) must state this same version.
-go = "1.26.11"
-node = "24"
+go = "1.27.4"
+node = "26"
 python = "3.13.14"
-golangci-lint = "2.12.2"
+golangci-lint = "2.15.0"
 # Security scanners live here next to the linter instead of being fetched by
 # `go run pkg@version` on every CI run. The go: backend builds them with the
 # Go toolchain above, so versions resolve once, install into the mise shims,
