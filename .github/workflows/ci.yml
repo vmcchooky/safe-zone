@@ -299,7 +299,7 @@ jobs:
             go-v2-${{ runner.os }}-
 
       - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
+        uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         with:
           cache: true
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
@@ -367,7 +367,7 @@ jobs:
             go-v2-${{ runner.os }}-
 
       - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
+        uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         with:
           cache: true
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
@@ -443,7 +443,7 @@ jobs:
             go-v2-${{ runner.os }}-
 
       - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
+        uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         with:
           cache: true
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
@@ -492,7 +492,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
+        uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         with:
           cache: true
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
