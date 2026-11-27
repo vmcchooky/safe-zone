@@ -5,6 +5,20 @@ PR merges to `main`, oldest batch first.
 
 ## [Unreleased]
 
+### Changed
+- The toolchain used by CI now matches the one release images already used:
+  Go 1.27.4 (`mise.toml`, `go.mod`, `Dockerfile`) and Node 26 (`mise.toml`,
+  `security.yml`, `Dockerfile`). CI had been running Go 1.26.11 and Node 24
+  while the `Dockerfile` built release images with 1.27.4 and 26, so the gates
+  did not exercise the compiler and runtime that ship. `golangci-lint` moves
+  to 2.15.0 because 2.12.2 is built with Go 1.26 and refuses a module that
+  targets a newer Go. `gosec` moves to 2.30.0, and both security scanners now
+  run through `go run pkg@version` instead of being installed by mise: 2.28.0's
+  `go/packages` cannot decode Go 1.27 export data, and a cached `go:`-installed
+  binary was compiled by the runner's older system Go even when mise had
+  already installed 1.27.4. The mise cache key now includes `mise.toml`, so a
+  tool change starts from a fresh install.
+
 ### Security
 - The Go toolchain moves to 1.26.11 across `mise.toml`, `go.mod`, the
   `Dockerfile`, and the documented prerequisite. `govulncheck` flagged
