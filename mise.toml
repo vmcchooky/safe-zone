@@ -5,19 +5,13 @@ go = "1.27.4"
 node = "26"
 python = "3.13.14"
 golangci-lint = "2.15.0"
-# govulncheck lives here next to the linter instead of being fetched by
-# `go run pkg@version` on every CI run. The go: backend builds it with the
-# Go toolchain above, so the version resolves once, installs into the mise
-# shims, and stays on PATH for the security task. Pin with the full module
-# version.
-#
-# gosec is deliberately NOT installed here. On a runner whose system Go is
-# older than mise's, the go: backend can build gosec with that older compiler;
-# the binary then cannot decode the Go 1.27 export data produced by `go list`
-# and the scan fails even though it reports zero findings. The security task
-# runs `go run ...@v2.30.0` instead, which always compiles with the active
-# mise-managed Go.
-"go:golang.org/x/vuln/cmd/govulncheck" = "v1.4.0"
+# The security scanners are deliberately NOT installed here. On a runner whose
+# mise cache predates a toolchain bump, `mise install` reuses a `go:` binary
+# compiled by the old Go; that binary then cannot read the Go 1.27 export data
+# produced by `go list` and the scan fails even though it reports zero
+# findings. The security task runs `go run pkg@version` instead, which always
+# compiles with the active mise-managed Go, and the restored module cache keeps
+# the cost down.
 
 [tasks.default]
 description = "Run the default repository verification suite"
@@ -210,7 +204,7 @@ description = "Run the Go security scans used in CI"
 depends = ["ui:bundle"]
 run = [
   "go run github.com/securego/gosec/v2/cmd/gosec@v2.30.0 ./...",
-  "govulncheck ./...",
+  "go run golang.org/x/vuln/cmd/govulncheck@v1.4.0 ./...",
 ]
 
 [tasks."ml:install"]
