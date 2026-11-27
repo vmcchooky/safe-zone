@@ -41,7 +41,7 @@ jobs:
             go-v2-${{ runner.os }}-
 
       - name: Set up mise
-        uses: jdx/mise-action@fc42bcc7ddbf51124c30f95a877a0c5168a3bfde # v5
+        uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5
         with:
           cache: true
           cache_key: ml-pyproject-${{ hashFiles('ml/pyproject.toml') }}
